@@ -1,0 +1,16 @@
+# requirements-min.txt
+numpy==1.26.4
+pandas
+scikit-learn
+matplotlib
+umap-learn
+
+transformers==4.51.3
+tokenizers
+sentencepiece
+protobuf
+
+langchain-openai
+openai
+tqdm
+pyyaml
