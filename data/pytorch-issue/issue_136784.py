@@ -1,0 +1,21 @@
+# torch.rand(4, 4, dtype=torch.bfloat16) ← Add a comment line at the top with the inferred input shape
+import torch
+import torch.nn as nn
+
+class MyModel(nn.Module):
+    def __init__(self):
+        super(MyModel, self).__init__()
+    
+    def forward(self, x):
+        noise = torch.ones_like(x)
+        result = torch._C._nn.rrelu_with_noise(x, noise, 0.2, 0.8, True)
+        return result, noise
+
+def my_model_function():
+    # Return an instance of MyModel, include any required initialization or weights
+    return MyModel()
+
+def GetInput():
+    # Return a random tensor input that matches the input expected by MyModel
+    return -torch.abs(torch.randn(4, 4, dtype=torch.bfloat16, requires_grad=True))
+

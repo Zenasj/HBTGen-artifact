@@ -1,0 +1,43 @@
+{
+  "PyTorch": {
+    "keywords": [
+      "inductor",
+      "dynamo",
+      "autograd",
+      "fx",
+      "pt2",
+      "onnx",
+      "export",
+      "aot_autograd",
+      "compile",
+      "regions",
+      "prims",
+      "nvfuser",
+      "cuda_graphs",
+      "tensor_expr",
+      "xpu",
+      "mps",
+      "xla",
+      "vulkan"
+    ]
+  },
+  "TensorFlow": {
+    "keywords": [
+      "jit_compile",
+      "experimental_compile",
+      "xla",
+      "xla_jit",
+      "auto_jit",
+      "auto_mixed_precision",
+      "layout_optimizer",
+      "constant_folding",
+      "shape_optimization",
+      "arithmetic_optimization",
+      "remapping",
+      "graph_optimization",
+      "tf_function",
+      "grappler_pass",
+      "eager_execution"
+    ]
+  }
+}
