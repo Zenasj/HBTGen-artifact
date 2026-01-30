@@ -1,43 +1,90 @@
-# tf.random.uniform((B, 28, 28, 1), dtype=tf.float32) ← MNIST images, grayscale, 28x28
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
+
+from __future__ import print_function
+
+from os import makedirs
+from os.path import exists, join
 
 import tensorflow as tf
+from tensorflow.keras.callbacks import TensorBoard
+from tensorflow.keras.datasets import mnist
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Dropout, Flatten
+from tensorflow.keras.layers import Conv2D, MaxPooling2D
+from tensorflow.keras import backend as K
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        self.conv1 = tf.keras.layers.Conv2D(32, (3, 3), activation='relu', input_shape=(28, 28, 1))
-        self.conv2 = tf.keras.layers.Conv2D(64, (3, 3), activation='relu')
-        self.pool = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))
-        self.dropout1 = tf.keras.layers.Dropout(0.25)
-        self.flatten = tf.keras.layers.Flatten()
-        self.features = tf.keras.layers.Dense(128, activation='relu', name='features')
-        self.dropout2 = tf.keras.layers.Dropout(0.5)
-        self.classifier = tf.keras.layers.Dense(10, activation='softmax')
+import numpy as np
 
-    def call(self, inputs, training=False):
-        x = self.conv1(inputs)
-        x = self.conv2(x)
-        x = self.pool(x)
-        x = self.dropout1(x, training=training)
-        x = self.flatten(x)
-        x = self.features(x)
-        x = self.dropout2(x, training=training)
-        outputs = self.classifier(x)
-        return outputs
+batch_size = 128
+num_classes = 10
+epochs = 12
+log_dir = './logs'
 
-def my_model_function():
-    model = MyModel()
-    # Compile as per original example
-    model.compile(
-        loss=tf.keras.losses.CategoricalCrossentropy(),
-        optimizer=tf.keras.optimizers.Adadelta(),
-        metrics=['accuracy']
-    )
-    return model
+if not exists(log_dir):
+    makedirs(log_dir)
 
-def GetInput():
-    # Return a random tensor shaped as a MNIST batch of 128 images with 1 channel
-    # Use float32 normalized data in range [0,1]
-    batch_size = 128
-    return tf.random.uniform((batch_size, 28, 28, 1), dtype=tf.float32, minval=0.0, maxval=1.0)
+# input image dimensions
+img_rows, img_cols = 28, 28
 
+# the data, split between train and test sets
+(x_train, y_train), (x_test, y_test) = mnist.load_data()
+
+if K.image_data_format() == 'channels_first':
+    x_train = x_train.reshape(x_train.shape[0], 1, img_rows, img_cols)
+    x_test = x_test.reshape(x_test.shape[0], 1, img_rows, img_cols)
+    input_shape = (1, img_rows, img_cols)
+else:
+    x_train = x_train.reshape(x_train.shape[0], img_rows, img_cols, 1)
+    x_test = x_test.reshape(x_test.shape[0], img_rows, img_cols, 1)
+    input_shape = (img_rows, img_cols, 1)
+
+x_train = x_train.astype('float32')
+x_test = x_test.astype('float32')
+x_train /= 255
+x_test /= 255
+print('x_train shape:', x_train.shape)
+print(x_train.shape[0], 'train samples')
+print(x_test.shape[0], 'test samples')
+
+# save class labels to disk to color data points in TensorBoard accordingly
+with open(join(log_dir, 'metadata.tsv'), 'w') as f:
+    np.savetxt(f, y_test)
+
+# convert class vectors to binary class matrices
+y_train = tf.keras.utils.to_categorical(y_train, num_classes)
+y_test = tf.keras.utils.to_categorical(y_test, num_classes)
+
+tensorboard = TensorBoard(batch_size=batch_size,
+                          embeddings_freq=1,
+                          embeddings_layer_names=['features'],
+                          embeddings_metadata='metadata.tsv',
+                          embeddings_data=x_test)
+
+model = Sequential()
+model.add(Conv2D(32, kernel_size=(3, 3),
+                 activation='relu',
+                 input_shape=input_shape))
+model.add(Conv2D(64, (3, 3), activation='relu'))
+model.add(MaxPooling2D(pool_size=(2, 2)))
+model.add(Dropout(0.25))
+model.add(Flatten())
+model.add(Dense(128, activation='relu', name='features'))
+model.add(Dropout(0.5))
+model.add(Dense(num_classes, activation='softmax'))
+
+model.compile(loss=tf.keras.losses.categorical_crossentropy,
+              optimizer=tf.keras.optimizers.Adadelta(),
+              metrics=['accuracy'])
+
+model.fit(x_train, y_train,
+          batch_size=batch_size,
+          callbacks=[tensorboard],
+          epochs=epochs,
+          verbose=1,
+          validation_data=(x_test, y_test))
+score = model.evaluate(x_test, y_test, verbose=0)
+print('Test loss:', score[0])
+print('Test accuracy:', score[1])

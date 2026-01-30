@@ -1,40 +1,30 @@
-# tf.random.uniform((B,), dtype=tf.string) ← input batch of string tensors, shape unknown (batch size only)
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # StringLookup layer with no pre-defined vocabulary, adapting expects string inputs.
-        self.string_lookup = tf.keras.layers.StringLookup()
-        # Embedding layer sized dynamically after adapt
-        self.embedding = None
+data = {"numbers": [111, 222, 333, 444], "strings": ["a", "b", "c", "d"]}
+dataset = tf.data.Dataset.from_tensor_slices(data).batch(2)
 
-    def adapt(self, dataset_strings):
-        # Adapt the StringLookup on the dataset strings (dataset of (batch_size,) string tensors)
-        self.string_lookup.adapt(dataset_strings)
-        # After adapt, create embedding layer of vocabulary size from string_lookup
-        vocab_size = self.string_lookup.vocabulary_size()
-        self.embedding = tf.keras.layers.Embedding(vocab_size, 4)
+number_encoding = tf.keras.layers.IntegerLookup()
+number_encoding.adapt(dataset.map(lambda x: x["numbers"]))
 
-    @tf.function(jit_compile=True)
-    def call(self, inputs):
-        # inputs: tf.Tensor of dtype = string and shape (batch_size,)
-        # Use StringLookup to convert strings to integer indices
-        x = self.string_lookup(inputs)
-        # Pass integer indices to embedding layer
-        return self.embedding(x)
+string_encoding = tf.keras.layers.StringLookup()
+string_encoding.adapt(dataset.map(lambda x: x["strings"]))
 
-def my_model_function():
-    model = MyModel()
-    # For demonstration/adaptation, create a dummy dataset of strings to adapt
-    example_strings = tf.data.Dataset.from_tensor_slices(["a", "b", "c", "d"]).batch(2)
-    model.adapt(example_strings)
-    return model
+string_model = tf.keras.Sequential([
+  string_encoding,
+  tf.keras.layers.Embedding(string_encoding.vocabulary_size(), 4)
+])
 
-def GetInput():
-    # Generate a batch of strings matching the model's expected input
-    # Here, batch size 2 with example strings matching the vocab used for adapt
-    batch_strings = tf.constant(["a", "c"])
-    return batch_strings
+number_model = tf.keras.Sequential([
+  number_encoding,
+  tf.keras.layers.Embedding(number_encoding.vocabulary_size(), 4)
+])
 
+print(number_model(next(iter(dataset.map(lambda x: x["numbers"]))))) # works
+
+print(string_model(next(iter(dataset.map(lambda x: x["strings"]))))) #fails
+
+tmp = string_encoding(next(iter(dataset.map(lambda x: x["strings"])))) # same as above, but works
+print(tf.keras.layers.Embedding(string_encoding.vocabulary_size(), 4)(tmp)) # works

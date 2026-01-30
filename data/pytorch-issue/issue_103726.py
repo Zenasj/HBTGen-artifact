@@ -1,12 +1,17 @@
-# torch.rand(1, dtype=torch.float, requires_grad=True)
 import torch
-from torch import nn
+
+a = torch.tensor(1., requires_grad=True)
+
+def pack(x):
+    return x
+
+def unpack(x):
+    return x
 
 class Func(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x):
         intermediate = x.exp()
-        # Save a tensor with requires_grad=True to trigger the issue
         ctx.save_for_backward(intermediate.clone().detach_().requires_grad_(True))
         return x.exp()
 
@@ -15,13 +20,6 @@ class Func(torch.autograd.Function):
         intermediate, = ctx.saved_tensors
         return grad_out * intermediate
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return Func.apply(x)
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(1, dtype=torch.float, requires_grad=True)
-
+with torch.autograd.graph.saved_tensors_hooks(pack, unpack):
+    out = Func.apply(a)

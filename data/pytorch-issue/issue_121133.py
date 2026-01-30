@@ -1,27 +1,21 @@
-# torch.rand(3, dtype=torch.float32)  # Inferred input shape from original example
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.tanh_layer = nn.Tanh()  # Autograd-based tanh
+import torch
+import torch.nn.functional as F
+print(f'torch={torch.__version__}')
+t = torch.arange(1.0, 4.0)
+t.requires_grad = True
+t_tanh = torch.tanh(t)
+t_tanh.sum().backward()
+M1 = 1.0 - (t_tanh)**2 ## <--  sometime ago, this generated exact match with torch tanh autograd, but now does not.
 
-    def forward(self, x):
-        self.x = x  # Store input to access gradients later
-        tanh_out = self.tanh_layer(x)
-        self.manual_derivative = 1 - tanh_out ** 2  # Manual derivative (1 - tanh²)
-        return tanh_out
-
-    def compare_gradients(self):
-        """Compares autograd gradient with manual derivative using torch.allclose"""
-        if self.x.grad is None:
-            raise RuntimeError("Gradient not computed (run backward first)")
-        return torch.allclose(self.manual_derivative, self.x.grad)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(3, dtype=torch.float32, requires_grad=True)
-
+def cmp(dt, t):
+  ex1 = dt == t.grad
+  ex = torch.all(ex1).item()
+  cnt = ex1.sum().item()
+  # torch.allclose returns a bool
+  app = torch.allclose(dt, t.grad)
+  print(f'comparing dt vs t.grad Exact={str(ex):5s} {cnt:5}/{t.numel():5} | approx {str(app):5s}')
+print(M1)
+print(t.grad, "SEEMS okay but it's not!")
+cmp(M1, t)

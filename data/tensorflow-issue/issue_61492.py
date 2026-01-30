@@ -1,54 +1,49 @@
-# tf.random.uniform((B, 28, 28, 1), dtype=tf.float32)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Build functional model architecture from the issue
-        self.inputs_layer = tf.keras.layers.InputLayer(input_shape=(28, 28, 1))
-        self.conv2d = tf.keras.layers.Conv2D(32, 3, activation='relu')
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense = tf.keras.layers.Dense(10, activation='softmax')
-        
-        # The submodel that replaces Conv2D, as per the clone_function logic:
-        # Takes input tensor and applies Conv2D layer followed by Lambda (t * 2) and Add.
-        # We'll instantiate this here for clarity and reuse.
-        self.submodel_conv = None # Will be lazily created during call on input shape
-        
-    def build_submodel_conv(self, input_shape):
-        # Input layer for the submodel
-        inputs = tf.keras.Input(shape=input_shape[1:])
-        x = self.conv2d(inputs)
+
+def replace_conv2d_with_sub_model(layer: tf.keras.layers.Layer) -> tf.keras.layers.Layer:
+    if isinstance(layer, tf.keras.layers.Conv2D):
+        inputs = layer.input
+        x = layer(inputs)
         y = tf.keras.layers.Lambda(lambda t: t * 2)(x)
         outputs = tf.keras.layers.Add()([x, y])
-        submodel = tf.keras.Model(inputs=inputs, outputs=outputs, name='conv2d_submodel')
-        return submodel
+        layer = tf.keras.models.Model(inputs=inputs, outputs=outputs, name=layer.name)
+    return layer
 
-    def call(self, inputs, training=None):
-        # inputs: (B, 28, 28, 1)
-        x = inputs
-        # Because the issue involves infinite loop cloning when Conv2D is replaced 
-        # by a functional submodel, we simulate this replacement here by
-        # using the submodel instead of plain Conv2D.
 
-        # Lazily create submodel matching input shape
-        if self.submodel_conv is None:
-            # input_shape includes batch dim, e.g. (None, 28, 28, 1)
-            self.submodel_conv = self.build_submodel_conv(tf.shape(x))
-        
-        x = self.submodel_conv(x)
-        x = self.flatten(x)
-        x = self.dense(x)
-        return x
+def get_sequential_model() -> tf.keras.Model:
+    return tf.keras.Sequential(
+        [
+            tf.keras.layers.InputLayer(input_shape=(28, 28, 1)),
+            tf.keras.layers.Conv2D(32, 3, activation='relu'),
+            tf.keras.layers.Flatten(),
+            tf.keras.layers.Dense(10, activation='softmax'),
+        ]
+    )
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # Input shape from the original issue: (batch_size, 28, 28, 1)
-    batch_size = 1
-    return tf.random.uniform((batch_size, 28, 28, 1), dtype=tf.float32)
+def get_functional_model() -> tf.keras.Model:
+    inputs = tf.keras.Input(shape=(28, 28, 1))
+    x = tf.keras.layers.Conv2D(32, 3, activation='relu')(inputs)
+    x = tf.keras.layers.Flatten()(x)
+    outputs = tf.keras.layers.Dense(10, activation='softmax')(x)
+    return tf.keras.Model(inputs=inputs, outputs=outputs)
 
+
+if __name__ == '__main__':
+    model = get_functional_model()  # get_sequential_model() works
+    model.compile()
+    sample_input = np.random.uniform(size=(1, 28, 28, 1))
+    o1 = model.predict(sample_input)
+
+    new_model = tf.keras.models.clone_model(
+        model, input_tensors=model.inputs, clone_function=replace_conv2d_with_sub_model
+    )  # <-- results in an infinite loop
+
+    o2 = new_model.predict(sample_input)

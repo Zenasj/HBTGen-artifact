@@ -1,25 +1,13 @@
-# tf.random.uniform((B, 1), dtype=tf.float32) ← Based on model input_shape=(1,)
+from tensorflow.keras import layers
 
 import tensorflow as tf
+from tensorflow import keras
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # A simple Dense layer as in the reported issue example
-        self.dense = tf.keras.layers.Dense(1, input_shape=(1,))
-    
-    def call(self, inputs):
-        # Forward pass through the dense layer
-        return self.dense(inputs)
+# tf.config.experimental_run_functions_eagerly(True)
+var = tf.Variable([[3.0]])
+model = keras.Sequential([keras.layers.Dense(1, input_shape=(1,))])
+model.compile(loss="mse", optimizer="adam")
 
-def my_model_function():
-    # Instantiate the model, no pretrained weights to load as per the issue context
-    return MyModel()
-
-def GetInput():
-    # Input should match the expected shape of the model input: (batch_size, 1)
-    # We'll assume a batch size of 4 for demonstration
-    batch_size = 4
-    # Return a random float32 tensor of shape (batch_size, 1)
-    return tf.random.uniform((batch_size, 1), dtype=tf.float32)
-
+tf.print(var)  # should print 3, OK
+var.assign(model.inputs[0])
+tf.print(var)  # should print anything else but 3, or raise an error - but prints 3

@@ -1,88 +1,70 @@
-# tf.random.uniform((BATCH_SIZE, 299, 299, 3), dtype=tf.float32) ← inferred input shape from InceptionV3 input_shape=(299,299,3)
-
-import os
-import datetime
-import pathlib
 import numpy as np
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
-BATCH_SIZE = 32  # Assumed default batch size since it's referenced but not defined
-AUTOTUNE = tf.data.experimental.AUTOTUNE
-IMAGESIZE = 299
-epochs = 2
-
-# Assuming datasetFilePath is the root directory containing class subfolders,
-# this is needed by GetInput() to generate valid inputs matching model expectations.
-datasetFilePath = "D:/TrainData/BalancedData"
-datasetPath = pathlib.Path(datasetFilePath)
-CLASS_NAMES = np.array([item.name for item in datasetPath.glob('*')])
-
+os.environ['TF_CONFIG'] = json.dumps({
+    'cluster': {
+        "worker": ["10.10.1.168:1234"],
+        'chief': ["10.10.1.60:2345"]
+    },
+    'task': {'type': 'chief', 'index': 0}
+})
+strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
 
 def get_label(file_path, class_names):
-    parts = tf.strings.split(file_path, os.path.sep)
-    return parts[-2] == class_names
-
+  parts = tf.strings.split(file_path, os.path.sep)
+  return parts[-2] == class_names
 
 def parse_image(filename):
-    # On Windows, the path uses backslash separator for raw filenames,
-    # but tf.strings.split expects '/' typically, so handle with os.sep for portability.
-    parts = tf.strings.split(filename, os.sep)
+    parts = tf.strings.split(filename, "\\")
     label = get_label(filename, CLASS_NAMES)
     image = tf.io.read_file(filename)
     image = tf.image.decode_png(image, channels=3)
     image = tf.image.convert_image_dtype(image, tf.float32)
-    image = tf.image.resize(image, [IMAGESIZE, IMAGESIZE])
+    image = tf.image.resize(image, [299,299])
     return image, label
 
-
 def make_dataset_unbatched():
-    list_ds = tf.data.Dataset.list_files(str(datasetPath / "*/*"))
     images_ds = list_ds.map(parse_image, num_parallel_calls=AUTOTUNE)
     images_ds = images_ds.shuffle(BATCH_SIZE)
     images_ds = images_ds.repeat(epochs)
-    images_ds = images_ds.prefetch(buffer_size=AUTOTUNE)
+    images_ds = images_ds.prefetch(BUFFER_SIZE)
     return images_ds
 
+datasetFilePath = "D:\TrainData\BalancedData"
+IMAGESIZE = 299
+AUTOTUNE = tf.data.experimental.AUTOTUNE
+datasetPath = pathlib.Path(datasetFilePath)
+list_ds = tf.data.Dataset.list_files(str(datasetPath/"*/*"))
+num_elements = tf.data.experimental.cardinality(list_ds).numpy()
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Build the base InceptionV3 model, pretrained on ImageNet,
-        # without the top layers, input shape 299x299x3
-        self.base_model = tf.keras.applications.InceptionV3(
-            include_top=False, weights="imagenet", input_shape=(IMAGESIZE, IMAGESIZE, 3)
-        )
-        self.base_model.trainable = True
+CLASS_NAMES = np.array([item.name for item in datasetPath.glob('*')])
 
-        # Classification head layers
-        self.global_avg_pool = tf.keras.layers.GlobalAveragePooling2D(name="avg_pool")
-        self.dense1 = tf.keras.layers.Dense(256, activation="relu")
-        self.predictions = tf.keras.layers.Dense(2, activation="softmax")
+epochs = 2
+def build_and_compile_model():
+    base_model =tf.keras.applications.InceptionV3(include_top=False, weights = "imagenet", input_shape=(299,299,3))
 
-    def call(self, inputs, training=None):
-        x = self.base_model(inputs, training=training)
-        x = self.global_avg_pool(x)
-        x = self.dense1(x)
-        x = self.predictions(x)
-        return x
+    base_model.trainable = True
+    x = base_model.output
+    x = tf.keras.layers.GlobalAveragePooling2D(name="avg_pool")(x)
+    x = tf.keras.layers.Dense(256, activation="relu")(x)
+    predictions = tf.keras.layers.Dense(2, activation="softmax")(x)
+    model = tf.keras.models.Model(inputs=base_model.input, outputs=predictions)
 
-
-def my_model_function():
-    model = MyModel()
-    base_learning_rate = 1e-5
-    # Compile the model with Adam optimizer and categorical crossentropy
-    model.compile(
-        optimizer=tf.keras.optimizers.Adam(learning_rate=base_learning_rate),
-        loss="categorical_crossentropy",
-        metrics=["accuracy"],
-    )
+    base_learning_rate = 0.00001
+    model.compile(optimizer=tf.keras.optimizers.Adam(lr=base_learning_rate),
+                 loss="categorical_crossentropy",
+                 metrics=["accuracy"])
     return model
+logdir = os.path.join("Z:\Tensorflow\TensorboardLogs", datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
+callbacks = [tf.keras.callbacks.ModelCheckpoint(filepath="Z:\Tensorflow\Checkpoints"), 
+             tf.keras.callbacks.TensorBoard(logdir, histogram_freq=1)]
 
+with strategy.scope():
+    dataset = make_dataset_unbatched().batch(BATCH_SIZE, drop_remainder=True)
+    multi_worker_model = build_and_compile_model()
 
-def GetInput():
-    # Return a random input tensor simulating a batch of images
-    # The batch size here can be BATCH_SIZE as per model training
-    return tf.random.uniform(
-        (BATCH_SIZE, IMAGESIZE, IMAGESIZE, 3), dtype=tf.float32
-    )
-
+history = multi_worker_model.fit(dataset, epochs=epochs, steps_per_epoch=50, callbacks=callbacks)

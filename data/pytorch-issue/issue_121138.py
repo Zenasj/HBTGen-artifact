@@ -1,26 +1,33 @@
-# torch.rand(1, dtype=torch.float32)  # Dummy input shape to satisfy model requirements
 import torch
 import numpy as np
+import h5py
+import sys
+import psutil
+process = psutil.Process()
+print(process.memory_info().rss/1024/1024)  # used memory in mb
+outfile="testingmemleak.h5"
 
-class MyModel(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Pre-initialize problematic array to simulate HDF5 string data conversion scenario
-        fill_value = "value".encode('ascii')
-        self.problematic_data = np.full((400, 2000, 8), fill_value, dtype='|S6')  # Fixed-length ASCII strings
-        
-    def forward(self, dummy_input):
-        """Attempt conversion that causes memory leak on exception"""
+fill_value = "value".encode('ascii')
+large_array_bad = np.full((400,2000,8), fill_value)
+# write a nice file
+with h5py.File(outfile, 'w') as file:
+    file.create_dataset('bad', data=large_array_bad)
+print(process.memory_info().rss/1024/1024)
+
+for i in range(100):
+    # read a nice file
+    data_dict={}  # cleared each iteration so memory should stay constant
+    with h5py.File(outfile,'r') as file:
+        for label, data in file.items():
+            data_dict[label] = data[()]
+    print(process.memory_info().rss/1024/1024)
+    tensor_data = []  # cleared each iteration so memory should stay constant
+    for label, data in data_dict.items():  # try to convert to torch tensors
         try:
-            # This will fail for ASCII string arrays, triggering exception handling
-            return torch.from_numpy(self.problematic_data)
+            tensor = torch.from_numpy(data)
+            tensor_data.append(tensor)
         except TypeError:
-            return torch.tensor(-1)  # Return placeholder on failure
-            
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    """Return dummy tensor to trigger model's conversion attempt"""
-    return torch.rand(1)
-
+            print("couldn't convert from numpy")
+    print(process.memory_info().rss/1024/1024)
+    if process.memory_info().rss/1024/1024 > 1000:
+        sys.exit("Too much memory used")

@@ -1,27 +1,34 @@
-# torch.rand(2, 12, 2, dtype=torch.float32)
-import torch
 import torch.nn as nn
+
+import torch
 import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Target tensor from the issue's repro steps
-        self.register_buffer('target', torch.tensor([
-            [1, 0, 0, 0, 0, -1, -1, -1, -1, -1, -1, -1],
-            [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0]
-        ], dtype=torch.long))
+input = torch.tensor([[[-0.7104, -0.6762],
+  [-0.7114, -0.6753],
+  [-0.6960, -0.6903],
+  [-0.6883, -0.6981],
+  [-0.6932, -0.6930],
+  [-0.6973, -0.6890],
+  [-0.6973, -0.6890],
+  [-0.6973, -0.6890],
+  [-0.6973, -0.6890],
+  [-0.6973, -0.6890],
+  [-0.6973, -0.6890],
+  [-0.6973, -0.6890]],
+[[-0.6651, -0.7220],
+  [-0.6567, -0.7310],
+  [-0.6614, -0.7260],
+  [-0.6499, -0.7384],
+  [-0.6586, -0.7289],
+  [-0.6550, -0.7328],
+  [-0.6656, -0.7215],
+  [-0.6512, -0.7370],
+  [-0.6405, -0.7487],
+  [-0.6484, -0.7400],
+  [-0.6527, -0.7353],
+  [-0.6593, -0.7282]]])
+target=torch.tensor([[1,0,0,0,0,-1,-1,-1,-1,-1,-1,-1],
+[0,0,0,0,0, 0, 1, 0, 0, 0, 0, 0]])
 
-    def forward(self, input):
-        input_flat = input.view(-1, input.size(-1))
-        target_flat = self.target.view(-1)
-        # Reproduce the problematic loss computation
-        return F.nll_loss(input_flat, target_flat, ignore_index=-1, reduction='none')
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Generate random input matching the shape and dtype from the issue
-    return torch.rand(2, 12, 2, dtype=torch.float32)
-
+output = F.nll_loss(input.view(-1, input.size(-1)), target.contiguous().view(-1), ignore_index=-1, reduction='none')

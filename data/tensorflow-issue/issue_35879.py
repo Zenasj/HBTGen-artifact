@@ -1,40 +1,45 @@
-# tf.random.uniform((32, 6, 12), dtype=tf.float32)
-import tensorflow as tf
 import numpy as np
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
-class MyModel(tf.keras.Model):
+from tensorflow.keras.utils import Sequence
+import tensorflow as tf
+import numpy as  np
+
+class DataGenerator(Sequence):
     def __init__(self):
-        super().__init__()
-        self.flatten = tf.keras.layers.Flatten(input_shape=(6, 12))
-        self.dense = tf.keras.layers.Dense(1, activation="sigmoid")
+        self.batch_size = 32
+        self.output_shape = (6, 12)
 
-    def call(self, inputs, training=False):
-        x = self.flatten(inputs)
-        return self.dense(x)
+    def __len__(self):
+        return 128
 
-def my_model_function():
-    # Instantiate and compile the model to match the behavior in the original example
-    model = MyModel()
-    model.compile(
-        optimizer=tf.keras.optimizers.Adam(),
-        loss=tf.keras.losses.MeanSquaredError()
-    )
+    def __getitem__(self, index):
+        X = np.random.uniform(-1, 1, (self.batch_size, *self.output_shape))
+        y = np.random.uniform(-1, 1, (self.batch_size, 1))
+        return (X, y)
+
+def build_model():
+    model = tf.keras.Sequential(name='hello')
+    model.add(tf.keras.layers.Flatten(input_shape=(6, 12)))
+    model.add(tf.keras.layers.Dense(1, activation='sigmoid'))
+    model.compile(optimizer=tf.keras.optimizers.Adam(),
+                  loss=tf.keras.losses.MeanSquaredError())
     return model
 
-def GetInput():
-    # Random input matching the expected input shape of (batch_size=32, 6, 12)
-    # dtype float32 to match typical keras defaults
-    return tf.random.uniform(shape=(32, 6, 12), dtype=tf.float32)
+if __name__== "__main__":
 
-# ---
-# ### Explanation and assumptions:
-# - The original issue centers on a model built with a `Sequential` wrapping `Flatten(input_shape=(6,12))` plus `Dense(1, activation='sigmoid')`.
-# - Input shape inferred to be `(32, 6, 12)` because the referenced batch size in the `DataGenerator` is 32.
-# - The model is converted from `Sequential` to a subclass `MyModel(tf.keras.Model)` as required.
-# - The model is compiled with Adam optimizer and MeanSquaredError loss — included in `my_model_function()` as per instructions.
-# - `GetInput()` returns a tensor matching the input shape and dtype, suitable for direct input to `MyModel`.
-# - No extra dataset/generator class is included since the issue mostly surrounds usage and deadlock with multiprocessing and validation data generators.
-# - No additional comparison or fusion of models was needed, as only one model was described.
-# - The code is compatible with TF 2.20.0, and no deprecated API is used; input and call signature is straightforward.
-# - This code can be run with XLA JIT compilation without issues.
-# If you want, I can add a version of a DataGenerator similar to the original, but it's not required by the instructions. The above fully represents the model and inputs.
+    gen = DataGenerator()
+    val_gen = DataGenerator()
+
+    model = build_model()
+    model.fit(x = gen, 
+        validation_data = val_gen,
+        epochs = 8,
+        workers = 4,
+        use_multiprocessing = True,
+        shuffle=True)
+
+keras.Sequence

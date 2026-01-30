@@ -1,10 +1,9 @@
-# torch.rand(B, 3, H, W, dtype=torch.float32)
-import torch
+from torch.ao.quantization.fuse_modules import fuse_modules
 import torch.nn as nn
 
-class MyModel(nn.Module):
+class M(nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
+        super(M, self).__init__()
         self.conv1 = nn.Conv2d(3, 64, 3, 1, 1)
         self.bn1 = nn.BatchNorm2d(64)
         self.relu1 = nn.ReLU()
@@ -21,9 +20,10 @@ class MyModel(nn.Module):
         x = self.relu2(x)
         return x
 
-def my_model_function():
-    return MyModel()
+m = M().eval()
 
-def GetInput():
-    return torch.rand(1, 3, 32, 32, dtype=torch.float32)
+modules_to_fuse = ['conv1', 'bn1', 'relu1']
 
+print(f'before operator fusion: \n{m}\n')
+fused_m = fuse_modules(m, modules_to_fuse)
+print(f'after operator fusion: \n{fused_m}\n')

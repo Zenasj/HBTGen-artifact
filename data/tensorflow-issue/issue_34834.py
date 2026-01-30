@@ -1,58 +1,106 @@
-# tf.random.uniform((B, 5, 5, 1), dtype=tf.float32)
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras.layers import Dense, Flatten, Conv2D
+from tensorflow.keras import Model, backend as K
 
-class MyModel(tf.keras.Model):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        # Define three Dense layers, no input_shape here; will handle in build
-        self.dense0 = tf.keras.layers.Dense(10, name='dense0')
-        self.dense1 = tf.keras.layers.Dense(10, name='dense1')
-        self.dense2 = tf.keras.layers.Dense(10, name='dense2')
+mnist = keras.datasets.mnist
 
-    def build(self, input_shape):
-        # Build the network structure explicitly on dummy Inputs so Keras
-        # can track inbound nodes properly for all layers, including dense2.
-        # input_shape includes batch dimension as None
-        # input_shape example: (None, 5, 5, 1)
-        x = tf.keras.layers.Input(shape=input_shape[1:], name="input_x")
-        x = self.dense0(x)
-        x = tf.keras.layers.ReLU()(x)  # Use ReLU layer to keep node info
-        x = self.dense1(x)
-        # No activation function as a layer here, so following the original problem scenario:
-        # Use tf.keras.activations.get('relu') which returns a function, not a layer.
-        relu_fn = tf.keras.activations.get('relu')
-        x = relu_fn(x)  # this breaks inbound nodes if done directly in call
-        x = self.dense2(x)
+(x_train, y_train), (x_test, y_test) = mnist.load_data()
+x_train, x_test = x_train / 255.0, x_test / 255.0
+
+x_train = x_train[..., tf.newaxis]
+x_test = x_test[..., tf.newaxis]
+
+train_ds = tf.data.Dataset.from_tensor_slices(
+    (x_train, y_train)).shuffle(10000).batch(32)
+test_ds = tf.data.Dataset.from_tensor_slices((x_test, y_test)).batch(32)
+
+
+class MyModel(Model):
+    def __init__(self):
+        super(MyModel, self).__init__()
+        self.conv1 = Conv2D(32, 3, activation='relu', input_shape=(28, 28, 1))
+        self.flatten = Flatten()
+        self.d1 = Dense(128, activation='relu')
+        self.d2 = Dense(10, activation='softmax')
 
     def call(self, x):
-        x = self.dense0(x)
-        # Use the ReLU layer - this sets inbound nodes correctly
-        x = tf.keras.layers.ReLU()(x)
-        x = self.dense1(x)
-        # Show inbound nodes for dense1 - should be populated
-        # Note: during graph tracing, print can be executed once
-        tf.print("dense1 inbound_nodes shape:", len(self.dense1.inbound_nodes))
-
-        # Now use relu activation function (not layer) - this will cause inbound node issues with next layer
-        relu_fn = tf.keras.activations.get('relu')
-        x = relu_fn(x)
-
-        # dense2 after relu_fn; inbound nodes may be missing due to using activation function inline
-        tf.print("dense2 inbound_nodes shape:", len(self.dense2.inbound_nodes))
-
-        x = self.dense2(x)
-        return x
+        x = self.conv1(x)
+        x = self.flatten(x)
+        x = self.d1(x)
+        return self.d2(x)
 
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+# def get_layer_output(self):
+#     output = graph.get_tensor_by_name('output:0')
 
 
-def GetInput():
-    # Return a random tensor with shape compatible with MyModel input
-    # From code and comments: shape (5, 5, 1) per example, batch dimension arbitrary
-    # Let's pick batch size 4 for example
-    return tf.random.uniform((4, 5, 5, 1), dtype=tf.float32)
+model = MyModel()
 
+loss_object = tf.keras.losses.SparseCategoricalCrossentropy()
+
+optimizer = tf.keras.optimizers.Adam()
+
+train_loss = tf.keras.metrics.Mean(name='train_loss')
+train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(
+    name='train_accuracy')
+
+test_loss = tf.keras.metrics.Mean(name='test_loss')
+test_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(
+    name='test_accuracy')
+
+
+@tf.function
+def train_step(images, labels):
+    with tf.GradientTape() as tape:
+        predictions = model(images)
+        loss = loss_object(labels, predictions)
+    gradients = tape.gradient(loss, model.trainable_variables)
+    optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+
+    train_loss(loss)
+    train_accuracy(labels, predictions)
+
+
+@tf.function
+def test_step(images, labels):
+    predictions = model(images)
+    t_loss = loss_object(labels, predictions)
+
+    test_loss(t_loss)
+    test_accuracy(labels, predictions)
+
+
+EPOCHS = 1
+
+for epoch in range(EPOCHS):
+    train_loss.reset_states()
+    train_accuracy.reset_states()
+    test_loss.reset_states()
+    test_accuracy.reset_states()
+
+    for images, labels in train_ds:
+        train_step(images, labels)
+
+    for test_images, test_labels in test_ds:
+        test_step(test_images, test_labels)
+
+    template = 'Epoch {}, Loss: {}, Accuracy: {}, Test Loss: {}, Test Accuracy: {}'
+    print(template.format(epoch+1,
+                          train_loss.result(),
+                          train_accuracy.result()*100,
+                          test_loss.result(),
+                          test_accuracy.result()*100))
+
+
+def get_all_outputs(model, input_data, learning_phase=1):
+    outputs = [layer.output for layer in model.layers[1:]]  # exclude Input
+    layers_fn = K.function([model.input, K.learning_phase()], outputs)
+    return layers_fn([input_data, learning_phase])
+
+
+outputs = get_all_outputs(model, "input_data", 1)
+print(outputs)

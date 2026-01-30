@@ -1,0 +1,3 @@
+class Proxy:
+    _is_infra_torch_function = True
+    ...

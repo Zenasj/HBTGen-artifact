@@ -1,18 +1,18 @@
-# torch.rand(3, 3, dtype=torch.float32), torch.rand(3, 3, dtype=torch.float32)  # as a tuple of two inputs
+py
+from lazy_tensor_core import debug
 import torch
-from torch import nn
+import lazy_tensor_core
+import lazy_tensor_core.debug.metrics as metrics
 
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        x, y = inputs
-        return torch.mm(x, y)
+lazy_tensor_core._LAZYC._ltc_init_ts_backend()
 
-def my_model_function():
-    return MyModel()
+torch.manual_seed(42)
 
-def GetInput():
-    dtype = torch.float32
-    x = torch.randn(3, 3, dtype=dtype)
-    y = torch.randn(3, 3, dtype=dtype)
-    return (x, y)
+device = 'lazy'
+dtype = torch.float32
 
+x = torch.randn(3, 3, device=device, dtype=dtype)
+y = torch.randn(3, 3, device=device, dtype=dtype)
+
+print(torch.mm(x, y))
+print(metrics.metrics_report())

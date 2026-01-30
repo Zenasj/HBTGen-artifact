@@ -1,49 +1,41 @@
-# tf.random.uniform((B, 32, 32, 3), dtype=tf.float32) ← CIFAR-10 image input shape
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
+from tensorflow.keras.utils import to_categorical
+from tensorflow.keras.callbacks import TensorBoard
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Construct layers as per the original Sequential model in the issue
-        self.conv1 = tf.keras.layers.Conv2D(8, (3, 3), activation='relu')
-        self.conv2 = tf.keras.layers.Conv2D(8, (3, 3), activation='relu')
-        self.pool1 = tf.keras.layers.MaxPooling2D((2, 2))
-        self.drop1 = tf.keras.layers.Dropout(0.25)
-        self.conv3 = tf.keras.layers.Conv2D(16, (3, 3), activation='relu')
-        self.conv4 = tf.keras.layers.Conv2D(16, (3, 3), activation='relu')
-        self.pool2 = tf.keras.layers.MaxPooling2D((2, 2))
-        self.drop2 = tf.keras.layers.Dropout(0.25)
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(32, activation='relu')
-        self.drop3 = tf.keras.layers.Dropout(0.5)
-        self.out = tf.keras.layers.Dense(10, activation='softmax')
+gpu_id = 0
+sess_config = tf.compat.v1.ConfigProto()
+sess_config.gpu_options.allow_growth = True
+sess_config.gpu_options.visible_device_list = '{}'.format(gpu_id)
+sess = tf.compat.v1.Session(config=sess_config)
+tf.compat.v1.keras.backend.set_session(sess)
 
-    def call(self, inputs, training=False):
-        x = self.conv1(inputs)
-        x = self.conv2(x)
-        x = self.pool1(x)
-        x = self.drop1(x, training=training)
-        x = self.conv3(x)
-        x = self.conv4(x)
-        x = self.pool2(x)
-        x = self.drop2(x, training=training)
-        x = self.flatten(x)
-        x = self.dense1(x)
-        x = self.drop3(x, training=training)
-        return self.out(x)
+(Xtr, Ytr), (Xva, Yva) = tf.keras.datasets.cifar10.load_data()
+Xtr, Ytr, Xva, Yva, nc = Xtr[:1000], Ytr[:1000], Xva[:100], Yva[:100], 10
+Xtr, Xva = Xtr.astype('float32') / 255, Xva.astype('float32') / 255
+Ytr, Yva, ins = to_categorical(Ytr, nc), to_categorical(Yva, nc), Xtr.shape[1:]
 
-def my_model_function():
-    # Returns an instance of MyModel with default weights
-    return MyModel()
+model = tf.keras.models.Sequential()
+model.add(tf.keras.layers.Conv2D(8, (3, 3), input_shape=ins, activation='relu'))
+model.add(tf.keras.layers.Conv2D(8, (3, 3), activation='relu'))
+model.add(tf.keras.layers.MaxPooling2D(pool_size=(2, 2)))
+model.add(tf.keras.layers.Dropout(0.25))
+model.add(tf.keras.layers.Conv2D(16, (3, 3), activation='relu'))
+model.add(tf.keras.layers.Conv2D(16, (3, 3), activation='relu'))
+model.add(tf.keras.layers.MaxPooling2D(pool_size=(2, 2)))
+model.add(tf.keras.layers.Dropout(0.25))
+model.add(tf.keras.layers.Flatten())
+model.add(tf.keras.layers.Dense(32, activation='relu'))
+model.add(tf.keras.layers.Dropout(0.5))
+model.add(tf.keras.layers.Dense(nc, activation='softmax'))
+opt = tf.keras.optimizers.RMSprop(lr=0.0001, decay=1e-6)
+model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['acc'])
 
-def GetInput():
-    # CIFAR-10 images are 32x32 RGB images with float32 normalized values
-    # Batch size is set to 4 as a reasonable small batch size for quick testing
-    batch_size = 4
-    height, width, channels = 32, 32, 3
-    # Generate random tensor with values between 0 and 1 (normalized input)
-    return tf.random.uniform(
-        (batch_size, height, width, channels),
-        minval=0, maxval=1, dtype=tf.float32)
+l_cb = [TensorBoard(log_dir='./tb_logs/cur', batch_size=32, write_graph=False)]
 
+model.fit(x=Xtr, y=Ytr, batch_size=32, epochs=100, callbacks=l_cb,
+          validation_data=(Xva, Yva), shuffle='batch')

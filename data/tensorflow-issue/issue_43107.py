@@ -1,114 +1,210 @@
-# tf.random.uniform((N_samples, N_dim), dtype=tf.float32) ← Input shape is (batch size, feature dim)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
+
 import tensorflow as tf
 import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        """
-        Constructs a model replicating the DenseCov + final Dense layer architecture.
-        The DenseCov layer tries to minimize the trace of covariance matrices over segments
-        of the weight matrix, with segments specified. The loss is added via add_loss.
+class DenseCov(tf.keras.layers.Dense):
+    def __init__(self, units, segments, **kwargs):
         
-        Segment-related logic is preserved though in the recreations from the issue 
-        segments are all zero, effectively one segment, but the structure kept.
-        """
-        super().__init__()
+        self.segment_ids = tf.keras.backend.constant(segments, dtype=tf.int64, name='segment_ids')
+        self.W_ragged = None
+        self.embed_dim = None
+        super().__init__(units=units, use_bias=False, kernel_initializer=tf.keras.initializers.Ones(), **kwargs)
+    
+    def call(self, inputs):
+        logits = super().call(inputs)
 
-        # Parameters from issue adjusted for feasible smaller size
-        self.N_class = 500         # number of classes / units in DenseCov
-        self.N_domains = 1         # single domain segment for simplicity
-        self.N_dim = 10            # feature dimension in input
-        self.segments = np.random.randint(0, self.N_domains, self.N_class)
-        self.segments = np.sort(self.segments)
+        # Want to minimize Kullback–Leibler divergence between two multivariate normal distributions
+        # But for simplicity minimize only trace
 
-        # Store segment ids as constant for RaggedTensor rowids construction
-        self.segment_ids = tf.constant(self.segments, dtype=tf.int64, name='segment_ids')
+        W_ragged = tf.RaggedTensor.from_value_rowids(tf.transpose(self.kernel), self.segment_ids, name='init_ragged')
+        means = tf.reduce_mean(W_ragged, axis=1, name='means')
+        W_centred = W_ragged - tf.expand_dims(means, 1)
+        cov_matrix = tf.map_fn(lambda x: tf.matmul(x, x, True) / (tf.cast(tf.shape(x)[0], tf.float32) - 1), W_centred, name='calc_covar')
+        cov_matrix = cov_matrix.to_tensor(name='convert_dense')
+        
+        traces =  tf.map_fn(lambda x: tf.linalg.trace(x), cov_matrix, name='calc_trace')
+        # traces = 0.
 
-        # DenseCov layer components
-        # We replicate DenseCov behavior inside this model
+        # logdets = tf.map_fn(lambda x: -tf.linalg.logdet(x), cov_matrix, name='calc_logdet')  # disabled for simplicity
+        logdets = 0.
 
-        # DenseCov layer: units=N_class, no bias, kernel initialized to ones
-        self.dense_cov_kernel = self.add_weight(
-            name="dense_cov_kernel",
-            shape=(self.N_dim, self.N_class),
-            initializer=tf.keras.initializers.Ones(),
-            trainable=True,
-            dtype=tf.float32
-        )
+        # loss = traces + logdets + tf.reduce_sum(centroid_means**2, axis=1)  # disabled for simplicity
+        loss = traces
 
-        # Final dense layer following DenseCov - maps N_class to scalar output
-        self.final_dense = tf.keras.layers.Dense(1, name='final_dense')
-
-        # On build an additive noise adjustment is applied to dense_cov_kernel to distort matrix
-        self._built = False
-
+        loss = tf.reduce_mean(loss, name='total_loss')        
+        self.add_loss(loss)
+        return logits
+    
     def build(self, input_shape):
         super().build(input_shape)
-        # Perturb kernel weights slightly with random normal noise (to simulate distortion)
-        noise = np.random.randn(self.N_dim, self.N_class).astype(np.float32)
-        self.dense_cov_kernel.assign_add(noise)
-        self._built = True
 
-    def call(self, inputs, training=None):
-        # Forward pass through DenseCov layer logic
-        # 1) Compute logits: inputs @ dense_cov_kernel
-        # 2) Compute loss related to trace of covariance matrices of weight segments
-        #    using tf.RaggedTensor.from_value_rowids and tf.map_fn
+        # Distorted matrix a bit
+        W = self.kernel
+        W.assign_add(np.random.randn(N_dim, N_class).astype(np.float32))
+        
+    def get_config(self):
+        config = {
+            'segments': self.segment_ids.numpy(),
+        }
+        base_config = super().get_config()
+        base_config.update(config)
+        return base_config
 
-        logits = tf.matmul(inputs, self.dense_cov_kernel)  # Shape (batch, N_class)
+N_class, N_domains, N_dim, N_samples = 50000, 1, 10, 100
+segments = np.random.randint(0, N_domains, N_class)
+segments = np.sort(segments)
 
-        # RaggedTensor construction:
-        # RaggedTensor segments weights (dense_cov_kernel.T) by segment_ids (rowids)
-        # kernel shape: (N_dim, N_class)
-        # We want to segment by segments per column, so transpose to (N_class, N_dim)
-        kernel_transposed = tf.transpose(self.dense_cov_kernel)  # shape (N_class, N_dim)
+data = np.random.randn(N_samples, N_dim).astype(np.float32)
+y_true = np.random.randn(N_samples).astype(np.float32)
 
-        # Use RaggedTensor.from_value_rowids: values=kernel_transposed, rowids=segment_ids
-        # This groups rows of kernel_transposed into ragged segments
-        W_ragged = tf.RaggedTensor.from_value_rowids(values=kernel_transposed, value_rowids=self.segment_ids)
+tf.keras.backend.clear_session()
+model = tf.keras.models.Sequential()
+model.add(tf.keras.Input(shape=(N_dim,)))
+model.add(DenseCov(N_class, segments))
+model.add(tf.keras.layers.Dense(1))
 
-        # Compute means over each segment along axis=1 (within each ragged segment rows)
-        means = tf.reduce_mean(W_ragged, axis=1)  # ragged: shape (num_segments, N_dim)
+def dummy_loss(y_true, y_pred):
+    return 0*tf.reduce_sum(y_pred)
 
-        # Center each segment by subtracting means (broadcast)
-        W_centred = W_ragged - tf.expand_dims(means, axis=1)  # ragged subtraction
+model.compile(optimizer=tf.keras.optimizers.Adam(0.1), loss=dummy_loss)
 
-        # For each segment matrix (segment rows x N_dim), compute covariance matrix:
-        # cov = X^T @ X / (n - 1)
-        def segment_covariance(x):
-            # x shape: (segment_length, N_dim)
-            n = tf.cast(tf.shape(x)[0], tf.float32)
-            cov = tf.matmul(x, x, transpose_a=True) / (n - 1.0)
-            return cov
+from tensorflow.raw_ops import RaggedTensorToVariant
 
-        cov_matrix = tf.map_fn(segment_covariance, W_centred, fn_output_signature=tf.float32)  # (num_segments, N_dim, N_dim)
+@tf.RegisterGradient("RaggedTensorFromVariant")
+def _RaggedTensorFromVariantGrad(*args):
+    if len(args) == 2:
+        op, grad = args
+        res = [RaggedTensorToVariant(rt_nested_splits=[], rt_dense_values=grad,
+                                      batched_input=False)]
+    else:
+        op, empty, grad = args
+        res = [RaggedTensorToVariant(rt_nested_splits=[op.outputs[0]], rt_dense_values=grad,
+                                    batched_input=True)]
+    return res
 
-        # cov_matrix is dense tensor since tf.map_fn returns stack
+initial_trace = np.trace(np.cov((model.layers[-2].weights[0].numpy())))
 
-        # Compute trace of each covariance matrix:
-        traces = tf.linalg.trace(cov_matrix)  # shape (num_segments,)
+loss = []
+for i in range(10):
+    res = model.train_on_batch(data[:10], y_true[:10])
+    print(f"Iter {i}, loss: {res}, delta: {initial_trace-res} ")
 
-        # Loss is mean of traces across segments
-        loss = tf.reduce_mean(traces, name='cov_trace_loss')
+import tensorflow as tf
+import numpy as np
 
-        # Add loss for optimization
+class DenseCov(tf.keras.layers.Dense):
+    def __init__(self, units, segments, **kwargs):
+        
+        self.segment_ids = tf.keras.backend.constant(segments, dtype=tf.int64, name='segment_ids')
+        self.W_ragged = None
+        self.embed_dim = None
+        super().__init__(units=units, use_bias=False, kernel_initializer=tf.keras.initializers.Ones(), **kwargs)
+    
+    def call(self, inputs):
+        logits = super().call(inputs)
+
+        # Want to minimize Kullback–Leibler divergence between two multivariate normal distributions
+        # But for simplicity minimize only trace
+
+#         W_ragged = tf.RaggedTensor.from_value_rowids(tf.transpose(self.kernel), self.segment_ids, name='init_ragged')
+        W_ragged = tf.transpose(self.kernel)
+        W_ragged = tf.expand_dims(W_ragged, 0)
+
+        means = tf.reduce_mean(W_ragged, axis=1, name='means')
+        W_centred = W_ragged - tf.expand_dims(means, 1)
+        cov_matrix = tf.map_fn(lambda x: tf.matmul(x, x, True) / (tf.cast(tf.shape(x)[0], tf.float32) - 1),
+                               W_centred, name='calc_covar')
+#         cov_matrix = cov_matrix.to_tensor(name='convert_dense')
+        
+        traces =  tf.map_fn(lambda x: tf.linalg.trace(x), cov_matrix, name='calc_trace')
+        # traces = 0.
+
+        # logdets = tf.map_fn(lambda x: -tf.linalg.logdet(x), cov_matrix, name='calc_logdet')  # disabled for simplicity
+        logdets = 0.
+
+        # loss = traces + logdets + tf.reduce_sum(centroid_means**2, axis=1)  # disabled for simplicity
+        loss = traces
+
+        loss = tf.reduce_mean(loss, name='total_loss')        
         self.add_loss(loss)
+        return logits
+    
+    def build(self, input_shape):
+        super().build(input_shape)
 
-        # Pass logits through final dense layer for downstream task predictions
-        output = self.final_dense(logits)  # shape (batch, 1)
+        # Distorted matrix a bit
+        W = self.kernel
+        W.assign_add(np.random.randn(N_dim, N_class).astype(np.float32))
+        
+    def get_config(self):
+        config = {
+            'segments': self.segment_ids.numpy(),
+        }
+        base_config = super().get_config()
+        base_config.update(config)
+        return base_config
 
-        return output
+N_class, N_domains, N_dim, N_samples = 500, 1, 10, 100
+segments = np.random.randint(0, N_domains, N_class)
+segments = np.sort(segments)
 
-def my_model_function():
-    # Return instance of MyModel with necessary initializations
-    model = MyModel()
-    # It will be built automatically on call with input shape
-    return model
+data = np.random.randn(N_samples, N_dim).astype(np.float32)
+y_true = np.random.randn(N_samples).astype(np.float32)
 
-def GetInput():
-    # Return a batch of random inputs matching input shape (N_samples=10 for demonstration, N_dim=10)
-    # Use dtype float32 as per typical TF float default
-    N_samples = 10
-    N_dim = 10
-    return tf.random.uniform((N_samples, N_dim), dtype=tf.float32)
+tf.keras.backend.clear_session()
+model = tf.keras.models.Sequential()
+model.add(tf.keras.Input(shape=(N_dim,)))
+model.add(DenseCov(N_class, segments))
+model.add(tf.keras.layers.Dense(1))
 
+def dummy_loss(y_true, y_pred):
+    return 0*tf.reduce_sum(y_pred)
+
+model.compile(optimizer=tf.keras.optimizers.Adam(0.1), loss=dummy_loss)
+
+
+initial_trace = np.trace(np.cov((model.layers[-2].weights[0].numpy())))
+
+loss = []
+for i in range(10):
+    res = model.train_on_batch(data[:10], y_true[:10])
+    print(f"Iter {i}, loss: {res}, delta: {initial_trace-res} ")
+
+from tensorflow.raw_ops import RaggedTensorToVariant
+@tf.RegisterGradient("RaggedTensorFromVariant")
+def _RaggedTensorFromVariantGrad(*args):
+
+    op, empty, grad = args
+    res = RaggedTensorToVariant(rt_nested_splits=[op.outputs[0]], rt_dense_values=grad,
+                                batched_input=True)
+    return res
+
+x = tf.constant([[1., 2.], 
+               [3., 4.],
+               [-1., 2.], 
+               [3., -4.]
+            ], dtype=tf.float32)
+
+with tf.GradientTape(persistent=True) as g:
+    g.watch(x)
+    W_ragged = tf.RaggedTensor.from_value_rowids(x, [0, 0 , 1, 1], name='init_ragged')
+    y = tf.reduce_mean(W_ragged, axis=1)
+dy_dx = g.gradient(y, W_ragged.values)
+print("Gradient means")
+print(dy_dx)
+
+
+with tf.GradientTape(persistent=True) as g:
+    g.watch(x)
+    W_ragged = tf.RaggedTensor.from_value_rowids(x, [0, 0 , 1, 1], name='init_ragged')
+    y = tf.map_fn(lambda x: tf.matmul(x, x, True) / (tf.cast(tf.shape(x)[0], tf.float32) - 1),
+                               W_ragged, name='calc_covar')
+
+dy_dx = g.gradient(y.values, W_ragged.values)
+print("\nGradient Covar")
+print(dy_dx)

@@ -1,45 +1,88 @@
-# tf.random.uniform((B,), dtype=tf.float32) ← Input inferred as 1D tensor of floats (shape (batch_size,))
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
 
+tf.enable_eager_execution()
+
 class MyModel(tf.keras.Model):
-    """
-    A subclassed Keras Model demonstrating support for dictionary outputs and labels.
-    This model takes a 1D float tensor as input and returns a dict of two outputs.
-    
-    This reflects the advanced use-case described in the issue discussion:
-    - outputs as a dict with named keys (e.g. "output_1" and "output_2")
-    - labels as a dict matching output keys to allow per-output losses
-    """
+  def call(self, inputs):
+    return inputs
+  
+model = MyModel()
+model.compile(tf.keras.optimizers.Adam(), 'mean_squared_error')
+inputs = labels = {'a': tf.range(5.0)}
+model.fit(x=inputs, y=labels)
+
+import tensorflow as tf
+
+tf.enable_eager_execution()
+
+class MyModel(tf.keras.Model):
+  def call(self, inputs):
+    return [inputs['a'], 2 * inputs['b']]
+  
+model = MyModel()
+model.compile(tf.train.AdamOptimizer(), 'mean_squared_error')
+inputs = {'a': tf.range(5.0), 'b': tf.range(5.0, 10.0)}
+labels = [tf.range(5, 10), tf.range(5, 10)]
+model.fit(x=inputs, y=labels)
+
+loss = {"MyOutput1": "MyLoss"}
+targets = {"MyOutput1": y1, "MyOutput2": y2}
+outputs = {"MyOutput1": out1, "MyOutput2": out2}
+
+loss = {"output_1": "MyLoss"}
+targets = y1
+outputs = [out1, out2]
+
+import tempfile
+
+import numpy as np
+import tensorflow as tf
+
+class MyModel(tf.keras.Model):
+
     def __init__(self):
         super().__init__()
-        # Simple layers for demonstration
-        self.layer1 = tf.keras.layers.Dense(10, activation='relu')
-        self.layer2 = tf.keras.layers.Dense(10, activation='relu')
-        
-    @tf.function
-    def call(self, inputs, training=False):
-        """
-        Forward pass accepting a tensor input.
-        
-        Returns a dict of tensors to demonstrate multiple named outputs.
-        """
-        x = tf.cast(inputs, tf.float32)
-        out1 = self.layer1(x)
-        out2 = self.layer2(x)
-        
-        # Return outputs as dictionary keyed by output names
-        return {"output_1": out1, "output_2": out2}
+        self.layer = tf.keras.layers.Dense(64)
 
-def my_model_function():
-    """Factory function to return an instance of MyModel"""
-    return MyModel()
+    @tf.function(input_signature=[tf.TensorSpec((None, 128, 128), tf.float32)])
+    def call(self, inputs):
+        return self.layer(inputs)
 
-def GetInput():
-    """
-    Returns a random tensor input compatible with MyModel.
-    According to usage in examples, input is a 1D tensor (batch dimension only).
-    Here we generate a batch of 5 with float32 values.
-    """
-    return tf.random.uniform((5,), dtype=tf.float32)
+model = MyModel()
 
+batch_size = 16
+inputs = np.random.random((batch_size, 128, 128)).astype('float32')
+outputs = model(inputs)
+
+print(inputs.shape, outputs.shape)
+
+model_path = tempfile.mkdtemp()
+tf.saved_model.save(model, model_path)
+
+inputs = dict(input1=np.random.random(28, 28), input2=(16, 16, 3))
+model.fit(inputs)
+
+import numpy as np
+import tensorflow as tf
+
+class MyModel(tf.keras.Model):
+
+    def __init__(self):
+        super().__init__()
+        self.layer = tf.keras.layers.Dense(64)
+
+    @tf.function(input_signature=dict(input1=tf.TensorSpec((None, 128, 128), tf.float32),
+                                      input2=tf.TensorSpec((None, 28, 28), tf.float32)))
+    def call(self, inputs):
+        return self.layer(inputs)
+
+model = MyModel()
+
+batch_size = 16
+inputs = np.random.random((batch_size, 128, 128)).astype('float32')
+outputs = model(inputs)

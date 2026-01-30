@@ -1,145 +1,184 @@
-# tf.random.uniform((B, 32, 32, 3), dtype=tf.float32)
+import random
 
+import numpy as np
 import tensorflow as tf
+from tensorflow import keras
 from tensorflow.keras import layers
+import tensorflow_addons as tfa
+import json
+import os
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Model hyperparameters as per the issue
-        self.num_classes = 100
-        self.input_shape_ = (32, 32, 3)
+tf_config = {
+     'cluster': {
+       'worker': ['localhost1:2222', 'localhost2:2222']
+    },
+      'task': {'type': 'worker', 'index': 0}
+  }
+os.environ['TF_CONFIG'] = json.dumps(tf_config)
 
-        self.image_size = 72  # resizing input images
-        self.patch_size = 6
-        self.num_patches = (self.image_size // self.patch_size) ** 2  # 12*12 = 144
-        self.projection_dim = 64
-        self.num_heads = 4
-        self.transformer_units = [self.projection_dim * 2, self.projection_dim]
-        self.transformer_layers = 4
-        self.mlp_head_units = [2048, 1024]
+communication_options = tf.distribute.experimental.CommunicationOptions(
+    implementation=tf.distribute.experimental.CommunicationImplementation.NCCL)
+strategy = tf.distribute.MultiWorkerMirroredStrategy(
+    communication_options=communication_options)
 
-        # Data augmentation pipeline including normalization (to be adapted externally),
-        # resizing, flipping, rotation and zoom.
-        self.data_augmentation = tf.keras.Sequential([
-            layers.Normalization(name="normalization"),  # requires adapt() externally
-            layers.Resizing(self.image_size, self.image_size),
+with strategy.scope():
+    num_classes = 100
+    input_shape = (32, 32, 3)
+
+    (x_tr, y_tr), (x_te, y_te) = keras.datasets.cifar100.load_data()
+
+    x_train = tf.convert_to_tensor(x_tr)
+    x_test = tf.convert_to_tensor(x_te)
+    y_train = tf.convert_to_tensor(y_tr)
+    y_test = tf.convert_to_tensor(y_te)
+
+    print(f"x_train shape: {x_train.shape} - y_train shape: {y_train.shape}")
+    print(f"x_test shape: {x_test.shape} - y_test shape: {y_test.shape}")
+
+    learning_rate = 0.001
+    weight_decay = 0.0001
+    batch_size = 1000
+    num_epochs = 5
+    image_size = 72  # We'll resize input images to this size
+    patch_size = 6  # Size of the patches to be extract from the input images
+    num_patches = (image_size // patch_size) ** 2
+    projection_dim = 64
+    num_heads = 4
+    transformer_units = [
+        projection_dim * 2,
+        projection_dim,
+    ]  # Size of the transformer layers
+    transformer_layers = 4
+    mlp_head_units = [2048, 1024]  # Size of the dense layers of the final classifier
+
+    data_augmentation = keras.Sequential(
+        [
+            layers.Normalization(),
+            layers.Resizing(image_size, image_size),
             layers.RandomFlip("horizontal"),
             layers.RandomRotation(factor=0.02),
-            layers.RandomZoom(height_factor=0.2, width_factor=0.2),
-        ], name="data_augmentation")
+            layers.RandomZoom(
+                height_factor=0.2, width_factor=0.2
+            ),
+        ],
+        name="data_augmentation",
+    )
+    # Compute the mean and the variance of the training data for normalization.
+    data_augmentation.layers[0].adapt(x_train)
 
-        # Patch extraction layer
-        self.patches_layer = Patches(self.patch_size)
-        # Patch encoding layers
-        self.patch_encoder = PatchEncoder(self.num_patches, self.projection_dim)
-
-        # Transformer blocks: each consists of
-        # LayerNorm -> MultiHeadAttention -> Residual Add
-        # -> LayerNorm -> MLP block -> Residual Add
-        self.transformer_layers_modules = []
-        for _ in range(self.transformer_layers):
-            mha = layers.MultiHeadAttention(num_heads=self.num_heads, key_dim=self.projection_dim, dropout=0.1)
-            ln1 = layers.LayerNormalization(epsilon=1e-6)
-            ln2 = layers.LayerNormalization(epsilon=1e-6)
-            mlp_block = MLP(self.transformer_units, dropout_rate=0.1)
-            self.transformer_layers_modules.append((ln1, mha, ln2, mlp_block))
-
-        self.final_layernorm = layers.LayerNormalization(epsilon=1e-6)
-        self.flatten = layers.Flatten()
-        self.dropout_1 = layers.Dropout(0.5)
-        self.mlp_head = MLP(self.mlp_head_units, dropout_rate=0.5)
-        self.classifier = layers.Dense(self.num_classes)
-
-    def call(self, inputs, training=False):
-        # inputs assumed shape: (batch_size, 32, 32, 3) with dtype float32 (e.g. from GetInput)
-        # Apply data augmentation pipeline
-        x = self.data_augmentation(inputs, training=training)
-
-        # Create patches and encode
-        patches = self.patches_layer(x)
-        encoded_patches = self.patch_encoder(patches)
-
-        # Transformer blocks
-        for ln1, mha, ln2, mlp_block in self.transformer_layers_modules:
-            x1 = ln1(encoded_patches)
-            attention_output = mha(x1, x1, training=training)
-            x2 = attention_output + encoded_patches
-            x3 = ln2(x2)
-            x3 = mlp_block(x3, training=training)
-            encoded_patches = x3 + x2
-
-        # Final layers
-        representation = self.final_layernorm(encoded_patches)
-        representation = self.flatten(representation)
-        representation = self.dropout_1(representation, training=training)
-        features = self.mlp_head(representation, training=training)
-        logits = self.classifier(features)
-        return logits
-
-
-class Patches(layers.Layer):
-    def __init__(self, patch_size):
-        super(Patches, self).__init__()
-        self.patch_size = patch_size
-
-    def call(self, images):
-        batch_size = tf.shape(images)[0]
-        patches = tf.image.extract_patches(
-            images=images,
-            sizes=[1, self.patch_size, self.patch_size, 1],
-            strides=[1, self.patch_size, self.patch_size, 1],
-            rates=[1, 1, 1, 1],
-            padding="VALID",
-        )
-        patch_dims = patches.shape[-1]
-        patches = tf.reshape(patches, [batch_size, -1, patch_dims])
-        return patches
-
-
-class PatchEncoder(layers.Layer):
-    def __init__(self, num_patches, projection_dim):
-        super(PatchEncoder, self).__init__()
-        self.num_patches = num_patches
-        self.projection = layers.Dense(units=projection_dim)
-        self.position_embedding = layers.Embedding(
-            input_dim=num_patches, output_dim=projection_dim
-        )
-
-    def call(self, patches):
-        positions = tf.range(start=0, limit=self.num_patches, delta=1)
-        encoded = self.projection(patches) + self.position_embedding(positions)
-        return encoded
-
-
-class MLP(layers.Layer):
-    def __init__(self, hidden_units, dropout_rate):
-        super(MLP, self).__init__()
-        self.hidden_layers = []
+    def mlp(x, hidden_units, dropout_rate):
         for units in hidden_units:
-            self.hidden_layers.append(layers.Dense(units, activation=tf.nn.gelu))
-            self.hidden_layers.append(layers.Dropout(dropout_rate))
-
-    def call(self, x, training=False):
-        for layer in self.hidden_layers:
-            if isinstance(layer, layers.Dropout):
-                x = layer(x, training=training)
-            else:
-                x = layer(x)
+            x = layers.Dense(units, activation=tf.nn.gelu)(x)
+            x = layers.Dropout(dropout_rate)(x)
         return x
 
+    class Patches(layers.Layer):
+        def __init__(self, patch_size):
+            super(Patches, self).__init__()
+            self.patch_size = patch_size
 
-def my_model_function():
-    # Create and return an instance of the ViT-like model wrapped inside MyModel
-    return MyModel()
+        def call(self, images):
+            batch_size = tf.shape(images)[0]
+            patches = tf.image.extract_patches(
+                images=images,
+                sizes=[1, self.patch_size, self.patch_size, 1],
+                strides=[1, self.patch_size, self.patch_size, 1],
+                rates=[1, 1, 1, 1],
+                padding="VALID",
+            )
+            patch_dims = patches.shape[-1]
+            patches = tf.reshape(patches, [batch_size, -1, patch_dims])
+            return patches
+
+    image = x_train[np.random.choice(range(x_train.shape[0]))]
 
 
-def GetInput():
-    # Return a random float32 tensor input matching the input shape (batch, 32, 32, 3)
-    # The model expects pixel values roughly in input range for normalization layer, so 0-255 scale consistent.
-    batch_size = 8  # small batch size for example
-    input_tensor = tf.random.uniform(
-        shape=(batch_size, 32, 32, 3), minval=0, maxval=255, dtype=tf.float32
+    resized_image = tf.image.resize(
+        tf.convert_to_tensor([image]), size=(image_size, image_size)
     )
-    return input_tensor
+    patches = Patches(patch_size)(resized_image)
+    print(f"Image size: {image_size} X {image_size}")
+    print(f"Patch size: {patch_size} X {patch_size}")
+    print(f"Patches per image: {patches.shape[1]}")
+    print(f"Elements per patch: {patches.shape[-1]}")
 
+
+    class PatchEncoder(layers.Layer):
+        def __init__(self, num_patches, projection_dim):
+            super(PatchEncoder, self).__init__()
+            self.num_patches = num_patches
+            self.projection = layers.Dense(units=projection_dim)
+            self.position_embedding = layers.Embedding(
+                input_dim=num_patches, output_dim=projection_dim
+            )
+
+        def call(self, patch):
+            positions = tf.range(start=0, limit=self.num_patches, delta=1)
+            encoded = self.projection(patch) + self.position_embedding(positions)
+            return encoded
+
+    def create_vit_classifier():
+        inputs = layers.Input(shape=input_shape)
+        # Augment data.
+        augmented = data_augmentation(inputs)
+        # Create patches.
+        patches = Patches(patch_size)(augmented)
+        # Encode patches.
+        encoded_patches = PatchEncoder(num_patches, projection_dim)(patches)
+
+        # Create multiple layers of the Transformer block.
+        for _ in range(transformer_layers):
+            # Layer normalization 1.
+            x1 = layers.LayerNormalization(epsilon=1e-6)(encoded_patches)
+            # Create a multi-head attention layer.
+            attention_output = layers.MultiHeadAttention(
+                num_heads=num_heads, key_dim=projection_dim, dropout=0.1
+            )(x1, x1)
+            # Skip connection 1.
+            x2 = layers.Add()([attention_output, encoded_patches])
+            # Layer normalization 2.
+            x3 = layers.LayerNormalization(epsilon=1e-6)(x2)
+            # MLP.
+            x3 = mlp(x3, hidden_units=transformer_units, dropout_rate=0.1)
+            # Skip connection 2.
+            encoded_patches = layers.Add()([x3, x2])
+
+        # Create a [batch_size, projection_dim] tensor.
+        representation = layers.LayerNormalization(epsilon=1e-6)(encoded_patches)
+        representation = layers.Flatten()(representation)
+        representation = layers.Dropout(0.5)(representation)
+        # Add MLP.
+        features = mlp(representation, hidden_units=mlp_head_units, dropout_rate=0.5)
+        # Classify outputs.
+        logits = layers.Dense(num_classes)(features)
+        # Create the Keras model.
+        model = keras.Model(inputs=inputs, outputs=logits)
+        return model
+
+    def run_experiment(model):
+        optimizer = tfa.optimizers.AdamW(
+            learning_rate=learning_rate, weight_decay=weight_decay
+        )
+
+        model.compile(
+            optimizer=optimizer,
+            loss=keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+            metrics=[
+                keras.metrics.SparseCategoricalAccuracy(name="accuracy"),
+                keras.metrics.SparseTopKCategoricalAccuracy(5, name="top-5-accuracy"),
+            ]
+        )
+
+        history = model.fit(
+            x=x_train,
+            y=y_train,
+            batch_size=batch_size,
+            epochs=num_epochs,
+            validation_split=0.1,
+        )
+
+        return history
+
+
+    vit_classifier = create_vit_classifier()
+    history = run_experiment(vit_classifier)

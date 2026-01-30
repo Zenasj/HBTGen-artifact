@@ -1,32 +1,50 @@
+import torch.nn as nn
+
 import torch
 from torch import nn
 
-# torch.rand(B, C, H, W, dtype=torch.float32)
-class MyModel(nn.Module):
+
+class Demo1(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        # Encapsulate both models as submodules
-        self.demo1 = nn.Sequential(
-            nn.Conv2d(3, 20, 3),
-            nn.Conv2d(3, 20, 3)
-        )
-        self.demo2 = nn.Sequential(
-            nn.Conv2d(3, 20, 3),
-            nn.Conv2d(3, 20, 3)
-        )
-        # Note: Original Demo1/Demo2 had separate conv layers but identical structure
-    
+        self.conv1 = nn.Conv2d(3, 20, 3)
+        self.conv2 = nn.Conv2d(3, 20, 3)
+
     def forward(self, x):
-        # Run both models and compare outputs
-        list_out = [self.demo1[0](x), self.demo2[0](x)]  # Mimic list output structure
-        dict_out = {'out1': self.demo1[1](x), 'out2': self.demo2[1](x)}  # Mimic dict output structure
-        # Perform comparison using allclose (structure comparison logic)
-        is_same = torch.allclose(list_out[0], dict_out['out1']) and torch.allclose(list_out[1], dict_out['out2'])
-        return torch.tensor(is_same, dtype=torch.bool)  # Return comparison result
+        return [self.conv1(x), self.conv2(x)]
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    return torch.rand(2, 3, 512, 512, dtype=torch.float32)
+class Demo2(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv1 = nn.Conv2d(3, 20, 3)
+        self.conv2 = nn.Conv2d(3, 20, 3)
 
+    def forward(self, x):
+        return {'out1': self.conv1(x), 'out2': self.conv2(x)}
+
+
+def test_demo(model):
+    inputs = torch.zeros(2, 3, 512, 512)
+    if torch.cuda.is_available():
+        model = model.cuda()
+        inputs = inputs.cuda()
+
+    for i in range(100):
+        model.train()
+        torch.onnx.export(model, inputs,
+                          'debug.onnx',
+                          input_names=['data'],
+                          opset_version=11,
+                          verbose=True,
+                          dynamic_axes={'data': {0: 'batch', 2: 'width', 3: 'height'}})
+        torch.cuda.empty_cache()
+        print(torch.cuda.memory_summary(device=None, abbreviated=False))
+
+if __name__ == '__main__':
+    model1 = Demo1()
+    model2 = Demo2()
+    print('demo1')
+    test_demo(model1)
+    print('demo2')
+    test_demo(model2)

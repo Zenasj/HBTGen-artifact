@@ -1,32 +1,29 @@
-# torch.rand(4, 4, dtype=torch.float32)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, input_dense):
-        # Convert input to sparse tensor
-        idx = input_dense.nonzero()
-        vals = input_dense[input_dense != 0]
-        sparse_adj = torch.sparse.FloatTensor(idx.t(), vals, input_dense.size())
-        sparse_adj = sparse_adj.coalesce()
-        
-        # Compute diagonal matrix D
-        ones = torch.ones(input_dense.size(0), 1, device=input_dense.device)
-        D_vec = sparse_adj.mm(ones).view(-1)
-        D_vec = D_vec ** -0.5
-        D = torch.diag(D_vec)
-        
-        # Compute sparse and dense results
-        sparse_result = sparse_adj.t().mm(D).t()
-        dense_adj = sparse_adj.to_dense()
-        dense_result = dense_adj.t().mm(D).t()
-        
-        # Return 1.0 if results match, else 0.0 (for compatibility with torch.compile)
-        return torch.tensor([1.0], dtype=torch.float32) if torch.allclose(sparse_result, dense_result) else torch.tensor([0.0], dtype=torch.float32)
+sparse_mult
+tensor([[0.7071, 0.7071, 0.0000, 0.0000],
+        [0.0000, 1.0000, 0.0000, 0.0000],
+        [0.0000, 1.4142, 0.0000, 0.0000],
+        [0.0000, 0.5774, 0.0000, 1.1547]])
 
-def my_model_function():
-    return MyModel()
+norm_adj = torch.tensor([[1., 0., 0., 1.],
+                         [0., 1., 0., 0.],
+                         [0., 1., 1., 0.],
+                         [0., 1., 0., 2.]])
 
-def GetInput():
-    return torch.rand(4, 4, dtype=torch.float32)
-
+idx = norm_adj.nonzero()
+vals = norm_adj[norm_adj>0]
+norm_adj = torch.sparse.FloatTensor(idx.t(),vals,torch.Size([4,4]))
+norm_adj = norm_adj.coalesce()
+print(norm_adj.to_dense())    
+# print(norm_adj)
+D = norm_adj.mm(torch.ones(4,1)).view(-1)
+D = D ** -0.5
+D = torch.diag(D)
+print(D)
+print('sparse_mult')
+print(norm_adj.t().mm(D).t())
+print('another dense')
+print(norm_adj.to_dense().t().mm(D).t())
+print('dense mult')
+print(D.mm(norm_adj.to_dense()))

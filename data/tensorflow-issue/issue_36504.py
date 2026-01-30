@@ -1,28 +1,74 @@
-# tf.random.uniform((B, 32, 32, 3), dtype=tf.float32) ← Input shape inferred from the issue example
-
+import numpy as np
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Create layers only once, during initialization to avoid variable creation on call.
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense = tf.keras.layers.Dense(10)
+input_layer = tf.keras.layers.Input([32, 32, 3])
+model = tf.keras.models.Sequential(
+    [input_layer, Flatten(), tf.keras.layers.Dense(10)])
 
-    @tf.function(jit_compile=True)
-    def call(self, inputs):
-        x = self.flatten(inputs)
-        x = self.dense(x)
-        return x
+a = np.ones([1, 32, 32, 3], dtype=np.float32)
+print(model(a))
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+class KerasModel(tf.keras.models.Model):
 
-def GetInput():
-    # Return a random tensor input compatible with MyModel input shape (batch, 32, 32, 3)
-    # Using dtype float32 as typical for image input tensors.
-    batch_size = 1  # typical single batch; can be adjusted as needed
-    input_shape = (batch_size, 32, 32, 3)
-    return tf.random.uniform(input_shape, dtype=tf.float32)
+  def __init__(self):
+    super(KerasModel, self).__init__()
+    self.flatten = Flatten()
+    self.dense = tf.keras.layers.Dense(10)
 
+  def call(self, input_layer):
+    x = input_layer
+    x = self.flatten(x)
+    x = self.dense(x)
+    return x
+
+model = KerasModel()
+
+a = np.ones([1, 32, 32, 3], dtype=np.float32)
+print(model(a))
+
+class KerasModel(tf.keras.models.Model):
+
+  def __init__(self):
+    super(KerasModel, self).__init__()
+    self.flatten = Flatten()
+    self.dense = tf.keras.layers.Dense(10)
+
+  @tf.function(experimental_compile=True)
+  def call(self, input_layer):
+    x = input_layer
+    x = self.flatten(x)
+    x = self.dense(x)
+    return x
+
+model = KerasModel()
+
+a = np.ones([1, 32, 32, 3], dtype=np.float32)
+print(model(a))
+
+model = tf.keras.Model(inputs, outputs)
+
+@tf.function
+def train_step(x, y):
+  y_pred = model(x)
+  ...
+
+class ModelTest(tf.keras.layers.Layer):
+
+  def __init__(self):
+    super(ModelTest, self).__init__()
+    self.flatten = Flatten()
+    self.dense = tf.keras.layers.Dense(10)
+
+  @tf.function
+  def call(self, input_layer):
+    x = input_layer
+    x = self.flatten(x)
+    x = self.dense(x)
+    return x
+
+input_layer = tf.keras.layers.Input([32, 32, 3])
+output_layer = ModelTest()(input_layer)
+model = tf.keras.Model(input_layer, output_layer)

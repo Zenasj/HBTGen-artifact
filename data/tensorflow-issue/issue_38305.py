@@ -1,50 +1,49 @@
-# tf.random.uniform((B, 1), dtype=tf.int64) ← The input is a batch of single integer IDs, shape (batch_size, 1)
-
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Keys and corresponding mapped values for lookup
-        keys = tf.constant([0, 1, 2, 3], dtype=tf.int64)
-        values = tf.constant([0, 10, 20, 30], dtype=tf.int64)
-        initializer = tf.lookup.KeyValueTensorInitializer(
-            keys=keys,
-            values=values,
-            key_dtype=tf.int64,
-            value_dtype=tf.int64,
-        )
-        # StaticHashTable created once and kept as a resource in the layer
-        self.table = tf.lookup.StaticHashTable(initializer, default_value=-1)
+class VocabLookup(tf.keras.layers.Layer):
+    def __init__(self,vocab_path):
+        super(VocabLookup, self).__init__(trainable=False,dtype=tf.int64)
+        self.vocab_path = vocab_path
+    def build(self,input_shape):
+        table_init = tf.lookup.TextFileInitializer(self.vocab_path,tf.string,tf.lookup.TextFileIndex.WHOLE_LINE,
+                              tf.int64,tf.lookup.TextFileIndex.LINE_NUMBER)
+        self.table = tf.lookup.StaticHashTable(table_init,-1)
+        self.built=True
+        
+    def call(self, input_text):
+        splitted_text = tf.strings.split(input_text).to_tensor()
+        word_ids = self.table.lookup(splitted_text)
+        return word_ids
+    
+    def get_config(self):
+        config = super(VocabLookup, self).get_config()
+        config.update({'vocab_path': self.vocab_path})
+        return config 
+input_text = tf.keras.Input(shape=(),dtype=tf.string,name='input_text')
+lookup_out = VocabLookup(vocab_path=vocab_path)(input_text)
+model_lookup = tf.keras.Model(inputs={'input_text':input_text},outputs=lookup_out)
 
-        # Embedding layer for the output of the lookup operation
-        self.embedder = tf.keras.layers.Embedding(
-            input_dim=tf.reduce_max(values).numpy() + 1,
-            output_dim=10,
-        )
+keys_tensor = tf.constant(range(27), tf.int64)
+vals_tensor = tf.constant([0]*11+[1]*9+[2]*6+[3], tf.int64)
+table = tf.lookup.StaticHashTable(
+    tf.lookup.KeyValueTensorInitializer(keys_tensor, vals_tensor), -1)
 
-    def call(self, inputs):
-        """
-        inputs: tf.Tensor of shape (batch_size, 1), dtype tf.int64
-        Returns:
-          tf.Tensor of embeddings with shape (batch_size, 1, embedding_dim)
-        """
-        # Use the table to map input IDs to translated IDs
-        translated = self.table.lookup(inputs)
-        # Embed the translated IDs
-        embedded = self.embedder(translated)
-        return embedded
+inputs = layers.Input(shape=(4))
+inputs1 = layers.Input(shape=(4))
+x = layers.Dense(4)(inputs)
+model = keras.Model([inputs,inputs1], x)
 
-def my_model_function():
-    # Return an instance of MyModel
-    # The table is initialized internally in __init__, so nothing else to do
-    return MyModel()
+key = tf.argmax(inputs1, axis=1)
+matches = table.lookup((key))
+matches = tf.one_hot(matches, depth=4)
+loss = K.categorical_crossentropy(matches, inputs1)
 
-def GetInput():
-    # Return a random tensor input that matches the expected input:
-    # Shape: (batch_size, 1), dtype=tf.int64, values in keys range (0 to 3)
-    batch_size = 4  # Example batch size
-    # Random integers between 0 and 3 inclusive
-    inp = tf.random.uniform(shape=(batch_size, 1), minval=0, maxval=4, dtype=tf.int64)
-    return inp
+model.add_loss(loss)
+model.compile(optimizer=keras.optimizers.Adam(1e-3))
 
+x_train = tf.ones(shape=[2,4])
+y_train = tf.constant([[0,0,0,1],[0,0,1,0]])
+model.fit([x_train, y_train])

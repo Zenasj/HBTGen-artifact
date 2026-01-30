@@ -1,70 +1,59 @@
-# tf.random.uniform((100, 1403), dtype=tf.int32)
-
+import random
 import tensorflow as tf
-from tensorflow.keras.layers import Input, Embedding, LSTMCell, RNN
-from tensorflow.keras.models import Model
+
+tf.gradients(ct, c0)
+
+### 1. Define model
+batch_size = 100
+input_length_m= 1403
+output_dim= 100
+
+xtr_pad = tf.random.uniform((batch_size, input_length_m), maxval = 500, dtype=tf.int32)
+ytr = tf.random.normal((batch_size, input_length_m, 200))
+inp= Input(batch_shape= (batch_size, input_length_m), name= 'input') 
+emb_out= Embedding(500, output_dim, input_length= input_length_m, trainable= False, name= 'embedding')(inp)
 
 class LSTMCellwithStates(LSTMCell):
     def call(self, inputs, states, training=None):
-        # The inputs to this cell contain concatenated data, but the actual inputs are only
-        # the first `units` columns (decoupling [h,c]).
-        real_inputs = inputs[:, :self.units]
-        outputs, [h, c] = super().call(real_inputs, states, training=training)
-        # Concatenate h and c to return combined output for the RNN layer
-        return tf.concat([h, c], axis=1), [h, c]
+        real_inputs = inputs[:,:self.units] # decouple [h, c]
+        outputs, [h,c] = super().call(real_inputs, states, training=training)
+        return tf.concat([h, c], axis=1), [h,c]
+    
+rnn = RNN(LSTMCellwithStates(200), return_sequences= True, return_state= False, name= 'LSTM') 
+h0 = tf.Variable(tf.random.uniform((batch_size, 200)))
+c0 = tf.Variable(tf.random.uniform((batch_size, 200)))
+rnn_allstates= rnn(emb_out, initial_state=[h0, c0])  
+model_lstm_mod = Model(inputs=inp, outputs= rnn_allstates, name= 'model_LSTMCell')
+model_lstm_mod.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['acc'])
 
-class MyModel(tf.keras.Model):
-    def __init__(self, batch_size=100, input_length=1403, embedding_vocab_size=500, embedding_dim=100, lstm_units=200):
-        super().__init__()
-        self.batch_size = batch_size
-        self.input_length = input_length
-        self.embedding_vocab_size = embedding_vocab_size
-        self.embedding_dim = embedding_dim
-        self.lstm_units = lstm_units
-        
-        # Input and embedding layers
-        self.input_layer = Input(batch_shape=(batch_size, input_length), name='input')
-        self.embedding = Embedding(
-            input_dim=self.embedding_vocab_size, output_dim=self.embedding_dim,
-            input_length=input_length, trainable=False, name='embedding')
-        
-        # Custom LSTM cell wrapped in RNN layer
-        self.rnn = RNN(LSTMCellwithStates(self.lstm_units), 
-                       return_sequences=True, return_state=False, name='LSTM')
-        
-        # Initial states as Variables so gradients can be computed with respect to them
-        self.h0 = tf.Variable(tf.random.uniform((batch_size, lstm_units)), trainable=True)
-        self.c0 = tf.Variable(tf.random.uniform((batch_size, lstm_units)), trainable=True)
+### 2. Compute gradients:
+ds = tf.data.Dataset.from_tensor_slices((xtr_pad, ytr)).batch(100)
 
-    def call(self, inputs, training=None):
-        # Compute embeddings
-        emb_out = self.embedding(inputs)
-        # Pass embeddings through RNN with initial states h0 and c0
-        # The output's shape is (batch_size, timesteps, 2*lstm_units) due to concatenation of h and c
-        rnn_allstates = self.rnn(emb_out, initial_state=[self.h0, self.c0], training=training)
-        # Return concatenated [h, c] states per timestep
-        return rnn_allstates
+@tf.function
+def compute_dct_dc0(ct, c0):
+    return tf.gradients(ct, c0)
 
-    @tf.function
-    def compute_dct_dc0(self, ct):
-        # Compute gradient of cell state ct w.r.t initial cell state c0 using tf.GradientTape
-        # We use GradientTape since tf.gradients (TF1.x) returns None in TF2 for Variables by default
-        with tf.GradientTape() as tape:
-            tape.watch(self.c0)
-            # To get a scalar output for gradient, reduce mean over batch and units
-            output_scalar = tf.reduce_mean(ct)
-        grad = tape.gradient(output_scalar, self.c0)
-        return grad
+n_b = int(xtr_pad.shape[0]/ 100)
+n_steps = 20   # look up only the first and last 20 steps
 
-def my_model_function():
-    # Instantiate and return the MyModel instance initialized with default parameters
-    return MyModel()
+dctdc0_all= tf.zeros([n_b, n_steps])
+for b, (x_batch_train, y_batch_train) in enumerate(ds):  
+    grad_batch= []   
+    cell_states= model_lstm_mod(x_batch_train)[:, :, 200:]
+    for t in range(n_steps):  
+        ct= cell_states[:, t, :]
+        print(ct)
+        # steps 0,...,19
+        dctdc0_b_t = compute_dct_dc0(ct, c0)  # (batch_size, n_units)
+        print(dctdc0_b_t)
+        grad_t = tf.reduce_mean(abs(dctdc0_b_t[0]), [0,1]) # Scalar dctdc0 at the current batch and step
+        print('step', t+1, 'of batch' ,b+1, 'done')
+        grad_batch.append(grad_t)
+    
+    dctdc0_all= tf.concat([dctdc0_all, [grad_batch]], axis = 0)
 
-def GetInput():
-    # Return input tensor shape (batch_size, input_length) with int32 values in vocab range [0, 500)
-    # Matches MyModel embedding input.
-    batch_size = 100
-    input_length = 1403
-    vocab_size = 500
-    return tf.random.uniform(shape=(batch_size, input_length), maxval=vocab_size, dtype=tf.int32)
+cell_states= model_lstm_mod(x_batch_train)[:, :, 200:]
 
+tape.watch(h0)
+
+tf.gradients

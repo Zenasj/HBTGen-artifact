@@ -1,49 +1,79 @@
-# tf.random.uniform((32, 32, 32, 3), dtype=tf.float32) ← inferred input shape (batch size arbitrary, 32x32 RGB images)
+import random
+from tensorflow.keras import optimizers
 
+import os
+import numpy as np
 import tensorflow as tf
+if tf.test.gpu_device_name():
+    print('Default GPU Device: {}'.format(tf.test.gpu_device_name()))
+else:
+    print("Please install GPU version of TF")
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Input shape is (32,32,3) as per EfficientNetB0 example
-        
-        # Load EfficientNetB0 base model without top layers, weights pretrained on ImageNet
-        # This model uses DepthwiseConv2D layers internally, source of nondeterminism on GPU.
-        self.base_model = tf.keras.applications.EfficientNetB0(
-            include_top=False,
-            weights="imagenet",
-            input_shape=(32, 32, 3)
-        )
-        
-        # Some layers from the original snippet
-        self.global_average_layer = tf.keras.layers.GlobalAveragePooling2D()
-        self.flatten_layer = tf.keras.layers.Flatten()
-        
-        # The dense layer at the end with softmax activation and fixed initializer for reproducibility
-        initializer = tf.keras.initializers.GlorotUniform(seed=1)
-        self.dense_layer = tf.keras.layers.Dense(
-            10,
-            use_bias=False,
-            kernel_initializer=initializer,
-            activation='softmax',
-            name='Bottleneck'
-        )
-    
-    def call(self, inputs, training=False):
-        x = self.base_model(inputs, training=training)  # pass training to handle batch norm mode properly
-        x = self.global_average_layer(x)
-        x = self.flatten_layer(x)
-        output = self.dense_layer(x)
-        return output
+np.random.seed(1)
+tf.random.set_seed(2)
+os.environ['TF_CUDNN_DETERMINISTIC'] = 'true'
+os.environ['TF_DETERMINISTIC_OPS'] = 'true'
+
+tf.config.threading.set_inter_op_parallelism_threads(1)
+tf.config.threading.set_intra_op_parallelism_threads(1)
+
+from tensorflow import keras
+from tensorflow.keras import layers
+import matplotlib.pyplot as plt
+from keras.utils import np_utils
+from keras.optimizers import SGD
+from keras.callbacks import CSVLogger
+
+csv_logger = CSVLogger('log.csv', append=True, separator=';')
+
+batch_size = 32 # 32 examples in a mini-batch, smaller batch size means more updates in one epoch
+num_classes = 10#
+epochs = 3# repeat 200 times
+data_augmentation = True
 
 
-def my_model_function():
-    # Return instance of MyModel, freshly initialized with ImageNet weights on EfficientNetB0 backbone
-    return MyModel()
+## Model 
+input_shape = (32,32,3)
+base_model  = tf.keras.applications.efficientnet.EfficientNetB0(include_top=False, weights="imagenet", input_shape=input_shape)
+#base_model = tf.keras.applications.VGG16(include_top=False, weights="imagenet", input_shape=input_shape)
+#base_model = tf.keras.applications.ResNet101(include_top=False, weights="imagenet", input_shape=input_shape)
+#base_model = tf.keras.applications.MobileNetV2(include_top=False, weights="imagenet", input_shape=input_shape)
+#base_model = tf.keras.applications.MobileNet(include_top=False, weights="imagenet", input_shape=input_shape)
+
+initializer = tf.keras.initializers.GlorotUniform(seed=1)
+regularizer = tf.keras.regularizers.l2(0.0001) # 0.0001
+global_average_layer = layers.GlobalAveragePooling2D()
+flatten_layer = layers.Flatten()
+dense_layer = layers.Dense(10, use_bias=False, kernel_initializer=initializer, bias_initializer='zeros', name='Bottleneck', activation='softmax')
+
+Model  = tf.keras.Sequential([base_model, global_average_layer, flatten_layer, dense_layer])
 
 
-def GetInput():
-    # Return a random tensor matching the input expected by MyModel
-    # Batch size chosen arbitrarily as 32 following the example batch size in the issue
-    return tf.random.uniform(shape=(32, 32, 32, 3), dtype=tf.float32)
+## Training Data
+(x_train, y_train), (x_test, y_test) = keras.datasets.cifar10.load_data()
+print('x_train shape:', x_train.shape)
+print(x_train.shape[0], 'train samples')
+print(x_test.shape[0], 'test samples')
+class_names = ['airplane','automobile','bird','cat','deer','dog','frog','horse','ship','truck']
+y_train = np_utils.to_categorical(y_train, num_classes)
+y_test = np_utils.to_categorical(y_test, num_classes)
+x_train = x_train.astype('float32')
+x_test = x_test.astype('float32')
+x_train  /= 255
+x_test /= 255
 
+
+## Training
+sgd = SGD(lr=0.01, momentum=0.9, decay=1e-6, nesterov=False)
+Model.compile(loss='categorical_crossentropy', optimizer=sgd, metrics=['accuracy'])
+cnn = Model.fit(x_train, y_train, batch_size=batch_size, epochs=epochs, validation_data=(x_test,y_test), shuffle=False,callbacks=[csv_logger])
+
+if tf.test.gpu_device_name():
+    print('Default GPU Device: {}'.format(tf.test.gpu_device_name()))
+else:
+    print("Please install GPU version of TF!")
+
+def summarize_keras_trainable_variables(model, message):
+  s = sum(map(lambda x: x.sum(), model.get_weights()))
+  print("summary of trainable variables %s: %.13f" % (message, s))
+  return s

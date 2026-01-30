@@ -1,20 +1,10 @@
-# torch.rand(3, 3, dtype=torch.float64), torch.rand((), dtype=torch.float64)
 import torch
-from torch import nn
+a = torch.randn(3, 3, dtype=torch.float64, requires_grad=True)
+torch.autograd.gradcheck(lambda x: torch.linalg.pinv(x, rcond=torch.tensor(1e-15)), [a])
+# RuntimeError: derivative for aten::linalg_pinv is not implemented
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        
-    def forward(self, inputs):
-        matrix, rcond = inputs
-        return torch.linalg.pinv(matrix, rcond=rcond)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    matrix = torch.randn(3, 3, dtype=torch.float64, requires_grad=True)
-    rcond = torch.tensor(1e-15, dtype=torch.float64, requires_grad=True)
-    return (matrix, rcond)
-
+import torch
+a = torch.randn(3, 3, dtype=torch.float64, requires_grad=True)
+rcond = torch.tensor(1e-15, dtype=torch.float64, requires_grad=True)
+torch.autograd.gradcheck(lambda rcond: torch.linalg.pinv(a, rcond=rcond), [rcond])
+# True in 1.9.0 and errors on master

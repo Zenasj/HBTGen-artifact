@@ -1,80 +1,89 @@
+import torch.nn as nn
+
 import torch
+from contextlib import contextmanager
+import comfy.model_management
 import triton
 import triton.language as tl
-from torch import nn
 
-# torch.rand(B, C, H, W, dtype=torch.float32, device='cuda') where B=2, C=32, H=8, W=8
 @triton.jit
 def _layer_norm_fwd_fused(
-    X, Y, W, B, Mean, Rstd, stride, N, eps, BLOCK_SIZE: tl.constexpr
+        X,  # pointer to the input
+        Y,  # pointer to the output
+        W,  # pointer to the weights
+        B,  # pointer to the biases
+        Mean,  # pointer to the mean
+        Rstd,  # pointer to the 1/std
+        stride,  # how much to increase the pointer when moving by 1 row
+        N,  # number of columns in X
+        eps,  # epsilon to avoid division by zero
+        BLOCK_SIZE: tl.constexpr,
 ):
+    # Map the program id to the row of X and Y it should compute.
     row = tl.program_id(0)
     Y += row * stride
     X += row * stride
-    mean = 0.0
+    # Compute mean
+    mean = 0
     _mean = tl.zeros([BLOCK_SIZE], dtype=tl.float32)
     for off in range(0, N, BLOCK_SIZE):
         cols = off + tl.arange(0, BLOCK_SIZE)
-        a = tl.load(X + cols, mask=cols < N, other=0.0).to(tl.float32)
+        a = tl.load(X + cols, mask=cols < N, other=0.).to(tl.float32)
         _mean += a
     mean = tl.sum(_mean, axis=0) / N
+    # Compute variance
     _var = tl.zeros([BLOCK_SIZE], dtype=tl.float32)
     for off in range(0, N, BLOCK_SIZE):
         cols = off + tl.arange(0, BLOCK_SIZE)
-        x = tl.load(X + cols, mask=cols < N, other=0.0).to(tl.float32)
-        x = tl.where(cols < N, x - mean, 0.0)
+        x = tl.load(X + cols, mask=cols < N, other=0.).to(tl.float32)
+        x = tl.where(cols < N, x - mean, 0.)
         _var += x * x
     var = tl.sum(_var, axis=0) / N
-    rstd = 1.0 / tl.sqrt(var + eps)
+    rstd = 1 / tl.sqrt(var + eps)
+    # Write mean / rstd
     tl.store(Mean + row, mean)
     tl.store(Rstd + row, rstd)
+    # Normalize and apply linear transformation
     for off in range(0, N, BLOCK_SIZE):
         cols = off + tl.arange(0, BLOCK_SIZE)
         mask = cols < N
         w = tl.load(W + cols, mask=mask)
         b = tl.load(B + cols, mask=mask)
-        x = tl.load(X + cols, mask=mask, other=0.0).to(tl.float32)
+        x = tl.load(X + cols, mask=mask, other=0.).to(tl.float32)
         x_hat = (x - mean) * rstd
         y = x_hat * w + b
+        # Write output
         tl.store(Y + cols, y, mask=mask)
 
+
 class disable_weight_init:
-    class LayerNorm(nn.LayerNorm):
-        def __init__(self, normalized_shape, eps=1e-5):
-            super().__init__(normalized_shape, eps=eps)
-        
-        def trition_forward(self, x, weight, bias, eps):
+    
+    class LayerNorm(torch.nn.LayerNorm):
+
+        def trition_forward(self, x, normalized_shape, weight, bias, eps):
+            # allocate output
             y = torch.empty_like(x)
+            # reshape input data into 2D tensor
             x_arg = x.reshape(-1, x.shape[-1])
             M, N = x_arg.shape
             mean = torch.empty((M,), dtype=torch.float32, device='cuda')
             rstd = torch.empty((M,), dtype=torch.float32, device='cuda')
+            # Less than 64KB per feature: enqueue fused kernel
             MAX_FUSED_SIZE = 65536 // x.element_size()
             BLOCK_SIZE = min(MAX_FUSED_SIZE, triton.next_power_of_2(N))
             if N > BLOCK_SIZE:
-                raise RuntimeError("Feature dimension exceeds Triton kernel limit.")
+                raise RuntimeError("This layer norm doesn't support feature dim >= 64KB.")
+            # heuristics for number of warps
             num_warps = min(max(BLOCK_SIZE // 256, 1), 8)
-            _layer_norm_fwd_fused[(M,)](
-                x_arg, y, weight, bias, mean, rstd,
-                x_arg.stride(0), N, eps,
-                BLOCK_SIZE=BLOCK_SIZE, num_warps=num_warps, num_ctas=1
-            )
+            # enqueue kernel
+            _layer_norm_fwd_fused[(M,)](  #
+                x_arg, y, weight, bias, mean, rstd,  #
+                x_arg.stride(0), N, eps,  #
+                BLOCK_SIZE=BLOCK_SIZE, num_warps=num_warps, num_ctas=1)
             return y
 
-        def forward(self, x):
-            return self.trition_forward(x, self.weight, self.bias, self.eps)
+        def layernorm_forward_wrapper(self, input):
+            return self.trition_forward(input, self.normalized_shape, self.weight, self.bias, self.eps)
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.norm = disable_weight_init.LayerNorm(32 * 8 * 8)  # C=32, H=8, W=8
-
-    def forward(self, x):
-        return self.norm(x.view(x.shape[0], -1)).view(x.shape)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(2, 32, 8, 8, dtype=torch.float32, device='cuda')
-
+        def forward(self, *args, **kwargs):
+            return self.layernorm_forward_wrapper(*args, **kwargs)

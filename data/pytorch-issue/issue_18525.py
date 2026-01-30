@@ -1,22 +1,29 @@
-# torch.rand(1, 1, 224, 224, dtype=torch.float32)
+import random
+
 import torch
 import torch.nn as nn
+import numpy as np
+from torch.autograd import Variable
 
-class MyModel(nn.Module):
+class PytorchModel(nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
-        self.bn = nn.BatchNorm2d(1, momentum=0.5)  # Problematic layer with specified momentum
-        
+        super(PytorchModel, self).__init__()
+        self.bn = nn.BatchNorm2d(1, momentum=0.5)
+
     def forward(self, x):
-        return self.bn(x)
+        x = self.bn(x)
+        return x
 
-def my_model_function():
-    # Returns the model instance in eval mode (as per original issue's setup)
-    model = MyModel()
-    model.eval()
-    return model
+pytorch_model = PytorchModel()
+pytorch_model.eval()
 
-def GetInput():
-    # Generate input matching the model's expected shape
-    return torch.rand(1, 1, 224, 224, dtype=torch.float32)
+x_data = np.random.uniform(0, 1, size=(1, 1, 224, 224))
+x = Variable(torch.Tensor(x_data))
 
+torch_out = torch.onnx._export(pytorch_model, x, "model.onnx", export_params=True)
+
+import onnx
+import caffe2.python.onnx.backend as onnx_caffe2_backend
+model = onnx.load("model.onnx")
+
+model

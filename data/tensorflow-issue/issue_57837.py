@@ -1,27 +1,41 @@
-# tf.constant(True, shape=[2], dtype=tf.bool) → input shape: (2,) with dtype=tf.bool
-
 import tensorflow as tf
+print(tf.__version__)
+from keras import layers
 
-class MyModel(tf.keras.Model):
+def get_tflite_callable(model, inp_dict):
+    converter = tf.lite.TFLiteConverter.from_concrete_functions(
+        funcs=[model.__call__.get_concrete_function(**inp_dict)],
+        trackable_obj=model,
+    )
+    converter.target_spec.supported_ops = [
+        tf.lite.OpsSet.TFLITE_BUILTINS, # enable TensorFlow Lite ops.
+        tf.lite.OpsSet.SELECT_TF_OPS # enable TensorFlow ops.
+    ]
+    tflite_bytes = converter.convert()
+    interpreter = tf.lite.Interpreter(model_content=tflite_bytes)
+    runner = interpreter.get_signature_runner()
+    return runner
+
+class MyModule(tf.Module):
     def __init__(self):
         super().__init__()
-        # Constant boolean tensor of shape [2,2], all True
-        self.const = tf.constant(True, shape=[2, 2], dtype=tf.bool)
+        self.const = tf.constant(True, shape=[2,2], dtype=tf.bool)
 
     @tf.function
-    def call(self, x):
-        # Apply logical OR between constant and input tensor (broadcasting input of shape [2])
-        x = tf.logical_or(self.const, x)
-        # Reshape result to [2, 2, 1, 1]
-        x = tf.reshape(x, [2, 2, 1, 1])
+    def __call__(self, x):
+        x = tf.logical_or(self.const, x) # works fine
+        x = tf.reshape(x, [2,2,1,1]) # after reshape the result is wrong
         return x
 
-def my_model_function():
-    # Returns an instance of MyModel, ready to use.
-    return MyModel()
 
-def GetInput():
-    # Return a boolean tensor matching expected input shape (2,) with all True values.
-    # Matches example in original code: tf.constant(True, shape=[2], dtype=tf.bool)
-    return tf.constant([True, True], shape=[2], dtype=tf.bool)
+inp = {
+    "x": tf.constant(True, shape=[2], dtype=tf.bool),
+}
+m = MyModule()
 
+out = m(**inp)
+print(f'{out}')
+
+runner = get_tflite_callable(m, inp) # Error!
+out = runner(**inp)
+print(f'{out}')

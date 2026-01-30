@@ -1,27 +1,57 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Inferred input shape: (batch_size, channels, height, width)
-
-import torch
 import torch.nn as nn
-import torch.distributed as dist
 
-class MyModel(nn.Module):
+import os
+from math import inf
+import torch
+from torch import tensor, device
+import torch.fx as fx
+import functools
+import torch._dynamo
+from torch._dynamo.debug_utils import run_fwd_maybe_bwd
+from torch._dynamo.optimizations.backends import BACKENDS
+from torch._dynamo.testing import rand_strided
+
+import torch._dynamo.config
+import torch._inductor.config
+torch._dynamo.config.load_config(b'\x80\x04\x95\x16\x08\x00\x00\x00\x00\x00\x00}\x94(\x8c\x08__name__\x94\x8c\x14torch._dynamo.config\x94\x8c\x07__doc__\x94N\x8c\x0b__package__\x94\x8c\rtorch._dynamo\x94\x8c\n__loader__\x94\x8c\x1a_frozen_importlib_external\x94\x8c\x10SourceFileLoader\x94\x93\x94)\x81\x94}\x94(\x8c\x04name\x94h\x02\x8c\x04path\x94\x8c[/linkhome/rech/gensak01/ugt86fu/.local/lib/python3.10/site-packages/torch/_dynamo/config.py\x94ub\x8c\x08__spec__\x94\x8c\x11_frozen_importlib\x94\x8c\nModuleSpec\x94\x93\x94)\x81\x94}\x94(h\x0ch\x02\x8c\x06loader\x94h\n\x8c\x06origin\x94h\x0e\x8c\x0cloader_state\x94N\x8c\x1asubmodule_search_locations\x94N\x8c\r_set_fileattr\x94\x88\x8c\x07_cached\x94\x8ct/linkhome/rech/gensak01/ugt86fu/.local/lib/python3.10/site-packages/torch/_dynamo/__pycache__/config.cpython-310.pyc\x94\x8c\r_initializing\x94\x89ub\x8c\x08__file__\x94h\x0e\x8c\n__cached__\x94h\x1b\x8c\x07abspath\x94\x8c\tposixpath\x94h\x1f\x93\x94\x8c\x07dirname\x94h h"\x93\x94\x8c\tlog_level\x94K\x1e\x8c\x0boutput_code\x94\x89\x8c\rlog_file_name\x94N\x8c\x07verbose\x94\x89\x8c\x11output_graph_code\x94\x89\x8c\x12verify_correctness\x94\x89\x8c\x12minimum_call_count\x94K\x01\x8c\x15dead_code_elimination\x94\x88\x8c\x10cache_size_limit\x94K@\x8c\x14specialize_int_float\x94\x88\x8c\x0edynamic_shapes\x94\x89\x8c\x10guard_nn_modules\x94\x89\x8c\x0cnormalize_ir\x94\x89\x8c\x1btraceable_tensor_subclasses\x94\x8f\x94\x8c\x0fsuppress_errors\x94\x89\x8c\x15replay_record_enabled\x94\x89\x8c rewrite_assert_with_torch_assert\x94\x88\x8c\x12print_graph_breaks\x94\x89\x8c\x07disable\x94\x89\x8c*allowed_functions_module_string_ignorelist\x94\x8f\x94(\x8c\x0btorch._refs\x94\x8c\rtorch.testing\x94\x8c\x13torch.distributions\x94\x8c\rtorch._decomp\x94\x8c\x0ctorch._prims\x94\x90\x8c\x0frepro_tolerance\x94G?PbM\xd2\xf1\xa9\xfc\x8c\x16capture_scalar_outputs\x94\x89\x8c\x19enforce_cond_guards_match\x94\x88\x8c\x0coptimize_ddp\x94\x88\x8c\x1araise_on_ctx_manager_usage\x94\x88\x8c\x1craise_on_unsafe_aot_autograd\x94\x89\x8c\rdynamo_import\x94\x8c\rtorch._dynamo\x94\x8c\x0finductor_import\x94\x8c\x0ftorch._inductor\x94\x8c\x18error_on_nested_fx_trace\x94\x88\x8c\tallow_rnn\x94\x89\x8c\x08base_dir\x94\x8cC/linkhome/rech/gensak01/ugt86fu/.local/lib/python3.10/site-packages\x94\x8c\x0edebug_dir_root\x94\x8cJ/gpfsdswork/projects/rech/nph/ugt86fu/code/visionBERT2/torch_compile_debug\x94\x8c)DO_NOT_USE_legacy_non_fake_example_inputs\x94\x89\x8c\x15_AccessLimitingConfig\x94}\x94(\x8c\n__module__\x94h\x02\x8c\x0b__setattr__\x94h\x02\x8c!_AccessLimitingConfig.__setattr__\x94\x93\x94h\x03Nu\x8c\x15_allowed_config_names\x94\x8f\x94(\x8c\x0brepro_after\x94\x8c\x0eexternal_utils\x94h?\x8c\nModuleType\x94h0h)\x8c\x12constant_functions\x94h.hEhOh\x1fh,h/h\x1ehJh%hC\x8c\x0brepro_level\x94hPh\x01h"\x8c\x03sys\x94h8h+hMh*hD\x8c!skipfiles_inline_module_allowlist\x94\x8c\x07logging\x94hIhB\x8c\x02os\x94h5\x8c\x05torch\x94h$\x8c\x0c__builtins__\x94hKh\x06h\x04h@h-h6h1h\'h\x03h7hAh\x1dhGh&h(h\x0fh4h3\x90\x8c\x1cget_config_serialization_fns\x94\x8c\x1atorch._dynamo.config_utils\x94hc\x93\x94u.')
+torch._inductor.config.load_config(b'\x80\x04\x95G\t\x00\x00\x00\x00\x00\x00}\x94(\x8c\x08__name__\x94\x8c\x16torch._inductor.config\x94\x8c\x07__doc__\x94N\x8c\x0b__package__\x94\x8c\x0ftorch._inductor\x94\x8c\n__loader__\x94\x8c\x1a_frozen_importlib_external\x94\x8c\x10SourceFileLoader\x94\x93\x94)\x81\x94}\x94(\x8c\x04name\x94h\x02\x8c\x04path\x94\x8c]/linkhome/rech/gensak01/ugt86fu/.local/lib/python3.10/site-packages/torch/_inductor/config.py\x94ub\x8c\x08__spec__\x94\x8c\x11_frozen_importlib\x94\x8c\nModuleSpec\x94\x93\x94)\x81\x94}\x94(h\x0ch\x02\x8c\x06loader\x94h\n\x8c\x06origin\x94h\x0e\x8c\x0cloader_state\x94N\x8c\x1asubmodule_search_locations\x94N\x8c\r_set_fileattr\x94\x88\x8c\x07_cached\x94\x8cv/linkhome/rech/gensak01/ugt86fu/.local/lib/python3.10/site-packages/torch/_inductor/__pycache__/config.cpython-310.pyc\x94\x8c\r_initializing\x94\x89ub\x8c\x08__file__\x94h\x0e\x8c\n__cached__\x94h\x1b\x8c\x05debug\x94\x89\x8c\x10disable_progress\x94\x88\x8c\x10verbose_progress\x94\x89\x8c\x0bcpp_wrapper\x94\x89\x8c\x03dce\x94\x89\x8c\x14static_weight_shapes\x94\x88\x8c\x0csize_asserts\x94\x88\x8c\x10pick_loop_orders\x94\x88\x8c\x0finplace_buffers\x94\x88\x8c\x11benchmark_harness\x94\x88\x8c\x0fepilogue_fusion\x94\x89\x8c\x15epilogue_fusion_first\x94\x89\x8c\x0fpattern_matcher\x94\x88\x8c\nreordering\x94\x89\x8c\x0cmax_autotune\x94\x89\x8c\x17realize_reads_threshold\x94K\x04\x8c\x17realize_bytes_threshold\x94M\xd0\x07\x8c\x1brealize_acc_reads_threshold\x94K\x08\x8c\x0ffallback_random\x94\x89\x8c\x12implicit_fallbacks\x94\x88\x8c\rprefuse_nodes\x94\x88\x8c\x0btune_layout\x94\x89\x8c\x11aggressive_fusion\x94\x89\x8c\x0fmax_fusion_size\x94K@\x8c\x1bunroll_reductions_threshold\x94K\x08\x8c\x0ecomment_origin\x94\x89\x8c\tis_fbcode\x94h\x02h9\x93\x94\x8c\x0fcompile_threads\x94K\n\x8c\x13kernel_name_max_ops\x94K\n\x8c\x0finductor_import\x94\x8c\x0ftorch._inductor\x94\x8c\rshape_padding\x94\x89\x8c\x0epermute_fusion\x94\x89\x8c\x1aprofiler_mark_wrapper_call\x94\x89\x8c\x03cpp\x94}\x94(\x8c\n__module__\x94h\x02\x8c\x07threads\x94J\xff\xff\xff\xff\x8c\x0fdynamic_threads\x94\x89\x8c\x07simdlen\x94N\x8c\x0emin_chunk_size\x94M\x00\x10\x8c\x03cxx\x94N\x8c\x03g++\x94\x86\x94\x8c\x15enable_kernel_profile\x94\x89h\x03Nu\x8c\x06triton\x94}\x94(hDh\x02\x8c\ncudagraphs\x94\x88\x8c\x10debug_sync_graph\x94\x89\x8c\x11debug_sync_kernel\x94\x89\x8c\x0bconvolution\x94\x8c\x04aten\x94\x8c\x0edense_indexing\x94\x89\x8c\tmax_tiles\x94K\x02\x8c\x12autotune_pointwise\x94\x88\x8c tiling_prevents_pointwise_fusion\x94\x88\x8c tiling_prevents_reduction_fusion\x94\x88\x8c\x14ordered_kernel_names\x94\x89\x8c\x18descriptive_kernel_names\x94\x89h\x03Nu\x8c\x05trace\x94}\x94(hDh\x02\x8c\x07enabled\x94\x89\x8c\tdebug_log\x94\x88\x8c\x08info_log\x94\x89\x8c\x08fx_graph\x94\x88\x8c\x14fx_graph_transformed\x94\x88\x8c\rir_pre_fusion\x94\x88\x8c\x0eir_post_fusion\x94\x88\x8c\x0boutput_code\x94\x88\x8c\rgraph_diagram\x94\x89\x8c\x0fcompile_profile\x94\x89\x8c\nupload_tar\x94Nh\x03Nu\x8c\x15InductorConfigContext\x94}\x94(hDh\x02\x8c\x0f__annotations__\x94}\x94(\x8c\rstatic_memory\x94\x8c\x08builtins\x94\x8c\x04bool\x94\x93\x94\x8c\x0ematmul_padding\x94hoh-ho\x8c\x12triton_convolution\x94hm\x8c\x03str\x94\x93\x94\x8c\x17rematerialize_threshold\x94hm\x8c\x03int\x94\x93\x94\x8c\x1brematerialize_acc_threshold\x94hvu\x8c\x05_save\x94h\x02\x8c\x1bInductorConfigContext._save\x94\x93\x94\x8c\x06_apply\x94h\x02\x8c\x1cInductorConfigContext._apply\x94\x93\x94\x8c\x08__init__\x94h\x02\x8c\x1eInductorConfigContext.__init__\x94\x93\x94\x8c\t__enter__\x94h\x02\x8c\x1fInductorConfigContext.__enter__\x94\x93\x94\x8c\x08__exit__\x94h\x02\x8c\x1eInductorConfigContext.__exit__\x94\x93\x94h\x03Nu\x8c\x1cget_config_serialization_fns\x94\x8c\x1atorch._dynamo.config_utils\x94h\x87\x93\x94u.')
+
+
+# REPLACEABLE COMMENT FOR TESTING PURPOSES
+
+
+args = [((32, 3, 256, 256), (196608, 65536, 256, 1), torch.float32, 'cuda', False)]
+args = [rand_strided(sh, st, dt, dev).requires_grad_(rg) for (sh, st, dt, dev, rg) in args]
+
+
+from torch.nn import *
+class Repro(torch.nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
-        self.self_encoder_conv1 = nn.Conv2d(3, 64, kernel_size=(4, 4), stride=(2, 2), padding=(1, 1)).cuda()
-        self.self_encoder_conv2 = nn.Conv2d(64, 128, kernel_size=(4, 4), stride=(2, 2), padding=(1, 1)).cuda()
+        super().__init__()
+        self.self_encoder_conv1 = Conv2d(3, 64, kernel_size=(4, 4), stride=(2, 2), padding=(1, 1)).cuda()
+        self.self_encoder_conv2 = Conv2d(64, 128, kernel_size=(4, 4), stride=(2, 2), padding=(1, 1)).cuda()
 
-    def forward(self, x: torch.Tensor):
-        x = self.self_encoder_conv1(x)
-        x = torch.nn.functional.relu(x)
-        x = self.self_encoder_conv2(x)
-        x = torch.nn.functional.relu(x)
-        return x
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    # Generate a random tensor input that matches the input expected by MyModel
-    batch_size, channels, height, width = 32, 3, 256, 256
-    return torch.rand(batch_size, channels, height, width, dtype=torch.float32, device='cuda')
+    def forward(self, x : torch.Tensor):
+        self_encoder_conv1 = self.self_encoder_conv1(x);  x = None
+        relu = torch.nn.functional.relu(self_encoder_conv1);  self_encoder_conv1 = None
+        self_encoder_conv2 = self.self_encoder_conv2(relu);  relu = None
+        relu_1 = torch.nn.functional.relu(self_encoder_conv2);  self_encoder_conv2 = None
+        return (relu_1,)
 
+
+mod = Repro()
+
+# Setup debug minifier compiler
+torch._dynamo.debug_utils.MINIFIER_SPAWNED = True
+compiler_fn = BACKENDS["dynamo_minifier_backend"]
+
+dynamo_minifier_backend = functools.partial(
+    compiler_fn,
+    compiler_name="inductor",
+)
+opt_mod = torch._dynamo.optimize(dynamo_minifier_backend)(mod)
+
+with torch.cuda.amp.autocast(enabled=True):
+    opt_mod(*args)

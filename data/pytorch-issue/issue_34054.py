@@ -1,23 +1,17 @@
-# torch.rand(3, dtype=torch.long)  # Inferred input shape from the provided tensor in the issue
-
 import torch
 import torch.nn as nn
+import onnxruntime
 
-class MyModel(nn.Module):
+class Net(nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
-
+        super(Net, self).__init__()
+    
     def forward(self, x):
-        # Create a mask where elements <= 1 are set to 0 and elements > 1 are set to 1
-        mask = (x > 1).long()
-        return mask
+        x = x.clone()
+        x[x <= 1] = 0
+        x[x > 1] = 1
+        return x
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # The input is a 1D tensor of shape (3,) with dtype=torch.long
-    return torch.randint(low=0, high=5, size=(3,), dtype=torch.long)
-
+model = Net()
+x=torch.tensor([4, 1, 3])
+torch.onnx.export(model, x, "dummy.pt", verbose=True, opset_version=11)

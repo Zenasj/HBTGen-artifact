@@ -1,18 +1,23 @@
-# torch.rand(2, 2048), torch.rand(128, 2048), torch.rand(128)  # input, weight, bias shapes
 import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        input, w, b = inputs
-        return torch.nn.functional.linear(input, w, b)
+class MyFunc(torch.nn.Module):
+  def __init__(self):
+    super(MyFunc, self).__init__()
 
-def my_model_function():
-    return MyModel()
+  def forward(self, input, w, b):
+    return torch.nn.functional.linear(input, w, b)
 
-def GetInput():
-    input = torch.rand(2, 2048, dtype=torch.float32)
-    w = torch.rand(128, 2048, dtype=torch.float32)
-    b = torch.rand(128, dtype=torch.float32)
-    return (input, w, b)
+input = torch.rand([2, 2048])
+w = torch.rand([128, 2048])
+b = torch.rand([128])
 
+m = MyFunc()
+ms = torch.jit.script(m)
+
+r1 = m(input, w, b)
+r2 = ms(input, w, b)
+r3 = m(input, w, b)
+
+print(torch.equal(r1, r2))
+print(torch.equal(r1, r3))

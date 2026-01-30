@@ -1,24 +1,17 @@
-# torch.rand(B, C, H, W, dtype=...)  # Inferred input shape: (batch_size, channels, height, width)
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv = nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3, stride=3)
+import torch
+# in_channels=3, out_channels=16, stride=3
+opt = torch.nn.Conv2d(3, 16, 3)
+# batch_size=5, channel=3, additional_dim=1, height=224, width=224 
+inputs = torch.randn(5, 3, 1, 224, 224)
+opt(inputs)
+# RuntimeError: Expected 4-dimensional input for 4-dimensional weight 16 3 3 3 140728118629264, but got 5-dimensional input of size [5, 3, 1, 224, 224] instead
 
-    def forward(self, x):
-        return self.conv(x)
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    batch_size = 5
-    channels = 3
-    height = 224
-    width = 224
-    return torch.randn(batch_size, channels, height, width)
-
+import torch
+# in_channels=3, out_channels=16, stride=3
+opt = torch.nn.Conv2d(3, 16, 3)
+# batch_size=5, channel=3, additional_dim=1, height=224, width=224 
+inputs = torch.randn(5, 3, 1, 224, 224)
+opt(inputs)
+# Expected 4-dimensional input for 4-dimensional weight 16 3 3 3, but got 5-dimensional input of size [5, 3, 1, 224, 224] instead

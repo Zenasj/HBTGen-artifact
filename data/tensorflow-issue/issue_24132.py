@@ -1,61 +1,93 @@
-# tf.random.uniform((B=4, H=100, W=100, C=3), dtype=tf.float32)
+from tensorflow import keras
+from tensorflow.keras import layers
+
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self, num_layers=3):
-        super(MyModel, self).__init__()
-        self.num_layers = num_layers
-        # We create a single ConvLayer instance that will internally create weights once.
-        # The original issue applied the same layer multiple times on the input, which is uncommon.
-        # Here we mimic the same behavior for demonstration.
-        self.conv_layer = self.ConvLayer()
 
-    class ConvLayer(tf.keras.layers.Layer):
-        def __init__(self):
-            super(MyModel.ConvLayer, self).__init__()
-            # Define weights in build() as recommended by Keras best practices
-            self.weights = None
+class ConvLayer(tf.keras.layers.Layer):
+    def call(self, image):
+        shape = (3, 3, 3, 16)
+        stddev = 1
+        weights = tf.get_variable(
+            name='weights',
+            initializer=tf.truncated_normal(shape, stddev=stddev),
+        )
+        conv = tf.nn.conv2d(image, weights, [1, 1, 1, 1], 'SAME')
+        return conv
 
-        def build(self, input_shape):
-            # input_shape expected: (batch, height, width, channels)
-            kernel_shape = (3, 3, input_shape[-1], 16)  # (filter_height, filter_width, in_channels, out_channels)
-            initializer = tf.keras.initializers.TruncatedNormal(stddev=1.0)
-            self.weights = self.add_weight(
+
+def get_train_op(loss):
+    global_step = tf.train.get_global_step()
+    optimizer = tf.contrib.optimizer_v2.AdamOptimizer(.001)  # use distribution-aware optimizer
+    train_op = optimizer.minimize(loss, global_step=global_step)
+    return train_op
+
+
+def model_fn(features, labels, mode):
+    image = features['image']
+
+    # if num_layers >= 3, graph construction will error if more than 1 gpu is used
+    num_layers = 3
+    layer = ConvLayer()
+    values = []
+    for _ in xrange(num_layers):
+        values.append(layer(image))
+    stacked_values = tf.concat(values, axis=0)
+
+    loss = tf.reduce_sum(stacked_values)
+    mode = tf.estimator.ModeKeys.TRAIN
+    train_op = get_train_op(loss)
+    return tf.estimator.EstimatorSpec(mode, loss=loss, train_op=train_op)
+
+
+def input_fn():
+
+    shape = (100, 100, 3)
+
+    def gen():
+        while True:
+            image = np.ones(shape, dtype=np.float32)
+            yield ({'image': image}, [])
+
+    ds = tf.data.Dataset.from_generator(
+        gen,
+        ({'image': tf.float32}, tf.float32),
+        output_shapes=({'image': tf.TensorShape(shape)}, tf.TensorShape(None)),
+    )
+    ds = ds.repeat().batch(4)
+    return ds
+
+
+# top-level call
+def run():
+    gpus = ['/device:GPU:0', '/device:GPU:1']
+    # MirroredStrategy fails
+    distribution = tf.contrib.distribute.MirroredStrategy(gpus)
+    # OneDeviceStrategy works
+    # distribution = tf.contrib.distribute.OneDeviceStrategy(gpus[0])
+
+    config = tf.estimator.RunConfig(
+        train_distribute=distribution,
+        model_dir='/path/to/output'
+    )
+    estimator = tf.estimator.Estimator(
+        model_fn=model_fn,
+        config=config,
+    )
+    estimator.train(
+        input_fn=input_fn,
+        steps=10,
+    )
+
+class ConvLayer(object):
+    def __call__(self, image):
+        with tf.variable_scope('conv_layer', reuse=tf.AUTO_REUSE):
+            shape = (3, 3, 3, 16)
+            stddev = 1
+            weights = tf.get_variable(
                 name='weights',
-                shape=kernel_shape,
-                initializer=initializer,
-                trainable=True,
+                initializer=tf.truncated_normal(shape, stddev=stddev),
             )
-            super(MyModel.ConvLayer, self).build(input_shape)
-
-        def call(self, inputs):
-            # Apply conv2d with stride 1 and SAME padding
-            conv = tf.nn.conv2d(inputs, self.weights, strides=[1,1,1,1], padding='SAME')
+            conv = tf.nn.conv2d(image, weights, [1, 1, 1, 1], 'SAME')
             return conv
-
-    def call(self, inputs):
-        """
-        Mimics the original pattern from the issue:
-        The same ConvLayer instance is applied multiple times to the same input tensor,
-        collecting outputs in a list, then concatenating them along axis=0 (batch dimension).
-        """
-        values = []
-        for _ in range(self.num_layers):
-            values.append(self.conv_layer(inputs))
-        # Concatenate outputs along batch dimension (axis=0)
-        stacked_values = tf.concat(values, axis=0)
-        return stacked_values
-
-
-def my_model_function():
-    # Return instance of MyModel with default 3 layer calls to mimic original behavior
-    return MyModel(num_layers=3)
-
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # Input shape is batch of 4, 100x100 RGB images as per original input_fn batching.
-    # Batch size 4 to match the batching in input_fn noted in the issue.
-    shape = (4, 100, 100, 3)
-    return tf.random.uniform(shape, dtype=tf.float32)
-

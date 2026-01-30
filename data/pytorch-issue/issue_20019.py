@@ -1,17 +1,9 @@
-# torch.rand(10**6, dtype=torch.float32, device='cuda')
 import torch
-from torch import nn
+print(torch.__version__)
+print(torch.prod(torch.ones(10 ** 6, device='cuda')))
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        return torch.prod(x)
+print(torch.prod(torch.ones(130_560, device='cuda'), dim=0))
+print(torch.prod(torch.ones(130_561, device='cuda'), dim=0))
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.ones(10**6, dtype=torch.float32, device='cuda')
-
+tensor(1., device='cuda:0')
+tensor(0., device='cuda:0')

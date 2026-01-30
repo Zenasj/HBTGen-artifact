@@ -1,20 +1,21 @@
-# torch.rand(B, 2, dtype=torch.float32)
-import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
+from typing import Any
+import torch
+
+class TestModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if x.shape[0] == 1:
-            return torch.tensor(1.0, dtype=x.dtype, device=x.device)
+    def forward(self, input: torch.Tensor) -> Any:
+        if input.shape[0] == 1:
+            return 1
         else:
-            return torch.tensor(3.0, dtype=x.dtype, device=x.device)
+            return "3"
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(2, 2)
-
+if __name__ == "__main__":
+    m = TestModule()
+    m_scripted = torch.jit.script(m)
+    print(m(torch.randn(1, 2)))
+    print(m_scripted(torch.randn(1, 2)))  # segfault!
+    print(m_scripted(torch.randn(2, 2)))  # segfault!

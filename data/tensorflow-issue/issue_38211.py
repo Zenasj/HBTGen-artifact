@@ -1,50 +1,46 @@
-# tf.random.uniform((B,)) ← Input is a 1D tensor of any batch size (vector), dtype float32 by default
+from tensorflow import keras
+from tensorflow.keras import layers
+
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
+class FooLayer(tf.keras.layers.Layer):
     def __init__(self, siz):
-        super(MyModel, self).__init__()
+        super(FooLayer, self).__init__()
         self.siz = siz
-        self.buildFoo()
+        self.buildFoo(siz)
 
     def call(self, in_data):
-        # Compute Foo0 = in_data * FooTns0 (scalar multiplication)
-        Foo0 = tf.multiply(in_data, self.FooTns0)
-        FooList = [Foo0]
-        # Iteratively multiply by each FooTns[i]
-        for i in range(self.siz):
-            tmp = tf.multiply(FooList[i], self.FooTns[i])
+        Foo0 = tf.multiply(in_data,self.FooTns0)
+        FooList = []
+        FooList.append(Foo0)
+        for it in range(1,self.siz+1):
+            tmp = tf.multiply(FooList[it-1],self.FooTns[it-1])
             FooList.append(tmp)
-        # Return the last element representing the "power" of multiplications
         return FooList[self.siz]
 
-    def buildFoo(self):
-        # Use add_weight instead of raw tf.Variable to ensure proper tracking by Keras
-        # Initialize the scalar variables with float32 dtype for proper multiplication with input tensor
-        self.FooTns0 = self.add_weight(
-            name="TNS0",
-            shape=(),
-            initializer=tf.keras.initializers.Constant(1.0),
-            trainable=True
-        )
+    def buildFoo(self,siz):
+        self.FooTns0 = tf.Variable(1, name="TNS0")
         self.FooTns = []
-        for i in range(self.siz):
-            # Initialize these weights with float values equal to their index (0,1,2,...)
-            var = self.add_weight(
-                name="TNS"+str(i+1),
-                shape=(),
-                initializer=tf.keras.initializers.Constant(float(i)),
-                trainable=True
-            )
-            self.FooTns.append(var)
+        for it in range(0,self.siz):
+            self.FooTns.append(tf.Variable(it, name="TNS"+str(it+1)))
 
-def my_model_function():
-    # Create a MyModel instance with siz=5 (matches example from issue)
-    return MyModel(siz=5)
+class FooModel(tf.keras.Model):
+    def __init__(self, siz):
+        super(FooModel, self).__init__()
+        self.flayer = FooLayer(siz)
 
-def GetInput():
-    # Generate a random input tensor matching the expected input shape (1D tensor)
-    # Since the model multiplies elementwise, shape can be (batch_size,)
-    # We use batch size 4 for demonstration, dtype float32 as default
-    return tf.random.uniform(shape=(4,), dtype=tf.float32)
+    def call(self, in_data):
+        return self.flayer(in_data)
 
+model = FooModel(5)
+
+for v in model.trainable_variables:
+    print(v.name)
+
+for v in model.variables:
+    print(v.name)
+
+TNS0:0
+TNS0:0

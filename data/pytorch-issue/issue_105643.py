@@ -1,19 +1,35 @@
-# torch.rand(1, 1, 1, 1, dtype=torch.float32)  # Inferred input shape based on example scalar usage
+py
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        values = ()
-        values += (x,)
-        return values  # Returns a tuple containing the input tensor
+@torch.compile(fullgraph=True)
+def foo(x):
+    values = ()
+    values += (x,)
 
-def my_model_function():
-    return MyModel()
+    return values
 
-def GetInput():
-    return torch.rand(1, 1, 1, 1)  # 4D tensor to match required input shape format
+foo(torch.tensor(2))
 
+py
+import torch
+
+@torch.compile(fullgraph=True)
+def foo(x):
+    values = []
+    values += [x]
+
+    return values
+
+foo(torch.tensor(2))
+
+py
+import torch
+
+@torch.compile(fullgraph=True)
+def foo(x, y):
+    values = (y,)
+    values += (x,)
+
+    return values
+
+foo(torch.tensor(2), torch.tensor(3))

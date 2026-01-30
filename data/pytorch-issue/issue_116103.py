@@ -1,20 +1,10 @@
-# torch.rand(B, 5, 3, dtype=torch.float32)
 import torch
-from torch import nn
+from pathlib import Path
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.linear = nn.Linear(3, 5)  # Matches input shape from example
-        
-    def forward(self, x):
-        return self.linear(x)
+print(torch.__version__)
 
-def my_model_function():
-    # Initialize model with default weights
-    return MyModel()
+file = Path("example.pt")
+torch.save(torch.rand(5, 3), file)
 
-def GetInput():
-    # Reproduces input shape from issue's example
-    return torch.rand(5, 3)
-
+print(torch.load(file, mmap=False))  # works!
+print(torch.load(file, mmap=True))   # does not work!

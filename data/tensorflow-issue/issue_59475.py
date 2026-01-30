@@ -1,27 +1,33 @@
-# tf.random.uniform((1875,), dtype=tf.int32) ← input shape inferred from np.array of length 1875 used in the loop
-
 import tensorflow as tf
+import numpy as np
 
-class MyModel(tf.keras.Model):
+
+class test:
     def __init__(self):
-        super().__init__()
-        # No trainable parameters or layers needed for this simple condition check
+        self.counter=None
     
-    def sum_func(self, counter):
-        # sum_func equivalent implemented as pure tf operation
-        return tf.equal(tf.reduce_sum(counter), 1875)
+    
+    def sum_func(self):
+        if np.sum(self.counter)==1875:
+            return True
+    
     
     @tf.function
-    def call(self, counter):
-        # Equivalent of tf_func in user code
-        return self.sum_func(counter)
+    def tf_func(self):
+        flag=self.sum_func()
+        return flag
+    
+    
+    def counter_func(self):
+        while True:
+            for i in range(1875):
+                if i==0:
+                    self.counter=np.array(1)
+                else:
+                    self.counter=np.append(self.counter,np.array(1))
+                flag=self.tf_func()
+                if flag==True:
+                    return
 
-def my_model_function():
-    # Return an instance of MyModel; no special initialization required
-    return MyModel()
-
-def GetInput():
-    # Return a 1-D int32 tensor of length 1875 filled with ones to represent the input array "counter"
-    # as built in the original code by appending 1 each step up to 1875 elements.
-    return tf.ones(shape=(1875,), dtype=tf.int32)
-
+t=test()
+t.counter_func()

@@ -1,21 +1,16 @@
-# torch.rand(16, 3, 224, 224, dtype=torch.float16)
+import torch.nn as nn
+
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.bn = nn.BatchNorm2d(3, affine=True, track_running_stats=True)
-    
-    def forward(self, x):
-        return self.bn(x)
 
-def my_model_function():
-    return MyModel()
+op = torch.nn.BatchNorm2d(num_features=3, affine=True, track_running_stats=True)
+ifm = torch.empty(size=[16, 3, 224, 224]).uniform_(0, 1).to(dtype=torch.float16)
+ifm = ifm.contiguous(memory_format=torch.channels_last) # this creates Nan in output
+ifm = ifm.requires_grad_()
 
-def GetInput():
-    x = torch.rand(16, 3, 224, 224, dtype=torch.float16)
-    x = x.contiguous(memory_format=torch.channels_last)
-    x.requires_grad_()
-    return x
+res = op(ifm)
+bwd_tensor = torch.empty(size=res.shape).uniform_(0, 1).to(dtype=torch.float16)
 
+res.backward(bwd_tensor)
+
+print(ifm.grad)

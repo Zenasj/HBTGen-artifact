@@ -1,47 +1,47 @@
-# tf.random.uniform((B, 28, 28), dtype=tf.float32) ← Input shape inferred from MNIST dataset (28x28 grayscale images)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
+from collections import defaultdict
+import gc
+import objgraph
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Model architecture from issue reproducible code:
-        # Sequential:
-        # Flatten input_shape=(28, 28)
-        # Dense(128) relu
-        # Dropout(0.2)
-        # Dense(10) softmax
-        
-        # Defining layers explicitly as submodules to fit tf.keras.Model subclass style
-        self.flatten = tf.keras.layers.Flatten(input_shape=(28, 28))
-        self.dense1 = tf.keras.layers.Dense(128, activation='relu')
-        self.dropout = tf.keras.layers.Dropout(0.2)
-        self.dense2 = tf.keras.layers.Dense(10, activation='softmax')
+mnist = tf.keras.datasets.mnist
+
+(x_train, y_train), (x_test, y_test) = mnist.load_data()
+x_train, x_test = x_train / 255.0, x_test / 255.0
+
+model = tf.keras.models.Sequential([
+    tf.keras.layers.Flatten(input_shape=(28, 28)),
+    tf.keras.layers.Dense(128, activation='relu'),
+    tf.keras.layers.Dropout(0.2),
+    tf.keras.layers.Dense(10, activation='softmax')
+])
+
+model.compile(optimizer='adam',
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
+
+model.fit(x_train, y_train, epochs=5)
+
+model.evaluate(x_test,  y_test, verbose=2)
+
+
+def mem_stat():
     
-    def call(self, inputs, training=False):
-        x = self.flatten(inputs)
-        x = self.dense1(x)
-        x = self.dropout(x, training=training)
-        output = self.dense2(x)
-        return output
+    objs = gc.get_objects()
+    print("total objects count", len(objs))
+    
+c = 1
+while True:
+    print("----------- iter", c)
 
-def my_model_function():
-    # Instantiate the model
-    model = MyModel()
-    # Compile with same loss/optimizer/metrics as original in issue
-    model.compile(
-        optimizer='adam',
-        loss='sparse_categorical_crossentropy',
-        metrics=['accuracy']
-    )
-    # Train weights are not loaded here since no data given,
-    # but user can train or load weights externally.
-    return model
+    model.predict(x_test)
+    
+    gc.collect()
 
-def GetInput():
-    # Return a batch of dummy MNIST-like inputs matching model input shape
-    # Batch size is arbitrarily chosen as 32
-    # Input tensor elements normalized [0, 1] float32, shape (B, 28, 28)
-    batch_size = 32
-    return tf.random.uniform((batch_size, 28, 28), dtype=tf.float32)
-
+    print("mem stat after predict:")
+    mem_stat()
+    objgraph.show_growth(limit=30)
+    c += 1

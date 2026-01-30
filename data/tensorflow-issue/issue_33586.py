@@ -1,77 +1,161 @@
-# tf.random.normal((54, 4), dtype=tf.float32) and tf.random.normal((54,), dtype=tf.float32) ← Input shapes for boxes and scores/classes respectively
+import random
 
 import tensorflow as tf
+import numpy as np
+import os
 
-class MyModel(tf.keras.Model):
-    def __init__(self, max_boxes=10, iou_threshold=0.5, score_threshold=0.1, soft_nms_sigma=0.0):
-        super(MyModel, self).__init__()
-        self.max_boxes = max_boxes
-        self.iou_threshold = iou_threshold
-        self.score_threshold = score_threshold
-        self.soft_nms_sigma = soft_nms_sigma
-
-    @tf.function(jit_compile=True)
-    def call(self, inputs):
-        """
-        inputs: tuple of (scores, boxes, classes)
-          scores: float32 tensor of shape (N,)
-          boxes: float32 tensor of shape (N, 4)
-          classes: float32 or int tensor of shape (N,)
-
-        Returns:
-          Tuple (scores_out, boxes_out, classes_out) after non max suppression
-          Each with shape (<= max_boxes, ...)
-        """
-        scores, boxes, classes = inputs
-
-        max_output_size = tf.constant(self.max_boxes, dtype=tf.int32)
-        # Use tf.image.non_max_suppression which corresponds to NonMaxSuppressionV3 internally
-
-        # We do NOT place the op explicitly on GPU because in TF 1.15 NonMaxSuppression ops
-        # do not have GPU kernels, which leads to an InvalidArgumentError.
-        # Instead, we rely on allow_soft_placement or default device placement to place
-        # NMS on CPU automatically while rest of graph can run on GPU.
-
-        nms_indices = tf.image.non_max_suppression(
-            boxes=boxes,
-            scores=scores,
-            max_output_size=max_output_size,
-            iou_threshold=self.iou_threshold,
-            score_threshold=self.score_threshold
-        )
-
-        # Gather filtered boxes, scores, classes
-        filtered_scores = tf.gather(scores, nms_indices)
-        filtered_boxes = tf.gather(boxes, nms_indices)
-        filtered_classes = tf.gather(classes, nms_indices)
-
-        return filtered_scores, filtered_boxes, filtered_classes
+import time
+from tensorflow.python.ops import gen_image_ops
 
 
-def my_model_function():
-    # Return an instance of MyModel with default parameters suitable for typical usage
-    return MyModel(max_boxes=10, iou_threshold=0.5, score_threshold=0.1)
-
-
-def GetInput():
-    # Generate valid random input tensors matching expected shapes and dtypes
+def yolo_non_max_suppression(scores, boxes, classes, sess, max_boxes = 10, iou_threshold = 0.5):
+    """
+    Applies Non-max suppression (NMS) to set of boxes
     
-    # Using float32, as required for tf.image.non_max_suppression compatibility on GPU/CPU
-    N = 54  # Number of boxes / scores
+    Arguments:
+    scores -- tensor of shape (None,), output of yolo_filter_boxes()
+    boxes -- tensor of shape (None, 4), output of yolo_filter_boxes() that have been scaled to the image size (see later)
+    classes -- tensor of shape (None,), output of yolo_filter_boxes()
+    max_boxes -- integer, maximum number of predicted boxes you'd like
+    iou_threshold -- real value, "intersection over union" threshold used for NMS filtering
     
-    # boxes: shape (N,4): each box is [ymin, xmin, ymax, xmax] format float32
-    # Generate plausible box coordinates with ymin < ymax and xmin < xmax in [0, 1]
-    ymin = tf.random.uniform((N,), minval=0, maxval=0.5, dtype=tf.float32)
-    xmin = tf.random.uniform((N,), minval=0, maxval=0.5, dtype=tf.float32)
-    ymax = tf.random.uniform((N,), minval=0.5, maxval=1.0, dtype=tf.float32)
-    xmax = tf.random.uniform((N,), minval=0.5, maxval=1.0, dtype=tf.float32)
-    boxes = tf.stack([ymin, xmin, ymax, xmax], axis=1)
+    Returns:
+    scores -- tensor of shape (, None), predicted score for each box
+    boxes -- tensor of shape (4, None), predicted box coordinates
+    classes -- tensor of shape (, None), predicted class for each box
+    
+    Note: The "None" dimension of the output tensors has obviously to be less than max_boxes. Note also that this
+    function will transpose the shapes of scores, boxes, classes. This is made for convenience.
+    """
+   
+    init_val_np = np.array ( [max_boxes], dtype=np.int32) 
+    max_boxes_tensor = tf.Variable(max_boxes,  dtype='int32')     # tensor to be used in tf.image.non_max_suppression()
+    sess.run(tf.variables_initializer([max_boxes_tensor])) # initialize variable max_boxes_tensor
+    
+    # Use tf.image.non_max_suppression() to get the list of indices corresponding to boxes you keep
+    ### START CODE HERE ### (~ 1 line)
+    with tf.device("gpu:0"):
+        boxes_np = boxes.eval() 
+        time0 = time.time()
+        score_threshold = 0.1
+        soft_nms_sigma=0.0
+        pad_to_max_output_size=False
+        for i in range(1,2):
+            nms_indices = tf.image.non_max_suppression(boxes, scores, max_boxes_tensor, iou_threshold=iou_threshold)
+            #nms_indices = nms(boxes_np, 0.5)
+            #nms_indices = gen_image_ops.non_max_suppression_v2(boxes, scores, max_boxes_tensor, iou_threshold, )
+            #nms_indices = gen_image_ops.non_max_suppression_v3(boxes, scores, max_boxes_tensor, iou_threshold, score_threshold)
+            #nms_indices = gen_image_ops.non_max_suppression_v4(boxes, scores, max_boxes_tensor, iou_threshold, score_threshold, pad_to_max_output_size)
+            #nms_indices = gen_image_ops.non_max_suppression_v5(boxes, scores, max_boxes_tensor, iou_threshold, score_threshold, soft_nms_sigma)
+            if i%100 == 0:
+                print (i, (time.time() - time0)/i )
+        ### END CODE HERE ###
 
-    # scores: random float32 confidence scores
-    scores = tf.random.normal((N,), mean=1.0, stddev=4.0, dtype=tf.float32, seed=1)
-
-    # classes: random int32 class indices from 0 to 9 for example
-    classes = tf.random.uniform((N,), minval=0, maxval=10, dtype=tf.int32, seed=1)
+        ### START CODE HERE ### (~ 3 lines)
+        scores = tf.gather(scores, nms_indices)
+        boxes = tf.gather(boxes, nms_indices)
+        classes = tf.gather(classes, nms_indices)
+        summary_writer = tf.summary.FileWriter(os.getenv('TENSORBOARD_DIR'), sess.graph)
+        ### END CODE HERE ###
 
     return scores, boxes, classes
 
+def test_yolo_non_max_suppression():
+    with tf.device("cpu:0"):
+        with tf.Session() as test_b:
+            scores = tf.random_normal([54,], mean=1, stddev=4, seed = 1)
+            boxes = tf.random_normal([54, 4], mean=1, stddev=4, seed = 1)
+            classes = tf.random_normal([54,], mean=1, stddev=4, seed = 1)
+            scores, boxes, classes = yolo_non_max_suppression(scores, boxes, classes, test_b)
+            #scores, boxes, classes = yolo_non_max_suppression0(scores, boxes, classes)
+            print("scores[2] = " + str(scores[2].eval()))
+            print("boxes[2] = " + str(boxes[2].eval()))
+            print("classes[2] = " + str(classes[2].eval()))
+            print("scores.shape = " + str(scores.eval().shape))
+            print("boxes.shape = " + str(boxes.eval().shape))
+            print("classes.shape = " + str(classes.eval().shape))
+
+
+test_yolo_non_max_suppression()
+
+scores = tf.random_normal([54,], mean=1, stddev=4, seed = 1)
+boxes = tf.random_normal([54, 4], mean=1, stddev=4, seed = 1)
+classes = tf.random_normal([54,], mean=1, stddev=4, seed = 1)
+
+scores = tf.random_normal([54,], mean=1, dtype = tf.float32, stddev=4, seed = 1)
+boxes = tf.random_normal([54, 4], mean=1, dtype = tf.float32, stddev=4, seed = 1)
+classes = tf.random_normal([54,], mean=1, dtype = tf.float32, stddev=4, seed = 1)
+
+py
+"""Minimum reproducing example.
+
+Device specs:
+    GPU: NVIDIA RTX 2080
+    TF version: 1.15 (tensorflow/tensorflow:1.15.0-gpu-py3 container)
+    Python version: 3.6.8
+    Host driver: 418.56
+    CUDA version: 10.1
+"""
+import numpy as np
+import tensorflow as tf
+from tensorflow.python.ops import gen_image_ops
+
+# Use placeholder to guarantee that we are feeding floats
+boxes = tf.placeholder(tf.float32, [5, 4])
+scores = tf.placeholder(tf.float32, [5])
+with tf.device('gpu:0'):
+    # Try out all 5 of the NMS options, tf.image.non_max_suppression uses V3
+    # behind the scenes.
+    indices1 = tf.image.non_max_suppression(
+        boxes=boxes, scores=scores, max_output_size=2, iou_threshold=0.5)
+    indices2 = gen_image_ops.non_max_suppression_v2(
+        boxes=boxes, scores=scores, max_output_size=2, iou_threshold=0.5)
+    indices3 = gen_image_ops.non_max_suppression_v3(
+        boxes=boxes, scores=scores, max_output_size=2, iou_threshold=0.5,
+        score_threshold=0.5)
+    indices4 = gen_image_ops.non_max_suppression_v4(
+        boxes=boxes, scores=scores, max_output_size=2, iou_threshold=0.5,
+        score_threshold=0.5, pad_to_max_output_size=False)
+    # V5 doesn't exist in TF1.15 yet
+    #indices5 = gen_image_ops.non_max_suppression_v5(
+    #    boxes=boxes, scores=scores, max_output_size=2, iou_threshold=0.5,
+    #    score_threshold=0.5, soft_nms_sigma=0.0, pad_to_max_output_size=False)
+
+# Log device placement to see if NMS op is placed on GPU
+sess = tf.Session(config=tf.ConfigProto(log_device_placement=True))
+
+# None of these 5 work
+try:
+    sess.run(indices1, feed_dict={
+        boxes: np.random.random([5, 4]),
+        scores: np.random.random([5])})
+except Exception as e:
+    print('tf.image.non_max_suppression failed: ', e)
+
+try:
+    sess.run(indices2, feed_dict={
+        boxes: np.random.random([5, 4]),
+        scores: np.random.random([5])})
+except Exception as e:
+    print('gen_image_ops.non_max_suppression_v2 failed: ', e)
+
+try:
+    sess.run(indices3, feed_dict={
+        boxes: np.random.random([5, 4]),
+        scores: np.random.random([5])})
+except Exception as e:
+    print('gen_image_ops.non_max_suppression_v3 failed: ', e)
+
+try:
+    sess.run(indices4, feed_dict={
+        boxes: np.random.random([5, 4]),
+        scores: np.random.random([5])})
+except Exception as e:
+    print('gen_image_ops.non_max_suppression_v4 failed: ', e)
+
+#try:
+#    sess.run(indices5, feed_dict={
+#        boxes: np.random.random([5, 4]),
+#        scores: np.random.random([5])})
+#except Exception as e:
+#    print('gen_image_ops.non_max_suppression_v5 failed: ', e)

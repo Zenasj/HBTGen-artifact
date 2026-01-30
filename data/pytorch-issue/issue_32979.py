@@ -1,0 +1,6 @@
+from deeplearning.numeric_suite.toolkit import packed_weights_inspector
+# inspect fp16 packed weights
+unpacked_fp16_weights = packed_weights_inspector.extract_fp16_fc_packed_weights(fp16_weight_blob_name)
+
+# inspect int8 packed weights
+unpacked_int8_weights, qparams = packed_weights_inspector.extract_int8_fc_packed_weights(int8_weight_blob_name)

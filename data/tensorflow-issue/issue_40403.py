@@ -1,71 +1,67 @@
-# tf.random.uniform((64, None), dtype=tf.int32) ← Input shape is a batch of sequences with variable length, batch size 64, integer tokens
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
+import tensorflow_datasets as tfds
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # From the provided code snippet:
-        # Embedding layer maps vocabulary size to embedding dimension 64
-        # Bidirectional LSTM with 64 units
-        # Dense layer with 64 units and relu activation
-        # Final Dense layer outputting a scalar (for binary classification logits)
-        #
-        # Note: Since the vocabulary size is dataset-dependent, we will set a placeholder
-        # vocab_size here and expect it as an argument when creating the model.
-        #
-        # The original code uses subwords8k encoder, so vocab size = 8192 approx.
-        # We'll default to 8192 but allow override.
-        
-        # These layers mimic the original model structure with Bidirectional LSTM
-        self.embedding = tf.keras.layers.Embedding(input_dim=8192, output_dim=64)
-        self.bidir_lstm = tf.keras.layers.Bidirectional(
-            tf.keras.layers.LSTM(64)
-        )
-        self.dense1 = tf.keras.layers.Dense(64, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(1)  # no activation, from_logits=True used in loss
+import matplotlib.pyplot as plt
 
-    def call(self, inputs, training=False):
-        """
-        Forward pass of the model.
-        :param inputs: A batch of sequences with padded tokens (batch_size, seq_len).
-        :param training: Boolean, whether in training mode.
-        :return: logits tensor of shape (batch_size, 1).
-        """
-        x = self.embedding(inputs)  # shape: (batch_size, seq_len, 64)
-        x = self.bidir_lstm(x, training=training)  # shape: (batch_size, 128) because bidir doubles units
-        x = self.dense1(x)  # shape: (batch_size, 64)
-        logits = self.dense2(x)  # shape: (batch_size, 1)
-        return logits
+def plot_graphs(history, metric):
+    plt.plot(history.history[metric])
+    plt.plot(history.history['val_'+metric], '')
+    plt.xlabel("Epochs")
+    plt.ylabel(metric)
+    plt.legend([metric, 'val_'+metric])
+    plt.show()
 
-def my_model_function():
-    """
-    Creates an instance of MyModel with the assumed vocabulary size.
-    Adjust the vocab_size in MyModel if necessary.
-    """
-    model = MyModel()
-    return model
 
-def GetInput():
-    """
-    Returns a batch of random integer sequences matching expected input.
-    The input matches the shape and dtype expected by MyModel:
-      - batch size 64 (from original code BATCH_SIZE)
-      - variable sequence length padded batches; we fix length here for tensor shape
-      - token IDs in range [0, vocab_size)
-    Uses sequence length 100 as a reasonable guess to allow stable input.
-    """
-    batch_size = 64
-    seq_length = 100  # fixed length for uniform input tensor; original batches padded dynamically
-    vocab_size = 8192  # from subwords8k vocabulary size
+dataset, info = tfds.load('imdb_reviews/subwords8k', with_info=True,
+                          as_supervised=True)
+train_dataset, test_dataset = dataset['train'], dataset['test']
 
-    # Random integer tensor of (batch_size, seq_length)
-    # Using tf.random.uniform with integer dtype is valid in TF >= 2.0
-    inputs = tf.random.uniform(
-        shape=(batch_size, seq_length),
-        minval=0,
-        maxval=vocab_size,
-        dtype=tf.int32
-    )
-    return inputs
+encoder = info.features['text'].encoder
+print('Vocabulary size: {}'.format(encoder.vocab_size))
 
+sample_string = 'Hello TensorFlow.'
+
+encoded_string = encoder.encode(sample_string)
+print('Encoded string is {}'.format(encoded_string))
+
+original_string = encoder.decode(encoded_string)
+print('The original string: "{}"'.format(original_string))
+
+assert original_string == sample_string
+
+for index in encoded_string:
+    print('{} ----> {}'.format(index, encoder.decode([index])))
+
+BUFFER_SIZE = 10000
+BATCH_SIZE = 64
+
+train_dataset = train_dataset.shuffle(BUFFER_SIZE)
+train_dataset = train_dataset.padded_batch(BATCH_SIZE)
+test_dataset = test_dataset.padded_batch(BATCH_SIZE)
+
+for example_batch, label_batch in train_dataset.take(20):
+    print("Batch shape:", example_batch.shape)
+    print("label shape:", label_batch.shape)
+
+model = tf.keras.Sequential([
+    tf.keras.layers.Embedding(encoder.vocab_size, 64),
+    tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(64)),
+    tf.keras.layers.Dense(64, activation='relu'),
+    tf.keras.layers.Dense(1)
+])
+
+model.compile(loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
+              optimizer=tf.keras.optimizers.Adam(1e-4),
+              metrics=['accuracy'])
+
+history = model.fit(train_dataset, epochs=10,
+                    validation_data=test_dataset, 
+                    validation_steps=30)
+test_loss, test_acc = model.evaluate(test_dataset)
+
+print('Test Loss: {}'.format(test_loss))
+print('Test Accuracy: {}'.format(test_acc))

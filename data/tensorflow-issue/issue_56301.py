@@ -1,44 +1,65 @@
-# tf.random.uniform((1, 21 * 3 * 2 * 21), dtype=tf.float32)  # Input shape: (batch=1, features=21*3*2*21)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
+import os
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # The original model layers based on the Sequential model described:
-        # Input shape: (21*3*2*21,) i.e. flat vector
-        # Reshape to (21, 3*2*21)
-        # Then LSTM layers with Dropout, ending with Dense(27, softmax)
-        
-        self.reshape = tf.keras.layers.Reshape((21, 3*2*21))  # (21, 126)
-        # LSTM(8, return_sequences=True, unroll=True), followed by Dropout(0.4)
-        # LSTM(8), Dropout(0.5)
-        # Dense(27, activation='softmax')
-        # unroll=True is deprecated in TF 2.20; still we keep same semantics
-        self.lstm1 = tf.keras.layers.LSTM(8, return_sequences=True, unroll=True)
-        self.dropout1 = tf.keras.layers.Dropout(0.4, seed=42)
-        self.lstm2 = tf.keras.layers.LSTM(8, unroll=True)
-        self.dropout2 = tf.keras.layers.Dropout(0.5, seed=42)
-        self.dense = tf.keras.layers.Dense(27, activation='softmax')
-        
-    def call(self, inputs, training=False):
-        x = self.reshape(inputs)
-        x = self.lstm1(x, training=training)
-        x = self.dropout1(x, training=training)
-        x = self.lstm2(x, training=training)
-        x = self.dropout2(x, training=training)
-        x = self.dense(x)
-        return x
 
-def my_model_function():
-    # Return an instance of MyModel - weights are randomly initialized here,
-    # since original weights/model file paths are not available.
-    return MyModel()
+def representative_data_gen():
+    for input_value in tf.data.Dataset.from_tensor_slices(X_train).batch(1).take(X_train.shape[0]):
+    # Model has only one input so each data point has one element.
+        yield [input_value]
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # The input shape is (batch_size=1, 21*3*2*21=2646)
-    batch_size = 1
-    input_dim = 21 * 3 * 2 * 21
-    return tf.random.uniform(shape=(batch_size, input_dim), dtype=tf.float32)
 
+training = ""
+model_save_path = ""
+
+X_train = np.loadtxt(training, delimiter=',', dtype='float32', usecols=list(range(1, (21 * 3 * 2 * 21) + 1)))
+y_train = np.loadtxt(training, delimiter=',', dtype='int32', usecols=(0))
+    
+model = tf.keras.models.Sequential([                            
+          tf.keras.layers.InputLayer(input_shape=(21 * 3 * 2 * 21, )),
+          tf.keras.layers.Reshape((21, 3 * 2 * 21)),        
+          tf.keras.layers.LSTM(8, return_sequences=True, unroll=True),
+          tf.keras.layers.Dropout(0.40, seed=42),
+          tf.keras.layers.LSTM(8, unroll=True),        
+          tf.keras.layers.Dropout(0.50, seed=42),             
+          tf.keras.layers.Dense(27, activation='softmax')])    
+               
+           
+model.compile(
+    optimizer='adam',
+    loss='sparse_categorical_crossentropy',
+    metrics=['accuracy']
+)
+
+history = model.fit(
+    X_train,
+    y_train,
+    epochs=100,
+    batch_size=256,
+)
+
+model.save(model_save_path, include_optimizer=False)   
+model = tf.keras.models.load_model(model_save_path)
+
+run_model = tf.function(lambda x: model(x))
+concrete_func = run_model.get_concrete_function(tf.TensorSpec([1, model.inputs[0].shape[1]], model.inputs[0].dtype))
+
+converter = tf.lite.TFLiteConverter.from_concrete_functions([concrete_func])  
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.experimental_new_converter = True
+#converter.representative_dataset = representative_data_gen
+converter.experimental_new_quantizer = True
+converter.experimental_enable_resource_variables = True
+converter.allow_custom_ops = True
+converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS, tf.lite.OpsSet.SELECT_TF_OPS]
+tflite_quantized_model = converter.convert()
+
+
+open("", 'wb').write(tflite_quantized_model)
+
+interpreter = tf.lite.Interpreter(model_path="")
+interpreter.allocate_tensors()

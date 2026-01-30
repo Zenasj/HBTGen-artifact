@@ -1,14 +1,13 @@
-# torch.randint(0, 10, (1,), dtype=torch.long)
+import torch.nn as nn
+
 import torch
 from torch import nn
-
-class MyModel(nn.Module):
+class A(nn.Module):
     def forward(self, x):
         return x * 2
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.randint(0, 10, (1,), dtype=torch.long)
-
+print(torch.__version__)
+model = A()
+trace = torch.jit.trace(model, torch.tensor([3]))
+print(trace.inlined_graph)
+n = trace.inlined_graph.nodes()
+print(list(n))

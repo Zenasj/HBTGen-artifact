@@ -1,23 +1,24 @@
-# tf.random.uniform((1, 64), dtype=tf.int32) ← inferred from input_spec: shape [1,64], dtype int32
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
+class MYMODEL(tf.keras.Model):
     def __init__(self):
-        super(MyModel, self).__init__()
-        # A single Dense layer with 10 units as per the original example
+        super(MYMODEL, self).__init__()
         self.dense1 = tf.keras.layers.Dense(10)
-        
     def call(self, inputs):
-        # Forward pass through the dense layer
-        return self.dense1(inputs)
+        output = self.dense1(inputs)
+        return output
 
-def my_model_function():
-    # Return an instance of MyModel - no special initialization needed here
-    return MyModel()
+model_keras = MYMODEL()
 
-def GetInput():
-    # Return a random tensor that matches the input spec used in the issue:
-    # batch size 1, input dimension 64, dtype int32 as per original example
-    return tf.random.uniform((1, 64), minval=0, maxval=100, dtype=tf.int32)
+input_spec = tf.TensorSpec([1, 64], tf.int32)
+model_keras._set_inputs(input_spec, training=False)
 
+# keras_input = tf.keras.Input([64], batch_size=1, dtype=tf.int32)
+# keras_output = model_keras(keras_input, training=False)
+# model_keras = tf.keras.Model(keras_input, keras_output)
+
+print(model_keras.inputs)
+print(model_keras.outputs)

@@ -1,266 +1,154 @@
-# tf.random.uniform((B, 512, 512, 1), dtype=tf.float32)
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
+
+#create the model
+model = Model(input_img,d1)
+
+#review the model   
+model.summary()
+
+#Compile the model
+model.compile(optimizer=optimizer,loss=theLoss,metrics =['accuracy'])
+
+#save the only the best weights acheived during training
+filepath='weights.best.hdf5'
+checkpoint = ModelCheckpoint(filepath, monitor='val_acc',verbose=1,save_best_only=True,mode='max')
+callbacks_list=[checkpoint]
+
+y_train = to_categorical(y_train,num_classes=2)
+X_train = X_train
+
+#fit model
+model.fit(X_train,y_train,validation_split=(0.15),epochs=1,batch_size=2,verbose=1,callbacks=callbacks_list,shuffle=True)
+
 import tensorflow as tf
+print(tf.__version__)
+import tensorflow.keras.backend as K
+from tensorflow.keras.models import Model, load_model
+from tensorflow.keras.initializers import glorot_normal, VarianceScaling,he_normal
+from tensorflow.keras.utils import to_categorical, HDF5Matrix
+from tensorflow.keras.callbacks import ModelCheckpoint
+from tensorflow.keras.layers import Dense, Flatten, Input, GlobalMaxPooling2D, Dropout, Conv2D,Activation,MaxPooling2D,Add
+from tensorflow.keras.layers import BatchNormalization, concatenate, UpSampling2D, Concatenate
+from tensorflow.keras.optimizers import Adam, Nadam, RMSprop
+from tensorflow.keras import regularizers
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Hyperparameters and configurations
-        self.ks = 3
-        self.rg = 0.01
-        self.activation = 'relu'
-        self.ch1 = 32
-        self.ch2 = self.ch1 * 2
-        self.ch3 = self.ch2 * 2
-        self.ch4 = self.ch3 * 2
-        self.ch5 = self.ch4 * 2
-        self.init = tf.keras.initializers.glorot_normal(seed=0)
-        # Layers for encoder
-        self.conv_in = tf.keras.layers.Conv2D(self.ch1, self.ks, padding='same', use_bias=True,
-                                              kernel_initializer=self.init,
-                                              kernel_regularizer=tf.keras.regularizers.l2(self.rg),
-                                              bias_initializer='zeros')
-        self.conv_x1_1 = tf.keras.layers.Conv2D(self.ch1, self.ks, padding='same', use_bias=True,
-                                                kernel_initializer=self.init,
-                                                kernel_regularizer=tf.keras.regularizers.l2(self.rg),
-                                                bias_initializer='zeros')
-        self.act_x1 = tf.keras.layers.Activation(self.activation)
-        self.bn_x1 = tf.keras.layers.BatchNormalization(axis=-1)
-        self.add_x1 = tf.keras.layers.Add()
-        self.pool_x1 = tf.keras.layers.MaxPooling2D((2, 2), padding='same')
+tf.compat.v1.reset_default_graph()
+K.clear_session()
 
-        self.conv_x2_0 = tf.keras.layers.Conv2D(self.ch2, self.ks, padding='same', use_bias=True,
-                                                kernel_initializer=self.init,
-                                                kernel_regularizer=tf.keras.regularizers.l2(self.rg),
-                                                bias_initializer='zeros')
-        self.conv_x2_1 = tf.keras.layers.Conv2D(self.ch2, self.ks, padding='same', use_bias=True,
-                                                kernel_initializer=self.init,
-                                                kernel_regularizer=tf.keras.regularizers.l2(self.rg),
-                                                bias_initializer='zeros')
-        self.act_x2 = tf.keras.layers.Activation(self.activation)
-        self.bn_x2 = tf.keras.layers.BatchNormalization(axis=-1)
-        self.add_x2 = tf.keras.layers.Add()
-        self.pool_x2 = tf.keras.layers.MaxPooling2D((2, 2), padding='same')
+#hyperparams
+input_img = Input(shape=(512,512,1))
+ch1=32
+ch2=ch1*2
+ch3=ch2*2
+ch4 = ch3*2
+ch5 = ch4*2
+ks=3
+rg = 0.01
+init = glorot_normal(seed=0)
+activation = 'relu'
+optimizer = Adam(learning_rate=0.00001)
+theLoss = 'categorical_crossentropy'
 
-        self.conv_x3_0 = tf.keras.layers.Conv2D(self.ch3, self.ks, padding='same', use_bias=True,
-                                                kernel_initializer=self.init,
-                                                kernel_regularizer=tf.keras.regularizers.l2(self.rg),
-                                                bias_initializer='zeros')
-        self.conv_x3_1 = tf.keras.layers.Conv2D(self.ch3, self.ks, padding='same', use_bias=True,
-                                                kernel_initializer=self.init,
-                                                kernel_regularizer=tf.keras.regularizers.l2(self.rg),
-                                                bias_initializer='zeros')
-        self.act_x3 = tf.keras.layers.Activation(self.activation)
-        self.bn_x3 = tf.keras.layers.BatchNormalization(axis=-1)
-        self.add_x3 = tf.keras.layers.Add()
-        self.pool_x3 = tf.keras.layers.MaxPooling2D((2, 2), padding='same')
+#model layers
+xin = Conv2D(ch1,ks,padding='same',use_bias=1,kernel_initializer=init,kernel_regularizer=regularizers.l2(rg),bias_initializer='zeros')(input_img)
+x1 = Conv2D(ch1,ks,padding='same',use_bias=1,kernel_initializer=init,kernel_regularizer=regularizers.l2(rg),bias_initializer='zeros')(xin)
+x1 = Activation(activation)(x1)
+x1 = BatchNormalization(axis=-1)(x1)
+x1 = Add()([xin,x1])
+x1 = MaxPooling2D((2,2),padding='same')(x1) #image size = 256
 
-        self.conv_x4_0 = tf.keras.layers.Conv2D(self.ch4, self.ks, padding='same', use_bias=True,
-                                                kernel_initializer=self.init,
-                                                kernel_regularizer=tf.keras.regularizers.l2(self.rg),
-                                                bias_initializer='zeros')
-        self.conv_x4_1 = tf.keras.layers.Conv2D(self.ch4, self.ks, padding='same', use_bias=True,
-                                                kernel_initializer=self.init,
-                                                kernel_regularizer=tf.keras.regularizers.l2(self.rg),
-                                                bias_initializer='zeros')
-        self.act_x4 = tf.keras.layers.Activation(self.activation)
-        self.bn_x4 = tf.keras.layers.BatchNormalization(axis=-1)
-        self.add_x4 = tf.keras.layers.Add()
-        self.pool_x4 = tf.keras.layers.MaxPooling2D((2, 2), padding='same')
+xin = Conv2D(ch2,ks,padding='same',use_bias=1,kernel_initializer=init,kernel_regularizer=regularizers.l2(rg),bias_initializer='zeros')(x1)
+x2 = Conv2D(ch2,ks,padding='same',use_bias=1,kernel_initializer=init,kernel_regularizer=regularizers.l2(rg),bias_initializer='zeros')(xin)
+x2 = Activation(activation)(x2)
+x2 = BatchNormalization(axis=-1)(x2)
+x2 = Add()([xin,x2])
+x2 = MaxPooling2D((2,2),padding='same')(x2) #image size = 128
 
-        self.conv_x5_0 = tf.keras.layers.Conv2D(self.ch5, self.ks, padding='same', use_bias=True,
-                                                kernel_initializer=self.init,
-                                                kernel_regularizer=tf.keras.regularizers.l2(self.rg),
-                                                bias_initializer='zeros')
-        self.conv_x5_1 = tf.keras.layers.Conv2D(self.ch5, self.ks, padding='same', use_bias=True,
-                                                kernel_initializer=self.init,
-                                                kernel_regularizer=tf.keras.regularizers.l2(self.rg),
-                                                bias_initializer='zeros')
-        self.act_x5 = tf.keras.layers.Activation(self.activation)
-        self.bn_x5 = tf.keras.layers.BatchNormalization(axis=-1)
-        self.add_x5 = tf.keras.layers.Add()
-        self.pool_x5 = tf.keras.layers.MaxPooling2D((2, 2), padding='same')  # encoded output size: 16x16
+xin = Conv2D(ch3,ks,padding='same',use_bias=1,kernel_initializer=init,kernel_regularizer=regularizers.l2(rg),bias_initializer='zeros')(x2)
+x3 = Conv2D(ch3,ks,padding='same',use_bias=1,kernel_initializer=init,kernel_regularizer=regularizers.l2(rg),bias_initializer='zeros')(xin)
+x3 = Activation(activation)(x3)
+x3 = BatchNormalization(axis=-1)(x3)
+x3 = Add()([xin,x3])
+x3 = MaxPooling2D((2,2),padding='same')(x3) #image size = 64
 
-        # "xu" conv 1x1 after encoding
-        self.conv_xu = tf.keras.layers.Conv2D(self.ch5, (1, 1), padding='valid')
+xin = Conv2D(ch4,ks,padding='same',use_bias=1,kernel_initializer=init,kernel_regularizer=regularizers.l2(rg),bias_initializer='zeros')(x3)
+x4 = Conv2D(ch4,ks,padding='same',use_bias=1,kernel_initializer=init,kernel_regularizer=regularizers.l2(rg),bias_initializer='zeros')(xin)
+x4 = Activation(activation)(x4)
+x4 = BatchNormalization(axis=-1)(x4)
+x4 = Add()([xin,x4])
+x4 = MaxPooling2D((2,2),padding='same')(x4) #image size = 32
 
-        # Decoder layers
-        self.up6 = tf.keras.layers.UpSampling2D((2, 2), interpolation='bilinear')
-        self.conv6_1x1 = tf.keras.layers.Conv2D(self.ch5, 1, padding='same', use_bias=True,
-                                                kernel_initializer=self.init,
-                                                kernel_regularizer=tf.keras.regularizers.l2(self.rg),
-                                                bias_initializer='zeros')
-        self.conv6_ks1 = tf.keras.layers.Conv2D(self.ch5, self.ks, padding='same', use_bias=True,
-                                                kernel_initializer=self.init,
-                                                kernel_regularizer=tf.keras.regularizers.l2(self.rg),
-                                                bias_initializer='zeros')
-        self.conv6_ks2 = tf.keras.layers.Conv2D(self.ch5, self.ks, padding='same', use_bias=True,
-                                                kernel_initializer=self.init,
-                                                kernel_regularizer=tf.keras.regularizers.l2(self.rg),
-                                                bias_initializer='zeros')
-        self.act6 = tf.keras.layers.Activation(self.activation)
-        self.bn6 = tf.keras.layers.BatchNormalization(axis=-1)
+xin = Conv2D(ch5,ks,padding='same',use_bias=1,kernel_initializer=init,kernel_regularizer=regularizers.l2(rg),bias_initializer='zeros')(x4)
+x5 = Conv2D(ch5,ks,padding='same',use_bias=1,kernel_initializer=init,kernel_regularizer=regularizers.l2(rg),bias_initializer='zeros')(xin)
+x5 = Activation(activation)(x5)
+x5 = BatchNormalization(axis=-1)(x5)
+x5 = Add()([xin,x5])
 
-        self.up7 = tf.keras.layers.UpSampling2D((2, 2), interpolation='bilinear')
-        self.conv7_1x1 = tf.keras.layers.Conv2D(self.ch4, 1, padding='same', use_bias=True,
-                                                kernel_initializer=self.init,
-                                                kernel_regularizer=tf.keras.regularizers.l2(self.rg),
-                                                bias_initializer='zeros')
-        self.conv7_ks1 = tf.keras.layers.Conv2D(self.ch4, self.ks, padding='same', use_bias=True,
-                                                kernel_initializer=self.init,
-                                                kernel_regularizer=tf.keras.regularizers.l2(self.rg),
-                                                bias_initializer='zeros')
-        self.conv7_ks2 = tf.keras.layers.Conv2D(self.ch4, self.ks, padding='same', use_bias=True,
-                                                kernel_initializer=self.init,
-                                                kernel_regularizer=tf.keras.regularizers.l2(self.rg),
-                                                bias_initializer='zeros')
-        self.act7 = tf.keras.layers.Activation(self.activation)
-        self.bn7 = tf.keras.layers.BatchNormalization(axis=-1)
+encoded = MaxPooling2D((2,2),padding='same')(x5) #image size = 16
+xu = Conv2D(ch5,(1,1),padding='valid')(encoded)
 
-        self.up8 = tf.keras.layers.UpSampling2D((2, 2), interpolation='bilinear')
-        self.conv8_1x1 = tf.keras.layers.Conv2D(self.ch3, 1, padding='same', use_bias=True,
-                                                kernel_initializer=self.init,
-                                                kernel_regularizer=tf.keras.regularizers.l2(self.rg),
-                                                bias_initializer='zeros')
-        self.conv8_ks1 = tf.keras.layers.Conv2D(self.ch3, self.ks, padding='same', use_bias=True,
-                                                kernel_initializer=self.init,
-                                                kernel_regularizer=tf.keras.regularizers.l2(self.rg),
-                                                bias_initializer='zeros')
-        self.conv8_ks2 = tf.keras.layers.Conv2D(self.ch3, self.ks, padding='same', use_bias=True,
-                                                kernel_initializer=self.init,
-                                                kernel_regularizer=tf.keras.regularizers.l2(self.rg),
-                                                bias_initializer='zeros')
-        self.act8 = tf.keras.layers.Activation(self.activation)
-        self.bn8 = tf.keras.layers.BatchNormalization(axis=-1)
-
-        self.up9 = tf.keras.layers.UpSampling2D((2, 2), interpolation='bilinear')
-        self.conv9_1x1 = tf.keras.layers.Conv2D(self.ch2, 1, padding='same', use_bias=True,
-                                                kernel_initializer=self.init,
-                                                kernel_regularizer=tf.keras.regularizers.l2(self.rg),
-                                                bias_initializer='zeros')
-        self.conv9_ks1 = tf.keras.layers.Conv2D(self.ch2, self.ks, padding='same', use_bias=True,
-                                                kernel_initializer=self.init,
-                                                kernel_regularizer=tf.keras.regularizers.l2(self.rg),
-                                                bias_initializer='zeros')
-        self.act9 = tf.keras.layers.Activation(self.activation)
-        self.bn9 = tf.keras.layers.BatchNormalization(axis=-1)
-
-        self.up10 = tf.keras.layers.UpSampling2D((2, 2), interpolation='bilinear')
-        self.conv10_1x1 = tf.keras.layers.Conv2D(self.ch1, 1, padding='same', use_bias=True,
-                                                 kernel_initializer=self.init,
-                                                 kernel_regularizer=tf.keras.regularizers.l2(self.rg),
-                                                 bias_initializer='zeros')
-        self.conv10_ks1 = tf.keras.layers.Conv2D(self.ch1, self.ks, padding='same', use_bias=True,
-                                                 kernel_initializer=self.init,
-                                                 kernel_regularizer=tf.keras.regularizers.l2(self.rg),
-                                                 bias_initializer='zeros')
-        self.act10 = tf.keras.layers.Activation(self.activation)
-        self.bn10 = tf.keras.layers.BatchNormalization(axis=-1)
-
-        # Final conv and softmax activation for 2 classes
-        self.final_conv = tf.keras.layers.Conv2D(2, (1, 1), padding='valid', use_bias=True)
-        self.final_softmax = tf.keras.layers.Activation('softmax')
-
-        # Concatenate layer to be reused
-        self.concat = tf.keras.layers.Concatenate(axis=-1)
-
-    def call(self, inputs, training=False):
-        # Encoder path
-        xin = self.conv_in(inputs)
-        x1 = self.conv_x1_1(xin)
-        x1 = self.act_x1(x1)
-        x1 = self.bn_x1(x1, training=training)
-        x1 = self.add_x1([xin, x1])
-        x1_pool = self.pool_x1(x1)  # 256 x 256
-
-        xin = self.conv_x2_0(x1_pool)
-        x2 = self.conv_x2_1(xin)
-        x2 = self.act_x2(x2)
-        x2 = self.bn_x2(x2, training=training)
-        x2 = self.add_x2([xin, x2])
-        x2_pool = self.pool_x2(x2)  # 128 x 128
-
-        xin = self.conv_x3_0(x2_pool)
-        x3 = self.conv_x3_1(xin)
-        x3 = self.act_x3(x3)
-        x3 = self.bn_x3(x3, training=training)
-        x3 = self.add_x3([xin, x3])
-        x3_pool = self.pool_x3(x3)  # 64 x 64
-
-        xin = self.conv_x4_0(x3_pool)
-        x4 = self.conv_x4_1(xin)
-        x4 = self.act_x4(x4)
-        x4 = self.bn_x4(x4, training=training)
-        x4 = self.add_x4([xin, x4])
-        x4_pool = self.pool_x4(x4)  # 32 x 32
-
-        xin = self.conv_x5_0(x4_pool)
-        x5 = self.conv_x5_1(xin)
-        x5 = self.act_x5(x5)
-        x5 = self.bn_x5(x5, training=training)
-        x5 = self.add_x5([xin, x5])
-        encoded = self.pool_x5(x5)  # 16 x 16
-
-        # Decoder path
-        xu = self.conv_xu(encoded)
-
-        x6 = self.concat([xu, encoded])  # 16x16 concatenation
-        x6 = self.up6(x6)  # 32x32
-        x6 = self.conv6_1x1(x6)
-        x6 = self.conv6_ks1(x6)
-        x6 = self.conv6_ks2(x6)
-        x6 = self.act6(x6)
-        x6 = self.bn6(x6, training=training)
-
-        x7 = self.concat([x6, x4])
-        x7 = self.up7(x7)  # 64x64
-        x7 = self.conv7_1x1(x7)
-        x7 = self.conv7_ks1(x7)
-        x7 = self.conv7_ks2(x7)
-        x7 = self.act7(x7)
-        x7 = self.bn7(x7, training=training)
-
-        x8 = self.concat([x7, x3])
-        x8 = self.up8(x8)  # 128x128
-        x8 = self.conv8_1x1(x8)
-        x8 = self.conv8_ks1(x8)
-        x8 = self.conv8_ks2(x8)
-        x8 = self.act8(x8)
-        x8 = self.bn8(x8, training=training)
-
-        x9 = self.concat([x8, x2])
-        x9 = self.up9(x9)  # 256x256
-        x9 = self.conv9_1x1(x9)
-        x9 = self.conv9_ks1(x9)
-        x9 = self.act9(x9)
-        x9 = self.bn9(x9, training=training)
-
-        x10 = self.concat([x9, x1])
-        x10 = self.up10(x10)  # 512x512
-        x10 = self.conv10_1x1(x10)
-        x10 = self.conv10_ks1(x10)
-        x10 = self.act10(x10)
-        x10 = self.bn10(x10, training=training)
-
-        decoded = self.final_conv(x10)
-        d1 = self.final_softmax(decoded)
-
-        return d1
+x6 = concatenate([xu,encoded],axis=-1)
+x6 = UpSampling2D((2,2), interpolation='bilinear')(x6)                  #image size = 32
+x6 = Conv2D(ch5,kernel_size=(1,1),padding='same',use_bias=1,kernel_initializer=init,kernel_regularizer=regularizers.l2(rg),bias_initializer='zeros')(x6)
+x6 = Conv2D(ch5,ks,padding='same',use_bias=1,kernel_initializer=init,kernel_regularizer=regularizers.l2(rg),bias_initializer='zeros')(x6)
+x6 = Conv2D(ch5,ks,padding='same',use_bias=1,kernel_initializer=init,kernel_regularizer=regularizers.l2(rg),bias_initializer='zeros')(x6)
+x6 = Activation(activation)(x6)
+x6 = BatchNormalization(axis=-1)(x6)
 
 
-def my_model_function():
-    # Returns an instance of MyModel
-    model = MyModel()
-    # Compile the model with same optimizer, loss and metric as described
-    optimizer = tf.keras.optimizers.Adam(learning_rate=0.00001)
-    loss = tf.keras.losses.CategoricalCrossentropy()
-    model.compile(optimizer=optimizer, loss=loss, metrics=['accuracy'])
-    return model
+x7 = concatenate([x6,x4],axis=-1)
+x7 = UpSampling2D((2,2), interpolation='bilinear')(x7)                  #image size =  64
+x7 = Conv2D(ch4,kernel_size=(1,1),padding='same',use_bias=1,kernel_initializer=init,kernel_regularizer=regularizers.l2(rg),bias_initializer='zeros')(x7)
+x7 = Conv2D(ch4,ks,padding='same',use_bias=1,kernel_initializer=init,kernel_regularizer=regularizers.l2(rg),bias_initializer='zeros')(x7)
+x7 = Conv2D(ch4,ks,padding='same',use_bias=1,kernel_initializer=init,kernel_regularizer=regularizers.l2(rg),bias_initializer='zeros')(x7)
+x7 = Activation(activation)(x7)
+x7 = BatchNormalization(axis=-1)(x7)
 
 
-def GetInput():
-    # Provides a random tensor matching input shape (batch size 4 chosen arbitrarily)
-    # dtype float32 typical for images
-    batch_size = 4
-    input_shape = (batch_size, 512, 512, 1)
-    return tf.random.uniform(input_shape, minval=0, maxval=1, dtype=tf.float32)
+x8 = concatenate([x7,x3],axis=-1)
+x8 = UpSampling2D((2,2), interpolation='bilinear')(x8)                  #image size = 128
+x8 = Conv2D(ch3,kernel_size=(1,1),padding='same',use_bias=1,kernel_initializer=init,kernel_regularizer=regularizers.l2(rg),bias_initializer='zeros')(x8)
+x8 = Conv2D(ch3,ks,padding='same',use_bias=1,kernel_initializer=init,kernel_regularizer=regularizers.l2(rg),bias_initializer='zeros')(x8)
+x8 = Conv2D(ch3,ks,padding='same',use_bias=1,kernel_initializer=init,kernel_regularizer=regularizers.l2(rg),bias_initializer='zeros')(x8)
+x8 = Activation(activation)(x8)
+x8 = BatchNormalization(axis=-1)(x8)
 
+
+x9 = concatenate([x8,x2],axis=-1)
+x9 = UpSampling2D((2,2), interpolation='bilinear')(x9)                  #image size = 256
+x9 = Conv2D(ch2,kernel_size=(1,1),padding='same',use_bias=1,kernel_initializer=init,kernel_regularizer=regularizers.l2(rg),bias_initializer='zeros')(x9)
+x9 = Conv2D(ch2,ks,padding='same',use_bias=1,kernel_initializer=init,kernel_regularizer=regularizers.l2(rg),bias_initializer='zeros')(x9)
+x9 = Activation(activation)(x9)
+x9 = BatchNormalization(axis=-1)(x9)
+
+
+x10 = concatenate([x9,x1],axis=-1)
+x10 = UpSampling2D((2,2), interpolation='bilinear')(x10)                  #image size = 512
+x10 = Conv2D(ch1,kernel_size=(1,1),padding='same',use_bias=1,kernel_initializer=init,kernel_regularizer=regularizers.l2(rg),bias_initializer='zeros')(x10)
+x10 = Conv2D(ch1,ks,padding='same',use_bias=1,kernel_initializer=init,kernel_regularizer=regularizers.l2(rg),bias_initializer='zeros')(x10)
+x10 = Activation(activation)(x10)
+x10 = BatchNormalization(axis=-1)(x10)
+
+decoded = Conv2D(2,(1,1),padding='valid',use_bias=1)(x10)
+d1 = Activation('softmax')(decoded)
+
+#create the model
+model = Model(input_img,d1)
+
+#review the model   
+model.summary()
+
+#Compile the model
+model.compile(optimizer=optimizer,loss=theLoss,metrics =['accuracy'])
+
+#save the only the best weights acheived during training
+filepath='weights.best.hdf5'
+checkpoint = ModelCheckpoint(filepath, monitor='val_acc',verbose=1,save_best_only=True,mode='max')
+callbacks_list=[checkpoint]
+
+#fit the model
+y_train = to_categorical(y_train,num_classes=2)
+X_train=X_train
+model.fit(X_train,y_train,validation_split=(0.15),epochs=1,batch_size=2,verbose=1,callbacks=callbacks_list,shuffle=True)

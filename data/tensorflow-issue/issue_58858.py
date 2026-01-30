@@ -1,57 +1,69 @@
-# tf.random.normal((1, 1, 192), dtype=tf.float32) ← Input shape inferred from original code: batch size 1, time step 1, feature dim 192
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
+from tensorflow.keras.layers import (
+    Concatenate,
+    Conv2D,
+    Conv2DTranspose,
+    Dropout,
+    BatchNormalization)
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # BatchNormalization on input with feature dim = 192
-        self.bn = tf.keras.layers.BatchNormalization()
-        # LSTMCell with units equal to feature dimension 192
-        self.lstm_cell = tf.keras.layers.LSTMCell(units=192)
+inp = tf.keras.Input([1,192], batch_size = 1)
+state_h = tf.keras.Input([192], batch_size = 1)
+state_c = tf.keras.Input([192], batch_size = 1)
+num_channels = 24
 
-    def call(self, inputs, states):
-        """
-        inputs: Tensor of shape [batch_size, 1, 192] (time step dimension = 1)
-        states: list of two tensors [state_h, state_c], each of shape [batch_size, 192]
-        
-        Returns:
-        - out: x + xT, where x is output from LSTMCell, xT is batch normalized input
-        - new_state_h: hidden state output of LSTMCell
-        - new_state_c: cell state output of LSTMCell
-        """
-        inp = inputs  # [B, 1, 192]
-        state_h, state_c = states    # each [B, 192]
+xT = BatchNormalization()(inp)
 
-        # Apply batch normalization along feature axis - inputs is 3D [B, 1, 192]
-        xT = self.bn(inp)  # [B, 1, 192]
+lstm_in = tf.keras.activations.tanh(xT)
+x, new_states = tf.keras.layers.LSTMCell(xT.shape[2])(lstm_in[:,0,:], states = [state_h, state_c])
+new_state_h = new_states[0]
+new_state_c = new_states[1]
+out = x + xT
 
-        # Activation tanh on batch normalized input
-        lstm_in = tf.keras.activations.tanh(xT)
+my_model = tf.keras.Model(inputs=[inp, state_h, state_c],outputs = [ out, 
+                                                                       new_state_h,
+                                                                       new_state_c])
 
-        # LSTMCell expects input with shape [batch_size, feature_dim], so we remove time dim by lstm_in[:,0,:]
-        x, new_states = self.lstm_cell(lstm_in[:, 0, :], states=[state_h, state_c])  # x: [B, 192]
+#save model and create tflite model
+my_model.save('lstm_test', include_optimizer = False)
+converter = tf.lite.TFLiteConverter.from_saved_model('lstm_test')
+converter.target_spec.supported_ops = [
+        tf.lite.OpsSet.TFLITE_BUILTINS, # enable TensorFlow Lite ops.
+        ]
 
-        new_state_h, new_state_c = new_states
+tflite_model = converter.convert()
 
-        # xT is [B, 1, 192], so squeeze time dim for addition with x
-        xT_squeezed = tf.squeeze(xT, axis=1)  # [B, 192]
+inpt = tf.random.normal([1,10,192])
+init_state_h = tf.zeros([1,192])
+init_state_c = tf.zeros([1,192])
+init_state_h_tfl = tf.zeros([1,192])
+init_state_c_tfl = tf.zeros([1,192])
 
-        # Output is element-wise addition of LSTMCell output and batch normalized input
-        out = x + xT_squeezed  # [B, 192]
+#set up tflite interpreter
+interpreter = tf.lite.Interpreter(model_content = tflite_model)
+interpreter.allocate_tensors()
+input_details = interpreter.get_input_details()
+output_details = interpreter.get_output_details()
+print('input_details')
+print(input_details)
+print('output details')
+print(output_details)
 
-        return out, new_state_h, new_state_c
-
-def my_model_function():
-    # Create and return an instance of MyModel with batchnorm and LSTMCell as described
-    return MyModel()
-
-def GetInput():
-    # Return the input tuple required by MyModel:
-    # inputs tensor with shape [1, 1, 192] (batch size 1, time 1, features 192)
-    # initial state_h and state_c tensors each [1, 192]
-    input_tensor = tf.random.normal([1, 1, 192], dtype=tf.float32)
-    init_state_h = tf.zeros([1, 192], dtype=tf.float32)
-    init_state_c = tf.zeros([1, 192], dtype=tf.float32)
-    return input_tensor, [init_state_h, init_state_c]
-
+for k in range(10):
+    outpt, st_h, st_c = my_model.predict([tf.expand_dims(inpt[:,k,:], axis=1), init_state_h, init_state_c])
+    init_state_h = st_h
+    init_state_c = st_c
+    interpreter.set_tensor(input_details[0]['index'], tf.expand_dims(inpt[:,k,:], axis = 1))
+    interpreter.set_tensor(input_details[1]['index'], init_state_h_tfl)
+    interpreter.set_tensor(input_details[2]['index'], init_state_c_tfl)
+    interpreter.invoke()
+    outpt_tfl = interpreter.get_tensor(output_details[0]['index'])
+    st_h_tfl = interpreter.get_tensor(output_details[1]['index'])
+    st_c_tfl = interpreter.get_tensor(output_details[2]['index'])
+    init_state_h_tfl = st_h_tfl
+    init_state_c_tfl = st_c_tfl
+    np.testing.assert_almost_equal(outpt, outpt_tfl, decimal = 5)

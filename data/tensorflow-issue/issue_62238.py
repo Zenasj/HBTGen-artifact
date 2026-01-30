@@ -1,39 +1,55 @@
-# tf.random.uniform((), dtype=tf.complex128)  ← Input is a scalar complex128 tensor (single value)
+import math
 
 import tensorflow as tf
+import traceback
 
 def replace_special_values(tensor):
+    # Convert tensor to tf.float32 if it's not a supported dtype
+    supported_dtypes = [tf.float16, tf.float32, tf.float64, tf.bfloat16]
+    if tensor.dtype not in supported_dtypes:
+        original_dtype = tensor.dtype
+        tensor = tf.cast(tensor, tf.float32)
+    else :
+        original_dtype = None
+    
     # Replace NaNs with zeros
     tensor = tf.where(tf.math.is_nan(tensor), tf.zeros_like(tensor), tensor)
-
-    # Replace positive infinities with large number (100)
-    tensor = tf.where(tf.math.is_inf(tensor) & tf.math.greater_equal(tensor, 0), tf.constant(100, dtype=tensor.dtype), tensor)
-
-    # Replace negative infinities with small number (-100)
-    tensor = tf.where(tf.math.is_inf(tensor) & tf.math.less(tensor, 0), tf.constant(-100, dtype=tensor.dtype), tensor)
+    
+    # Replace positive infinities with a large number (e.g., 1e30)
+    tensor = tf.where(tf.math.is_inf(tensor), 100, tensor)
+    
+    # Replace negative infinities with a small number (e.g., -1e30)
+    tensor = tf.where(tf.math.is_inf(tensor) & tf.math.less(tensor, 0), -100, tensor)
+    
+    # Convert tensor back to its original dtype
+    if original_dtype is not None :
+        tensor = tf.cast(tensor, original_dtype)
     return tensor
 
-
-class MyModel(tf.keras.Model):
+class Network(tf.Module):
     def __init__(self):
         super().__init__()
-        # No trainable parameters, just raw_ops usage
 
     @tf.function(jit_compile=True)
-    def call(self, x):
-        # Apply tf.raw_ops.Sin then tf.raw_ops.Asinh as per the issue reproduction
-        # Supports complex64, complex128, float types as per source notes
-        x_sin = tf.raw_ops.Sin(x=x)
-        x_asinh = tf.raw_ops.Asinh(x=x_sin)
-        return x_asinh
+    def __call__(self, x):
+      
+      x = tf.raw_ops.Sin(x=x, )        
+      x = tf.raw_ops.Asinh(x=x, )        
+      return x
 
-def my_model_function():
-    # Return an instance of MyModel for usage
-    return MyModel()
+m = Network()
+dic = {'ele': (900108.2563231019-417958.5363911558j), 'size': [], 'dtype': tf.complex128}
+tensor = tf.constant(dic['ele'], dtype=tf.as_dtype(dic['dtype']))
+inp = {
+    "x": tensor,
+}
 
-def GetInput():
-    # Return a scalar complex128 tensor as input, matching original example
-    # The original example used the complex number: (900108.2563231019-417958.5363911558j)
-    val = tf.constant(900108.2563231019 - 417958.5363911558j, dtype=tf.complex128)
-    return val
-
+with tf.device('/GPU:0'):
+    tf.config.run_functions_eagerly(True)
+    no_op_res = m(**inp)
+    tf.config.run_functions_eagerly(False)
+    with tf.device('/GPU:0'):
+        op_res = m(**inp)
+    no_op_res = replace_special_values(no_op_res)
+    op_res = replace_special_values(op_res)
+    tf.debugging.assert_near(no_op_res, op_res, atol=0.001, rtol=0.001)

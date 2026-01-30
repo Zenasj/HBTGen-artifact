@@ -1,37 +1,48 @@
-# torch.randint(0, 2, (), dtype=torch.long)  # Inferred input shape
+import torch.nn as nn
 
 import torch
-from torch import nn
+import onnx
+from onnx import numpy_helper
 
-class TestModule3(nn.Module):
+class TestModule3(torch.nn.Module):
     def __init__(self):
-        super().__init__()
-        self.embeds = nn.Embedding(2, 7)
+        super(TestModule3, self).__init__()
+        self.embeds = torch.nn.Embedding(2, 7)
 
-class TestModule2(nn.Module):
+    def forward(self):
+        return None
+
+class TestModule2(torch.nn.Module):
     def __init__(self, embed3):
-        super().__init__()
-        self.embeds = nn.Embedding(2, 6)
-        self.embed3 = embed3  # Reference to shared TestModule3 instance
+        super(TestModule2, self).__init__()
+        self.embeds = torch.nn.Embedding(2, 6)
+        self.embed3 = embed3
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Create shared TestModule3 instance
-        shared_model3 = TestModule3()
-        # Create TestModule2 with shared_model3
-        model2 = TestModule2(shared_model3)
-        # Main embedding layers
-        self.embeds = nn.Embedding(2, 5)
-        self.embeds2 = model2  # EmbedModule2 instance
-        self.embeds3 = shared_model3  # Direct reference to shared TestModule3
+    def forward(self):
+        return None
+
+class TestModule(torch.nn.Module):
+    def __init__(self, embed2, embed3):
+        super(TestModule, self).__init__()
+        # When a member is initialized externally, the ONNX export
+        # parameters orderings would be wrong.
+        self.embeds = torch.nn.Embedding(2, 5)
+        self.embeds2 = embed2
+        self.embeds3 = embed3
 
     def forward(self, id1):
         return self.embeds(id1)
 
-def my_model_function():
-    return MyModel()
+onnx_path = "external_member.onnx"
+model3 = TestModule3()
+model2 = TestModule2(model3)
+model = TestModule(model2, model3)
+torch_in = (torch.tensor(0, dtype=torch.long),)
+torch_out = model(*torch_in)
+torch.onnx.export(model, torch_in, onnx_path, verbose=True,
+        export_params=True)
 
-def GetInput():
-    return torch.randint(0, 2, (), dtype=torch.long)
-
+prog = onnx.load(onnx_path)
+weights = prog.graph.initializer
+for w in weights:
+    print(w.name, numpy_helper.to_array(w).shape)

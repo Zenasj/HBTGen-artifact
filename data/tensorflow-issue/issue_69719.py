@@ -1,50 +1,120 @@
-# tf.random.uniform((B, 10), dtype=tf.float32) ← input shape inferred from data X = np.random.rand(100, 10)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self, scaling_vector):
-        """
-        A fused MLP + Rescaling model that encapsulates the behavior described:
-        - Three Dense layers with relu except last
-        - A Rescaling layer after the last Dense layer using a fixed scaling vector
+# fake data
+X = np.random.rand(100, 10)
+Y = np.random.rand(100, 5)
+r = np.random.rand(5)
 
-        The Rescaling layer applies elementwise multiplication by the given scaling vector,
-        fixing issues that arise from saving/loading the standard Rescaling layer with vector inputs.
+# build/compile/fit model
+model = tf.keras.Sequential(
+    [
+        tf.keras.layers.Dense(100, activation="relu", name="layer1"),
+        tf.keras.layers.Dense(10, activation="relu", name="layer2"),
+        tf.keras.layers.Dense(5, name="layer3"),
+    ]
+)
+model.compile(optimizer="adam", loss="mse")
+model.fit(X, Y, epochs=50)
 
-        Args:
-          scaling_vector: a 1D tensor or list/array with length matching output dim of last Dense (5)
-        """
-        super().__init__()
-        # Define MLP layers
-        self.dense1 = tf.keras.layers.Dense(100, activation="relu", name="layer1")
-        self.dense2 = tf.keras.layers.Dense(10, activation="relu", name="layer2")
-        self.dense3 = tf.keras.layers.Dense(5, name="layer3")
-        
-        # Instead of standard tf.keras.layers.Rescaling (which had serialization issues),
-        # implement a custom rescaling as a Lambda layer wrapping elementwise multiply.
-        # This avoids config serialization issues with vector scale in newer Keras versions.
-        scaling_vector = tf.convert_to_tensor(scaling_vector, dtype=tf.float32)
-        # Reshape to match expected broadcasting dims: (1, 5)
-        scaling_vector = tf.reshape(scaling_vector, (1, -1))
-        self.rescaling = tf.keras.layers.Lambda(lambda x: x * scaling_vector, name="custom_rescaling")
+# add rescaling layer
+model.add(tf.keras.layers.Rescaling(r))
 
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        x = self.dense3(x)
-        x = self.rescaling(x)
-        return x
+# test point
+x_tst = np.random.rand(1, 10)
 
-def my_model_function():
-    # Use the same scaling vector as in the examples to maintain consistency.
-    # Here, an example vector is used from the typical "r" variable in the issue (random for illustration).
-    # In real usage, this should be set to the actual scaling vector used during training or inference.
-    example_scaling_vector = [0.5410176, 0.03500207, 0.687843, 0.8070028, 0.22955463]
-    return MyModel(example_scaling_vector)
+# this works!
+print(model(x_tst))
 
-def GetInput():
-    # Return a random tensor matching the model input: shape (batch, 10), dtype float32.
-    # Batch size chosen is 1 for simplicity.
-    return tf.random.uniform((1, 10), dtype=tf.float32)
+# save model
+model.save('model.keras')
 
+# load model now
+model = tf.keras.models.load_model('model.keras')
+model.summary()
+
+# error here!
+print(model(x_tst))
+
+import numpy as np
+import tensorflow as tf
+
+# Fake data
+X = np.random.rand(100, 10)
+Y = np.random.rand(100, 5)
+r = np.random.rand(5)
+
+# Build/compile/fit model
+model = tf.keras.Sequential([
+    tf.keras.layers.Dense(100, activation="relu", name="layer1"),
+    tf.keras.layers.Dense(10, activation="relu", name="layer2"),
+    tf.keras.layers.Dense(5, name="layer3"),
+])
+model.compile(optimizer="adam", loss="mse")
+model.fit(X, Y, epochs=50)
+
+# Save model
+model.save('model.keras')
+
+# Load model
+model = tf.keras.models.load_model('model.keras')
+
+# Add rescaling layer after loading
+model.add(tf.keras.layers.Rescaling(r))
+
+# Test point
+x_tst = np.random.rand(1, 10)
+
+# Print prediction (should work after recompiling)
+print(model(x_tst))
+
+# Summary of the model
+model.summary()
+
+# Recompile the model after adding Rescaling layer
+model.compile(optimizer="adam", loss="mse")
+
+# Now the prediction would run successful
+print(model(x_tst))
+
+# fake data
+X = np.random.rand(100, 10)
+Y = np.random.rand(100, 5)
+r = np.random.rand(5)
+
+# build/compile/fit model
+model = tf.keras.Sequential(
+    [
+        tf.keras.layers.Dense(100, activation="relu", name="layer1"),
+        tf.keras.layers.Dense(10, activation="relu", name="layer2"),
+        tf.keras.layers.Dense(5, name="layer3"),
+    ]
+)
+model.compile(optimizer="adam", loss="mse")
+model.fit(X, Y, epochs=50)
+
+# add rescaling layer
+model.add(tf.keras.layers.Rescaling(r))
+
+# test point
+x_tst = np.random.rand(1, 10)
+
+# this works!
+print(model(x_tst))
+
+# save model
+model.save('model.keras')
+
+# load model now
+model = tf.keras.models.load_model('model.keras')
+
+# Recompile the model after adding Rescaling layer
+model.compile(optimizer="adam", loss="mse")
+
+# error here!
+print(model(x_tst))

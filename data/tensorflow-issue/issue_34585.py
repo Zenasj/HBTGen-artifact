@@ -1,51 +1,110 @@
-# tf.random.uniform((B, 50, 1), dtype=tf.float32) ← Inferred input shape based on make_dataset and model input reshape
+from tensorflow.keras import layers
 
+X=[
+   [[1,2,3],[4,5,6],   [7,8,9]],
+   [[4,5,6],[7,8,9],   [10,11,12]],
+   [[7,8,9],[10,11,12],[13,14,15]],
+   ...
+  ] 
+Y = [
+     [4],
+     [7],
+     [10],
+     ...
+    ]
+
+model = Sequential()
+model.add(LSTM(50, activation='relu', input_shape=(n_steps, n_features)))
+model.add(Dense(1))
+model.compile(optimizer='adam', loss='mse')
+
+model.fit([X],[Y],num_epochs=300,validation_split=0.2)
+
+import json
+import os
+import pickle
+import random
+import sys
+import yaml
+import numpy as np
+import pandas as pd
 import tensorflow as tf
+
 from tensorflow.keras import Input, Model
-from tensorflow.keras.layers import Reshape, LSTM, RepeatVector, TimeDistributed, Dense
+from tensorflow.keras.layers import Concatenate, Dense, LSTM, RepeatVector, Reshape, TimeDistributed
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Parameters inferred from the create_model function & dataset:
-        self.input_window_samps = 50
-        self.num_signals = 1
-        self.output_window_samps = 3
-        self.units0 = 10
-        self.units1 = 10
-        
-        # Define layers similarly to create_model()
-        self.reshape = Reshape((self.input_window_samps, self.num_signals))
-        self.lstm1 = LSTM(self.units0, activation='relu')
-        self.repeat = RepeatVector(self.output_window_samps)
-        self.lstm2 = LSTM(self.units1, activation='relu', return_sequences=True)
-        self.time_dense = TimeDistributed(Dense(self.num_signals))
+def main():
+    # tf.compat.v1.enable_v2_behavior()
+
+    # create the dataset
+    datasetD = make_dataset()
+
+    train_x = datasetD['train']['x']
+    train_y = datasetD['train']['y']
+    # test_x  = datasetD['test']['x']
+    # test_y  = datasetD['test']['y']
+    val_x   = datasetD['val']['x']
+    val_y   = datasetD['val']['y']
+
+    # create the model
+    model = create_model()
+    model.compile(optimizer='adam',
+                  loss='mse')
     
-    @tf.function(jit_compile=True)
-    def call(self, inputs):
-        # inputs shape: (batch_size, input_window_samps * num_signals) => (batch_size, 50*1=50)
-        x = self.reshape(inputs)
-        x = self.lstm1(x)
-        x = self.repeat(x)
-        x = self.lstm2(x)
-        x = self.time_dense(x)
-        return x
+    print(model.summary())
 
+    history = model.fit([train_x],[train_y],
+                        batch_size=32,
+                        epochs=300, 
+                        validation_data=([val_x],[val_y]),
+                        validation_freq=1)
 
-def my_model_function():
-    # Return an instance of MyModel; no pretrained weights provided – weights will be randomly initialized
-    return MyModel()
+def make_dataset():
+    input_window_samps  = 50
+    num_signals         = 1
+    output_window_samps = 3
+    returnD = {}
 
-
-def GetInput():
-    # Return a random input tensor matching expected model input shape:
-    # shape = (batch_size, input_window_samps * num_signals)
-    # We select batch_size = 32 as typical batch size used in example
-    batch_size = 32
-    input_window_samps = 50
-    num_signals = 1
+    returnD['train'] = {}
+    returnD['train']['x'] = []
+    returnD['train']['y'] = []
     
-    # Create a random uniform tensor with shape (batch_size, 50 * 1 = 50)
-    # Using float32 as default dtype consistent with TensorFlow default and typical model usage
-    return tf.random.uniform((batch_size, input_window_samps * num_signals), dtype=tf.float32)
+    for i in range(10000):
+        returnD['train']['x'].append(np.arange(i,i+input_window_samps))
+        returnD['train']['y'].append(np.expand_dims(np.arange(i+input_window_samps,i+input_window_samps+output_window_samps),axis=1))
+    
+    returnD['val'] = {}
+    returnD['val']['x'] = []
+    returnD['val']['y'] = []
+    
+    for i in range(10000,20000):
+        returnD['val']['x'].append(np.arange(i,i+input_window_samps))
+        returnD['val']['y'].append(np.expand_dims(np.arange(i+input_window_samps,i+input_window_samps+output_window_samps),axis=1))
+    
+    returnD['test'] = {}
+    returnD['test']['x'] = []
+    returnD['test']['y'] = []
+    
+    for i in range(20000,30000):
+        returnD['test']['x'].append(np.arange(i,i+input_window_samps))
+        returnD['test']['y'].append(np.expand_dims(np.arange(i+input_window_samps,i+input_window_samps+output_window_samps),axis=1))
 
+    return returnD
+
+def create_model():
+    # from https://machinelearningmastery.com/how-to-develop-lstm-models-for-time-series-forecasting/ "Multiple Parallel Input and Multi-Step Output" example 
+    input_window_samps  = 50
+    num_signals         = 1
+    output_window_samps = 3
+    units0 = 10
+    units1 = 10
+
+    input = Input(shape=(input_window_samps*num_signals,))
+    x = Reshape((input_window_samps,num_signals))(input)
+    x = LSTM(units0,activation='relu')(x)
+    x = RepeatVector(output_window_samps)(x)
+    x = LSTM(units1,activation='relu',return_sequences=True)(x)
+    x = TimeDistributed(Dense(num_signals))(x)
+
+    model = Model(inputs=input,outputs=x)
+    return model

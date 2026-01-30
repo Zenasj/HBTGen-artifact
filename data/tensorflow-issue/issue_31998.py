@@ -1,53 +1,56 @@
-# tf.random.uniform((1, 100, 100), dtype=tf.float32), tf.random.uniform((1, 100), dtype=tf.float32)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+
+import numpy as np
 import tensorflow as tf
+from tensorflow.keras import Model as M
+from tensorflow.keras import Input as I
 
-class MyModel(tf.keras.Model):
+x = tf.cast(np.random.randn(1, 100, 100), tf.float32)
+y = tf.cast(np.random.randn(1, 100), tf.float32)
+z = tf.cast(np.random.randn(1, 100), tf.float32)
+u = tf.cast(np.random.randn(1, 100), tf.float32)
+
+class Model(M):
     def __init__(self):
-        super(MyModel, self).__init__()
-        # Using GRU layer, trying to match the original example's units=100
-        self.gru_layer = tf.keras.layers.GRU(100)
-        # Using LSTM layer with RNN(LSTMCell) workaround to avoid persistent=True bug
-        self.lstm_layer = tf.keras.layers.RNN(tf.keras.layers.LSTMCell(100))
+        super().__init__()
+        self.layer = tf.keras.layers.GRU(100)
+        self(I(shape=(None, 100)), I(shape=(100,)))
 
-    @tf.function
-    def call(self, inputs):
-        # inputs is assumed to be a tuple: (x_gru, y_gru), (s_lstm, h_lstm, c_lstm)
-        # For clarity, expect inputs = (x_gru, y_gru, s_lstm, h_lstm, c_lstm)
-        # which follows from the issue examples.
+    @tf.function # remove this and it works fine
+    def call(self, x, y):
+        z = self.layer(x, initial_state=y)
+        return z
 
-        # Unpack inputs
-        x_gru, y_gru, s_lstm, h_lstm, c_lstm = inputs
 
-        # GRU call: y_gru as sequence input, x_gru as initial state
-        # Match original signature: layer(y, initial_state=x)
-        gru_output = self.gru_layer(y_gru, initial_state=x_gru)
+model = Model()
 
-        # LSTM call: use RNN(LSTMCell) with initial_state tuple (h, c)
-        lstm_output = self.lstm_layer(s_lstm, initial_state=[h_lstm, c_lstm])
+with tf.GradientTape(persistent=True) as tape: # if persistent=False it works fine
+    loss = tf.norm(model(x, y) - z)
+grads = tape.gradient(loss, model.trainable_variables)
 
-        # Compare the outputs by norm of difference as a single float tensor:
-        # This represents a numeric difference to reflect the original issue's comparison motives.
-        diff = tf.norm(gru_output - lstm_output)
+print("###############SUCCESS################")
 
-        # Returning scalar difference as output (could also return a boolean by threshold if needed)
-        return diff
+class Model2(M):
+    def __init__(self):
+        super().__init__()
+        self.layer = tf.keras.layers.LSTM(100)
+        self(I(shape=(None, 100)), I(shape=(100,)), I(shape=(100,)))
 
-def my_model_function():
-    return MyModel()
+    @tf.function     # remove this and it works fine
+    def call(self, s, h, c):
+        z = self.layer(s, initial_state=(h, c))
+        return z
 
-def GetInput():
-    # Construct inputs matching Model call signature:
-    # From the issue:
-    # x (initial_state for GRU) shape=(1, 100)
-    # y (sequence input for GRU) shape=(1, 100, 100)
-    # s (sequence input for LSTM) shape=(1, 100, 100)
-    # h, c (initial states for LSTM) shape=(1, 100) each
 
-    x_gru = tf.random.uniform((1, 100), dtype=tf.float32)        # initial_state for GRU
-    y_gru = tf.random.uniform((1, 100, 100), dtype=tf.float32)   # sequence input for GRU
-    s_lstm = tf.random.uniform((1, 100, 100), dtype=tf.float32)  # sequence input for LSTM
-    h_lstm = tf.random.uniform((1, 100), dtype=tf.float32)       # initial hidden state for LSTM
-    c_lstm = tf.random.uniform((1, 100), dtype=tf.float32)       # initial cell state for LSTM
+model2 = Model2()
 
-    return (x_gru, y_gru, s_lstm, h_lstm, c_lstm)
+with tf.GradientTape(persistent=True) as tape: # if persistent=False it works fine
+    loss = tf.norm(model2(x, y, u) - z)
+grads = tape.gradient(loss, model2.trainable_variables)
 
+
+print("###############SUCCESS################")
+
+self.layer = tf.keras.layers.RNN(tf.keras.layers.LSTMCell(100))

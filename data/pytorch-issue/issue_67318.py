@@ -1,21 +1,10 @@
-# torch.rand(B, 2, dtype=torch.float32)  # Input shape inferred from Linear(2,2) model in the issue's reproduction steps
+import torch.nn as nn
+
+self.optimizer = optimizer
+
 import torch
-from torch import nn
+model = torch.nn.Linear(2,2)
+optim = torch.optim.SGD(model.parameters(), lr=0.1)
+lr_scheduler = torch.optim.lr_scheduler.SequentialLR(optim, [torch.optim.lr_scheduler.ConstantLR(optim), torch.optim.lr_scheduler.StepLR(optim, step_size=10)], [1])
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.linear = nn.Linear(2, 2)  # Matches the Linear layer used in the issue's example
-
-    def forward(self, x):
-        return self.linear(x)
-
-def my_model_function():
-    # Returns the model instance with default initialization
-    return MyModel()
-
-def GetInput():
-    # Generate random input matching the model's expected input shape (batch_size, 2)
-    B = 1  # Arbitrary batch size (can be adjusted)
-    return torch.rand(B, 2, dtype=torch.float32)
-
+lr_scheduler.optimizer

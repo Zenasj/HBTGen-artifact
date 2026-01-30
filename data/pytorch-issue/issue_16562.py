@@ -1,26 +1,23 @@
-# torch.rand(B, C, H, W, dtype=...)  # The input shape is not explicitly defined in the issue, so we will use a placeholder comment.
 import torch
-import torch.nn as nn
+a = torch.rand(2, 3, 4)
+b = torch.rand(4, 6)
+b_ = b.to_sparse()
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.mat = nn.Parameter(torch.ones(3, 3))
+c = torch.matmul(a, b)
+# torch.Size([2, 3, 6])
 
-    def forward(self, sp_mat):
-        res = torch.sparse.mm(sp_mat, self.mat.t())
-        return res
+c_ = torch.matmul(b.t(), a.flatten(end_dim = 1).t()).view(-1, *a.shape[:2]).permute(1, 2, 0)
+print(torch.eq(c, c_).all()) # 1
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+#print(torch.matmul(a, b_).shape)
+# RuntimeError: Expected object of backend CPU but got backend SparseCPU for argument #2 'mat2'
 
-def GetInput():
-    # Create a sparse matrix
-    sp_mat = torch.sparse.FloatTensor(
-        torch.LongTensor([[0, 0, 1], [0, 1, 2]]),
-        torch.FloatTensor([1, 2, 3]),
-        torch.Size([3, 3])
-    )
-    return sp_mat
+import torch
+a = torch.rand(2, 3, 4)
+b = torch.rand(4, 6)
 
+print(b.t() @ a.permute(2, 0, 1))
+# Correct error about shape:     RuntimeError: Expected tensor to have size 4 at dimension 1, but got size 2 for argument #2 'batch2' (while checking arguments for bmm)
+
+print(b.to_sparse().t() @ a.permute(2, 0, 1))
+# Different and cryptic error: RuntimeError: sparse tensors do not have strides

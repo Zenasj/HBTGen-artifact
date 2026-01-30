@@ -1,31 +1,38 @@
-# torch.rand(B, 4096, dtype=torch.int64)  # Input shape: batch_size x sequence_length (assuming token IDs)
+import torch.nn as nn
+
 import torch
-from torch import nn
+import torch.nn.functional as F
+from transformers import AutoTokenizer, AutoModel
 
-class MyModel(nn.Module):
-    def __init__(self):
+# Each query needs to be accompanied by an corresponding instruction describing the task.
+task_name_to_instruct = {"example": "Given a question, retrieve passages that answer the question",}
+
+query_prefix = "Instruct: "+task_name_to_instruct["example"]+"\nQuery: "
+queries = [
+    'are judo throws allowed in wrestling?',
+    'how to become a radiology technician in michigan?'
+    ]
+
+# No instruction needed for retrieval passages
+passage_prefix = ""
+passages = [
+    "Since you're reading this, you are probably someone from a judo background or someone who is just wondering how judo techniques can be applied under wrestling rules. So without further ado, let's get to the question. Are Judo throws allowed in wrestling? Yes, judo throws are allowed in freestyle and folkstyle wrestling. You only need to be careful to follow the slam rules when executing judo throws. In wrestling, a slam is lifting and returning an opponent to the mat with unnecessary force.",
+    "Below are the basic steps to becoming a radiologic technologist in Michigan:Earn a high school diploma. As with most careers in health care, a high school education is the first step to finding entry-level employment. Taking classes in math and science, such as anatomy, biology, chemistry, physiology, and physics, can help prepare students for their college studies and future careers.Earn an associate degree. Entry-level radiologic positions typically require at least an Associate of Applied Science. Before enrolling in one of these degree programs, students should make sure it has been properly accredited by the Joint Review Committee on Education in Radiologic Technology (JRCERT).Get licensed or certified in the state of Michigan."
+]
+
+# load model with tokenizer
+model = AutoModel.from_pretrained('nvidia/NV-Embed-v1', trust_remote_code=True)
+
+# get the embeddings
+max_length = 4096
+
+class ExportWrapper(torch.nn.Module):
+    def __init__(self, fn):
         super().__init__()
-        # NV-Embed-v1 stub implementation: typical transformer-based encoder
-        self.embedding_dim = 512  # Example dimension matching HuggingFace model specs
-        self.token_embeddings = nn.Embedding(num_embeddings=30522, embedding_dim=self.embedding_dim)  # BERT-like vocab size
-        self.position_embeddings = nn.Embedding(4096, self.embedding_dim)  # Max position embeddings
-        # Simplified transformer layers (actual model has 24 layers but we use 1 for stub)
-        self.transformer_layer = nn.TransformerEncoderLayer(d_model=self.embedding_dim, nhead=8)
-        self.layernorm = nn.LayerNorm(self.embedding_dim)
-    
-    def forward(self, input_ids):
-        seq_length = input_ids.size(1)
-        position_ids = torch.arange(seq_length, device=input_ids.device).unsqueeze(0)
-        embeddings = self.token_embeddings(input_ids) + self.position_embeddings(position_ids)
-        # Apply single transformer layer as stub
-        transformer_output = self.transformer_layer(embeddings.transpose(0, 1)).transpose(0, 1)
-        return self.layernorm(transformer_output).mean(dim=1)  # Mean pooling for embedding
+        self.fn = fn
 
-def my_model_function():
-    return MyModel()
+    def forward(self, *args, **kwargs):
+        return self.fn(*args, **kwargs)
 
-def GetInput():
-    # Generate random token IDs matching NV-Embed-v1 input requirements
-    B = 2  # Batch size from original example's two queries
-    return torch.randint(0, 30522, (B, 4096), dtype=torch.int64)
-
+encode = ExportWrapper(model.encode)
+exported = torch.export.export(encode, (queries,), {"instruction": query_prefix, "max_length": max_length}, strict=False)

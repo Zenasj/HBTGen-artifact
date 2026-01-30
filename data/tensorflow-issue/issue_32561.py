@@ -1,34 +1,41 @@
-# tf.random.uniform((1000, 28, 28), dtype=tf.float32) ← inferred from batch_size=1000 and input_shape=(28,28)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Simple fashion MNIST model as per original example
-        # Flatten -> Dense(128, relu) -> Dense(10, softmax)
-        self.flatten = tf.keras.layers.Flatten(input_shape=(28, 28))
-        self.dense1 = tf.keras.layers.Dense(128, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(10, activation='softmax')
+initial_run = True
 
-    def call(self, inputs, training=False):
-        x = self.flatten(inputs)
-        x = self.dense1(x)
-        return self.dense2(x)
+batch_size = 1000
 
+(train_images, train_labels), (test_images, test_labels) = tf.keras.datasets.fashion_mnist.load_data()
+train_images = train_images / 255.0
+train_dataset = tf.data.Dataset.from_tensor_slices((train_images, train_labels))
+train_dataset = train_dataset.batch(batch_size).repeat()
 
-def my_model_function():
-    # Return an instance of MyModel.
-    # Important usage note from the issue: when using
-    # tf.distribute.Strategy (e.g., MirroredStrategy), model weights
-    # and optimizer variables must be loaded/created inside strategy.scope().
-    # Here we just return the model instance.
-    return MyModel()
+strategy = tf.distribute.MirroredStrategy()
 
+with strategy.scope():
+    model = tf.keras.Sequential([
+        tf.keras.layers.Flatten(input_shape=(28, 28)),
+        tf.keras.layers.Dense(128, activation='relu'),
+        tf.keras.layers.Dense(10, activation='softmax')
+    ])
 
-def GetInput():
-    # Return a random input tensor matching model input shape: (batch_size, 28, 28)
-    batch_size = 1000  # as per example
-    # Use float32 uniformly distributed input between 0 and 1, compatible with normal preprocessing
-    return tf.random.uniform((batch_size, 28, 28), dtype=tf.float32)
+    model.compile(
+            optimizer=tf.keras.optimizers.SGD(momentum=0.9),
+            loss='sparse_categorical_crossentropy',
+            metrics=['accuracy'])
 
+if not initial_run:
+    model.load_weights("latest_weights")
+
+model.fit(
+        train_dataset,
+        steps_per_epoch=len(train_images) / batch_size,
+        epochs=1000,
+        initial_epoch=int(model.optimizer.iterations.numpy() // (len(train_images) / batch_size)),
+        callbacks=[
+            tf.keras.callbacks.ModelCheckpoint(
+                filepath="latest_weights",
+                save_weights_only=True)])

@@ -1,66 +1,97 @@
-# tf.random.uniform((B, 28, 28, 1), dtype=tf.float32) ← inferred input shape from MNIST image dimension and channel
-
-import tensorflow as tf
-from tensorflow.keras import layers, Model
-from tensorflow.keras import backend as K
 import numpy as np
+import random
 
-class MyModel(tf.keras.Model):
-    def __init__(self, input_shape=(28, 28, 1), embedding_dim=48):
-        super().__init__()
-        # Feature extractor submodel (siamese branch)
-        self.feature_extractor = self.build_siamese_model(input_shape, embedding_dim)
-        # Output layer for similarity score
-        self.output_layer = layers.Dense(1, activation="sigmoid")
-    
-    def build_siamese_model(self, input_shape, embedding_dim):
-        inputs = layers.Input(shape=input_shape)
-        x = layers.Conv2D(64, (2, 2), padding="same", activation="relu")(inputs)
-        x = layers.MaxPooling2D(pool_size=(2, 2))(x)
-        x = layers.Dropout(0.3)(x)
+def build_siamese_model(inputShape, embeddingDim=48):
+	# specify the inputs for the feature extractor network
+	inputs = Input(inputShape)
 
-        x = layers.Conv2D(64, (2, 2), padding="same", activation="relu")(x)
-        x = layers.MaxPooling2D(pool_size=(2, 2))(x)
-        x = layers.Dropout(0.3)(x)
+	# define the first set of CONV => RELU => POOL => DROPOUT layers
+	x = Conv2D(64, (2, 2), padding="same", activation="relu")(inputs)
+	x = MaxPooling2D(pool_size=(2, 2))(x)
+	x = Dropout(0.3)(x)
 
-        pooled = layers.GlobalAveragePooling2D()(x)
-        outputs = layers.Dense(embedding_dim)(pooled)
+	# second set of CONV => RELU => POOL => DROPOUT layers
+	x = Conv2D(64, (2, 2), padding="same", activation="relu")(x)
+	x = MaxPooling2D(pool_size=2)(x)
+	x = Dropout(0.3)(x)
 
-        model = Model(inputs, outputs)
-        return model
+        # prepare the final outputs
+	pooledOutput = GlobalAveragePooling2D()(x)
+	outputs = Dense(embeddingDim)(pooledOutput)
 
-    @staticmethod
-    def euclidean_distance(vectors):
-        # vectors is a list of two tensors: featsA, featsB
-        featsA, featsB = vectors
-        sum_squared = K.sum(K.square(featsA - featsB), axis=1, keepdims=True)
-        # avoid sqrt of zero by max with epsilon
-        return K.sqrt(K.maximum(sum_squared, K.epsilon()))
+	# build the model
+	model = Model(inputs, outputs)
 
-    def call(self, inputs, training=False):
-        # inputs: a list/tuple of two tensors [imgA, imgB]
-        imgA, imgB = inputs
-        featsA = self.feature_extractor(imgA, training=training)
-        featsB = self.feature_extractor(imgB, training=training)
-        # compute euclidean distance between embeddings
-        distance = self.euclidean_distance([featsA, featsB])
-        # apply sigmoid dense output layer to distance to get similarity score
-        output = self.output_layer(distance)
-        return output
+	# return the model to the calling function
+	return model
+
+def euclidean_distance(vectors):
+	# unpack the vectors into separate lists
+	(featsA, featsB) = vectors
+
+	# compute the sum of squared distances between the vectors
+	sumSquared = K.sum(K.square(featsA - featsB), axis=1,
+		keepdims=True)
+
+	# return the euclidean distance between the vectors
+	return K.sqrt(K.maximum(sumSquared, K.epsilon()))
 
 
-def my_model_function():
-    # Instantiate the model for MNIST input shape (28,28,1)
-    # embedding dimension 48 as per original code
-    model = MyModel(input_shape=(28,28,1), embedding_dim=48)
-    return model
+print("[INFO] building siamese network...")
+imgA = Input(shape=config.IMG_SHAPE)
+imgB = Input(shape=config.IMG_SHAPE)
+featureExtractor = build_siamese_model(config.IMG_SHAPE)
+featsA = featureExtractor(imgA)
+featsB = featureExtractor(imgB)
 
-def GetInput():
-    # Generate a random input of shape (batch, 28, 28, 1) matching MNIST format
-    # Assuming batch size 4 here arbitrarily, since batch size can vary in usage
-    batch_size = 4
-    # Two inputs required, imgA and imgB, each is batch_size x 28 x 28 x 1
-    imgA = tf.random.uniform((batch_size, 28, 28, 1), dtype=tf.float32)
-    imgB = tf.random.uniform((batch_size, 28, 28, 1), dtype=tf.float32)
-    return [imgA, imgB]
+distance = Lambda(utils.euclidean_distance)([featsA, featsB])
+outputs = Dense(1, activation="sigmoid")(distance)
+model = Model(inputs=[imgA, imgB], outputs=outputs)
 
+def make_pairs(images, labels):
+	# initialize two empty lists to hold the (image, image) pairs and
+	# labels to indicate if a pair is positive or negative
+	pairImages = []
+	pairLabels = []
+	# calculate the total number of classes present in the dataset
+	# and then build a list of indexes for each class label that
+	# provides the indexes for all examples with a given label
+	numClasses = len(np.unique(labels))
+	idx = [np.where(labels == i)[0] for i in range(0, numClasses)]
+	# loop over all images
+	for idxA in range(len(images)):
+		# grab the current image and label belonging to the current
+		# iteration
+		currentImage = images[idxA]
+		label = labels[idxA]
+		# randomly pick an image that belongs to the *same* class
+		# label
+		idxB = np.random.choice(idx[label])
+		posImage = images[idxB]
+		# prepare a positive pair and update the images and labels
+		# lists, respectively
+		pairImages.append([currentImage, posImage])
+		pairLabels.append([1])
+		# grab the indices for each of the class labels *not* equal to
+		# the current label and randomly pick an image corresponding
+		# to a label *not* equal to the current label
+		negIdx = np.where(labels != label)[0]
+		negImage = images[np.random.choice(negIdx)]
+		# prepare a negative pair of images and update our lists
+		pairImages.append([currentImage, negImage])
+		pairLabels.append([0])
+	# return a 2-tuple of our image pairs and labels
+	return (np.array(pairImages), np.array(pairLabels))
+
+# load MNIST dataset and scale the pixel values to the range of [0, 1]
+print("[INFO] loading MNIST dataset...")
+(trainX, trainY), (testX, testY) = mnist.load_data()
+trainX = trainX / 255.0
+testX = testX / 255.0
+# add a channel dimension to the images
+trainX = np.expand_dims(trainX, axis=-1)
+testX = np.expand_dims(testX, axis=-1)
+# prepare the positive and negative pairs
+print("[INFO] preparing positive and negative pairs...")
+(pairTrain, labelTrain) = utils.make_pairs(trainX, trainY)
+(pairTest, labelTest) = utils.make_pairs(testX, testY)

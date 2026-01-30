@@ -1,28 +1,46 @@
-# torch.rand(2, 64, 50, 50, dtype=torch.float16) ← Add a comment line at the top with the inferred input shape
+import torch.nn as nn
+import numpy as np
 
 import torch
-import torch.nn as nn
+from classy_vision.models import build_model
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.bn = nn.BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+torch.manual_seed(123)
+dtype = torch.float16
+model = build_model({"name": "resnext101_32x4d"}).eval().cuda()
 
-    def forward(self, x):
-        return self.bn(x)
+# By default BatchNorm weights are set to 0. This prevents that.
+model._initialize_weights(False)
+model = model.to(dtype)
+device = torch.device('cuda')
+inp = torch.randn(2, 3, 50, 50, device=torch.device('cuda'), dtype=dtype)
+out1 = model(inp)
+inp = inp.contiguous(memory_format=torch.channels_last)
+out2 = model(inp)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    model = MyModel()
-    model.eval()  # Set the model to evaluation mode
-    model.cuda()  # Move the model to GPU
-    model.to(torch.float16)  # Convert the model to half precision
-    return model
+print((out1 - out2).abs().mean().item())
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    dtype = torch.float16
-    device = torch.device('cuda')
-    inp = torch.randn(2, 64, 50, 50, device=device, dtype=dtype)
-    return inp
+# Using float16 tolerances from torch/testing/_core.py
+print(torch.allclose(out1, out2, rtol=1e-3, atol=1e-3))
 
+0.0718994140625
+False
+
+import torch
+from classy_vision.models import build_model
+
+torch.manual_seed(123)
+dtype = torch.float16
+model = torch.nn.BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+model = model.eval().cuda()
+model = model.to(dtype)
+device = torch.device('cuda')
+inp = torch.randn(2, 64, 50, 50, device=torch.device('cuda'), dtype=dtype)
+out1 = model(inp)
+inp = inp.contiguous(memory_format=torch.channels_last)
+out2 = model(inp)
+
+print((out1 - out2).abs().mean().item())
+print(torch.allclose(out1, out2, rtol=1e-3, atol=1e-3))
+
+1.12890625
+False

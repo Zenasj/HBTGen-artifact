@@ -1,21 +1,23 @@
-# torch.rand(1, dtype=torch.complex128)
 import torch
-from torch import nn
+import os
+import pathlib
+from ctypes import cdll
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        finfo = torch.finfo(torch.complex128)
-        val = finfo.min / 2
-        self.nom = nn.Parameter(torch.tensor([complex(val, val)], dtype=torch.complex128))
-        self.denom = nn.Parameter(torch.tensor([complex(val, val)], dtype=torch.complex128))
-    
-    def forward(self, x):
-        return self.nom / self.denom
+if int(os.getenv("NO_LOAD", "0")) == 0:
+    lib = pathlib.Path(os.getenv("LIB",""))
+    if not lib.is_file():
+        from torch._inductor.codecache import CppCodeCache
+        path = CppCodeCache.load("")._name
+        raise ValueError(f"export LIB=\"{path}\" and re-run.")
 
-def my_model_function():
-    return MyModel()
+    cdll.LoadLibrary(lib)
 
-def GetInput():
-    return torch.rand(1, dtype=torch.complex128)
-
+device="cpu"
+dtype=torch.complex128
+finfo = torch.finfo(dtype)
+nom = torch.tensor([complex(finfo.min / 2, finfo.min / 2)], dtype=dtype, device=device)
+denom = torch.tensor([complex(finfo.min / 2, finfo.min / 2)], dtype=dtype, device=device)
+res = (nom / denom).item()
+# Expected complex(1.0, 0.0)
+assert res.real > 0.5, res
+print("OK!")

@@ -1,96 +1,92 @@
-# tf.random.uniform((B,)) with each element a dictionary of scalar features (strings or floats/ints)
+from __future__ import absolute_import, division, print_function
 
+import numpy as np
+import pandas as pd
+
+#!pip install tensorflow==2.0.0-alpha0
 import tensorflow as tf
+
+from tensorflow import feature_column
+from tensorflow import keras
 from tensorflow.keras import layers
+from sklearn.model_selection import train_test_split
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define feature columns 
-        feature_columns = []
+URL = 'https://storage.googleapis.com/applied-dl/heart.csv'
+dataframe = pd.read_csv(URL)
+dataframe.head()
 
-        # Numeric columns
-        numeric_features = ['age', 'trestbps', 'chol', 'thalach', 'oldpeak', 'slope', 'ca']
-        for feature_name in numeric_features:
-            feature_columns.append(tf.feature_column.numeric_column(feature_name))
-        
-        # Bucketized column for age
-        age = tf.feature_column.numeric_column("age")
-        age_buckets = tf.feature_column.bucketized_column(age, boundaries=[18, 25, 30, 35, 40, 45, 50, 55, 60, 65])
-        feature_columns.append(age_buckets)
-        
-        # Categorical column with vocabulary and indicator (one-hot)
-        thal = tf.feature_column.categorical_column_with_vocabulary_list('thal', ['fixed', 'normal', 'reversible'])
-        thal_one_hot = tf.feature_column.indicator_column(thal)
-        feature_columns.append(thal_one_hot)
-        
-        # Embedding column on thal
-        thal_embedding = tf.feature_column.embedding_column(thal, dimension=8)
-        feature_columns.append(thal_embedding)
-        
-        # Crossed column example (age bucket crossed with thal), indicator column
-        crossed_feature = tf.feature_column.crossed_column([age_buckets, thal], hash_bucket_size=1000)
-        crossed_feature = tf.feature_column.indicator_column(crossed_feature)
-        feature_columns.append(crossed_feature)
+train, test = train_test_split(dataframe, test_size=0.2)
+train, val = train_test_split(train, test_size=0.2)
+print(len(train), 'train examples')
+print(len(val), 'validation examples')
+print(len(test), 'test examples')
 
-        # DenseFeatures layer to transform inputs dict to dense tensor
-        self.feature_layer = tf.keras.layers.DenseFeatures(feature_columns)
+# A utility method to create a tf.data dataset from a Pandas Dataframe
+def df_to_dataset(dataframe, shuffle=True, batch_size=32):
+  dataframe = dataframe.copy()
+  labels = dataframe.pop('target')
+  ds = tf.data.Dataset.from_tensor_slices((dict(dataframe), labels))
+  if shuffle:
+    ds = ds.shuffle(buffer_size=len(dataframe))
+  ds = ds.batch(batch_size)
+  return ds
 
-        # Define dense network layers
-        self.dense1 = layers.Dense(128, activation='relu')
-        self.dense2 = layers.Dense(64, activation='relu')
-        self.final = layers.Dense(1, activation='sigmoid')
+batch_size = 5 # A small batch sized is used for demonstration purposes
+train_ds = df_to_dataset(train, batch_size=batch_size)
+val_ds = df_to_dataset(val, shuffle=False, batch_size=batch_size)
+test_ds = df_to_dataset(test, shuffle=False, batch_size=batch_size)
 
-    def call(self, inputs):
-        """
-        inputs: dict of feature_name -> tensor of shape (batch_size, 1),
-        where categorical string features are dtype string, and numeric are float/int.
-        """
-        x = self.feature_layer(inputs)
-        x = self.dense1(x)
-        x = self.dense2(x)
-        out = self.final(x)
-        return out
+age = feature_column.numeric_column("age")
 
+feature_columns = []
+feature_layer_inputs = {}
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+# numeric cols
+for header in ['age', 'trestbps', 'chol', 'thalach', 'oldpeak', 'slope', 'ca']:
+  feature_columns.append(feature_column.numeric_column(header))
+  feature_layer_inputs[header] = tf.keras.Input(shape=(1,), name=header)
 
+# bucketized cols
+age_buckets = feature_column.bucketized_column(age, boundaries=[18, 25, 30, 35, 40, 45, 50, 55, 60, 65])
+feature_columns.append(age_buckets)
 
-def GetInput():
-    # Construct a batch of example inputs that match expected feature signatures.
-    # For simplicity, batch_size=4 here.
+# indicator cols
+thal = feature_column.categorical_column_with_vocabulary_list(
+      'thal', ['fixed', 'normal', 'reversible'])
+thal_one_hot = feature_column.indicator_column(thal)
+feature_columns.append(thal_one_hot)
+feature_layer_inputs['thal'] = tf.keras.Input(shape=(1,), name='thal', dtype=tf.string)
 
-    batch_size = 4
-    import numpy as np
+# embedding cols
+thal_embedding = feature_column.embedding_column(thal, dimension=8)
+feature_columns.append(thal_embedding)
 
-    # Input dict keys must match feature columns:
-    # Numeric features are floats shaped (batch_size, 1)
-    numeric_features = {
-        'age': np.random.uniform(20, 60, size=(batch_size, 1)).astype(np.float32),
-        'trestbps': np.random.uniform(90, 140, size=(batch_size, 1)).astype(np.float32),
-        'chol': np.random.uniform(100, 300, size=(batch_size, 1)).astype(np.float32),
-        'thalach': np.random.uniform(100, 200, size=(batch_size, 1)).astype(np.float32),
-        'oldpeak': np.random.uniform(0, 5, size=(batch_size, 1)).astype(np.float32),
-        'slope': np.random.uniform(0, 3, size=(batch_size, 1)).astype(np.float32),
-        'ca': np.random.uniform(0, 4, size=(batch_size, 1)).astype(np.float32)
-    }
+# crossed cols
+crossed_feature = feature_column.crossed_column([age_buckets, thal], hash_bucket_size=1000)
+crossed_feature = feature_column.indicator_column(crossed_feature)
+feature_columns.append(crossed_feature)
 
-    # Categorical feature 'thal' must be strings shaped (batch_size, 1)
-    # Choose randomly among ['fixed', 'normal', 'reversible']
-    thal_options = np.array(['fixed', 'normal', 'reversible'])
-    thal_idx = np.random.randint(0, 3, size=(batch_size,))
-    thal_data = thal_options[thal_idx].reshape(batch_size, 1)
+batch_size = 32
+train_ds = df_to_dataset(train, batch_size=batch_size)
+val_ds = df_to_dataset(val, shuffle=False, batch_size=batch_size)
+test_ds = df_to_dataset(test, shuffle=False, batch_size=batch_size)
 
-    inputs = {}
-    inputs.update(numeric_features)
-    inputs['thal'] = tf.constant(thal_data)
+feature_layer = tf.keras.layers.DenseFeatures(feature_columns)
+feature_layer_outputs = feature_layer(feature_layer_inputs)
 
-    # Wrap numpy arrays as tensors
-    for k, v in inputs.items():
-        if not isinstance(v, tf.Tensor):
-            inputs[k] = tf.convert_to_tensor(v)
+x = layers.Dense(128, activation='relu')(feature_layer_outputs)
+x = layers.Dense(64, activation='relu')(x)
 
-    return inputs
+baggage_pred = layers.Dense(1, activation='sigmoid')(x)
 
+model = keras.Model(inputs=[v for v in feature_layer_inputs.values()], outputs=baggage_pred)
+
+model.compile(optimizer='adam',
+              loss='binary_crossentropy',
+              metrics=['accuracy'])
+
+model.fit(train_ds)
+
+with tf.compat.v1.Session() as sess:
+    sess.run(tf.compat.v1.initialize_all_tables())
+    model.fit(train_ds)

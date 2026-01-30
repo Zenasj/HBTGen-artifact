@@ -1,25 +1,11 @@
-# tf.random.uniform((B,)) ← Input is a 1D tensor since the example model input shape is (1,)
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Following the example dummy_model with a single Dense layer, input_shape=(1,)
-        self.dense = tf.keras.layers.Dense(1)
-
-    def call(self, inputs):
-        # Forward pass through the dense layer
-        return self.dense(inputs)
-
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Based on the example, input shape is (batch_size, 1)
-    # Batch size is arbitrary; here we use 4 as in the example
-    batch_size = 4
-    # Shape is (batch_size, 1)
-    # Use uniform random floats as placeholder input, dtype float32
-    return tf.random.uniform((batch_size, 1), dtype=tf.float32)
-
+strategy = tf.distribute.MirroredStrategy()
+ds = tf.data.Dataset.list_files(".*", shuffle=False).map(lambda x: (tf.strings.length(x), tf.strings.length(x)))
+with strategy.scope():
+  dummy_model = tf.keras.Sequential()
+  dummy_model.add(tf.keras.layers.Dense(1, input_shape=(1,)))
+  dummy_model.compile(loss="mse")
+dummy_model.fit(ds.batch(4))

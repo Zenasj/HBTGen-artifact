@@ -1,20 +1,38 @@
-# torch.randint(low=0, high=100000, size=(10000000,))  # Inferred input shape
+import argparse
+import time
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Compare non-dim and dim implementations of torch.unique with return_inverse=True
-        # Both should produce the same inverse indices for 1D tensors
-        _, inv_non_dim = torch.unique(x, sorted=False, return_inverse=True)
-        _, inv_dim = torch.unique(x, sorted=False, return_inverse=True, dim=0)
-        return torch.all(inv_non_dim == inv_dim)  # Return comparison result
+def test_unique(use_cuda, use_dim):
+    N = int(1e7)
+    device = 'cuda:0' if use_cuda else 'cpu'
+    for high in torch.logspace(1, 5, 5):
+        high = int(high.item())
+        print('Timing unique with high={} for {} values on {}'.format(
+            high, N, device))
+        x = torch.randint(low=0, high=high, size=(N,))
+        if use_cuda:
+            x = x.to(device)
 
-def my_model_function():
-    # Returns a model instance that compares the two torch.unique implementations
-    return MyModel()
+        torch.cuda.synchronize()
+        start = time.time()
+        if use_dim:
+            unique, inv = torch.unique(
+                x, sorted=False, return_inverse=True, dim=0)
+        else:
+            unique, inv = torch.unique(x, sorted=False, return_inverse=True)
+        torch.cuda.synchronize()
+        print(time.time()-start)
 
-def GetInput():
-    # Returns a 1D tensor matching the input shape expected by MyModel
-    return torch.randint(low=0, high=100000, size=(10000000,), dtype=torch.int64)
 
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--use_cuda', action='store_true', default=False)
+    parser.add_argument('--use_dim', action='store_true', default=False)
+    args = parser.parse_args()
+    use_cuda = args.use_cuda and torch.cuda.is_available()
+    use_dim = args.use_dim
+    test_unique(use_cuda=use_cuda, use_dim=use_dim)
+
+
+if __name__=='__main__':
+    main()

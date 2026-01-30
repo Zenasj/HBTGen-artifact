@@ -1,21 +1,42 @@
+from torch.multiprocessing import Process
+model = loadModel() # somehow load a model (e.g. from torch vision)
+inputList = loadListOfInputs() # somehow get the list of input tensors
+
+processes = []
+for i in range(100):
+    processes.append(Process(target=doForwardPass, kwargs={'input': inputList[i]}))
+    processes[-1].start()
+
+for i in range(100):
+    processes[i].join()
+
+def doForwardPass(input):
+    # model.cuda() # this, uncommented, used to work also
+    output = model(input)
+
 import torch
-import torchvision.models as models
-from torch import nn
+import os
 
-# torch.rand(B, 3, 224, 224, dtype=torch.float32)
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.model = models.resnet50()  # Base model from example context
+print(torch.zeros(2))
 
-    def forward(self, x):
-        return self.model(x)
+os.fork()
 
-def my_model_function():
-    # Returns a pre-defined ResNet50-based model
-    return MyModel()
+print(torch.zeros(2, device='cuda'))
 
-def GetInput():
-    # Generates a single input tensor matching ResNet50's input requirements
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
+import torch
+from torch.multiprocessing import Process
+import torchvision
 
+model = torchvision.models.resnet50()
+inputList = [torch.randn(1, 3, 224, 224), torch.randn(1, 3, 224, 224)]
+
+def doForwardPass(input):
+    model.cuda()
+
+processes = []
+for i in range(2):
+    processes.append(Process(target=doForwardPass, kwargs={'input': inputList[i]}))
+    processes[-1].start()
+
+for i in range(2):
+    processes[i].join()

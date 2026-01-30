@@ -1,19 +1,21 @@
-# tf.random.uniform((B, SeqLen), dtype=tf.int64) and (B, SeqLen) position ids as inputs
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
-import tensorflow as tf
+from __future__ import (absolute_import, division, print_function,
+                        unicode_literals)
+
+
 import numpy as np
+import tensorflow as tf
 
 def positional_encoding(shape, dtype=tf.float32):
     """
-    Positional encoding initializer as used in the CustomEmbedding layer.
-    Generates sinusoidal embeddings for position indices.
-    
-    Args:
-        shape: tuple of (max_position_embeddings, hidden_size)
-        dtype: output dtype
-    
-    Returns:
-        Tensor of shape (max_position_embeddings, hidden_size) with positional encodings.
+    positional encoding initializer. Note that we can't freeze the embedding layer because tf is shit
+    :param shape:
+    :param dtype:
+    :return:
     """
     n_pos, dim = shape
     position_enc = np.array([
@@ -27,27 +29,27 @@ def positional_encoding(shape, dtype=tf.float32):
     # apply cos to odd indices in the array; 2i+1
     position_enc[:, 1::2] = np.cos(position_enc[:, 1::2])
 
+    # pos_encoding = position_enc[np.newaxis, ...]
+
     return tf.cast(position_enc, dtype=dtype)
 
 
 class CustomEmbedding(tf.keras.layers.Layer):
+    """Construct the embeddings from word, position and token_type embeddings.
     """
-    Custom embedding layer combining word embeddings and positional embeddings.
-    Positional embeddings are initialized with a fixed positional_encoding initializer.
-    Word embeddings are trainable.
-    """
-    def __init__(self, vocab_size, hidden_size, max_position_embeddings, **kwargs):
+
+    def __init__(self, vocab_size, hidden_size,  max_position_embeddings, **kwargs):
         super(CustomEmbedding, self).__init__(**kwargs)
         self.vocab_size = vocab_size
         self.hidden_size = hidden_size
-        # +1 to max_position_embeddings as per original code
-        self.max_position_embeddings = max_position_embeddings + 1
+        self.max_position_embeddings = max_position_embeddings
+        self.pad_idx = 0
+        self.max_position_embeddings += 1
+
 
     def build(self, input_shape):
         with tf.name_scope("position_embeddings"):
-            # Important: Provide a 'name' to the weight to avoid checkpoint saving issue
             self.position_embeddings = self.add_weight(
-                name="position_embeddings",
                 shape=(self.max_position_embeddings, self.hidden_size),
                 initializer=positional_encoding,
                 trainable=False,
@@ -55,7 +57,7 @@ class CustomEmbedding(tf.keras.layers.Layer):
 
         with tf.name_scope("word_embeddings"):
             self.word_embeddings = self.add_weight(
-                name="token_weight",
+                "token_weight",
                 shape=(self.vocab_size, self.hidden_size),
                 initializer=tf.keras.initializers.TruncatedNormal(stddev=0.02),
                 trainable=True,
@@ -65,83 +67,76 @@ class CustomEmbedding(tf.keras.layers.Layer):
 
     def call(self, inputs):
         input_ids, position_ids = inputs
+
         inputs_embeds = tf.nn.embedding_lookup(self.word_embeddings, input_ids)
         position_embeddings = tf.nn.embedding_lookup(self.position_embeddings, position_ids)
+
         embeddings = inputs_embeds + position_embeddings
         return embeddings
 
 
 class TestModel(tf.keras.Model):
-    """
-    A simple classifier model that uses CustomEmbedding and a Dense layer.
-    Takes as input a tuple of (input_ids, position_ids), embeds them and predicts classes.
-    """
-    def __init__(self, vocab_size, hidden_size, max_position_embeddings, num_class, **kwargs):
+    def __init__(self, vocab_size, hidden_size,  max_position_embeddings, num_class, **kwargs):
         super(TestModel, self).__init__(**kwargs)
         self.emb = CustomEmbedding(vocab_size, hidden_size, max_position_embeddings)
         self.dense = tf.keras.layers.Dense(num_class, name="class_prj")
 
     def call(self, inputs):
         word_emb = self.emb(inputs)
-        # Mean pooling over sequence length dimension (axis=1)
         sent_emb = tf.reduce_mean(word_emb, axis=1)
         logit = self.dense(sent_emb)
         return logit
 
-
-class MyModel(tf.keras.Model):
-    """
-    Wrapper model that encapsulates the TestModel with fixed hyperparameters.
-    This acts as the main entrypoint model as requested.
-    """
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Using same hyperparameters as the provided example
-        VOCAB_SIZE = 100
-        HIDDEN_SIZE = 5
-        MAX_POSITION_EMBEDDING = 30
-        NUM_CLASS = 3
-        self.model = TestModel(VOCAB_SIZE, HIDDEN_SIZE, MAX_POSITION_EMBEDDING, NUM_CLASS)
-
-    def call(self, inputs):
-        return self.model(inputs)
+VOCAB_SIZE = 100
+HIDDEN_SIZE = 5
+MAX_POSITION_EMBEDDING = 30
+NUM_CLASS = 3
+EPOCH = 1
+LR = 0.001
 
 
-def my_model_function():
-    """
-    Factory function to return an instance of MyModel.
-    """
-    return MyModel()
+def compute_loss(label, logit):
+    cross_ent = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logit, labels=label)
+    return tf.reduce_mean(cross_ent)
 
 
-def GetInput():
-    """
-    Generate dummy inputs corresponding to the input signature expected by MyModel:
-    - input_ids: (batch_size, seq_len), int64
-    - position_ids: (batch_size, seq_len), int64 (positions from 0 to seq_len-1)
-    
-    We choose:
-      batch_size = 3
-      seq_len = 4
-    
-    Returns:
-      Tuple of two tf.Tensor objects (input_ids, position_ids)
-    """
-    batch_size = 3
-    seq_len = 4
-    vocab_size = 100  # must <= MyModel VOCAB_SIZE
+if __name__ == '__main__':
+    tf.random.set_seed(0)
+    # construct the model
+    model = TestModel(VOCAB_SIZE, HIDDEN_SIZE, MAX_POSITION_EMBEDDING, NUM_CLASS)
 
-    # Random input_ids in vocabulary range [0, vocab_size)
-    input_ids = tf.random.uniform(
-        shape=(batch_size, seq_len),
-        minval=0,
-        maxval=vocab_size,
-        dtype=tf.int64)
+    # generate dataset
+    seqs = np.array([[0, 0, 1], [1, 1, 1], [2, 3, 2], [3, 4, 3], [4, 4, 4]], dtype=np.int64)
+    poss = np.array([[0, 1, 2], [0, 1, 2], [0, 1, 2], [0, 1, 2], [0, 1, 2]], dtype=np.int64)
+    label = np.array([0, 1, 2, 1, 1], dtype=np.int64)
+    dataset = tf.data.Dataset.from_tensor_slices((seqs, poss, label)).batch(3)
 
-    # position ids from 0 to seq_len-1 repeated for each batch
-    position_ids = tf.tile(
-        tf.expand_dims(tf.range(seq_len, dtype=tf.int64), 0),
-        multiples=[batch_size, 1])
+    # def optim
+    optim = tf.keras.optimizers.RMSprop(LR, clipnorm=1.)
 
-    return (input_ids, position_ids)
+    # def checkpoint
+    ckpt = tf.train.Checkpoint(model=model, optimizer=optim)
+    ckpt_manager = tf.train.CheckpointManager(ckpt,
+                                              directory="./tmp/test_ckp",
+                                              max_to_keep=2)
 
+
+    def train_step(inputs):
+        seq, pos, label = inputs
+        with tf.GradientTape() as tape:
+            logit = model((seq, pos))
+            loss = compute_loss(label, logit)
+
+        gradients = tape.gradient(loss, model.trainable_variables)
+        optim.apply_gradients(zip(gradients, model.trainable_variables))
+        return loss
+
+
+    for epoch in range(EPOCH):
+        loss = 0.
+        for batch in dataset:
+            b_loss = train_step(batch)
+            loss += b_loss.numpy()
+
+        print(loss)
+        ckpt_save_path = ckpt_manager.save()

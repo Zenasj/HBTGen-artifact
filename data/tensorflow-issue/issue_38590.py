@@ -1,121 +1,204 @@
-# tf.random.uniform((B, 1), dtype=tf.string)  ← Input shape inference: batch size B, single string per example
+from tensorflow import keras
 
-import tensorflow as tf
+py
 from tensorflow.keras import layers
-from tensorflow.keras.layers.experimental.preprocessing import TextVectorization
+import tensorflow as tf
 import numpy as np
+from tensorflow.keras.layers.experimental.preprocessing import TextVectorization
+from tensorflow.keras import layers
 
-# Character dictionary used for vocabulary; adjusted to avoid escaping issues and length mismatch
-CHAR_DICT = 'abcdefghijklmnopqrstuvwxyz0123456789 .!?:,\'%-()/$|&;[]"'
+print(tf.__version__)
 
-embedding_dim = 128  # Embedding dimension constant used in vectorize submodel
+# Model constants.
+embedding_dim = 128
+CHAR_DICT = 'abcdefghijklmnopqrstuvwxyz0123456789 .!?:,\'%-\(\)/$|&;[]"'
 
 
 @tf.keras.utils.register_keras_serializable(package='Custom', name='l1')
 @tf.function
-def split_text(text_list):
-    # Custom function to split strings into characters expected by TextVectorization
-    # text_list: a scalar or vector of strings; returns shape (1, seq_len)
+def split_text(text_list: list):
     joined = tf.strings.reduce_join(text_list)
-    split = tf.strings.unicode_split(joined, 'UTF-8')
-    return tf.expand_dims(split, 0)  # Add batch dim as required
+    split = tf.strings.split(joined, sep="")
+    return tf.expand_dims(split, 0)
 
 
-def vectorize_layers(factor):
-    # Builds a submodel that vectorizes text input and applies embedding, dense and dropout layers
+def vectorize_layers(factor, time_dims):
+    embedding_dim = 128
     text_input = layers.Input(shape=(1,), dtype=tf.string)
     vectorize_layer = TextVectorization(
         split=split_text,
-        max_tokens=len(CHAR_DICT) + 1,  # +1 for OOV or masking token
+        max_tokens=len(CHAR_DICT) + 1,
         output_mode='int',
-        output_sequence_length=128
-    )
+        output_sequence_length=128)
+
     vectorize_layer.set_vocabulary(list(CHAR_DICT))
     x = vectorize_layer(text_input)
     x = layers.Embedding(len(CHAR_DICT) + 1, embedding_dim)(x)
     x = layers.Dense(factor, activation='relu')(x)
     x = layers.Dropout(0.2)(x)
-    # Note: Avoid flatten here because inside TimeDistributed that causes output mismatch
-    model = tf.keras.Model(text_input, x)
+    model = tf.keras.Model(inputs=text_input, outputs=x)
     return model
 
 
-class MyModel(tf.keras.Model):
-    def __init__(self, input_labels=["a", "b"], factor=10):
-        super().__init__()
-        self.input_labels = input_labels
-        self.factor = factor
-        # Build vectorize submodel once
-        self.vectorize_submodel = vectorize_layers(factor)
-        # Prepare to accept multiple named string inputs
-        self.flatten = layers.Flatten()
-        self.concat = layers.Concatenate()
-        self.dense1 = layers.Dense(factor)
-        self.dense2 = layers.Dense(1, activation='sigmoid', name='predictions')
+def build_model(input_labels, factor):
+    inputs = []
+    mergers = []
+    for label in input_labels:
+        text_input = tf.keras.Input(shape=(1,), dtype=tf.string, name=label)
+        inputs.append(text_input)
+        mergers.append(text_input)
 
-    def call(self, inputs):
-        # inputs is a dict of string tensor with shape (batch, 1)
-        # Extract inputs for each label, shape=(batch, 1)
-        subs = []
-        for label in self.input_labels:
-            # Expect inputs[label] shape (batch, 1), tf.string dtype
-            inp = inputs[label]
-            # Expand dims for channel if needed for TimeDistributed, here we add axis=-1
-            # We need shape (batch, 1, 1), so we expand dims on axis=-1
-            x = tf.expand_dims(inp, -1)
-            # Send through TimeDistributed vectorize model
-            # Actually vectorize_submodel expects (batch, 1), so remove TimeDistributed and assume single time step
-            # But original user code tried TimeDistributed over multiple inputs concatenated - we replicate that logic here
-            # So to fuse multiple inputs:
-            # -> concatenate inputs along the last dimension (axis=-1) after expanding dims
-            subs.append(inp)
-
-        # Concatenate input strings along last dimension axis
-        concat_inputs = self.concat(subs)  # shape (batch, num_inputs)
-        # Expand last dim for apply vectorize submodel via TimeDistributed
-        # But vectorize_layers expects (batch, 1) shape, so instead we split along the last dim and map vectorize_submodel
-        # Simulate TimeDistributed by mapping over last dim (axis=1)
-        # Instead of complex logic, implement a simple loop tf.vectorized_map is tricky for strings
-        # We'll stack and map manually via tf.map_fn
-        # But given complexity, do per input separately and stack after embedding
-
-        # Alternatively, as original code used layers.TimeDistributed(vectorize_layers)(x),
-        # where x was concatenated strings expanded by axis -1
-        # So we recreate that:
-        # x = tf.expand_dims(concat_inputs, -1)  # shape (batch, time, 1)
-        # Then apply TimeDistributed
-        x = tf.expand_dims(concat_inputs, -1)  # shape (batch, time, 1)
-        x = tf.keras.layers.TimeDistributed(self.vectorize_submodel)(x)  # output shape (batch, time, seq_len, embedding_dim) with factor dense dims
-
-        # Flatten to prepare for final dense layers
-        x = self.flatten(x)  # shape (batch, ...)
-
-        x = self.dense1(x)
-        x = self.dense2(x)
-        return x
+    x = layers.Concatenate()(mergers)
+    x = tf.expand_dims(x, axis=-1)
+    x = layers.TimeDistributed(vectorize_layers(factor, len(input_labels)))(x)
+    x = layers.Flatten()(x)
+    x = layers.Dense(factor)(x)
+    x = layers.Dense(1, activation='sigmoid', name='predictions')(x)
+    model = tf.keras.Model(inputs=inputs, outputs=x)
+    return model
 
 
-def my_model_function():
-    # Instantiate MyModel with default input labels and factor
-    return MyModel(input_labels=["a", "b"], factor=10)
+model = build_model(["a", "b"], 10)
+# model.save("/tmp/asd")
+
+# Compile the model with binary crossentropy loss and an adam optimizer.
+model.compile(
+    loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
+
+model.fit({"a": np.array(["heasdasdre", "is somdfas", "dfae ", "mads d!", "asd dfa%# 12"]),
+           "b": np.array(["asagda gdaasdfasd fgaewgasdg", "asd", "asdfasd,%#", "dasd", "asdasfg"])},
+          np.array([0.1, 0.5, 0.4, 0.6, 0.3]))
+
+print(model.predict({"a": ["here is some mad dog shit right ere boiz!"], "b": ["asdagaewgasdg"]}))
+
+py
+
+from tensorflow.keras import layers
+import tensorflow as tf
+import numpy as np
+from tensorflow.keras.layers.experimental.preprocessing import TextVectorization
+from tensorflow.keras import layers
+
+print(tf.__version__)
+
+# Model constants.
+embedding_dim = 128
+CHAR_DICT = 'abcdefghijklmnopqrstuvwxyz0123456789 .!?:,\'%-\(\)/$|&;[]"'
 
 
-def GetInput():
-    # Construct sample input dictionary with inputs for all required labels
-    batch_size = 2  # Reasonable batch size for demonstration
+@tf.keras.utils.register_keras_serializable(package='Custom', name='l1')
+@tf.function
+def split_text(text_list: list):
+    joined = tf.strings.reduce_join(text_list)
+    split = tf.strings.split(joined, sep="")
+    return tf.expand_dims(split, 0)
 
-    # Each input is a tensor of shape (batch, 1) dtype string
-    # Provide example strings compatible with CHAR_DICT and the vectorizer preprocessor
-    a_input = tf.constant([
-        "hello world!", 
-        "test input"
-    ], shape=(batch_size, 1), dtype=tf.string)
 
-    b_input = tf.constant([
-        "tensorflow is fun", 
-        "keras layers"
-    ], shape=(batch_size, 1), dtype=tf.string)
+def vectorize_layers(factor, time_dims):
+    embedding_dim = 128
+    text_input = layers.Input(shape=(1))
+    # text_input = layers.Input(shape=(1,), dtype=tf.string)
+    # vectorize_layer = TextVectorization(
+    #     split=split_text,
+    #     max_tokens=len(CHAR_DICT) + 1,
+    #     output_mode='int',
+    #     output_sequence_length=128)
 
-    # Return dict keyed by input label names matching MyModel's expectation
-    return {"a": a_input, "b": b_input}
+    # vectorize_layer.set_vocabulary(list(CHAR_DICT))
+    # x = vectorize_layer(text_input)
+    x = layers.Embedding(len(CHAR_DICT) + 1, embedding_dim)(text_input)
+    x = layers.Dense(factor, activation='relu')(x)
+    x = layers.Dropout(0.2)(x)
+    model = tf.keras.Model(inputs=text_input, outputs=x)
+    return model
 
+
+def build_model(input_labels, factor):
+    inputs = []
+    mergers = []
+    for label in input_labels:
+        text_input = tf.keras.Input(shape=(1,), dtype=tf.float32, name=label)
+        inputs.append(text_input)
+        mergers.append(text_input)
+
+    x = layers.Concatenate()(mergers)
+    x = tf.expand_dims(x, axis=-1)
+    x = layers.TimeDistributed(vectorize_layers(factor, len(input_labels)))(x)
+    x = layers.Flatten()(x)
+    x = layers.Dense(factor)(x)
+    x = layers.Dense(1, activation='sigmoid', name='predictions')(x)
+    model = tf.keras.Model(inputs=inputs, outputs=x)
+    return model
+
+
+model = build_model(["a", "b"], 10)
+# model.save("/tmp/asd")
+
+# Compile the model with binary crossentropy loss and an adam optimizer.
+model.compile(
+    loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
+
+model.fit({"a": np.array([4, 5, 6, 6, 7], dtype=np.float),
+           "b": np.array([6, 4, 2, 1, 0], dtype=np.float)},
+          np.array([0.1, 0.5, 0.4, 0.6, 0.3], dtype=np.float))
+
+print(model.predict({"a": np.array([2.5], dtype=np.float), "b": np.array([2.5], dtype=np.float)}))
+
+py
+from tensorflow.keras import layers
+import tensorflow as tf
+import numpy as np
+from tensorflow.keras.layers.experimental.preprocessing import TextVectorization
+from tensorflow.keras import layers
+
+print(tf.__version__)
+
+# Model constants.
+embedding_dim = 128
+CHAR_DICT = 'abcdefghijklmnopqrstuvwxyz0123456789 .!?:,\'%-\(\)/$|&;[]"'
+
+
+@tf.keras.utils.register_keras_serializable(package='Custom', name='l1')
+@tf.function
+def split_text(text_list: list):
+    joined = tf.strings.reduce_join(text_list)
+    split = tf.strings.split(joined, sep="")
+    return tf.expand_dims(split, 0)
+
+
+def build_model(factor, time_dims):
+    embedding_dim = 128
+    text_input = layers.Input(shape=(1,), dtype=tf.string)
+    vectorize_layer = TextVectorization(
+        split=split_text,
+        max_tokens=len(CHAR_DICT) + 1,
+        output_mode='int',
+        output_sequence_length=128)
+
+    vectorize_layer.set_vocabulary(list(CHAR_DICT))
+    x = vectorize_layer(text_input)
+    x = layers.Embedding(len(CHAR_DICT) + 1, embedding_dim)(x)
+    x = layers.Dense(factor, activation='relu')(x)
+    x = layers.Dropout(0.2)(x)
+    x = layers.Flatten()(x)
+    x = layers.Dense(1, activation='sigmoid', name='predictions')(x)
+    model = tf.keras.Model(inputs=text_input, outputs=x)
+    return model
+
+
+model = build_model(10, 10)
+# model.save("/tmp/asd")
+
+# Compile the model with binary crossentropy loss and an adam optimizer.
+model.compile(
+    loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
+
+model.fit( np.array(["heasdasdre", "is somdfas", "dfae ", "mads d!", "asd dfa%# 12"]),
+          np.array([0.1, 0.5, 0.4, 0.6, 0.3]))
+
+print(model.predict(
+    np.array(["asdf gadg asdfas df hr hrt"]),))
+
+CHAR_DICT = 'abcdefghijklmnopqrstuvwxyz0123456789 .!?:,\'%-\(\)/$|&;[]"'
+
+CHAR_DICT = 'abcdefghijklmnopqrstuvwxyz0123456789 .!?:,\'%-()/$|&;[]"'

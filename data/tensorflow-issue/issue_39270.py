@@ -1,29 +1,27 @@
-# tf.random.uniform((32, 28, 28), dtype=tf.float32) ← Batch size 32, input shape 28x28 grayscale images
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Simple MNIST-like model as in the issue example:
-        # Flatten -> Dense(128, relu) -> Dense(10 logits)
-        self.flatten = tf.keras.layers.Flatten(input_shape=(28, 28))
-        self.dense1 = tf.keras.layers.Dense(128, activation="relu")
-        self.dense2 = tf.keras.layers.Dense(10)
+strategy = tf.distribute.MirroredStrategy()
 
-    def call(self, inputs, training=False):
-        x = self.flatten(inputs)
-        x = self.dense1(x)
-        logits = self.dense2(x)
-        return logits
+with strategy.scope():
+    (x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
+    x_train, x_test = x_train / 255.0, x_test / 255.0
+    train_dataset = tf.data.Dataset.from_tensor_slices((x_train, y_train)).batch(32)
 
-def my_model_function():
-    # Construct a fresh instance of MyModel with default initialization.
-    # No pretrained weights are provided in the issue.
-    return MyModel()
+    model = tf.keras.models.Sequential([
+        tf.keras.layers.Flatten(input_shape=(28, 28)),
+        tf.keras.layers.Dense(128, activation='relu'),
+        tf.keras.layers.Dense(10),
+    ])
 
-def GetInput():
-    # Return a random float32 tensor matching the expected input shape (batch_size=32, 28x28 grayscale)
-    # Similar to MNIST samples, normalized to [0,1].
-    return tf.random.uniform((32, 28, 28), minval=0, maxval=1, dtype=tf.float32)
+    model.compile(
+        optimizer=tf.keras.optimizers.SGD(),
+        loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+        metrics=['accuracy'])
 
+for x, y in train_dataset:
+    model.train_on_batch(x, y)

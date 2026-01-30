@@ -1,27 +1,37 @@
-# tf.random.uniform((4, 1000, 1000, 10), dtype=tf.float32) ← inferred input shape from the issue NxHxWxC = 4x1000x1000x10
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
+import tqdm
+import numpy as np
 import tensorflow as tf
+from tensorflow.keras.utils import Sequence
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # The original model was a no-op linear activation (just tf.keras.layers.Activation("linear"))
-        # We replicate that behavior with a Lambda layer (identity)
-        self.identity_layer = tf.keras.layers.Activation("linear")
+class NumpySequence(Sequence):
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
 
-    def call(self, inputs, training=False):
-        # Forward pass: just pass through inputs unchanged, mimicking the original "linear" activation
-        return self.identity_layer(inputs)
+    def __len__(self):
+        return len(self.x)
 
-def my_model_function():
-    # Return an instance of MyModel with no additional initialization
-    return MyModel()
+    def __getitem__(self, idx):
+        return self.x[idx], self.y[idx]
 
-def GetInput():
-    # Generate a random input tensor matching the shape described in the issue: (N=4, H=1000, W=1000, C=10)
-    # We'll use tf.random.uniform with dtype float32 to match the numpy arrays in the example
-    N, H, W, C = 4, 1000, 1000, 10
+workers = 1
+steps_per_epoch, epochs = 100, 10
+N, H, W, C = 4, 1000, 1000, 10
 
-    # Using uniform random data as a reasonable stand-in for the standard normal numpy arrays in the example
-    return tf.random.uniform((N, H, W, C), dtype=tf.float32)
+x_train = []
+y_train = []
+rng = np.random.default_rng()
+for step in tqdm.tqdm(range(steps_per_epoch)):
+    x_train.append(rng.standard_normal(size=(N, H, W, C), dtype=np.float32))
+    y_train.append(rng.standard_normal(size=(N, H, W, C), dtype=np.float32))
 
+data_sequence = NumpySequence(x_train, y_train)
+
+model = tf.keras.models.Sequential([tf.keras.layers.Activation("linear")])
+model.compile(optimizer='adam', loss=tf.keras.losses.CategoricalCrossentropy())
+model.fit(data_sequence, epochs=epochs, workers=workers)

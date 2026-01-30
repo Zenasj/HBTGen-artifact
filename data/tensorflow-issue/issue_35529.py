@@ -1,54 +1,59 @@
-# tf.random.uniform((B, T), dtype=tf.int64) ← Input shape is (batch_size, variable_sequence_length), padded in dataset with shape [None, None]
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
+import tensorflow.keras as keras
+import random
+import os
+os.environ["CUDA_VISIBLE_DEVICES"]="0,1"
 
-class MyModel(tf.keras.Model):
+class Model(keras.Model):
     def __init__(self):
-        super(MyModel, self).__init__()
-        # Embedding layer for vocabulary size 51 and output dimension 100
-        self.emb = tf.keras.layers.Embedding(51, 100)
-        # Dense layer projecting embeddings back to vocabulary size 51
-        self.layer = tf.keras.layers.Dense(51)
+        super(Model, self).__init__()
+        self.emb = keras.layers.Embedding(51,100)
+        self.layer = keras.layers.Dense(51)
 
-    def call(self, x):
+    def call(self,x):
         x = self.emb(x)
         x = self.layer(x)
         return x
 
 
-def my_model_function():
-    # Return an instance of the MyModel. No pretrained weights specified.
-    return MyModel()
+strategy = tf.distribute.MirroredStrategy()
+
+data = [[i for i in range(random.randint(10,50))] for j in range(400)]
 
 
-def GetInput():
-    # Generate a random batch of padded sequences matching the input expected by MyModel.
-    # Assumptions:
-    # - Batch size: 4 (same as the original padded_batch(4))
-    # - Sequence length: random between 10 and 50, padded up to max length 50 for simplicity
-    # - Integer values in [0, 50] as token IDs, dtype int64
+def iterator():
+    for i in range(len(data)):
+        yield data[i], data[i]
 
-    batch_size = 4
-    max_seq_len = 50
-    vocab_size = 51
 
-    # Create a list of random sequence lengths between 10 and 50
-    seq_lengths = tf.random.uniform(shape=(batch_size,), minval=10, maxval=max_seq_len + 1, dtype=tf.int32)
+with strategy.scope():
+    model = Model()
+    optimizer = keras.optimizers.Adam()
 
-    # Initialize a tensor of zeros (padding token assumed 0)
-    inputs = tf.zeros((batch_size, max_seq_len), dtype=tf.int64)
+dataset = tf.data.Dataset.from_generator(iterator, output_types=(tf.int64, tf.int64))
+batchfier = dataset.padded_batch(4, padded_shapes=([None], [None]))
+batchfier = strategy.experimental_distribute_dataset(batchfier)
 
-    # For each sequence, generate random tokens and pad with zeros
-    inputs_list = []
-    for i in range(batch_size):
-        length = seq_lengths[i].numpy()
-        # Generate random ints in [1,50] for tokens (excluding padding 0)
-        tokens = tf.random.uniform((length,), minval=1, maxval=vocab_size, dtype=tf.int64)
-        # Pad tokens to max_seq_len with zeros at the end
-        padded = tf.pad(tokens, [[0, max_seq_len - length]])
-        inputs_list.append(padded)
 
-    # Stack into a tensor
-    inputs = tf.stack(inputs_list, axis=0)
-    return inputs
+@tf.function(input_signature=batchfier.element_spec)
+def multi_gpu_step(x,y):
+    def example_update_step(x, y):
+        with tf.GradientTape() as tape:
+            y_ = model(x)
+            batch_loss = keras.losses.sparse_categorical_crossentropy(y_true=y, y_pred=y_, from_logits=True)
+            losses = batch_loss / strategy.num_replicas_in_sync
+        step_grad = tape.gradient(losses, model.trainable_variables)
+        optimizer.apply_gradients(zip(step_grad, model.trainable_variables))
+        return tf.reduce_mean(batch_loss,1)
+    example_loss = strategy.experimental_run_v2(
+        example_update_step, args=(x, y))
+    losses_sum = strategy.reduce(
+        tf.distribute.ReduceOp.SUM, example_loss, axis=0)
+    return losses_sum
 
+
+for x,y in batchfier:
+    multi_gpu_step(x,y)

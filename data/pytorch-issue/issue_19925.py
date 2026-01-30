@@ -1,45 +1,78 @@
-# torch.rand(B, C, H, W, dtype=...)  # Inferred input shape: (batch_size, 3, 224, 224)
+import sys
+import subprocess
+import json
+import os
 
-import torch
-import torch.nn as nn
+def host_to_rank(hostname):
+    if hostname == "eco-11":
+        return 0
+    if hostname == "eco-12":
+        return 1
+    if hostname == "eco-13":
+        return 2
+    if hostname == "eco-14":
+        return 3
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1)
-        self.relu = nn.ReLU()
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
-        self.fc = nn.Linear(64 * 112 * 112, 10)  # Assuming input size 224x224
+def main():
+    argslist = list(sys.argv)[1:]
+    configs = {}
+    with open("dist_config.txt") as configfile:
+        for line in configfile.readlines():
+            key = line.split(":")[0]
+            value = line.split(":")[1].strip()
+            configs[key] = value
+    world_size = int(configs["world_size"])
+    gpus = int(configs["gpus"])
+    master_addr = configs["master_addr"]
+    master_port = configs["master_port"]
+    nccl_ifname = configs["nccl_ifname"]
 
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.relu(x)
-        x = self.pool(x)
-        x = x.view(x.size(0), -1)
-        x = self.fc(x)
-        return x
+    os.environ["MASTER_ADDR"] = master_addr
+    os.environ["MASTER_PORT"] = master_port
+    os.environ["NCCL_SOCKET_IFNAME"] = nccl_ifname
+    os.environ["NCCL_DEBUG"] = "INFO"
+    os.environ["NCCL_BUFFSIZE"] = str(16 * 1024 * 1024)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+    node_rank = host_to_rank(os.environ["HOSTNAME"])
+    workers = []
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    batch_size = 4  # Example batch size
-    channels = 3  # RGB images
-    height = 224
-    width = 224
-    return torch.rand(batch_size, channels, height, width, dtype=torch.float32)
+    for i in range(gpus):
+        if '--rank' in argslist:
+            argslist[argslist.index('--rank') + 1] = str(node_rank * gpus + i)
+        else:
+            argslist.append('--rank')
+            argslist.append(str(node_rank * gpus + i))
+        if '--gpu-rank' in argslist:
+            argslist[argslist.index('--gpu-rank') + 1] = str(i)
+        else:
+            argslist.append('--gpu-rank')
+            argslist.append(str(i))
+        if '--world-size' in argslist:
+            argslist[argslist.index('--world-size') + 1] = str(world_size)
+        else:
+            argslist.append('--world-size')
+            argslist.append(str(world_size))
 
-# The provided issue describes a distributed training setup using PyTorch with NCCL backend, and it encounters an unhandled CUDA error. The issue is related to the distributed training setup and not to a specific PyTorch model. However, to meet the task requirements, I will create a minimal PyTorch model and the necessary functions to initialize and get input for the model.
-# Since the issue does not provide a specific model, I will create a simple convolutional neural network (CNN) as an example. The input shape will be inferred from common image data shapes, such as `(B, C, H, W)` where `B` is the batch size, `C` is the number of channels, and `H` and `W` are the height and width of the images.
-# Here is the complete Python code file:
-# ### Explanation:
-# 1. **MyModel Class**:
-#    - A simple CNN with one convolutional layer, ReLU activation, max pooling, and a fully connected layer.
-#    - The input shape is assumed to be `(batch_size, 3, 224, 224)` for RGB images of size 224x224.
-# 2. **my_model_function**:
-#    - Returns an instance of `MyModel`.
-# 3. **GetInput Function**:
-#    - Generates a random tensor with the shape `(batch_size, 3, 224, 224)` to match the input expected by `MyModel`.
-# This code provides a minimal, self-contained example that can be used for further development or testing. If you have a specific model structure or additional requirements, please provide more details, and I can adjust the code accordingly.
+        stdout = None if i == 0 else open("GPU_" + str(i) + ".log", "w")
+        worker = subprocess.Popen([str(sys.executable)] + argslist, stdout=stdout)
+        workers.append(worker)
+
+    returncode = 0
+    try:
+        for worker in workers:
+            worker_returncode = worker.wait()
+            if worker_returncode != 0:
+                returncode = 1
+    except KeyboardInterrupt:
+        print('Pressed CTRL-C, TERMINATING')
+        for worker in workers:
+            worker.terminate()
+        for worker in workers:
+            worker.wait()
+        raise
+
+    sys.exit(returncode)
+
+
+if __name__ == "__main__":
+    main()

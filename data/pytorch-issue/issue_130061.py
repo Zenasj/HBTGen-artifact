@@ -1,18 +1,18 @@
-# Input is a tuple of two 1D tensors of shape (0,): (torch.rand(0), torch.rand(0))
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-    
-    def forward(self, inputs):
-        t1, t2 = inputs
-        return torch.matmul(t1, t2)
+t1 = torch.tensor([])
+t2 = torch.tensor([])
 
-def my_model_function():
-    return MyModel()
+torch.matmul(input=t1, other=t2)
+# tensor(0.)
 
-def GetInput():
-    return (torch.rand(0), torch.rand(0))
+# Additional
+t1 = torch.tensor([0.])
+t2 = torch.tensor([0.])
 
+torch.matmul(input=t1, other=t2)
+# tensor(0.)
+
+import torch
+
+torch.__version__ # 2.3.0+cu121

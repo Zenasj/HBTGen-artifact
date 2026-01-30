@@ -1,26 +1,17 @@
-# torch.rand(B, C, H, W, dtype=...)  # This issue does not provide a specific input shape, so it is not included.
-
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Placeholder for the model. Since the issue does not provide a specific model,
-        # we will use a simple linear layer as an example.
-        self.linear = nn.Linear(10, 10)
-
-    def forward(self, x):
-        return self.linear(x)
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # Since the model uses a linear layer with input size 10, we generate a tensor of shape (batch_size, 10)
-    batch_size = 1
-    input_tensor = torch.rand(batch_size, 10)
-    return input_tensor
-
+torch._C.parse_ir(
+    """
+graph():
+  %0 : float = prim::Constant[value=-0.31622776601683789]()
+  %1 : float = prim::Constant[value=0.31622776601683789]()
+  %2 : Generator = prim::Constant[value=torch.Generator(device="cpu", seed=352461024221769975)]()
+  %3 : NoneType = prim::Constant()
+  %4 : int[] = prim::Constant[value=[10, 10]]()
+  %5 : int = prim::Constant[value=6]()
+  %6 : Device = prim::Constant[value="cpu"]()
+  %7 : Tensor = aten::empty(%4, %5, %3, %6, %3, %3)
+  %8 : Float(10, 10) = aten::uniform(%7, %0, %1, %2)
+  return (%8)
+    """,
+)

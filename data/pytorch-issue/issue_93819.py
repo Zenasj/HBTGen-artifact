@@ -1,54 +1,72 @@
-# torch.rand(1, 2, 1, 5, dtype=torch.float64)
-import torch
-import torch.nn.functional as F
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
+import torch
+
+def fn(v1_0):
+    v4_0 = torch.nn.functional.log_softmax(v1_0, 2, _stacklevel=17, dtype=None)
+    v2_0 = torch.nn.functional.pad(v4_0, [0, 0, 1, 0], mode='constant', value=None)
+    return [v2_0]
+
+x = torch.rand([1, 2, 1, 5], dtype=torch.float64)
+
+ret_eager = fn(x)
+print('==== Eager mode OK! ====')
+
+compiled = torch.compile(fn)
+print('==== torchcomp compilation OK! ====')
+
+ret_compiled = compiled(x)
+print('==== torchcomp mode OK! ====')
+
+import torch._inductor.overrides
+
+import torch
+from torch import tensor, device
+import torch.fx as fx
+from torch._dynamo.testing import rand_strided
+from math import inf
+from torch.fx.experimental.proxy_tensor import make_fx
+
+import torch._dynamo.config
+import torch._inductor.config
+torch._dynamo.config.load_config(b'\x80\x04\x95\xad\x07\x00\x00\x00\x00\x00\x00}\x94(\x8c\x08__name__\x94\x8c\x14torch._dynamo.config\x94\x8c\x07__doc__\x94N\x8c\x0b__package__\x94\x8c\rtorch._dynamo\x94\x8c\n__loader__\x94\x8c\x1a_frozen_importlib_external\x94\x8c\x10SourceFileLoader\x94\x93\x94)\x81\x94}\x94(\x8c\x04name\x94h\x02\x8c\x04path\x94\x8cF/home/yuyao/.local/lib/python3.8/site-packages/torch/_dynamo/config.py\x94ub\x8c\x08__spec__\x94\x8c\x11_frozen_importlib\x94\x8c\nModuleSpec\x94\x93\x94)\x81\x94}\x94(h\x0ch\x02\x8c\x06loader\x94h\n\x8c\x06origin\x94h\x0e\x8c\x0cloader_state\x94N\x8c\x1asubmodule_search_locations\x94N\x8c\r_set_fileattr\x94\x88\x8c\x07_cached\x94\x8c^/home/yuyao/.local/lib/python3.8/site-packages/torch/_dynamo/__pycache__/config.cpython-38.pyc\x94\x8c\r_initializing\x94\x89ub\x8c\x08__file__\x94h\x0e\x8c\n__cached__\x94h\x1b\x8c\x07abspath\x94\x8c\tposixpath\x94h\x1f\x93\x94\x8c\x07dirname\x94h h"\x93\x94\x8c\tlog_level\x94K\x1e\x8c\x0boutput_code\x94\x89\x8c\rlog_file_name\x94N\x8c\x07verbose\x94\x89\x8c\x11output_graph_code\x94\x89\x8c\x12verify_correctness\x94\x89\x8c\x12minimum_call_count\x94K\x01\x8c\x15dead_code_elimination\x94\x88\x8c\x10cache_size_limit\x94K@\x8c\x14specialize_int_float\x94\x88\x8c\x0edynamic_shapes\x94\x89\x8c\x10guard_nn_modules\x94\x89\x8c\x0cnormalize_ir\x94\x89\x8c\x1btraceable_tensor_subclasses\x94\x8f\x94\x8c\x0fsuppress_errors\x94\x89\x8c\x15replay_record_enabled\x94\x89\x8c rewrite_assert_with_torch_assert\x94\x88\x8c\x12print_graph_breaks\x94\x89\x8c\x07disable\x94\x89\x8c*allowed_functions_module_string_ignorelist\x94\x8f\x94(\x8c\x13torch.distributions\x94\x8c\x0ctorch._prims\x94\x8c\rtorch._decomp\x94\x8c\x0btorch._refs\x94\x8c\rtorch.testing\x94\x90\x8c\x16capture_scalar_outputs\x94\x89\x8c\x19enforce_cond_guards_match\x94\x88\x8c\x0coptimize_ddp\x94\x88\x8c\x1araise_on_ctx_manager_usage\x94\x88\x8c\x1craise_on_unsafe_aot_autograd\x94\x89\x8c\rdynamo_import\x94\x8c\rtorch._dynamo\x94\x8c\x0finductor_import\x94\x8c\x0ftorch._inductor\x94\x8c\x18error_on_nested_fx_trace\x94\x88\x8c\tallow_rnn\x94\x89\x8c\x08base_dir\x94\x8c./home/yuyao/.local/lib/python3.8/site-packages\x94\x8c\x0edebug_dir_root\x94\x8c)/home/yuyao/bug_repro/torch_compile_debug\x94\x8c)DO_NOT_USE_legacy_non_fake_example_inputs\x94\x89\x8c\x15_AccessLimitingConfig\x94}\x94(\x8c\n__module__\x94h\x02\x8c\x0b__setattr__\x94\x8c\x14torch._dynamo.config\x94\x8c!_AccessLimitingConfig.__setattr__\x94\x93\x94h\x03Nu\x8c\x15_allowed_config_names\x94\x8f\x94(h\x1dh7\x8c\nModuleType\x94hB\x8c\x02os\x94h5h@h\x04h/h*hOh$\x8c\x07logging\x94hDh3h1\x8c\x12constant_functions\x94h.\x8c\x0brepro_level\x94h0\x8c\x03sys\x94\x8c\x05torch\x94h\x1fh\x01hNhChIhHhAh(h%hJh\x03h\x0fh&h)h-\x8c!skipfiles_inline_module_allowlist\x94h8h\x1e\x8c\x0brepro_after\x94\x8c\x0c__builtins__\x94hLh4h,hF\x8c\x0eexternal_utils\x94h"h\x06h6h\'h+h?\x90\x8c\x1cget_config_serialization_fns\x94\x8c\x1atorch._dynamo.config_utils\x94hc\x93\x94u.')
+torch._inductor.config.load_config(b'\x80\x04\x95\x07\t\x00\x00\x00\x00\x00\x00}\x94(\x8c\x08__name__\x94\x8c\x16torch._inductor.config\x94\x8c\x07__doc__\x94N\x8c\x0b__package__\x94\x8c\x0ftorch._inductor\x94\x8c\n__loader__\x94\x8c\x1a_frozen_importlib_external\x94\x8c\x10SourceFileLoader\x94\x93\x94)\x81\x94}\x94(\x8c\x04name\x94h\x02\x8c\x04path\x94\x8cH/home/yuyao/.local/lib/python3.8/site-packages/torch/_inductor/config.py\x94ub\x8c\x08__spec__\x94\x8c\x11_frozen_importlib\x94\x8c\nModuleSpec\x94\x93\x94)\x81\x94}\x94(h\x0ch\x02\x8c\x06loader\x94h\n\x8c\x06origin\x94h\x0e\x8c\x0cloader_state\x94N\x8c\x1asubmodule_search_locations\x94N\x8c\r_set_fileattr\x94\x88\x8c\x07_cached\x94\x8c`/home/yuyao/.local/lib/python3.8/site-packages/torch/_inductor/__pycache__/config.cpython-38.pyc\x94\x8c\r_initializing\x94\x89ub\x8c\x08__file__\x94h\x0e\x8c\n__cached__\x94h\x1b\x8c\x05debug\x94\x89\x8c\x10disable_progress\x94\x88\x8c\x10verbose_progress\x94\x89\x8c\x0bcpp_wrapper\x94\x89\x8c\x03dce\x94\x89\x8c\x14static_weight_shapes\x94\x88\x8c\x0csize_asserts\x94\x88\x8c\x10pick_loop_orders\x94\x88\x8c\x0finplace_buffers\x94\x88\x8c\x11benchmark_harness\x94\x88\x8c\x0fepilogue_fusion\x94\x89\x8c\x15epilogue_fusion_first\x94\x89\x8c\x0cmax_autotune\x94\x89\x8c\x17realize_reads_threshold\x94K\x04\x8c\x17realize_bytes_threshold\x94M\xd0\x07\x8c\x1brealize_acc_reads_threshold\x94K\x08\x8c\x0ffallback_random\x94\x89\x8c\x12implicit_fallbacks\x94\x88\x8c\rprefuse_nodes\x94\x88\x8c\x0btune_layout\x94\x89\x8c\x11aggressive_fusion\x94\x89\x8c\x0fmax_fusion_size\x94K@\x8c\x1bunroll_reductions_threshold\x94K\x08\x8c\x0ecomment_origin\x94\x89\x8c\tis_fbcode\x94\x8c\x16torch._inductor.config\x94h7\x93\x94\x8c\x0fcompile_threads\x94K \x8c\x13kernel_name_max_ops\x94K\n\x8c\x0finductor_import\x94\x8c\x0ftorch._inductor\x94\x8c\rshape_padding\x94\x89\x8c\x0epermute_fusion\x94\x89\x8c\x1aprofiler_mark_wrapper_call\x94\x89\x8c\x03cpp\x94}\x94(\x8c\n__module__\x94h\x02\x8c\x07threads\x94J\xff\xff\xff\xff\x8c\x0fdynamic_threads\x94\x89\x8c\x07simdlen\x94N\x8c\x0emin_chunk_size\x94M\x00\x10\x8c\x03cxx\x94N\x8c\x03g++\x94\x86\x94\x8c\x15enable_kernel_profile\x94\x89h\x03Nu\x8c\x06triton\x94}\x94(hCh\x02\x8c\ncudagraphs\x94\x88\x8c\x10debug_sync_graph\x94\x89\x8c\x11debug_sync_kernel\x94\x89\x8c\x0bconvolution\x94\x8c\x04aten\x94\x8c\x0edense_indexing\x94\x89\x8c\tmax_tiles\x94K\x02\x8c\x12autotune_pointwise\x94\x88\x8c tiling_prevents_pointwise_fusion\x94\x88\x8c tiling_prevents_reduction_fusion\x94\x88\x8c\x14ordered_kernel_names\x94\x89\x8c\x18descriptive_kernel_names\x94\x89h\x03Nu\x8c\x05trace\x94}\x94(hCh\x02\x8c\x07enabled\x94\x89\x8c\tdebug_log\x94\x88\x8c\x08info_log\x94\x89\x8c\x08fx_graph\x94\x88\x8c\rir_pre_fusion\x94\x88\x8c\x0eir_post_fusion\x94\x88\x8c\x0boutput_code\x94\x88\x8c\rgraph_diagram\x94\x89\x8c\x0fcompile_profile\x94\x89\x8c\nupload_tar\x94Nh\x03Nu\x8c\x15InductorConfigContext\x94}\x94(hCh\x02\x8c\x0f__annotations__\x94}\x94(\x8c\rstatic_memory\x94\x8c\x08builtins\x94\x8c\x04bool\x94\x93\x94\x8c\x0ematmul_padding\x94hm\x8c\x0cmax_autotune\x94hm\x8c\x12triton_convolution\x94hk\x8c\x03str\x94\x93\x94\x8c\x17rematerialize_threshold\x94hk\x8c\x03int\x94\x93\x94\x8c\x1brematerialize_acc_threshold\x94huu\x8c\x05_save\x94h8\x8c\x1bInductorConfigContext._save\x94\x93\x94\x8c\x06_apply\x94h8\x8c\x1cInductorConfigContext._apply\x94\x93\x94\x8c\x08__init__\x94h8\x8c\x1eInductorConfigContext.__init__\x94\x93\x94\x8c\t__enter__\x94h8\x8c\x1fInductorConfigContext.__enter__\x94\x93\x94\x8c\x08__exit__\x94h8\x8c\x1eInductorConfigContext.__exit__\x94\x93\x94h\x03Nu\x8c\x1cget_config_serialization_fns\x94\x8c\x1atorch._dynamo.config_utils\x94h\x86\x93\x94u.')
+
+
+# REPLACEABLE COMMENT FOR TESTING PURPOSES
+
+
+# torch version: 2.0.0.dev20230131+cu117
+# torch cuda version: 11.7
+# torch git version: b2690c3ceae36fa6681a0c7cedcc8db7f5d9814a
+
+
+# CUDA Info: 
+# nvcc not found
+# GPU Hardware Info: 
+# NVIDIA RTX A6000 : 4 
+
+
+from torch.nn import *
+class Repro(torch.nn.Module):
     def __init__(self):
         super().__init__()
+
+    
+    
+    def forward(self, sub, exp):
+        sum_1 = torch.ops.aten.sum.dim_IntList(exp, [2], True);  exp = None
+        log = torch.ops.aten.log.default(sum_1);  sum_1 = None
+        sub_1 = torch.ops.aten.sub.Tensor(sub, log);  sub = log = None
+        constant_pad_nd = torch.ops.aten.constant_pad_nd.default(sub_1, [0, 0, 1, 0], 0.0);  sub_1 = None
+        return (constant_pad_nd,)
         
-    def forward(self, x):
-        x = F.log_softmax(x, dim=2)  # Apply along dimension 2
-        x = F.pad(x, [0, 0, 1, 0], mode='constant', value=0.0)  # Pad last two dimensions: [left, right, top, bottom]
-        return x
+args = [((1, 2, 1, 5), (10, 5, 5, 1), torch.float64, 'cpu'), ((1, 2, 1, 5), (10, 5, 5, 1), torch.float64, 'cpu')]
+args = [rand_strided(sh, st, dt, dev) for (sh, st, dt, dev) in args]
+mod = make_fx(Repro())(*args)
 
-def my_model_function():
-    return MyModel()
+from torch._inductor.compile_fx import compile_fx_inner
+from torch._dynamo.debug_utils import same_two_models
 
-def GetInput():
-    return torch.rand(1, 2, 1, 5, dtype=torch.float64)
-
-# Alright, let's tackle this problem. The user wants me to generate a complete Python code file based on the provided GitHub issue. The main goal is to replicate the issue where using `log_softmax` followed by `pad` in compiled mode triggers an assertion error, specifically with `torch.compile`.
-# First, I need to parse the original issue. The user provided a code snippet that demonstrates the problem. The code defines a function `fn` which applies `log_softmax` along dimension 2 and then pads the result. The input tensor is of shape (1, 2, 1, 5) and uses `torch.float64`. When run in eager mode, it works, but in compiled mode, it fails with an assertion error.
-# The task is to create a Python code file with a `MyModel` class, a function `my_model_function` that returns an instance of this model, and a `GetInput` function that generates the correct input tensor. The code must be structured as specified, with the input shape comment at the top.
-# Looking at the original code, the model can be encapsulated into `MyModel`. The `forward` method would mirror the steps in the original function `fn`. The input shape is given as (1, 2, 1, 5) with dtype float64, so the `GetInput` function should create a tensor matching that.
-# Wait, the original code uses `torch.nn.functional.log_softmax` and `torch.nn.functional.pad`. I need to ensure that these are correctly imported. Also, the error occurs in compiled mode, so the model should be compatible with `torch.compile`.
-# The user mentioned that the issue can happen with any dtype, but the original example uses `float64`, so I'll stick with that unless there's a reason to change. The problem's root cause is related to the combination of `log_softmax` and `pad`, so the model needs to have those operations in sequence.
-# Now, the structure:
-# 1. The input comment must specify the shape and dtype. The original input is `torch.rand([1, 2, 1, 5], dtype=torch.float64)`, so the comment should be `# torch.rand(B, C, H, W, dtype=torch.float64)` but adjusted to the actual dimensions. Wait, the shape is (1,2,1,5). So maybe `# torch.rand(1, 2, 1, 5, dtype=torch.float64)` as a comment?
-# 2. The `MyModel` class: It should have a `forward` method applying log_softmax then pad. Let me check the original function:
-# Original code:
-# v4_0 = F.log_softmax(v1_0, 2, ...)
-# v2_0 = F.pad(v4_0, [0,0,1,0], ...)
-# So dimension 2 is the third dimension (since PyTorch uses 0-based indices). The pad parameters are [0,0,1,0], which for 4D tensors (N,C,H,W), padding is applied to the last two dimensions first. Wait, the padding is specified as (left, right, top, bottom) for 2D, but for 4D tensors, it's (left, right, top, bottom, D_start, D_end) for higher dimensions. Wait, actually, the `pad` function's parameters are in reverse order of dimensions. The documentation says: The input dimensions are padded according to (pad_left, pad_right, pad_top, pad_bottom, ...). So for a 4D tensor (N,C,H,W), the padding list [0,0,1,0] would pad the third dimension (H) by adding 1 on the top and 0 on the bottom, and the fourth (W) by 0 on both sides. So the pad is adding a row (height direction) at the top.
-# Thus, in the model:
-# class MyModel(nn.Module):
-#     def __init__(self):
-#         super().__init__()
-#         
-#     def forward(self, x):
-#         x = F.log_softmax(x, dim=2)  # dim=2 is the third dimension
-#         x = F.pad(x, [0, 0, 1, 0], mode='constant', value=0.0)  # assuming value is 0 as in original code
-#         return x
-# Wait, in the original code, the value was `None`, but the default for `constant` is 0. The user's code had `value=None`, but in the minified repro, there's a `constant_pad_nd` with 0.0. So perhaps it's safe to set value=0.0 explicitly.
-# The `my_model_function` should return an instance of MyModel, so that's straightforward.
-# The `GetInput` function should return a tensor of shape (1,2,1,5) with dtype float64. So:
-# def GetInput():
-#     return torch.rand(1, 2, 1, 5, dtype=torch.float64)
-# Now, checking the constraints:
-# - The model must be usable with `torch.compile(MyModel())(GetInput())`. The code above should satisfy that.
-# Wait, in the original code, the function `fn` is compiled, but in the model, the forward is the same steps. So yes.
-# Special requirements: If there are multiple models to compare, but the issue doesn't mention that. The original code is a single function, so the model is straightforward.
-# The minified repro includes a `Repro` class, but that's part of the bug report. Since the task is to generate the code that reproduces the issue, the provided code should encapsulate the problem scenario.
-# I think that's all. Now putting it into the required structure with the correct comments and functions.
-# </think>
+compiled = compile_fx_inner(mod, args)
+ref = compiled(args)

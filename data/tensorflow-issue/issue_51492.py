@@ -1,196 +1,370 @@
-# tf.random.uniform((B, max_sentence_len, embedding_dim), dtype=tf.float32)
+import os
+
+import numpy as np
 import tensorflow as tf
+from sklearn.metrics import precision_recall_fscore_support
 
-# Note: Original code is TF 1.x style with placeholders and tf.Session.
-# Here is a reconstructed single class MyModel using TF 2.x keras.Model style,
-# converting placeholders to input tensors, and reorganizing the logic accordingly.
-# For conv layers, we replace `tf.contrib.layers.conv2d` and max_pool2d with Keras layers.
-# For missing softmax_layer and transition_layer, simple placeholder dense layers are used,
-# with comments referring to their original use.
+import config
+from data_helper import batch_index, load_word2id, load_y2id_id2y, load_word2vector, recover_data_from_files
+from model.nn_layer import transition_layer, softmax_layer
 
-class MyModel(tf.keras.Model):
-    def __init__(self, config,
-                 filter_list=(3, 4, 5),
-                 filter_num=100,
-                 seed=42):
-        super().__init__()
-        self.config = config
+import random
+
+tf.set_random_seed(42)
+np.random.seed(42)
+os.environ['PYTHONHASHSEED']=str(42)
+random.seed(42)
+
+os.environ['TF_DETERMINISTIC_OPS'] = '1'
+os.environ['TF_CUDNN_DETERMINISTIC']='1'
+os.environ['HOROVOD_FUSION_THRESHOLD']='0'
+
+class NetAbModel(object):
+    def __init__(self, domain, flags, filter_list=(3, 4, 5), filter_num=100):
+        self.config = flags
         self.filter_list = filter_list
         self.filter_num = filter_num
-        self.seed = seed
+        # placeholder
+        self.sen_x_batch = None
+        self.sent_len_batch = None
+        self.sen_y_batch = None
+        self.keep_prob1 = None
+        self.keep_prob2 = None
+        # embedding
+        self.add_placeholder()
+        self.word2id = None
+        # self.id2word = None
+        self.vocab_size = None
+        self.embedding = None
+        inputs = self.add_embedding(domain)
+        # model
+        self.sen_logits, self.sen_logits2 = self.netAb(inputs)
+        # noisy-loss
+        self.loss = self.add_loss(self.sen_logits)
+        self.accuracy, self.accuracy_num = self.add_accuracy(self.sen_logits)
+        self.train_op = self.add_train_op(self.loss)
+        # clean-loss
+        self.loss2 = self.add_loss(self.sen_logits2)
+        self.accuracy2, self.accuracy_num2 = self.add_accuracy(self.sen_logits2)
+        self.train_op2 = self.add_train_op(self.loss2)
 
-        # Embedding weights handled externally (assume initialized outside for now),
-        # if config.pre_trained: use constant embeddings, else trainable embeddings
-        # For simplicity, initialize embedding layer here with uniform random weights and seed for reproducibility
-        if hasattr(config, "vocab_size") and config.vocab_size is not None:
-            vocab_size = config.vocab_size
+    def add_placeholder(self):
+        self.sen_x_batch = tf.placeholder(tf.int32, [None, self.config.max_sentence_len])
+        self.sent_len_batch = tf.placeholder(tf.int32, [None])
+        self.sen_y_batch = tf.placeholder(tf.float32, [None, self.config.n_class])
+        self.keep_prob1 = tf.placeholder(tf.float32)
+        self.keep_prob2 = tf.placeholder(tf.float32)
+
+    def add_embedding(self, domain):
+        if self.config.pre_trained:
+            self.word2id, w2v = load_word2vector(self.config.word2id_path, domain)
+            # self.word2id, self.id2word, w2v = load_w2v_mongo(domain)
         else:
-            vocab_size = 5000  # assumption
-        if hasattr(config, "embedding_dim") and config.embedding_dim is not None:
-            embedding_dim = config.embedding_dim
+            self.word2id = load_word2id(self.config.word2id_path, domain)
+            self.vocab_size = len(self.word2id)
+            w2v = tf.random_uniform([self.vocab_size, self.config.embedding_dim], -1.0, 1.0, trainable=True, seed=42)
+        if self.config.embedding_type == 'static':
+            self.embedding = tf.constant(w2v, dtype=tf.float32, name='word_embedding')
         else:
-            embedding_dim = 300  # assumption
+            self.embedding = tf.Variable(w2v, dtype=tf.float32, name='word_embedding')
+        inputs = tf.nn.embedding_lookup(self.embedding, self.sen_x_batch)
+        return inputs
 
-        # Seed-based initializer for reproducibility of embedding
-        self.embedding_layer = tf.keras.layers.Embedding(
-            input_dim=vocab_size,
-            output_dim=embedding_dim,
-            embeddings_initializer=tf.keras.initializers.RandomUniform(minval=-1.0, maxval=1.0, seed=self.seed),
-            trainable=(getattr(config, "embedding_type", "non-static") != 'static')
-        )
+    def create_feed_dict(self, sen_x_batch, sent_len_batch, sen_y_batch, kp1=1.0, kp2=1.0):
+        holder_list = [self.sen_x_batch, self.sent_len_batch, self.sen_y_batch,
+                       self.keep_prob1, self.keep_prob2]
+        feed_list = [sen_x_batch, sent_len_batch, sen_y_batch, kp1, kp2]
+        return dict(zip(holder_list, feed_list))
 
-        # CNN conv and max pool layers for each filter size - two sets: clean and noisy CNN
-        self.clean_cnn_layers = []
-        self.noisy_cnn_layers = []
-        for filter_size in filter_list:
-            # conv layer: 1D conv with ReLU activation
-            conv_layer_clean = tf.keras.layers.Conv2D(
-                filters=filter_num,
-                kernel_size=(filter_size, embedding_dim),
-                strides=(1,1),
-                padding='valid',
-                activation='relu',
-                kernel_initializer=tf.keras.initializers.GlorotUniform(seed=self.seed)
-            )
-            self.clean_cnn_layers.append(conv_layer_clean)
-
-            conv_layer_noisy = tf.keras.layers.Conv2D(
-                filters=filter_num,
-                kernel_size=(filter_size, embedding_dim),
-                strides=(1,1),
-                padding='valid',
-                activation='relu',
-                kernel_initializer=tf.keras.initializers.GlorotUniform(seed=self.seed)
-            )
-            self.noisy_cnn_layers.append(conv_layer_noisy)
-
-        # Pooling layers for each filter (pool over time dimension after conv)
-        # Implemented in call()
-
-        # Fully connected softmax layer replacing original softmax_layer
-        # The original code used a noisy layer and a p1, p2 transition matrices.
-        # Here we approximate with dense layers.
-        self.fc_softmax = tf.keras.layers.Dense(
-            units=getattr(config, "n_class", 2),
-            kernel_regularizer=tf.keras.regularizers.l2(getattr(config, "l2_reg", 0.0)),
-            activation=None,  # logits, softmax applied in loss
-            kernel_initializer=tf.keras.initializers.GlorotUniform(seed=self.seed)
-        )
-
-        # Transition layers approximated by Dense layers (p1 and p2), act as learned transitions
-        hidden_dim = filter_num * len(filter_list)
-        self.p1_layer = tf.keras.layers.Dense(
-            units=getattr(config, "n_class", 2),  # output shape consistent with n_class
-            kernel_regularizer=tf.keras.regularizers.l2(getattr(config, "l2_reg", 0.0)),
-            activation=None,
-            kernel_initializer=tf.keras.initializers.GlorotUniform(seed=self.seed)
-        )
-        self.p2_layer = tf.keras.layers.Dense(
-            units=getattr(config, "n_class", 2),
-            kernel_regularizer=tf.keras.regularizers.l2(getattr(config, "l2_reg", 0.0)),
-            activation=None,
-            kernel_initializer=tf.keras.initializers.GlorotUniform(seed=self.seed)
-        )
-
-        # Dropout layers
-        self.dropout1 = tf.keras.layers.Dropout(rate=1-getattr(config, "keep_prob1", 1.0), seed=self.seed)
-        self.dropout2 = tf.keras.layers.Dropout(rate=1-getattr(config, "keep_prob2", 1.0), seed=self.seed)
-
-    def _apply_cnn_layers(self, inputs, cnn_layers):
-        # inputs: shape (B, max_sentence_len, embedding_dim)
-        # Expand dim for conv2d to 4D: (B, H, W, C) with W=embedding_dim and C=1 channel
-        x = tf.expand_dims(inputs, axis=-1)  # (B, max_len, embedding_dim, 1)
-        pooled_outputs = []
-        max_len = tf.shape(inputs)[1]
-        embedding_dim = tf.shape(inputs)[2]
-        for i, conv_layer in enumerate(cnn_layers):
-            conv = conv_layer(x)  # shape (B, max_len - filter_size + 1, 1, filter_num)
-            # max pooling over the time dimension (height axis = conv.shape[1])
-            pool_size = conv.shape[1]
-            pool = tf.keras.layers.MaxPooling2D(pool_size=(pool_size,1), strides=(1,1), padding='valid')(conv)  # shape (B,1,1,filter_num)
-            pooled_outputs.append(pool)
-        # Concatenate pooled outputs over filters along last axis
-        hiddens = tf.concat(pooled_outputs, axis=-1)  # (B,1,1, filter_num * len(filter_list))
-        hiddens = tf.reshape(hiddens, [-1, self.filter_num * len(self.filter_list)])  # (B, hidden_dim)
+    # cnn layer
+    def add_cnn_layer(self, inputs, inputs_dim, max_len, scope_name='cnn'):
+        inputs = tf.expand_dims(inputs, -1)
+        pooling_outputs = []
+        for i, filter_size in enumerate(self.filter_list):
+            ksize = [filter_size, inputs_dim]
+            conv = tf.contrib.layers.conv2d(inputs=inputs,
+                                            num_outputs=self.filter_num,
+                                            kernel_size=ksize,
+                                            stride=1,
+                                            padding='VALID',
+                                            activation_fn=tf.nn.relu,
+                                            scope='conv_' + scope_name + str(i))
+            ksize = [max_len - filter_size + 1, 1]
+            pooling = tf.contrib.layers.max_pool2d(inputs=conv,
+                                                   kernel_size=ksize,
+                                                   stride=1,
+                                                   padding='VALID',
+                                                   scope='pooling_' + scope_name)
+            pooling_outputs.append(pooling)
+        hiddens = tf.concat(pooling_outputs, 3)
+        hiddens = tf.reshape(hiddens, [-1, self.filter_num * len(self.filter_list)])
         return hiddens
 
-    def call(self, inputs, training=False):
-        """
-        inputs: a dict or tuple containing:
-            'sen_x_batch': int tensor shape (B, max_sentence_len) -- word ids
-        or directly a tensor (B, max_sentence_len) of word indices (integers)
-        
-        Returns:
-          noisy_logits: logits after noisy adaptation (B, n_class)
-          clean_logits: clean logits directly from CNN softmax (B, n_class)
-        """
-        if isinstance(inputs, dict):
-            sen_x_batch = inputs.get('sen_x_batch')
-        else:
-            sen_x_batch = inputs
+    # cnn layer
+    def add_noisy_cnn_layer(self, inputs, inputs_dim, max_len, scope_name='cnn'):
+        inputs = tf.expand_dims(inputs, -1)
+        pooling_outputs = []
+        for i, filter_size in enumerate(self.filter_list):
+            ksize = [filter_size, inputs_dim]
+            conv = tf.contrib.layers.conv2d(inputs=inputs,
+                                            num_outputs=self.filter_num,
+                                            kernel_size=ksize,
+                                            stride=1,
+                                            padding='VALID',
+                                            activation_fn=tf.nn.relu,
+                                            scope='conv_' + scope_name + str(i))
+            ksize = [max_len - filter_size + 1, 1]
+            pooling = tf.contrib.layers.max_pool2d(inputs=conv,
+                                                   kernel_size=ksize,
+                                                   stride=1,
+                                                   padding='VALID',
+                                                   scope='pooling_' + scope_name)
+            pooling_outputs.append(pooling)
+        hiddens = tf.concat(pooling_outputs, 3)
+        hiddens = tf.reshape(hiddens, [-1, self.filter_num * len(self.filter_list)])
+        return hiddens
 
-        # Embed words (B, max_sentence_len, embedding_dim)
-        x_embed = self.embedding_layer(sen_x_batch)  
-
-        # Apply first dropout (like keep_prob1)
-        x_dropout = self.dropout1(x_embed, training=training)
-
-        # CNN layers produce clean features and noisy features
-        clean_features = self._apply_cnn_layers(x_dropout, self.clean_cnn_layers)
-        noisy_features = self._apply_cnn_layers(x_dropout, self.noisy_cnn_layers)
-
-        # Fully connected layer for clean logits
-        clean_logits = self.fc_softmax(self.dropout2(clean_features, training=training))  # shape (B, n_class)
-
-        # Transition matrices p1 and p2 from noisy features
-        p1 = self.p1_layer(noisy_features)  # (B, n_class)
-        p2 = self.p2_layer(noisy_features)  # (B, n_class)
-
-        p1_exp = tf.expand_dims(p1, 2)  # (B, n_class, 1)
-        p2_exp = tf.expand_dims(p2, 2)  # (B, n_class, 1)
-        prob = tf.concat([p1_exp, p2_exp], axis=2)  # (B, n_class, 2) [as original]
-
-        sen_logits_exp = tf.expand_dims(clean_logits, 1)  # (B,1,n_class)
-
-        # noisy_logits = tf.squeeze(tf.matmul(sen_logits_exp, prob)) replicates
-        # matmul shape: (B,1,n_class) x (B,n_class,2) => (B,1,2) squeeze->(B,2)
-        noisy_logits = tf.matmul(sen_logits_exp, prob)  # (B,1,2)
-        noisy_logits = tf.squeeze(noisy_logits, axis=1)  # (B,2)
-
+    def netAb(self, inputs):
+        print('Running NetAb...')
+        inputs = tf.nn.dropout(inputs, keep_prob=self.keep_prob1, seed=42)
+        inputs = tf.reshape(inputs, [-1, self.config.max_sentence_len, self.config.embedding_dim])
+        # word-sentence: cnn
+        outputs_sen = self.add_cnn_layer(inputs, self.config.embedding_dim, self.config.max_sentence_len, 'h')
+        outputs_sen_dim = self.filter_num * len(self.filter_list)
+        outputs_sen = tf.reshape(outputs_sen, [-1, outputs_sen_dim])
+        noisy_cnn = self.add_noisy_cnn_layer(inputs, self.config.embedding_dim, self.config.max_sentence_len, 'u')
+        noisy_cnn = tf.reshape(noisy_cnn, [-1, outputs_sen_dim])
+        # fully-connection
+        clean_logits = softmax_layer(outputs_sen, outputs_sen_dim, self.config.random_base, self.keep_prob2,
+                                     self.config.l2_reg, self.config.n_class, 'sen_softmax')
+        p1 = transition_layer(noisy_cnn, outputs_sen_dim, self.config.l2_reg, self.config.random_base, 'p1')
+        p2 = transition_layer(noisy_cnn, outputs_sen_dim, self.config.l2_reg, self.config.random_base, 'p2')
+        p1 = tf.expand_dims(p1, 2)
+        p2 = tf.expand_dims(p2, 2)
+        prob = tf.concat([p1, p2], 2)
+        sen_logits = tf.expand_dims(clean_logits, 1)
+        noisy_logits = tf.squeeze(tf.matmul(sen_logits, prob))
         return noisy_logits, clean_logits
 
+    def add_loss(self, sen_logits):
+        loss = tf.nn.softmax_cross_entropy_with_logits_v2(logits=sen_logits, labels=self.sen_y_batch)
+        self.sen_vars = [var for var in tf.global_variables()
+                         if 'h' in var.name or 'u' in var.name or 'p1' in var.name or 'p2' in var.name]
+        # print(self.sen_vars)
+        reg_loss = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES, scope='sen_softmax')
+        # print(reg_loss)
+        loss = tf.reduce_mean(loss)  # TODO+ self.config.l1_reg * tf.add_n(reg_loss)
+        return loss
 
-def my_model_function():
-    # Dummy config class with minimal needed attributes for instantiation
-    class Config:
-        max_sentence_len = 50
-        embedding_dim = 300
-        n_class = 2
-        keep_prob1 = 0.8
-        keep_prob2 = 0.5
-        l2_reg = 0.001
-        embedding_type = 'non-static'  # trainable embeddings
-        random_base = 0.1
-        # fill vocab_size for embedding init
-        vocab_size = 5000
-    config = Config()
-    return MyModel(config=config)
+    def add_accuracy(self, scores):
+        correct_predicts = tf.equal(tf.argmax(scores, 1), tf.argmax(self.sen_y_batch, 1))
+        accuracy_num = tf.reduce_sum(tf.cast(correct_predicts, tf.int32))  # the number of correct predicting docs
+        accuracy = tf.reduce_mean(tf.cast(correct_predicts, tf.float32), name='accuracy')  # accuracy metric result
+        return accuracy, accuracy_num
+
+    def add_train_op(self, doc_loss):
+        # new_learning_rate = current_learning_rate * decay_rate ^ (global_step / decay_steps)
+        global_step = tf.Variable(0, name='global_step', trainable=False)  # record the current step (global step)
+        self.lr = tf.train.exponential_decay(self.config.lr, global_step, self.config.decay_steps,
+                                             self.config.decay_rate, staircase=True)
+        # the optimizer used in this work
+        # optimizer = tf.train.AdadeltaOptimizer(self.lr)
+        optimizer = tf.train.AdamOptimizer(self.lr)
+        grads, global_norm = tf.clip_by_global_norm(tf.gradients(doc_loss, self.sen_vars, gate_gradients=True), self.config.max_grad_norm)
+        train_op = optimizer.apply_gradients(zip(grads, self.sen_vars), name='train_op', global_step=global_step)
+        # train_op = optimizer.minimize(doc_loss, global_step=global_step, var_list=self.doc_vars)
+        return train_op
+
+    def run_op(self, sess, op, sen_x, sen_len, sen_y, kp1=1.0, kp2=1.0):
+        res_list = []
+        len_list = []
+        for indices in batch_index(len(sen_x), self.config.batch_size, n_iter=1, is_shuffle=False, is_train=False):
+            feed_dict = self.create_feed_dict(sen_x[indices], sen_len[indices], sen_y[indices], kp1, kp2)
+            res = sess.run(op, feed_dict=feed_dict)
+            res_list.append(res)
+            len_list.append(len(indices))
+        if type(res_list[0]) is list:  # if op is a list
+            res = np.concatenate(res_list, axis=1)
+        elif op is self.accuracy_num or op is self.accuracy_num2:
+            res = sum(res_list)  # sum all batches
+        elif op is self.sen_logits or op is self.sen_logits2:
+            res = np.concatenate(np.asarray(res_list), 0)
+        else:  # for los, etc.
+            res = sum(res_list) * 1.0 / len(len_list)
+        return res
+
+    def run_cleaner(self, sess, feed_dict):
+        sess.run([self.train_op2], feed_dict=feed_dict)
+
+    def pre_run(self, sess, feed_dict):
+        sess.run([self.train_op2], feed_dict=feed_dict)
+
+    def run(self, sess, feed_dict):
+        logits = sess.run([self.sen_logits2], feed_dict=feed_dict)
+        _, loss, acc_num = sess.run([self.train_op, self.loss, self.accuracy_num], feed_dict=feed_dict)
+        return loss, acc_num, np.concatenate(np.asarray(logits), 0)
 
 
-def GetInput():
-    """
-    Returns random valid input tensor matching the expected input:
-    A batch of integer IDs for words of shape [B, max_sentence_len]
-    """
-    B = 16  # batch size assumption
-    max_sentence_len = 50  # from Config default
-    vocab_size = 5000
+def test_case(sess, classifier, sen_x, sen_len, sen_y):
+    score = classifier.run_op(sess, classifier.sen_logits2, sen_x, sen_len, sen_y)
+    loss = classifier.run_op(sess, classifier.loss2, sen_x, sen_len, sen_y)
+    acc_num = classifier.run_op(sess, classifier.accuracy_num2, sen_x, sen_len, sen_y)
+    y_pred = np.argmax(score, axis=1)
+    y_true = np.argmax(sen_y, axis=1)
+    p_class, r_class, f_class, support_micro = precision_recall_fscore_support(y_true=y_true, y_pred=y_pred,
+                                                                               labels=[0, 1], average=None)
+    return acc_num * 1.0 / len(sen_y), loss, f_class[0]
 
-    import numpy as np
 
-    # generate random integer word ids between 0 and vocab_size-1
-    input_tensor = tf.constant(
-        np.random.randint(low=0, high=vocab_size, size=(B, max_sentence_len)), dtype=tf.int32
-    )
-    return input_tensor
+def run_test(sess, classifier, domain, sen_x, sen_len, sen_y):
+    scores = classifier.run_op(sess, classifier.sen_logits2, sen_x, sen_len, sen_y)
+    acc_num = classifier.run_op(sess, classifier.accuracy_num2, sen_x, sen_len, sen_y)
+    y_pred = np.argmax(scores, axis=1)
+    y_true = np.argmax(sen_y, axis=1)
+    p_class, r_class, f_class, support_micro = precision_recall_fscore_support(y_true=y_true, y_pred=y_pred,
+                                                                               labels=[0, 1], average=None)
+    _, id2y = load_y2id_id2y('./data/y2id.txt')
+    result_save_path = classifier.config.result_path + classifier.config.model + '/'
+    if not os.path.exists(result_save_path):
+        os.makedirs(result_save_path)
+    with open(result_save_path + domain + '_test.txt', 'w', encoding='utf-8') as fin:
+        fin.write('ACC: ' + str(acc_num * 1.0 / len(sen_x)) + '\t')
+        fin.write('P: ' + str(p_class) + '\tR: ' + str(r_class) +
+                  '\tF1: ' + str(f_class) + '\tF1_macro: ' + str(f_class.mean()) + '\n')
+        for id_y in y_pred:
+            fin.write(id2y[id_y] + '\n')
+    with open(result_save_path + domain + '_true.txt', 'w', encoding='utf-8') as fin:
+        for id_y in y_true:
+            fin.write(id2y[id_y] + '\n')
+    print('Test. Acc = {}, P = {}, R = {}, F1 = {}, F1_macro = {}'.
+          format(acc_num * 1.0 / len(sen_x), p_class, r_class, f_class, f_class.mean()))
 
+
+def train_run(_):
+    flags_ = config.FLAGS
+    domain = flags_.dataset  # movie, laptop, restaurant
+    print('{} Learning start: >>>\n'.format(domain))
+    tf.reset_default_graph()
+#     os.environ['CUDA_VISIBLE_DEVICES'] = flags_.gpu
+    classifier = NetAbModel(domain, flags_)
+
+    gpu_config = tf.ConfigProto(intra_op_parallelism_threads=1, inter_op_parallelism_threads=1)  #arguments I added
+#     gpu_config.gpu_options.per_process_gpu_memory_fraction = 0.85
+#     gpu_config.gpu_options.allow_growth = True
+#     gpu_config.allow_soft_placement = True  # If 'True': allow cpu, if no gpu
+    saver = tf.train.Saver(tf.global_variables())
+    save_path = classifier.config.ckpt_path + classifier.config.model + '/' + domain + '/' + domain + '_ckpt'
+    with tf.Session(config=gpu_config) as sess:
+        sess.run(tf.global_variables_initializer())
+        best_val_acc = 0
+        best_val_epoch = 0
+        # best_test_acc = 0
+        training_path = os.path.join(flags_.data_path, 'TrainingSens/')
+        train_sen_x, train_sen_len, train_sen_y = recover_data_from_files(
+            training_path, 'training', domain, flags_.max_sentence_len)
+        val_path = os.path.join(flags_.data_path, 'ValSens/')
+        val_sen_x, val_sen_len, val_sen_y = recover_data_from_files(
+            val_path, 'validation', domain, flags_.max_sentence_len)
+        test_path = os.path.join(flags_.data_path, 'TestSens/')
+        test_sen_x, test_sen_len, test_sen_y = recover_data_from_files(
+            test_path, 'test', domain, flags_.max_sentence_len)
+        # train_sen_x, train_sen_len, train_sen_y = load_inputs_document_mongo(
+        #     domain, 'train_noisy', classifier.word2id, flags_.max_sentence_len, flags_.max_doc_len)
+        # val_sen_x, val_sen_len, val_sen_y = load_inputs_document_mongo(
+        #     domain, 'dev', classifier.word2id, flags_.max_sentence_len, flags_.max_doc_len)
+        # test_sen_x, test_sen_len, test_sen_y = load_inputs_document_mongo(
+        #     domain, 'test', classifier.word2id, flags_.max_sentence_len, flags_.max_doc_len)
+        if classifier.config.is_train:
+            for epoch_i in range(flags_.n_epoch):
+                print('=' * 20 + 'Epoch ', epoch_i, '=' * 20)
+                total_loss = []
+                total_acc_num = []
+                total_num = []
+                if epoch_i < classifier.config.initial_epochs:  # initial epochs
+                    for step, indices in enumerate(batch_index(len(train_sen_y), flags_.batch_size, n_iter=1, is_shuffle=False), 1):
+                        indices = list(indices)
+                        print(train_sen_x[indices], [train_sen_y])  #-------------------------------------- I added
+                        feed_dict = classifier.create_feed_dict(train_sen_x[indices], train_sen_len[indices],
+                                                                train_sen_y[indices],
+                                                                flags_.keep_prob1, flags_.keep_prob2)
+                        classifier.pre_run(sess, feed_dict=feed_dict)
+                    continue
+                for step, indices in enumerate(batch_index(len(train_sen_y), flags_.batch_size, n_iter=1, is_shuffle=False), 1):
+                    indices = list(indices)
+                    # if epoch_i < 10:
+                    #print("indices", train_sen_x[indices], [train_sen_y])  #-------------------------------------- I added
+                    
+                    feed_dict = classifier.create_feed_dict(train_sen_x[indices], train_sen_len[indices],
+                                                            train_sen_y[indices],
+                                                            flags_.keep_prob1, flags_.keep_prob2)
+                    loss, acc_num, logits = classifier.run(sess, feed_dict=feed_dict)
+                    y_pred_set = np.argmax(logits, axis=1)
+                    y_true_set = np.argmax(train_sen_y[indices], axis=1)
+                    f_indices = np.arange(0, len(indices))
+                    valid_indices = f_indices[y_pred_set == y_true_set]
+                    indices_new = list(np.array(indices)[valid_indices])
+                    # print("newindices", train_sen_x[indices], [train_sen_y])  #-------------------------------------- I added
+
+                    if indices_new is None:
+                        continue
+                    # else:
+                    #     indices_new = indices
+                    # indices_new = indices
+                    feed_dict = classifier.create_feed_dict(train_sen_x[indices_new], train_sen_len[indices_new],
+                                                            train_sen_y[indices_new],
+                                                            flags_.keep_prob1, flags_.keep_prob2)
+                    classifier.run_cleaner(sess, feed_dict=feed_dict)
+                    total_loss.append(loss)
+                    total_acc_num.append(acc_num)
+                    total_num.append(len(indices))
+                    verbose = flags_.display_step
+                    if step % verbose == 0:
+                        print('[INFO] Len {}, Epoch {} - Batch {} : loss = {}, acc = {}'.format(
+                            len(indices_new), epoch_i, step, np.mean(total_loss[-verbose:]),
+                            sum(total_acc_num[-verbose:]) * 1.0 / sum(total_num[-verbose:])))
+                loss = np.mean(total_loss)
+                acc = sum(total_acc_num) * 1.0 / sum(total_num)
+                print('\n[INFO] Epoch {} : mean loss = {}, mean acc = {}'.format(epoch_i, loss, acc))
+                if np.isnan(loss):
+                    raise ValueError('[Error] loss is not a number!')
+                # validation
+                val_acc, val_loss, val_f1 = test_case(sess, classifier, val_sen_x, val_sen_len, val_sen_y)
+                print('[INFO] val loss: {}, val acc: {}, val f1: {}'.format(val_loss, val_acc, val_f1))
+                # test
+                test_acc, test_loss, test_f1 = test_case(sess, classifier, test_sen_x, test_sen_len, test_sen_y)
+                print('[INFO] test loss: {}, test acc: {}, test f1: {}'.format(test_loss, test_acc, test_f1))
+                print('=' * 25 + ' end', '=' * 25 + '\n')
+                if best_val_acc < val_acc:
+                    best_val_acc = val_acc
+                    best_val_epoch = epoch_i
+                    # best_test_acc = test_acc
+                    if not os.path.exists(classifier.config.ckpt_path + classifier.config.model + '/'):
+                        os.makedirs(classifier.config.ckpt_path + classifier.config.model + '/')
+                    saver.save(sess, save_path=save_path)
+                if epoch_i - best_val_epoch > classifier.config.early_stopping:
+                    # here early_stopping is 5 :> 'the number of early stopping epoch'
+                    print('Normal early stop at {}!'.format(best_val_epoch))
+                    break
+            print('Best val acc = {}'.format(best_val_acc))
+            # print('Test acc = {}'.format(best_test_acc))
+            best_val_epoch_save_path = classifier.config.result_path + classifier.config.model + '/'
+            if not os.path.exists(best_val_epoch_save_path):
+                os.makedirs(best_val_epoch_save_path)
+            with open(best_val_epoch_save_path + domain + '_bestEpoch.txt', 'w', encoding='utf-8') as fin:
+                fin.write('Best epoch: ' + str(best_val_epoch) + '\n')
+
+            saver.restore(sess, save_path)
+            print('Model restored from %s' % save_path)
+            # # test now
+            run_test(sess, classifier, domain, test_sen_x, test_sen_len, test_sen_y)
+        else:
+            saver.restore(sess, save_path)
+            print('Model restored from %s' % save_path)
+            # # test now
+            run_test(sess, classifier, domain, test_sen_x, test_sen_len, test_sen_y)
+        print('Domain {} is done..'.format(domain))
+    print('\nTraining complete!\n')
+
+
+if __name__ == '__main__':
+    tf.app.run(train_run)

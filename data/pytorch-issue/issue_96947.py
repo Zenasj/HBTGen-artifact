@@ -1,25 +1,25 @@
-# torch.rand(B, C, H, W, dtype=...)  # The input shape is not explicitly defined in the issue, so we will use a generic shape (B, C, H, W) for demonstration purposes.
+import itertools
 
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.dtype = torch.float16  # Example dtype, can be changed to other dtypes as needed
+for device, dtype in itertools.product(
+    ["cpu", "cuda"],
+    [
+        torch.float16,
+        torch.bfloat16,
+        torch.float32,
+        torch.float64,
+        torch.complex32,
+        torch.complex64,
+        torch.complex128,
+    ],
+):
+    torch.manual_seed(0)
+    # I only used this high number of samples to make sure the other dtypes are not affected
+    # On my machine 1_000 was sufficient for the check to fail for bfloat16, 
+    # and 10_000 for float16 and complex32
+    t = torch.rand(10_000_000, dtype=dtype, device=device)
+    if dtype.is_complex:
+        t = torch.view_as_real(t)
 
-    def forward(self, x):
-        # Generate a random tensor and check if it contains the upper bound value (1.0)
-        t = torch.rand(x.shape, dtype=self.dtype, device=self.device)
-        return (t != 1).all()
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    B, C, H, W = 10, 3, 32, 32  # Example input shape
-    return torch.rand(B, C, H, W, dtype=torch.float16, device="cuda" if torch.cuda.is_available() else "cpu")
-
+    print(f"{dtype}, {device}: {'PASS' if (t != 1).all() else 'FAIL'}")

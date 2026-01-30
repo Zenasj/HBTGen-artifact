@@ -1,18 +1,29 @@
-# torch.rand(B, 4096, dtype=torch.float32)
-import torch
-import torch.nn as nn
+with FSDP.FullyShardedDataParallel.state_dict_type(
+        trainer.model,
+        StateDictType.LOCAL_STATE_DICT, # or any other StateDictType
+        LocalStateDictConfig(offload_to_cpu=True), # or without this line
+        LocalOptimStateDictConfig(offload_to_cpu=True), # or without this line
+        ):
+    state_dict = trainer.model.state_dict()
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.fc = nn.Linear(4096, 4096)  # Large layer to trigger potential memory issues during state_dict collection
+def safe_save_model_for_hf_trainer(trainer: transformers.Trainer, output_dir: str):
+    """Collects the state dict and dump to disk."""
+    state_dict = trainer.model.state_dict()
+    if trainer.args.should_save:
+        cpu_state_dict = {key: value.cpu() for key, value in state_dict.items()}
+        del state_dict
+        trainer._save(output_dir, state_dict=cpu_state_dict)  # noqa
 
-    def forward(self, x):
-        return self.fc(x)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(2, 4096, dtype=torch.float32)
-
+def safe_save_model_for_hf_trainer(trainer: transformers.Trainer, output_dir: str):
+    """Collects the state dict and dump to disk."""
+    with FSDP.FullyShardedDataParallel.state_dict_type(
+            trainer.model,
+            StateDictType.LOCAL_STATE_DICT, # or any other StateDictType
+            LocalStateDictConfig(offload_to_cpu=True), # or without this line
+            LocalOptimStateDictConfig(offload_to_cpu=True), # or without this line
+            ):
+        state_dict = trainer.model.state_dict()
+    if trainer.args.should_save:
+        cpu_state_dict = {key: value.cpu() for key, value in state_dict.items()}
+        del state_dict
+        trainer._save(output_dir, state_dict=cpu_state_dict)  # noqa

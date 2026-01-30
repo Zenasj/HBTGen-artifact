@@ -1,44 +1,64 @@
-# tf.random.uniform((1, 640, 640, 3), dtype=tf.float32)  # Batch size 1, 640x640 RGB image input shape inferred from usage in code
+import random
+
+from __future__ import division
+import numpy as np
 
 import tensorflow as tf
-import numpy as np
 from tensorflow.python.tools.optimize_for_inference_lib import optimize_for_inference
 from tensorflow.python.framework import dtypes
+import os
+import sys
+from argparse import ArgumentParser
 
-class MyModel(tf.keras.Model):
+BATCH_SIZE = 1
+IMAGE_SIZE = 640
+
+
+class model_infer:
+
     def __init__(self):
-        super().__init__()
-        # Placeholder layers for input and output processing.
-        # Since the original code operates on frozen graphs loaded via tf.compat.v1,
-        # and uses graph_def & sessions, we cannot fully replicate the frozen graph loading here.
-        # Instead we simulate a minimal functional equivalent using a simple Keras model.
-        #
-        # Assumptions:
-        # - Input: tensor shape (1, 640, 640, 3), dtype float32 as typical for image input
-        # - Outputs: simulate 5 output tensors since original code expected 5 output nodes
-        #
-        # The original 'StatefulPartitionedCall' output nodes named '0', '1', '2', '3', '4' imply multiple outputs.
-      
-        # For demonstration, create 5 separate small Conv2D layers to simulate multiple outputs.
-        self.conv_outputs = [
-            tf.keras.layers.Conv2D(1, (1,1), activation='sigmoid', name=f'output_{i}') for i in range(5)
-        ]
-        
-    def call(self, inputs, training=False):
-        # inputs expected shape: (1, 640, 640, 3)
-        outputs = []
-        for conv in self.conv_outputs:
-            # For each conv layer simulate separate output tensor
-            outputs.append(conv(inputs))
-        return outputs
+        arg_parser = ArgumentParser(description='Parse args')
+
+        arg_parser.add_argument('-g', "--input-graph",
+                                help='Specify the input graph.',
+                                dest='input_graph')
+
+        # parse the arguments
+        self.args = arg_parser.parse_args()
+
+        self.input_layer = 'serving_default_input_tensor'
+        self.output_layers = 'StatefulPartitionedCall'
+        self.output_node_index = ['0', '1', '2', '3', '4']
+        self.load_graph()
+
+        self.input_tensor = self.infer_graph.get_tensor_by_name(
+            self.input_layer + ":0")
+        self.output_tensors = [self.infer_graph.get_tensor_by_name(self.output_layers + ":" + index) for index in self.output_node_index]
 
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+    def load_graph(self):
+        print('load graph from: ' + self.args.input_graph)
+
+        self.infer_graph = tf.Graph()
+        with self.infer_graph.as_default():
+            graph_def = tf.compat.v1.GraphDef()
+            with tf.compat.v1.gfile.FastGFile(self.args.input_graph, 'rb') as input_file:
+                input_graph_content = input_file.read()
+                graph_def.ParseFromString(input_graph_content)
+            output_graph = optimize_for_inference(graph_def, [self.input_layer],
+                                                  [self.output_layers], dtypes.uint8.as_datatype_enum, False)
+            tf.import_graph_def(output_graph, name='')
+        print('----------------------load graph: success------------------------', flush=True)
+
+    def run_benchmark(self):
+        with tf.compat.v1.Session(graph=self.infer_graph) as sess:
+            input_images = np.random.normal(size=[BATCH_SIZE,
+                    IMAGE_SIZE, IMAGE_SIZE, 3])
+            _ = sess.run(self.output_tensors, {
+                                 self.input_tensor: input_images})
 
 
-def GetInput():
-    # Return a random input tensor matching expected input shape: batch 1, 640x640, 3 channels, float32
-    return tf.random.uniform((1, 640, 640, 3), dtype=tf.float32)
 
+if __name__ == "__main__":
+    infer = model_infer()
+    infer.run_benchmark()

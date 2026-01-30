@@ -1,53 +1,104 @@
-# tf.random.uniform((B, H, W, C), dtype=...) 
-# 
-# Note: The original issue and discussion focus on multiprocessing with TensorFlow sessions
-# on GPUs, illustrating how to properly handle GPU assignment and TensorFlow import per process.
-# There is no explicit "model" or "layer" definition in the issue. The minimal computation shown
-# everywhere is a simple identity on a placeholder input, which is replicated inside each process/session.
-#
-# Based on the issue content, the best meaningful "model" class we can reconstruct is a simple
-# TensorFlow Keras model that takes an int16 tensor input and outputs the same tensor (identity).
-# We then show how to generate an input compatible with that model.
-#
-# There is no multi-model fusion or diff comparison described, so a single MyModel suffices.
-#
-# This model and input follow TF2 style (compatible with tf.function jit_compile=True) and maintain
-# structure similar to that used in the original examples (int16 input, identity output).
-#
-# The multiprocessing GPU-related issues described revolve around importing TF inside processes,
-# setting CUDA_VISIBLE_DEVICES before import, and ensuring no TensorFlow session is created in
-# parent before child processes start. Those multiprocessing aspects are NOT explicitly part of
-# the requested code output, which should focus on MyModel, my_model_function(), and GetInput().
+run_session('0')
 
-import tensorflow as tf
+run_session('0')
+run_session('1')
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Identity layer: just passes input as-is
-        # Could be tf.keras.layers.Lambda, but here just use tf.identity in call
-        pass
+import multiprocessing as mp
 
-    def call(self, inputs):
-        # inputs is expected to be an int16 tensor
-        # Return identity (same tensor) per the issue examples
-        return tf.identity(inputs, name="output_identity")
+p = mp.Pool(2)
+p.map(run_session, ['0', '1'])
+p.close()
+p.join()
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+import multiprocessing as mp
 
-def GetInput():
-    # Return a random int16 tensor compatible with MyModel input
-    # In the example code, the input placeholder was scalar int16 or int16 tensor
-    # We create a scalar int16 tensor with a single random value for simplicity
-    # Since the example used tf.placeholder(tf.int16), scalar input 3, let's use shape=()
-    # dtype=tf.int16
-    return tf.random.uniform(shape=(), maxval=100, dtype=tf.int16)
+run_session('0')
+p = mp.Pool(2)
+p.map(run_session, ['0', '1'])
+p.close()
+p.join()
 
-# Example usage (not requested to be included):
-# model = my_model_function()
-# x = GetInput()
-# y = model(x)
-# print(y)
+import os
+import tensorflow
+from multiprocessing.pool import Pool
 
+def runInSubprocess(somearg):
+    print('Training model on process id {}.'.format(os.getpid()))
+    with tensorflow.Session() as sess:
+        sess.run(tensorflow.global_variables_initializer())
+
+# This Hangs:
+runInSubprocess(2)
+Pool(processes=2).map(runInSubprocess, [1,2])
+
+# This works:
+runInSubprocess(2)
+runInSubprocess(2)
+
+# This works:
+Pool(processes=2).map(runInSubprocess, [1,2])
+Pool(processes=2).map(runInSubprocess, [1,2])
+
+# This works:
+Pool(processes=2).map(runInSubprocess, [1,2])
+runInSubprocess(2)
+
+import os
+import multiprocessing
+
+
+class Predictor(multiprocessing.Process):
+    def __init__(self, input_queue, output_queue, gpu_id):
+        multiprocessing.Process.__init__(self)
+        self.input_queue = input_queue
+        self.output_queue = output_queue
+        self.gpu_id = gpu_id
+
+    def run(self):
+        #set GPU id before importing tensorflow!!!!!!!!!!!!!
+        os.environ["CUDA_VISIBLE_DEVICES"] = "{}".format(self.gpu_id)
+        #import tensorflow here
+        import tensorflow as tf
+        sess = tf.Session()
+        print('Using device #%s' % self.gpu_id)
+        a = tf.placeholder(tf.int16, name='a')
+        y = tf.identity(a, name='y')
+        while True:
+            input = self.input_queue.get()
+            if input is None:
+                self.input_queue.task_done()
+                print("Exiting Process %d" % self.gpu_id)
+                break
+            else:
+                res = sess.run(y, feed_dict={a: input})
+                self.input_queue.task_done()
+                self.output_queue.put(res)
+        sess.close()
+        return
+
+if __name__ == "__main__":
+    jobs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    num_gpus = 2
+    p_list = []
+    input_queue = multiprocessing.JoinableQueue()
+    output_queue = multiprocessing.Queue()
+    for i in range(num_gpus):
+        p = Predictor(input_queue, output_queue, i)
+        p_list.append(p)
+
+    for p in p_list:
+        p.start()
+
+    for job in jobs:
+        input_queue.put(job)
+
+    for i in range(num_gpus):
+        input_queue.put(None)
+
+    for i in range(num_gpus):
+        print(output_queue.get())
+
+    input_queue.join()
+    
+    for p in p_list:
+        p.join()

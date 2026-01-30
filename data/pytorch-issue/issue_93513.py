@@ -1,31 +1,40 @@
-# torch.rand(1, dtype=torch.float32)  # Dummy input shape (assumed from benchmark context)
-import torch
-import torch.nn as nn
+import torch._dynamo
+from torch._inductor.utils import fresh_inductor_cache
+import time
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.seed = 42  # Fixed seed to replicate "non-random" behavior
-        self.old_rng = torch.Generator()  # RNG for old (non-random) generation
+@torch._dynamo.optimize("inductor")
+def foo():
+    return torch.randn(10000)
+
+def fresh_cache(fn):
+    def inner(*args, **kwargs):
+        cache_entries = {}
+        cache_minder = fresh_inductor_cache(cache_entries)
         
-    def forward(self, x):
-        # Replicate old "non-random" behavior: reset seed each call
-        self.old_rng.manual_seed(self.seed)
-        old_output = torch.randn(10000, generator=self.old_rng)
-        
-        # New "random" behavior: use default RNG without resetting
-        new_output = torch.randn(10000)
-        
-        # Return boolean tensor indicating if outputs differ beyond tolerance
-        return torch.tensor(
-            not torch.allclose(old_output, new_output, atol=1e-5),
-            dtype=torch.bool
-        )
+        with cache_minder:
+            return fn(*args, **kwargs)
+    return inner
 
-def my_model_function():
-    return MyModel()
+fresh_cache(foo)()
 
-def GetInput():
-    # Return dummy input tensor matching expected input shape
-    return torch.rand(1, dtype=torch.float32)
+# warm up
+start = time.time()
+for _ in range(100):
+    #foo()
+    fresh_cache(foo)()
+end = time.time()
+print('average warmup: {:.2f} ms'.format((end-start)/100*1000))
 
+# measure
+start = time.time()
+for _ in range(100):
+    #foo()
+    fresh_cache(foo)()
+end = time.time()
+print('average measure: {:.2f} ms'.format((end-start)/100*1000))
+
+from torch.profiler import profile, ProfilerActivity
+with profile(activities=[ProfilerActivity.CPU]) as prof:
+    #foo()
+    fresh_cache(foo)()
+print(prof.key_averages().table(sort_by="self_cpu_time_total"))

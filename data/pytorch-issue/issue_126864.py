@@ -1,10 +1,8 @@
-# torch.rand(4, device="cuda"), torch.rand(4, device="cuda")
 import torch
-from torch import nn
 from torch.utils._triton import has_triton
 
 if not has_triton():
-    raise RuntimeError("Triton is not supported on this device.")
+    print("Skipping because triton is not supported on this device.")
 else:
     import triton
     from triton import language as tl
@@ -35,18 +33,15 @@ else:
         output = x + y
         tl.store(out_ptr + offsets, output, mask=mask)
 
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        x, y = inputs
+    @torch.compile(fullgraph=True, mode="reduce-overhead") # FAILS if mode is provided
+    def add_fn(x, y):
         output = torch.zeros_like(x)
         n_elements = output.numel()
         grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
         add_kernel_autotuned[grid](x, y, output, n_elements)
         return output
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return (torch.randn(4, device="cuda"), torch.randn(4, device="cuda"))
-
+    x = torch.randn(4, device="cuda")
+    y = torch.randn(4, device="cuda")
+    out = add_fn(x, y)
+    print(f"Vector addition of\nX:\t{x}\nY:\t{y}\nis equal to\n{out}")

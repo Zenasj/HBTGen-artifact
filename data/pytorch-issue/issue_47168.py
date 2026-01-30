@@ -1,32 +1,15 @@
-# torch.rand(B, C, H, W, dtype=...)  # Not applicable here, as the input is (2, 800)
+# test.py
 
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        # Compare the results of summing and then indexing vs. indexing and then summing
-        sum_then_index = x.sum(dim=1)[1]
-        index_then_sum = x[1].sum()
-        return sum_then_index, index_then_sum
+for i in range(1000):
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+    gpu_arr = torch.randn(size=[2, 800]).cuda()
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(size=[2, 800]).cuda()
+    success = (gpu_arr[1].sum() == gpu_arr.sum(dim=1)[1])
 
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# sum_then_index, index_then_sum = model(input_tensor)
-# print("Sum then index:", sum_then_index)
-# print("Index then sum:", index_then_sum)
+    if not success:
+        print("Test failed!")
+        exit()
 
-# This code defines a `MyModel` class that compares the results of summing and then indexing a tensor versus indexing and then summing. The `GetInput` function generates a random tensor with the shape `[2, 800]` on the GPU, which is the input expected by `MyModel`. The `my_model_function` returns an instance of `MyModel`.
-# The example usage at the end (commented out) shows how to use the model and input tensor to compare the two summation methods.
+print("Test passed!")

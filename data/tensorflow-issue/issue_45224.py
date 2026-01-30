@@ -1,12 +1,20 @@
-# tf.random.uniform((B, 16, 10), dtype=tf.float32)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
+import numpy as np
 import tensorflow as tf
+
+data_x = np.random.default_rng().normal(size=(100, 16, 10))
+data_y = np.random.default_rng().normal(size=(100, 16, 1))
 
 @tf.keras.utils.register_keras_serializable(package="Custom")
 class CustomLayer(tf.keras.layers.Layer):
     def __init__(self, units, outputs, **kwargs):
-        super(CustomLayer, self).__init__(**kwargs)
         self.units = units
         self.outputs = outputs
+        super(CustomLayer, self).__init__(**kwargs)
 
     @property
     def state_size(self):
@@ -28,28 +36,17 @@ class CustomLayer(tf.keras.layers.Layer):
     def get_config(self):
         return {"units": self.units, "outputs": self.outputs}
 
+model = tf.keras.models.Sequential(
+    [
+        tf.keras.Input((16, 10,)),
+        tf.keras.layers.RNN(CustomLayer(10, 1), return_sequences=True),
+    ]
+)
+model.compile(optimizer="adam", loss="mean_squared_error")
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Define the RNN layer using the custom RNN cell
-        self.rnn_layer = tf.keras.layers.RNN(CustomLayer(10, 1), return_sequences=True)
+model.fit(x=data_x, y=data_y, batch_size=25, epochs=1)
+model.evaluate(x=data_x, y=data_y)
+model.save("test_2.h5")
 
-    def call(self, inputs):
-        return self.rnn_layer(inputs)
-
-
-def my_model_function():
-    # Return an instance of MyModel with the custom RNN cell inside RNN layer
-    return MyModel()
-
-
-def GetInput():
-    # Input shape inferred from example: batch size variable, sequence length=16, features=10
-    # Return a random tensor compatible with MyModel input
-    # Using batch size 4 as example
-    batch_size = 4
-    seq_len = 16
-    features = 10
-    return tf.random.uniform((batch_size, seq_len, features), dtype=tf.float32)
-
+model = tf.keras.models.load_model("test_2.h5")  ## Crashes here
+model.evaluate(x=data_x, y=data_y)

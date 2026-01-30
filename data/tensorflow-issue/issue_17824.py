@@ -1,52 +1,102 @@
-# tf.random.uniform((B, ...), dtype=tf.float32) ← 
-# From the issue context, input is a dictionary of features for prediction, 
-# e.g. numerical tensor inputs like SepalLength, SepalWidth etc. 
-# For a self-contained example, we'll assume a single tensor input with shape (batch_size, feature_dim)
-
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Example simple model to mimic prediction with labels returned
-        # This simulates a classifier output logits/predictions with access to labels as part of input.
-        self.dense1 = tf.keras.layers.Dense(10, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(3)  # Pretend 3 classes for classification
+# Generate predictions from the model
+expected = ['Setosa', 'Versicolor', 'Virginica']
+predict_x = {
+    'SepalLength': [5.1, 5.9, 6.9],
+    'SepalWidth': [3.3, 3.0, 3.1],
+    'PetalLength': [1.7, 4.2, 5.4],
+    'PetalWidth': [0.5, 1.5, 2.1],
+}
 
-    def call(self, inputs, training=False):
-        """
-        inputs: dict with keys:
-           - 'features': tf.Tensor shape (B, feature_dim)
-           - 'labels': tf.Tensor shape (B,) or None
+predictions = classifier.predict(
+    input_fn=lambda:iris_data.eval_input_fn(predict_x,
+                                            batch_size=args.batch_size))
 
-        Returns:
-           If labels provided: tuple (predictions, labels)
-           Else: predictions only
-        """
-        x = inputs.get('features')
-        labels = inputs.get('labels', None)
+def predict(self,
+              input_fn,
+              predict_keys=None,
+              hooks=None,
+              checkpoint_path=None):
+    """Yields predictions for given features.
 
-        x = self.dense1(x)
-        preds = self.dense2(x)  # logits or predicted scores for 3 classes
+    Args:
+      input_fn: A function that constructs the features. Prediction continues
+        until `input_fn` raises an end-of-input exception (`OutOfRangeError` or
+        `StopIteration`).
+        See @{$get_started/premade_estimators#create_input_functions} for more
+        information. The function should construct and return one of
+        the following:
 
-        if labels is not None:
-            # Return a tuple allowing easy comparison or downstream processing
-            return preds, labels
-        else:
-            return preds
+          * A 'tf.data.Dataset' object: Outputs of `Dataset` object must have
+            same constraints as below.
+          * features: A `Tensor` or a dictionary of string feature name to
+            `Tensor`. features are consumed by `model_fn`. They should satisfy
+            the expectation of `model_fn` from inputs.
+          * A tuple, in which case the first item is extracted as features.
 
-def my_model_function():
-    # Return an instance of MyModel, could restore weights here if available
-    return MyModel()
+      predict_keys: list of `str`, name of the keys to predict. It is used if
+        the `EstimatorSpec.predictions` is a `dict`. If `predict_keys` is used
+        then rest of the predictions will be filtered from the dictionary. If
+        `None`, returns all.
+      hooks: List of `SessionRunHook` subclass instances. Used for callbacks
+        inside the prediction call.
+      checkpoint_path: Path of a specific checkpoint to predict. If `None`, the
+        latest checkpoint in `model_dir` is used.
 
-def GetInput():
-    # Generate synthetic input matching model expectations:
-    # Return a dict with 'features' and 'labels' keys
-    batch_size = 4
-    feature_dim = 5  # For example, 5 features as in iris dataset
-    features = tf.random.uniform((batch_size, feature_dim), dtype=tf.float32)
-    # Simulated true labels as integers for classification (e.g., 0 to 2)
-    labels = tf.random.uniform((batch_size,), minval=0, maxval=3, dtype=tf.int32)
+    Yields:
+      Evaluated values of `predictions` tensors.
 
-    return {'features': features, 'labels': labels}
+    Raises:
+      ValueError: Could not find a trained model in model_dir.
+      ValueError: if batch length of predictions are not same.
+      ValueError: If there is a conflict between `predict_keys` and
+        `predictions`. For example if `predict_keys` is not `None` but
+        `EstimatorSpec.predictions` is not a `dict`.
+    """
+    hooks = _check_hooks_type(hooks)
+    # Check that model has been trained.
+    if not checkpoint_path:
+      checkpoint_path = saver.latest_checkpoint(self._model_dir)
+    if not checkpoint_path:
+      raise ValueError('Could not find trained model in model_dir: {}.'.format(
+          self._model_dir))
 
+    with ops.Graph().as_default() as g:
+      random_seed.set_random_seed(self._config.tf_random_seed)
+      self._create_and_assert_global_step(g)
+      features, labels, input_hooks = self._get_features_and_labels_from_input_fn(
+          input_fn, model_fn_lib.ModeKeys.PREDICT)
+      estimator_spec = self._call_model_fn(
+          features, None, model_fn_lib.ModeKeys.PREDICT, self.config)
+      predictions = self._extract_keys(estimator_spec.predictions, predict_keys)
+      all_hooks = list(input_hooks)
+      all_hooks.extend(hooks)
+      all_hooks.extend(list(estimator_spec.prediction_hooks or []))
+      with training.MonitoredSession(
+          session_creator=training.ChiefSessionCreator(
+              checkpoint_filename_with_path=checkpoint_path,
+              master=self._config.master,
+              scaffold=estimator_spec.scaffold,
+              config=self._session_config),
+          hooks=all_hooks) as mon_sess:
+        while not mon_sess.should_stop():
+          preds_evaluated, gt_labels = mon_sess.run([predictions, labels])
+          if not isinstance(predictions, dict):
+            for pred, true_label in zip(preds_evaluated, gt_labels):
+              yield pred, true_label
+          else:
+            for i in range(self._extract_batch_length(preds_evaluated)):
+              yield {
+                  key: value[i]
+                  for key, value in six.iteritems(preds_evaluated)
+              }, gt_labels[i]
+
+# Generate predictions from the model
+def parse_input(x, y):
+   features = dict(
+      x=x,
+      labels=y
+   )
+   
+   return features, y

@@ -1,25 +1,37 @@
-# tf.random.uniform((B, 100), dtype=tf.float32) ← The input shape inferred from the example is (batch_size, 100) features
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
+import numpy as np
 import tensorflow as tf
+from keras.layers import Input, Dense
+from keras.models import Model
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Based on the original example Dense(10, activation='sigmoid') then Dense(1, activation='sigmoid')
-        self.dense1 = tf.keras.layers.Dense(10, activation='sigmoid', name="Hidden_1")
-        self.dense2 = tf.keras.layers.Dense(1, activation='sigmoid', name="Output")
+from keras.optimizers import SGD
 
-    def call(self, inputs):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        return x
+num_features = 100
+train_x = np.random.rand(40, num_features)
+train_y = np.random.randint(2, size=40)
 
-def my_model_function():
-    # Return an instance of MyModel initialized freshly
-    return MyModel()
+# The input layer
+input_layer = Input(shape=(num_features,), name="Input")
+output = Dense(10, activation='sigmoid', name="Hidden_1")(input_layer)
+output = Dense(1, activation='sigmoid', name="Output")(output)
+model = Model(inputs=input_layer, outputs=output)
 
-def GetInput():
-    # Return a random float32 tensor of shape (batch_size, 100)
-    # Batch size can be a reasonable default like 40 to match the example
-    return tf.random.uniform((40, 100), dtype=tf.float32)
+sgd = SGD(lr=0.01, decay=1e-4, momentum=0.9, nesterov=True)
+model.compile(loss='binary_crossentropy',
+                     optimizer=sgd,
+                      metrics=['accuracy'])
 
+tensorboard_callback = tf.keras.callbacks.TensorBoard(
+            log_dir=os.path.join("out_dir", datetime.now().strftime("%Y%m%d-%H%M%S")),
+            histogram_freq=2, write_graph=True, write_images=True)
+my_callbacks = [tensorboard_callback]
+
+model.fit(x=train_x, y=train_y,
+                  validation_split=.2,
+                  epochs=5,
+                  callbacks=my_callbacks)

@@ -1,14 +1,17 @@
-# torch.rand(5, 5, dtype=torch.float32)
+import torch.nn as nn
+
 import torch
-from torch import nn
+import onnx
 
-class MyModel(nn.Module):
+FILENAME = 'model.onnx'
+
+
+class Model(torch.nn.Module):
     def forward(self, x0):
-        return torch.clamp(x0, max=6)
+        x = torch.clamp(x0, max=6)
+        return x
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(5, 5)
-
+torch.onnx.export(Model(), torch.randn(5, 5), FILENAME, opset_version=11)
+model = onnx.load(FILENAME)
+onnx.checker.check_model(model)
+print(model)

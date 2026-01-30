@@ -1,34 +1,44 @@
-# tf.random.uniform((B, 2), dtype=tf.float32)  ← Based on example_data=tf.constant([[1.0, 2.0]])
+from tensorflow.keras import layers
+
+converter = tf.lite.TFLiteConverter.from_saved_model(model_path)
+tflite_model = converter.convert()
+
+convert
+
+if len(self._funcs) != 1:
+      raise ValueError("This converter can only convert a single "
+                       "ConcreteFunction. Converting multiple functions is "
+                       "under development.")
 
 import tensorflow as tf
 from tensorflow.keras.layers import Dense
 
-class MyModel(tf.keras.Model):
+
+# Define very simple classification model
+class Model(tf.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
-        # Define layers as in the reported example
+        super(Model, self).__init__()
+
         self.d1 = Dense(2, activation='relu')
         self.d2 = Dense(2, activation='softmax')
-
-    def call(self, x):
-        # Mimic the original call function with print replaced by tf.print for graph mode
-        # Note: The original example uses @tf.function, which is implicit here.
-        tf.print("Tracing the model")
+    
+    @tf.function
+    def __call__(self, x):
+        print("Tracing the model")
         x = self.d1(x)
         return self.d2(x)
 
+model = Model()
 
-def my_model_function():
-    # Return an initialized instance of MyModel
-    model = MyModel()
-    # Optional: run a dummy input once to build model weights if needed
-    dummy_input = tf.random.uniform((1, 2), dtype=tf.float32)
-    _ = model(dummy_input)
-    return model
+example_data = tf.constant([[1.0, 2.0]])
+preds = model(example_data)
+tf.print(preds)
+
+# Save the model
+tf.saved_model.save(model, './model_example')
 
 
-def GetInput():
-    # Return a random tensor input that matches the expected input of shape (B, 2)
-    # Assuming batch size 1 for simplicity here
-    return tf.random.uniform((1, 2), dtype=tf.float32)
-
+# Load the saved model and convert to TFLite
+converter = tf.lite.TFLiteConverter.from_saved_model('./model_example')
+tflite_model = converter.convert()
+open("converted_model.tflite", "wb").write(tflite_model)

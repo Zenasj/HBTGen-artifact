@@ -1,43 +1,42 @@
-# tf.random.uniform((B, 10), dtype=tf.float32) ← Input shape (batch_size, 10) as per example
+import random
+from tensorflow.keras import layers
 
 import tensorflow as tf
+from tensorflow import keras
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Following the Sequential architecture from the issue reproduction code
-        self.dense1 = tf.keras.layers.Dense(64, activation='relu', input_shape=(10,))
-        self.dropout1 = tf.keras.layers.Dropout(0.1)
-        self.dense2 = tf.keras.layers.Dense(64, activation='relu')
-        self.dropout2 = tf.keras.layers.Dropout(0.1)
-        self.dense3 = tf.keras.layers.Dense(64, activation='relu')
-        self.dropout3 = tf.keras.layers.Dropout(0.1)
-        self.dense4 = tf.keras.layers.Dense(64, activation='relu')
-        self.dropout4 = tf.keras.layers.Dropout(0.1)
-        self.output_layer = tf.keras.layers.Dense(1, activation='sigmoid')
-        
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.dropout1(x, training=training)
-        x = self.dense2(x)
-        x = self.dropout2(x, training=training)
-        x = self.dense3(x)
-        x = self.dropout3(x, training=training)
-        x = self.dense4(x)
-        x = self.dropout4(x, training=training)
-        return self.output_layer(x)
+x_train = np.random.rand(10000, 10)
+y_train = np.random.rand(10000, 1)
+w_train = np.random.rand(10000, 1)
 
-def my_model_function():
-    model = MyModel()
-    # Compile as per original example
-    model.compile(
-        loss='binary_crossentropy',
-        optimizer='adam',
-        metrics=['accuracy']
-    )
-    return model
+def run(with_sample_weights=True):
+  model = keras.Sequential()
+  model.add(keras.layers.Dense(64, input_dim=x_train.shape[1], activation='relu')) 
+  model.add(keras.layers.Dropout(0.1))
+  model.add(keras.layers.Dense(64, activation='relu'))
+  model.add(keras.layers.Dropout(0.1))
+  model.add(keras.layers.Dense(64, activation='relu'))
+  model.add(keras.layers.Dropout(0.1))
+  model.add(keras.layers.Dense(64, activation='relu'))
+  model.add(keras.layers.Dropout(0.1))
+  model.add(keras.layers.Dense(1, activation='sigmoid'))
+  model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
 
-def GetInput():
-    # Return a random tensor shaped like (batch_size, 10), batch_size = 32 as a common default
-    return tf.random.uniform((32, 10), dtype=tf.float32)
+  if with_sample_weights:
+    model.fit(x_train, y_train, sample_weight=w_train)
+  else:
+    model.fit(x_train, y_train)
 
+import time
+
+start = time.time()
+for i in range(10):
+  run(True)
+end = time.time()
+print(end - start)
+
+start = time.time()
+for i in range(10):
+  run(False)
+end = time.time()
+print(end - start)

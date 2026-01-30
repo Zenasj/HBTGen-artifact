@@ -1,26 +1,17 @@
-# torch.rand(2, 3, dtype=torch.float32)  # Inferred input shape
-
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+import torch
+import torch._dynamo 
+
+class MyModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.p = torch.nn.Parameter(torch.ones(2, 3))
-
+    
     def forward(self, x):
         return self.p + x
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+with torch.device("meta"):
+    m = MyModule()
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.ones(2, 3)
-
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
-
+torch._dynamo.export(m, torch.ones(2, 3))

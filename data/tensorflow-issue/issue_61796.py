@@ -1,37 +1,47 @@
-# tf.random.uniform((B, T, D), dtype=tf.float32) for query and value inputs
-# Here, B=1 (batch size), T=variable sequence length (8 for query, 4 for value), D=16 (feature dimension)
+import random
+from tensorflow import keras
+
 import tensorflow as tf
+from tensorflow.keras import layers
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # MultiHeadAttention layer with 2 heads and key dimension 2, 
-        # matching the example setup (num_heads=2, key_dim=2)
-        self.mha = tf.keras.layers.MultiHeadAttention(num_heads=2, key_dim=2)
+def model(q, v):
+    x = layers.MultiHeadAttention(num_heads=2, key_dim=2)(q, v)
+    return x
 
-    def call(self, inputs):
-        """
-        Expects `inputs` as a tuple: (q, v)
-          - q: query tensor of shape (batch, 8, 16)
-          - v: value tensor of shape (batch, 4, 16)
-        Returns output of MultiHeadAttention layer.
-        """
-        q, v = inputs
-        # Call the MHA layer with query and value both provided.
-        # Key is not explicitly provided, so defaults to value.
-        attn_output = self.mha(query=q, value=v)
-        return attn_output
+def representative_dataset():
+    for _ in range(100):
+        q = np.log(np.random.random((8, 16)))
+        v = np.log(np.random.random((4, 16)))
 
-def my_model_function():
-    # Build and return an instance of MyModel
-    return MyModel()
+        yield [q.astype(np.float32), v.astype(np.float32)]
 
-def GetInput():
-    # Return a tuple of two random float32 tensors matching the input:
-    # Query shape: (1, 8, 16)
-    # Value shape: (1, 4, 16)
-    # Using tf.random.uniform to simulate input data similar to original example
-    q = tf.random.uniform(shape=(1, 8, 16), dtype=tf.float32)
-    v = tf.random.uniform(shape=(1, 4, 16), dtype=tf.float32)
-    return (q, v)
+target = tf.keras.Input(shape=[8, 16])
+source = tf.keras.Input(shape=[4, 16])
+out = model(target, source)
+model = tf.keras.Model(inputs=(target, source), outputs=out)
+model.summary()
 
+model.save('MultiHeadAttention.h5')
+
+run_model = tf.function(model)
+# let's fix the input size.
+concrete_func = run_model.get_concrete_function((
+    tf.TensorSpec([1, 8, 16], model.inputs[0].dtype), tf.TensorSpec([1, 4, 16], model.inputs[0].dtype)))
+
+# model directory.
+MODEL_DIR = "MultiHeadAttention"
+model.save(MODEL_DIR, save_format="tf", signatures=concrete_func)
+
+converter = tf.lite.TFLiteConverter.from_saved_model(MODEL_DIR)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
+converter.representative_dataset = representative_dataset
+converter.inference_input_type = tf.int8  # or tf.uint8
+converter.inference_output_type = tf.int8  # or tf.uint8
+tflite_model = converter.convert()
+# Save the model.
+with open('MultiHeadAttention.tflite', 'wb') as f:
+    f.write(tflite_model)
+
+print(f'Created model: MultiHeadAttention.tflite')

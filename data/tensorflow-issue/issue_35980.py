@@ -1,32 +1,49 @@
-# tf.random.uniform((1, 28, 28), dtype=tf.float32) ← Input shape inferred from MNIST example in the issue
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
+from gevent import monkey
+monkey.patch_all()
+
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Build the MNIST simple model as per the official beginner tutorial snippet
-        self.flatten = tf.keras.layers.Flatten(input_shape=(28, 28))
-        self.dense1 = tf.keras.layers.Dense(128, activation='relu')
-        self.dropout = tf.keras.layers.Dropout(0.2)
-        self.dense2 = tf.keras.layers.Dense(10, activation='softmax')
-    
-    def call(self, inputs, training=False):
-        x = self.flatten(inputs)
-        x = self.dense1(x)
-        x = self.dropout(x, training=training)
-        return self.dense2(x)
+classifier = tf.keras.models.load_model('tensorflow_model_dir')
+classifier.predict(np.array(
+    np.zeros((1, 12623))
+))
 
-def my_model_function():
-    # Return an instance of MyModel, compiled with settings matching the example
-    model = MyModel()
-    model.compile(optimizer='adam',
-                  loss='sparse_categorical_crossentropy',
-                  metrics=['accuracy'])
-    return model
+from gevent import monkey
+monkey.patch_all()
 
-def GetInput():
-    # Return a random tensor input compatible with MyModel: MNIST images normalized to [0,1]
-    # Shape: (batch=1, height=28, width=28)
-    return tf.random.uniform((1, 28, 28), minval=0, maxval=1, dtype=tf.float32)
+import numpy as np
+import tensorflow as tf
 
+classifier = tf.keras.models.load_model('/opt/test/model_dir')
+classifier.predict(np.array(
+    np.zeros((1, 12623))
+))
+
+from gevent import monkey
+monkey.patch_all()
+import tensorflow as tf
+
+mnist = tf.keras.datasets.mnist
+
+(x_train, y_train), (x_test, y_test) = mnist.load_data()
+x_train, x_test = x_train / 255.0, x_test / 255.0
+
+model = tf.keras.models.Sequential([
+    tf.keras.layers.Flatten(input_shape=(28, 28)),
+    tf.keras.layers.Dense(128, activation='relu'),
+    tf.keras.layers.Dropout(0.2),
+    tf.keras.layers.Dense(10, activation='softmax')
+])
+
+model.compile(optimizer='adam',
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
+
+model.fit(x_train, y_train, epochs=5)
+
+model.evaluate(x_test, y_test, verbose=2)

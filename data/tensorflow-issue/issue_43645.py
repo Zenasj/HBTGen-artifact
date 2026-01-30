@@ -1,46 +1,77 @@
-# tf.random.uniform((B, 20), dtype=tf.float32) ← Input shape inferred from example code with input_shape=(20,)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
+import numpy as np
+from tensorflow.keras.layers import Input, Dense
+from tensorflow.keras.models import Model
 import tensorflow as tf
-from tensorflow.keras import layers, models, callbacks, metrics
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Build a simple example model matching the example shape
-        self.dense1 = layers.Dense(32, activation="relu", input_shape=(20,))
-        self.dense2 = layers.Dense(20, activation="relu")
-        self.dense3 = layers.Dense(1, activation="sigmoid")
+def make_and_fit():
+    inp = Input(shape=(1,))
+    out = Dense(1, activation='sigmoid')(inp)
+    model = Model(inputs=inp, outputs=out)
+    auc = tf.keras.metrics.AUC()
+    model.compile(loss='binary_crossentropy',
+                  metrics=[auc])
+    x = np.random.normal(size=10)
+    y = np.random.normal(size=10) > 0
+    xv = np.random.normal(size=10)
+    yv = np.random.normal(size=10) > 0
+    earlystopping = tf.keras.callbacks.EarlyStopping(monitor='val_auc',
+                                                     patience=2)
+    model.fit(x=x,
+              y=y,
+              validation_data=(xv, yv),
+              epochs=2,
+              verbose=1,
+              callbacks=earlystopping)
 
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        return self.dense3(x)
+for i in range(2):
+    make_and_fit()
 
-def my_model_function():
-    """
-    Instantiate and compile the model with the AUC and F1Score metrics as shown in the example.
-    This setup reflects the issue context where EarlyStopping tries to monitor 'val_auc' but 
-    metric suffixes can cause confusion in multiple model instantiations.
-    """
-    model = MyModel()
-    # Compile the model: use binary crossentropy with AUC and F1Score metrics
-    # F1Score is in TF 2.8+ under tf.keras.metrics but confirm available in TF2.20.0 as per requirements
-    # If not available, fallback to dummy metric or custom implementation (here assume availability)
-    model.compile(
-        loss="binary_crossentropy",
-        optimizer="adam",
-        metrics=[metrics.AUC(name="auc"), metrics.F1Score(num_classes=1, average="micro", name="f1_score")]
-    )
-    return model
+for i in range(2):
+  tf.keras.backend.clear_session()
+  make_and_fit()
 
-def GetInput():
-    """
-    Generate a random float tensor input with shape (batch_size, 20) matching the model's input_shape.
-    Also generate dummy binary targets matching the output shape for testing compilation and fitting.
-    """
-    batch_size = 32  
-    x = tf.random.uniform((batch_size, 20), dtype=tf.float32)
-    y = tf.random.uniform((batch_size, 1), minval=0, maxval=2, dtype=tf.int32)  # binary labels
-    y = tf.cast(y, tf.float32)
-    return x, y
+import numpy as np
+from keras.models import Sequential
+from keras.layers import Dense
+import keras
 
+# Define the model
+model = Sequential(
+    [
+        Dense(32, input_shape=(20,), activation="relu"),
+        Dense(20, activation="relu"),
+        Dense(1, activation="sigmoid"),
+    ]
+)
+
+# Compile the model
+model.compile(
+    loss="binary_crossentropy",
+    optimizer="adam",
+    metrics=[keras.metrics.AUC, keras.metrics.F1Score],
+)
+
+# Train the model
+early_stopping = keras.callbacks.EarlyStopping(
+    monitor="val_auc",
+    patience=2,
+    mode="min",
+)
+
+model.fit(
+    X_train,
+    y_train,
+    epochs=20,
+    batch_size=32,
+    callbacks=early_stopping,
+)
+
+# Evaluate the model
+loss, AUC, F1 = model.evaluate(X_test, y_test)
+print("AUC:", AUC)
+print("F1:", F1)

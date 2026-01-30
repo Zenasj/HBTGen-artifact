@@ -1,23 +1,26 @@
-# torch.rand(B, 3, 224, 224, dtype=torch.float32)  # Assumed input shape for a generic CNN
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1)
-        self.fc = nn.Linear(16 * 224 * 224, 10)  # Example output layer
+import tempfile
+f = tempfile.NamedTemporaryFile()
+cmd = f"python -m torch.distributed.launch --init_method=file://{f.name} --nproc_per_node=2 ..."
 
-    def forward(self, x):
-        x = F.relu(self.conv1(x))
-        x = x.view(x.size(0), -1)
-        return self.fc(x)
+def pytest_xdist_worker_id():
+    """
+    Returns an int value of worker's numerical id under ``pytest-xdist``'s concurrent workers ``pytest -n N`` regime,
+    or 0 if ``-n 1`` or ``pytest-xdist`` isn't being used.
+    """
+    worker = os.environ.get("PYTEST_XDIST_WORKER", "gw0")
+    worker = re.sub(r"^gw", "", worker, 0, re.M)
+    return int(worker)
 
-def my_model_function():
-    return MyModel()  # Basic initialization with default parameters
 
-def GetInput():
-    # Generates a random tensor matching the assumed input shape
-    return torch.rand(2, 3, 224, 224, dtype=torch.float32)
+def get_torch_dist_unique_port():
+    """
+    Returns a port number that can be fed to ``torch.distributed.launch``'s ``--master_port`` argument.
 
+    Under ``pytest-xdist`` it adds a delta number based on a worker id so that concurrent tests don't try to use the
+    same port at once.
+    """
+    port = 29500
+    uniq_delta = pytest_xdist_worker_id()
+    return port + uniq_delta

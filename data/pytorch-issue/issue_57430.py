@@ -1,32 +1,21 @@
-# torch.rand(B, 3, 32, 32, dtype=torch.float32)
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
+import torchvision
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Basic CNN structure for CIFAR-10 compatibility
-        self.conv1 = nn.Conv2d(3, 6, 5)
-        self.pool = nn.MaxPool2d(2, 2)
-        self.conv2 = nn.Conv2d(6, 16, 5)
-        self.fc1 = nn.Linear(16 * 5 * 5, 120)
-        self.fc2 = nn.Linear(120, 84)
-        self.fc3 = nn.Linear(84, 10)
+file = open('test.txt', 'w')
 
-    def forward(self, x):
-        x = self.pool(F.relu(self.conv1(x)))
-        x = self.pool(F.relu(self.conv2(x)))
-        x = torch.flatten(x, 1)  # flatten all dimensions except batch
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        return self.fc3(x)
+if __name__ == "__main__":
+    file.write("test1\n")
+    file.flush()
+    train_loader = torch.utils.data.DataLoader(
+        torchvision.datasets.CIFAR10(root='./data', train=True, download=True,
+                                     transform=torchvision.transforms.ToTensor()),
+        batch_size=128, shuffle=True, num_workers=2)
+    for _ in enumerate(train_loader):
+        pass
+    file.write("test2\n")
+    file.flush()
 
-def my_model_function():
-    # Return initialized model instance
-    return MyModel()
+test1
+test2
 
-def GetInput():
-    # Generate random input tensor matching CIFAR-10 dimensions
-    return torch.rand(128, 3, 32, 32, dtype=torch.float32)
-
+test2

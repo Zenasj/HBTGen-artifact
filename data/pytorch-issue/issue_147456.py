@@ -1,18 +1,6 @@
-# torch.rand(3, 2**31, dtype=torch.float32), torch.rand(3, 3, dtype=torch.float32)
 import torch
-from torch import nn
-
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        arg1, arg2 = inputs
-        return torch.cholesky_solve(arg1, arg2)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Original input uses N=2**31 (too large for practical testing), so using 4 here
-    arg1 = torch.rand(3, 4, dtype=torch.float32)
-    arg2 = torch.rand(3, 3, dtype=torch.float32)
-    return (arg1, arg2)
-
+arg_1_tensor = torch.rand([3, 2**31], dtype=torch.float32)
+arg_1 = arg_1_tensor.clone()
+arg_2_tensor = torch.rand([3, 3], dtype=torch.float32)
+arg_2 = arg_2_tensor.clone()
+res = torch.cholesky_solve(arg_1, arg_2)

@@ -1,38 +1,52 @@
-# torch.rand(1, dtype=torch.float32)
+import torch.nn as nn
+
 import torch
 from torch import nn
-import types
 
-class MyModel(nn.Module):
-    class FooSub(nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.foo = True  # Attribute for conditional in forward
-            
-        def forward(self, x: torch.Tensor) -> torch.Tensor:
-            # Replicates MyModuleFoo's behavior from the issue
-            return x * 123 if self.foo else x * 0
+import torch._dynamo
 
-    class TrainSub(nn.Module):
-        # Replicates MyModuleTraining's behavior using self.training
-        def forward(self, x: torch.Tensor) -> torch.Tensor:
-            return x * 123 if self.training else x * 0
+import logging
+torch._dynamo.config.log_level = logging.DEBUG
+torch._dynamo.config.verbose = True
+
+def check(module, attr: str) -> None:
+    inp = torch.ones(1)
+    compiled_value = m(inp) 
+    eager_value = m._orig_mod(inp)
+    prefix = "✅" if (compiled_value == eager_value).all().item() else "❌"
+    print(f"{prefix} {attr}={getattr(m._orig_mod, attr)}: compiled={compiled_value}, eager: {eager_value}")
+
+print("=== Foo attribute test ===")
+class MyModuleFoo(nn.Module):
+
+    foo: bool
 
     def __init__(self):
         super().__init__()
-        # Encapsulate both test cases as submodules
-        self.foo_sub = MyModel.FooSub()
-        self.train_sub = MyModel.TrainSub()
+        self.foo = True
 
-    def forward(self, x: torch.Tensor):
-        # Execute both submodules and return their outputs
-        return self.foo_sub(x), self.train_sub(x)
+    def forward(self, x: torch.Tensor) -> torch.Tensor: 
+        if self.foo:
+            return x * 123
+        else:
+            return x * 0
 
-def my_model_function():
-    # Returns an instance with initialized submodules
-    return MyModel()
 
-def GetInput():
-    # Returns tensor matching the input shape (1,) used in the repro
-    return torch.rand(1, dtype=torch.float32)
+m = torch.compile(MyModuleFoo())
+check(m, "foo")
+m._orig_mod.foo = False
+check(m, "foo")
 
+print("=== Training attribute test ===")
+class MyModuleTraining(nn.Module):
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor: 
+        if self.training:
+            return x * 123
+        else:
+            return x * 0
+
+m = torch.compile(MyModuleTraining())
+check(m, "training")
+m._orig_mod.training = False
+check(m, "training")

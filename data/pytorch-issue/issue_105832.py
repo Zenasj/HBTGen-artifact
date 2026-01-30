@@ -1,27 +1,17 @@
-# torch.rand(256, 10, 512, dtype=torch.float32)  # Inferred input shape
-
 import torch
-import torch.nn as nn
+from transformers import AutoTokenizer, AutoModelForCausalLM
 
-class MyModel(nn.Module):
-    def __init__(self, d_model: int):
-        super().__init__()
-        self.model = nn.Sequential(
-            nn.Linear(d_model, d_model),
-            nn.ReLU(),
-            nn.Linear(d_model, d_model),
-            nn.ReLU(),
-            nn.Linear(d_model, d_model),
-        )
 
-    def forward(self, x):
-        return self.model(x)
+def main():
+    model = AutoModelForCausalLM.from_pretrained('facebook/opt-125m').to("cuda")
+    tokenizer = AutoTokenizer.from_pretrained('facebook/opt-125m')
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel(d_model=512)
+    model = torch.compile(model, backend="inductor")
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(256, 10, 512, dtype=torch.float32).cuda()
+    while True:
+        x = tokenizer(['I like turtles.'], return_tensors='pt')
+        x = x.to("cuda")
+        output = model(**x)
 
+if __name__ == '__main__':
+    main()

@@ -1,49 +1,75 @@
-# tf.random.uniform((B, H, W, C), dtype=...) ← Based on the issue content, no explicit model or input tensor shape is described.
-# The discussion centers around tf.name_scope usage and string constraints, not a ML model or input tensor shape.
-# To fulfill the task, I'll create a MyModel class that demonstrates the name_scope behavior that the issue discusses.
-# We'll create a model with a dummy forward pass and use two submodules with names combined in a tf.name_scope.
-# Input will be a random tensor of shape (1, 10), dtype float32, arbitrarily chosen for demonstration.
-
 import tensorflow as tf
 
 class MyModule(tf.Module):
     def __init__(self, name):
         super(MyModule, self).__init__(name=name)
-        # Dummy variable for demonstration
-        self.var = tf.Variable(1.0, trainable=True)
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Create two submodules with explicit names as in the issue ('inst1' and 'inst2')
-        self.mod_inst1 = MyModule(name='inst1')
-        self.mod_inst2 = MyModule(name='inst2')
-        # A simple dense layer for demonstration 
-        self.dense = tf.keras.layers.Dense(5)
+@tf.function
+def graphcry():
+    mod_inst1 = MyModule(name='inst1')
+    mod_inst2 = MyModule(name='inst2')
+    myscalar = tf.constant(83.2)
+    with tf.name_scope('scalaragain'):
+        tf.summary.scalar('scalaragain', data=myscalar)
+    with tf.name_scope(mod_inst1.name + ' and ' + mod_inst2.name):
+        tf.summary.scalar('myscalar', data=myscalar)
 
-    @tf.function(jit_compile=True)
-    def call(self, x):
-        # We want to illustrate the issue around name_scope concatenation and constraints.
-        # The issue's main point: spaces in tf.name_scope argument cause ValueError in graph mode.
-        # So here, we must avoid spaces in the concatenated name_scope string to avoid errors.
+graphcry()
 
-        # Compose name scope with underscore instead of spaces (per the resolution in issue)
-        scope_name = self.mod_inst1.name + '_and_' + self.mod_inst2.name
-        with tf.name_scope(scope_name):
-            # Perform some operations within the name scope
-            # Use tf.summary.scalar to simulate original scenario (no actual summary writing here, placeholder)
-            tf.summary.experimental.write_raw_pb(b'')  # placeholder: no actual summary, just to have something
+import tensorflow as tf
 
-            # A dummy computation to represent model forward
-            x = self.dense(x)
-            return x
+@tf.function
+def graphcry():
+    mod_inst1 = tf.Module(name='inst1')
+    mod_inst2 = tf.Module(name='inst2')
+    myscalar = tf.constant(83.2)  # just a random number
+    with tf.name_scope('scalaragain'):
+        tf.summary.scalar('scalaragain', data=myscalar)  # this works!
+    with tf.name_scope(mod_inst1.name + ' and ' + mod_inst2.name):
+        tf.summary.scalar('myscalar', data=myscalar)  # this returns the error above
 
-def my_model_function():
-    # Return an instance of MyModel, no special initialization required
-    return MyModel()
+graphcry()
 
-def GetInput():
-    # Return a random tensor that matches the input expected by MyModel's call method
-    # Input here is (batch=1, features=10), float32 arbitrary choice:
-    return tf.random.uniform((1, 10), dtype=tf.float32)
+import tensorflow as tf
 
+@tf.function
+def graphcry():
+    inst1 = 'inst1'
+    inst2 = 'inst2'
+    myscalar = tf.constant(83.2)  # just a random number
+    with tf.name_scope('scalaragain_scope'):
+        tf.summary.scalar('scalaragain', data=myscalar)  # this works!
+    with tf.name_scope(inst1 + ' and ' + inst2):
+        tf.summary.scalar('myscalar', data=myscalar)  # this returns the error above
+
+graphcry()
+
+import tensorflow as tf
+
+
+inst1 = 'inst1'
+inst2 = 'inst2'
+
+@tf.function
+def graphcry():
+    myscalar = tf.constant(83.2)  # just a random number
+    with tf.name_scope('scalaragain_scope'):
+        tf.summary.scalar('scalaragain', data=myscalar)  # this works!
+    with tf.name_scope(inst1 + ' and ' + inst2):
+        tf.summary.scalar('myscalar', data=myscalar)  # this returns the error above
+
+graphcry()
+
+import tensorflow as tf
+
+
+def graphcry():
+    inst1 = 'inst1'
+    inst2 = 'inst2'
+    myscalar = tf.constant(83.2)  # just a random number
+    with tf.name_scope('scalaragain_scope'):
+        tf.summary.scalar('scalaragain', data=myscalar)  # this works!
+    with tf.name_scope(inst1 + ' and ' + inst2):
+        tf.summary.scalar('myscalar', data=myscalar)  # this returns the error above
+
+tf.function(graphcry)()

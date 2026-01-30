@@ -1,38 +1,68 @@
-# tf.random.uniform((B, 28, 28), dtype=tf.float32) ← input shape inferred from MNIST example (batch size unspecified)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
+from time import sleep
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define a simple MNIST classifier matching the provided example
-        self.flatten = tf.keras.layers.Flatten(input_shape=(28, 28))
-        self.dense1 = tf.keras.layers.Dense(128, activation='relu')
-        self.dropout = tf.keras.layers.Dropout(0.2)
-        self.dense2 = tf.keras.layers.Dense(10)
-        # Wrap softmax as part of a probability model
-        self.softmax = tf.keras.layers.Softmax()
+def fn_raw(inputs):
+      return inputs*2
 
-    def call(self, inputs, training=False):
-        x = self.flatten(inputs)
-        x = self.dense1(x)
-        x = self.dropout(x, training=training)
-        logits = self.dense2(x)
-        probs = self.softmax(logits)
-        return probs
+while True:
+  fn = tf.function(fn_raw)
+  r = fn(2)
+  print(r)
+  sleep(1)
 
-def my_model_function():
-    # Return an instance of MyModel
-    model = MyModel()
-    # It's typical TensorFlow practice to build the model by running on dummy input once
-    dummy_input = GetInput()
-    _ = model(dummy_input, training=False)
-    return model
+from time import sleep
+import tensorflow as tf
 
-def GetInput():
-    # Generate a random tensor input like MNIST images normalized to [0, 1]
-    # Common batch size assumption: 1 for quick test
-    # dtype=float32 to match typical TensorFlow input types
-    # Note: Pixel values normalized to [0,1], shape (1, 28, 28)
-    return tf.random.uniform(shape=(1, 28, 28), minval=0, maxval=1, dtype=tf.float32)
+def fn_raw(inputs):
+      return inputs*2
 
+while True:
+  fn = tf.function(fn_raw)
+  r = fn(2)
+  print(r)
+  sleep(1)
+
+### Relevant log output
+
+
+
+import tensorflow as tf
+mnist = tf.keras.datasets.mnist
+
+(x_train, y_train), (x_test, y_test) = mnist.load_data()
+x_train, x_test = x_train / 255.0, x_test / 255.0
+
+
+model = tf.keras.models.Sequential([
+  tf.keras.layers.Flatten(input_shape=(28, 28)),
+  tf.keras.layers.Dense(128, activation='relu'),
+  tf.keras.layers.Dropout(0.2),
+  tf.keras.layers.Dense(10)
+])
+
+
+predictions = model(x_train[:1]).numpy()
+predictions
+
+
+tf.nn.softmax(predictions).numpy()
+loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+loss_fn(y_train[:1], predictions).numpy()
+
+model.compile(optimizer='adam',
+              loss=loss_fn,
+              metrics=['accuracy'])
+
+model.fit(x_train, y_train, epochs=5)
+model.evaluate(x_test,  y_test, verbose=2)
+
+probability_model = tf.keras.Sequential([
+  model,
+  tf.keras.layers.Softmax()
+])
+
+probability_model(x_test[:5])

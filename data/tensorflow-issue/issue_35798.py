@@ -1,30 +1,39 @@
-# tf.random.uniform((B,), dtype=tf.int32) ← input is a 1D tensor of integers (batch dimension unknown at graph build)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
+class Test_Layer(tf.keras.layers.Layer):
+
     def __init__(self):
-        super(MyModel, self).__init__()
+        super(Test_Layer, self).__init__()
 
     @tf.function
     def call(self, x):
-        # Use dynamic shape for batch size to avoid TensorArray init errors during model.predict
-        batch_size = tf.shape(x)[0]
-        result = tf.TensorArray(tf.int32, size=batch_size)
-        for i in tf.range(batch_size):
-            # Elementwise condition: if x[i] > 0, square it, else keep as is
-            val = tf.cond(x[i] > 0,
-                          true_fn=lambda: x[i] ** 2,
-                          false_fn=lambda: x[i])
-            result = result.write(i, val)
+        result = tf.TensorArray(tf.int32, size=x.shape[0])
+        for i in tf.range(x.shape[0]):
+            if x[i] > 0:
+                result = result.write(i, x[i] ** 2)
+            else:
+                result = result.write(i, x[i])
         return result.stack()
 
-def my_model_function():
-    # Return an instance of MyModel (no special weights or params)
-    return MyModel()
 
-def GetInput():
-    # Generate a random integer vector of length 10 between -5 and 4 (like tf.range(-5,5))
-    # This matches the example input and is compatible with the model.
-    return tf.range(-5, 5, dtype=tf.int32)
 
+test_layer = Test_Layer()
+
+out = test_layer(tf.range(-5, 5))
+print(out) #works fine:= tf.Tensor([-5 -4 -3 -2 -1  0  1  4  9 16], shape=(10,), dtype=int32)
+
+
+test_model = tf.keras.models.Sequential([test_layer])
+test_model.compile(loss=tf.losses.mse)
+
+
+out = test_model(tf.range(-5, 5))
+print(out) #works fine:= tf.Tensor([-5 -4 -3 -2 -1  0  1  4  9 16], shape=(10,), dtype=int32)
+
+
+out = test_model.predict(tf.range(-5, 5))
+print(out) #ERROR

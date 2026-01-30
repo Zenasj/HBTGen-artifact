@@ -1,28 +1,28 @@
-# torch.rand(100, dtype=torch.float32)  # Input shape inferred from example
 import torch
-from torch import nn, autograd
+from torch import autograd
 
 class Foo(autograd.Function):
     @staticmethod
     def forward(ctx, x):
-        # Clone to avoid view-based storage sharing (fixes the error)
-        s = x.clone()[:10]
-        ctx.save_for_backward(x, s)
-        return s
+        # Inputs/output should not be saved in ctx
+        # But use ctx.save_for_backward()
+        ctx.save_for_backward(x)
+        x1 = x.clone()
+        ctx.x1 = x1
+        x2 = x1.clone()
+        return x2
 
     @staticmethod
-    def backward(ctx, grad_output):
-        # Dummy gradient for demonstration (replace with actual logic)
-        x, s = ctx.saved_tensors
-        return grad_output.clone()
+    def backward(ctx, gx):
+        print(ctx.x1)
+        print(ctx.saved_tensors)
+        return gx.clone()
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return Foo.apply(x)
+inp = torch.rand(10, requires_grad=True)
 
-def my_model_function():
-    return MyModel()
+Foo.apply(inp).sum().backward()
+print("Ok")
 
-def GetInput():
-    return torch.rand(100, requires_grad=True)
-
+with torch.no_grad():
+    Foo.apply(inp).sum()
+print("Ok")

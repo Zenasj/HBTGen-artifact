@@ -1,27 +1,29 @@
-# torch.rand(B, 48000 * 12, dtype=torch.float32)  # B=batch, L=signal length
+import torch.nn as nn
+
 import torch
 import torchaudio
 from torch import nn
+from torch import onnx
 
-class MyModel(nn.Module):
+
+class DataCov(nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
+        super(DataCov, self).__init__()
+
         self.transform = nn.Sequential(
-            torchaudio.transforms.MelSpectrogram(
-                sample_rate=48000,
-                n_fft=1536,
-                hop_length=768,
-                f_min=20,
-                f_max=20000
-            )
+            torchaudio.transforms.MelSpectrogram(sample_rate=48000, n_fft=1536, hop_length=768, f_min=20, f_max=20000)
         )
 
-    def forward(self, x):
-        return self.transform(x)
+    def forward(self, x1):
+        return self.transform(x1)
 
-def my_model_function():
-    return MyModel()
+def export_datacov_onnx(path):
+    model = DataCov()
+    model.eval()
+    model = torch.jit.script(model)
+    x = torch.randn((1, 48000 * 12), requires_grad=True)
+    args = (x,)
+    torch.onnx.dynamo_export(model, args, path, export_params=True, opset_version=17)
 
-def GetInput():
-    return torch.randn(1, 48000 * 12, dtype=torch.float32, requires_grad=True)
-
+if __name__ == '__main__':
+    export_datacov_onnx('DataCov.onnx')

@@ -1,25 +1,24 @@
-# tf.random.uniform((B=1, 200), dtype=tf.float32)
-import tensorflow as tf
+from tensorflow.keras import layers
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define the architecture as per original example: Input(200) -> Dense(64, relu) -> Dense(1, sigmoid)
-        self.dense1 = tf.keras.layers.Dense(64, activation="relu")
-        self.dense2 = tf.keras.layers.Dense(1, activation="sigmoid")
+from tensorflow.keras.layers import Input, Dense
+from tensorflow.keras import Model
+from tensorflow import saved_model
+from pathlib import Path
+from numpy.random import rand
 
-    def call(self, inputs):
-        x = self.dense1(inputs)
-        return self.dense2(x)
+inputs = Input(shape=(200,))
+x = Dense(64, activation="relu")(inputs)
+outputs = Dense(1, activation="sigmoid")(x)
 
-def my_model_function():
-    # Return a compiled instance of MyModel
-    model = MyModel()
-    # Compile is optional if only inference used, included here for completeness
-    model.compile()
-    return model
+model = Model(inputs=inputs, outputs=outputs, name="DummyTF")
+model.compile()
 
-def GetInput():
-    # Produce a single input sample with shape (1, 200), float32 dtype to match model
-    return tf.random.uniform((1, 200), dtype=tf.float32)
+data = rand(1, 200).tolist()
+model.predict(data)
 
+path = str(Path(__file__).parent.resolve() / "ai_model" / "models" / "dummy_tf")
+
+model.save(path)
+
+model_loaded = saved_model.load(path)
+model_loaded.predict(data)

@@ -1,19 +1,5 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)
-import torch
-from torch import nn
+'x.size()[1] == x.size()[0] and x.stride()[0] == x.[264 chars]!= 1' != 'x.size()[0] < 3'
+- x.size()[1] == x.size()[0] and x.stride()[0] == x.size()[0] and x.stride()[1] == 1 and x.storage_offset() == 0 and y.size()[0] == x.size()[0] and y.size()[1] == x.size()[0] and y.stride()[0] == x.size()[0] and y.stride()[1] == 1 and y.storage_offset() == 0 and x.size()[0] < 3 and x.size()[0] != 0 and x.size()[0] != 1
++ x.size()[0] < 3
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Dynamo guard condition simplified to check batch size <3
-        if x.size(0) < 3:
-            return x * 2  # Example operation path for small batch
-        else:
-            return x * 1  # Alternate path for larger batch
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Matches input shape with batch_size=2 (to trigger the simplified guard)
-    return torch.rand(2, 2, 1, 1, dtype=torch.float32)
-
+"x.size()[0] < 3"

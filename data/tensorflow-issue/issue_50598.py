@@ -1,40 +1,45 @@
-# tf.random.uniform((B, 6952, 20), dtype=tf.float32)  # Assumed input shape and dtype from issue details
-
+import numpy as np
 import tensorflow as tf
+from tensorflow.keras import models
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Replicating the model architecture described in the issue:
-        # Sequential model:
-        # Masking(mask_value=-1, input_shape=(n_timesteps=6952, n_features=20))
-        # LSTM(64, input_shape=(6952,20))
-        # RepeatVector(n_timesteps=6952)
-        # LSTM(64, return_sequences=True)
-        # TimeDistributed(Dense(n_features=20))
-        # For this implementation, we'll implement only up to the first LSTM layer output,
-        # because in the issue, the saved model is of the encoder = Model(inputs, output of first LSTM)
-        #
-        # So to mimic the "encoder" Model:
-        self.masking = tf.keras.layers.Masking(mask_value=-1.0)
-        self.lstm1 = tf.keras.layers.LSTM(64, return_sequences=False)  # output shape (batch, 64)
+model = Sequential()
+model.add(Masking(mask_value=-1, input_shape=(n_timesteps, n_features))) # This layer is used in the final model
+model.add(LSTM(64, input_shape=(n_timesteps,n_features))) # This layer is used in the final model
+model.add(RepeatVector(n_timesteps))
+model.add(LSTM(64, return_sequences=True))
+model.add(TimeDistributed(Dense(n_features)))
+optimizer = Adam(learning_rate=0.001, epsilon=1e-04)
+model.compile(optimizer= optimizer, loss='mse')
+model.fit(x_train, x_train, epochs=1000, verbose=2)
 
-    def call(self, inputs):
-        x = self.masking(inputs)
-        x = self.lstm1(x)
-        return x  # shape (batch, 64)
+# Saving
+encoder = Model(inputs=model.inputs, outputs=model.layers[1].output)
+encoder.save('encoder.h5')
 
-def my_model_function():
-    # Return an instance of MyModel.
-    # Note: No weights loading is specified in the issue, so weights are untrained/random.
-    return MyModel()
+from tensorflow.keras.models import load_model
+encoder = load_model('encoder.h5')
 
-def GetInput():
-    # Return a random tensor input matching the input expected by MyModel:
-    # Shape = (batch_size, 6952, 20), dtype=tf.float32
-    # Since a dynamic batch size is desired by the issue, generate batch size 2 as example.
-    batch_size = 2
-    # According to the issue, masking is done with mask_value=-1,
-    # so to resemble real data, generate random float32 numbers mostly not -1
-    return tf.random.uniform(shape=(batch_size, 6952, 20), dtype=tf.float32)
+# Following code from https://www.tensorflow.org/lite/convert/rnn
+run_model = tf.function(lambda x: encoder(x))
+BATCH_SIZE = None
+STEPS = 6952
+INPUT_SIZE = 20
+concrete_func = run_model.get_concrete_function(tf.TensorSpec([BATCH_SIZE, STEPS, INPUT_SIZE], encoder.inputs[0].dtype))
+encoder.save('/encoder', save_format="tf", signatures=concrete_func)
 
+converter = tf.lite.TFLiteConverter.from_saved_model('/encoder')
+converter.experimental_new_converter = True
+tflite_model = converter.convert()
+with open('encoder.tflite', 'wb') as f:
+  f.write(tflite_model)
+
+interpreter = tf.lite.Interpreter(model_path='encoder.tflite')
+input_details = interpreter.get_input_details()
+output_details = interpreter.get_output_details()
+data = np.vstack([a,a]).astype(np.float32) # Shape: (2, 6952, 20)
+interpreter.resize_tensor_input(input_details[0]['index'], data .shape) # Shape: (2, 6952, 20)
+interpreter.resize_tensor_input(output_details[0]['index'], (data .shape[0], 64)) # Shape: (2, 64)
+interpreter.allocate_tensors()
+interpreter.set_tensor(input_details[0]['index'], data )
+interpreter.invoke()
+output_data = interpreter.get_tensor(output_details[0]['index'])

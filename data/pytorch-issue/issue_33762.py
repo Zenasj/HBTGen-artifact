@@ -1,21 +1,62 @@
-# torch.rand(B, 10, dtype=torch.float32)
+import torch.nn as nn
+
 import torch
-from torch import nn
+from torch.nn import Linear
+from torch.autograd import Variable
+from torch.optim import AdamW
+from torch.utils import hooks
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.linear = nn.Linear(10, 20)
-        
-    def forward(self, x):
-        # Process input tensor through linear layer
-        return self.linear(x)
+# nn.Module should have training attribute
+module = Linear(10, 20)
+module.training
 
-def my_model_function():
-    # Returns an instance of MyModel with default initialization
-    return MyModel()
+# torch should have dtype bfloat16
+tensor2 = torch.tensor([1,2,3], dtype=torch.bfloat16)
 
-def GetInput():
-    # Returns a random input tensor matching the model's expected input shape
-    return torch.rand(2, 10)  # Batch size 2, 10 features
+# torch.Tensor.cuda should accept int or str value
+torch.randn(5).cuda(1)
+torch.tensor(5).cuda('cuda:0')
 
+# optimizer should have default attribute
+module = Linear(10, 20)
+print(AdamW(module.weight).default)
+
+# torch.Tensor should have these boolean attributes
+torch.tensor([1]).is_sparse
+torch.tensor([1]).is_quantized
+torch.tensor([1]).is_mkldnn
+
+# Size class should tuple of int
+a, b = torch.tensor([[1,2,3]]).size()
+
+# check modules can be accessed
+torch.nn.parallel
+torch.autograd.profiler
+torch.multiprocessing
+torch.sparse
+torch.onnx
+torch.jit
+torch.hub
+torch.random
+torch.distributions
+torch.quantization
+torch.__config__
+torch.__future__
+
+torch.ops
+torch.classes
+
+# Variable class's constructor should return Tensor
+def fn_to_test_variable(t: torch.Tensor):
+    return None
+
+v = Variable(torch.tensor(1))
+fn_to_test_variable(v)
+
+# check RemovableHandle attributes can be accessed
+handle = hooks.RemovableHandle({})
+handle.id
+handle.next_id
+
+# check torch function hints
+torch.is_grad_enabled()

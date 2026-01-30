@@ -1,25 +1,34 @@
-# tf.random.uniform((B, 10), dtype=tf.float32) ← Input shape is (batch_size, 10) based on test_model.test concrete function input
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
-import tensorflow as tf
-
-class MyModel(tf.keras.Model):
-    def __init__(self, dims=0, **kwargs):
-        super().__init__(**kwargs)
-        # Dense layer with dims outputs; dims may be zero (empty weights)
-        self._dense = tf.keras.layers.Dense(dims)
+import tensorflow as tf                                                        
+                                                                               
+class TestModel(tf.keras.models.Model):                                        
+                                                                               
+  def __init__(self, dims, **kwargs):                                          
+    super().__init__(**kwargs)                                                 
+    self._dense = tf.keras.layers.Dense(dims)                                  
+        
+  @tf.function
+  def test(self, x):
+    return self._dense(x)                                                      
+                                                                               
+  
+# Fails only if dims=0.
+test_model = TestModel(dims=0)                                                 
+signatures = [
+  test_model.test.get_concrete_function(x=tf.TensorSpec([None, 10], tf.float32))  
+]                                                                              
     
-    @tf.function
-    def call(self, x):
-        # Call the dense layer normally
-        return self._dense(x)
+converter = tf.lite.TFLiteConverter.from_concrete_functions(signatures, test_model)                                                                            
+converter.optimizations = [tf.lite.Optimize.DEFAULT]                           
+converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS]         
 
-def my_model_function():
-    # Return an instance of MyModel with dims=0 to match the problematic case
-    # This reproduces the scenario where the dense layer's weights are empty and cause TFLite conversion issues
-    return MyModel(dims=0)
-
-def GetInput():
-    # Return a random tensor with shape (batch_size, 10), dtype float32
-    # batch_size chosen as 1, consistent with the TFLite test code
-    return tf.random.uniform((1, 10), dtype=tf.float32)
-
+# Fails with "ConverterError: Quantize weights transformation failed."         
+# But calling directly test_model.test(tf.random.normal(shape=[1, 10]) works.
+tflite_model = converter.convert()
+  
+interpreter = tf.lite.Interpreter(model_content=tflite_model)                  
+result = interpreter.get_signature_runner()(x=tf.random.normal(shape=[1, 10]))

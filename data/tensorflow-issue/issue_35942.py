@@ -1,34 +1,62 @@
-# tf.random.uniform((B, 28, 28), dtype=tf.float32) ← inferred input shape from example: (28, 28) grayscale images, batch size B unspecified
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
-import tensorflow as tf
+python 
+import tensorflow as tf 
+import os
+import contextlib
+import numpy as np
+import tensorflow.keras as keras  
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Model defined corresponds to example in the issue:
-        # Flatten(input_shape=(28,28)) + Dense(10, activation softmax)
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense = tf.keras.layers.Dense(10, activation='softmax')
-
-    def call(self, inputs, training=False):
-        # Forward pass
-        x = self.flatten(inputs)
-        return self.dense(x)
-
-def my_model_function():
-    # Return an instance of MyModel
-    model = MyModel()
-    # Compile the model to match example: Adam optimizer + sparse_categorical_crossentropy loss
-    model.compile(
-        optimizer=tf.keras.optimizers.Adam(),
-        loss='sparse_categorical_crossentropy'
-    )
+def get_model():
+    model = keras.Sequential([
+        keras.layers.Flatten(input_shape=(28, 28)),
+        keras.layers.Dense(10, activation=tf.nn.softmax)
+    ])
+    model.compile(optimizer=tf.keras.optimizers.Adam(),
+                      loss='sparse_categorical_crossentropy')
     return model
 
-def GetInput():
-    # Return a random tensor with shape (batch_size, 28, 28)
-    # Use batch size 32 as a reasonable default
-    batch_size = 32
-    # Values normalized to [0,1] like the MNIST data preprocessing described
-    return tf.random.uniform(shape=(batch_size, 28, 28), minval=0, maxval=1, dtype=tf.float32)
+def get_model_path():
+    model_dir = '/tmp/m' + str(np.random.randint(0, 1000000))
+    os.makedirs(model_dir)
+    model_path = os.path.join(model_dir, 'model')
+    return model_path + ".h5"
 
+def attempt_save_and_reload(model_path, distributed_training=False):
+    fashion_mnist = keras.datasets.fashion_mnist
+    (train_images, train_labels), (test_images, test_labels) = fashion_mnist.load_data()
+    train_images = train_images / 255.0
+    test_images = test_images / 255.0
+
+    with strategy.scope() if distributed_training else contextlib.nullcontext():
+        model = get_model()
+        model.fit(
+            train_images,
+            train_labels,
+            epochs=1,
+        )
+        model.save(model_path)
+        model = tf.keras.models.load_model(model_path)
+
+if __name__ == '__main__':
+    strategy = tf.distribute.MirroredStrategy()
+    for distributed_training in [False, True]:
+        print('distributed training: ', distributed_training)
+        model_path = get_model_path()
+        try:
+            attempt_save_and_reload(model_path, distributed_training)
+        except Exception as e:
+            print('Exception raised: \n', e)
+        print()
+
+new_model = tf.keras.models.load_model('model.h5')
+new_model.summary()
+
+import efficientnet.tfkeras
+from tensorflow.keras.models import load_model
+
+model = load_model('path/to/model.h5')

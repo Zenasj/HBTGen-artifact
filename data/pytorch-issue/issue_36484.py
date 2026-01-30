@@ -1,26 +1,18 @@
-# (torch.rand(B, C, dtype=torch.float), torch.rand(B, C, dtype=torch.float))  # Input shape: tuple of two tensors
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        output, target = inputs
-        probs = F.softmax(output, dim=1)
-        loss = -(target * torch.log(probs)).mean()
-        loss = loss.reshape(1)  # Fix empty shape for Java compatibility
-        batch_size = output.size(0)
-        num_classes = target.size(1)
-        loss_grad = (probs - target) / (batch_size * num_classes)
-        return probs, loss, loss_grad
+import torch as th
+def cross_entropy_with_logits(output, target, batch_size):
+    probs = th.nn.functional.softmax(output, dim=1)
+    loss = -(target * th.log(probs)).mean()
+    loss_grad = (probs - target) / (batch_size * target.shape[1])
+    return probs, loss, loss_grad
 
-def my_model_function():
-    return MyModel()
+cant_return = th.ones(1)[0]
+print(cant_return)
+print(cant_return.shape)
+this_is_fine = cant_return.reshape(1)
+print(this_is_fine)
 
-def GetInput():
-    B = 32  # Example batch size
-    C = 10  # Example number of classes
-    output = torch.rand(B, C, dtype=torch.float)
-    target = torch.rand(B, C, dtype=torch.float)
-    return (output, target)
-
+tensor(1.)
+torch.Size([])
+tensor([1.])

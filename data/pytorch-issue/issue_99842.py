@@ -1,27 +1,33 @@
-# torch.rand(B, C, H, W, dtype=...)  # Add a comment line at the top with the inferred input shape
-import torch
-import torch.nn as nn
 import torch.nn.functional as F
 
-class MyModel(nn.Module):
+py
+import torch.nn as nn
+import torch
+
+torch.manual_seed(420)
+
+class Model(torch.nn.Module):
+
     def __init__(self):
-        super(MyModel, self).__init__()
+        super(Model, self).__init__()
         self.conv = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1)
 
     def forward(self, input_tensor):
         x = self.conv(input_tensor)
-        x = F.relu(x + torch.rand_like(x))
+        x = F.relu(x + torch.rand(x.size()))
         return x
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+batch_size = 1
+x = torch.rand(batch_size, 3, 224, 224)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    batch_size = 1
-    channels = 3
-    height = 224
-    width = 224
-    return torch.rand(batch_size, channels, height, width)
+func = Model()
 
+res1 = func(x)
+print(res1)
+
+with torch.no_grad():
+    func.train(False)
+    jit_func = torch.compile(func)
+    res2 = jit_func(x)
+    print(res2)
+    # AssertionError: the MutationLayout's real layout shouldn't be FlexibleLayout

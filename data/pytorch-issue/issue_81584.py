@@ -1,21 +1,21 @@
-# torch.rand(B, 10, dtype=torch.float32)
-import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
 from torch import nn
+import torch
+from torch.nn import functional as F
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.model = nn.Sequential(
-            nn.Linear(10, 1),
-            nn.Sigmoid()
-        )
-    
-    def forward(self, x):
-        return self.model(x)
 
-def my_model_function():
-    return MyModel()
+device = torch.device("mps")
+model = nn.Sequential(
+    nn.Linear(10, 1),
+    nn.Sigmoid()
+)
+model.to(device)
+input = torch.randn(5, 10).to(device)
+target = torch.randint(0, 2, (5, 1)).float().to(device)
 
-def GetInput():
-    return torch.rand(5, 10, dtype=torch.float32)
-
+F.binary_cross_entropy(
+    model(input),
+    target
+)

@@ -1,14 +1,22 @@
-# torch.rand(1, 1, 1, 3, dtype=torch.float32)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return x + 2
+def f(x):
+    return x + 2
 
-def my_model_function():
-    return MyModel()
+torch._export.aot_compile(f, (torch.randn(3),))
 
-def GetInput():
-    return torch.rand(1, 1, 1, 3, dtype=torch.float32)
+import torch
 
+
+def compile_fn(x):
+    return x + 2
+
+
+torch._export.aot_compile(compile_fn, (torch.randn(3),))
+
+ep = torch.export.export(mod)
+print(aot_compile(ep, ...))
+print(serialize(ep, ...))
+ep2 = run_pass1(ep)
+ep3 = run_pass2(ep2)
+...

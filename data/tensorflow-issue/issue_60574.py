@@ -1,35 +1,50 @@
-# tf.random.uniform((1,), dtype=tf.float32) ← input shape inferred from the issue example model
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
+import os
+tf.get_logger().setLevel('ERROR')
+import tensorboard as tb
+import numpy as np
+import librosa
+import matplotlib.pyplot as plt
+import datetime
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # The model in the issue is a simple 3-layer MLP:
-        # Input (shape=(1,))
-        # Dense(16) + ReLU
-        # Dense(16) + ReLU
-        # Dense(1)
-        self.dense1 = tf.keras.layers.Dense(16)
-        self.relu1 = tf.keras.layers.ReLU()
-        self.dense2 = tf.keras.layers.Dense(16)
-        self.relu2 = tf.keras.layers.ReLU()
-        self.dense3 = tf.keras.layers.Dense(1)
-    
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.relu1(x)
-        x = self.dense2(x)
-        x = self.relu2(x)
-        x = self.dense3(x)
-        return x
+def converter_issue():
 
-def my_model_function():
-    # Returns an instance of the model
-    return MyModel()
+    input_shape = (1,)
 
-def GetInput():
-    # Returns a random float32 tensor with shape (1,), matching model input
-    # As in the provided code, input data range is uniform between 0 and 2*pi.
-    return tf.random.uniform(shape=(1,), minval=0, maxval=2*3.141592653589793, dtype=tf.float32)
+    def representative_ds():
+        for _ in range(100):
+            x = np.random.uniform(0, 2*np.pi, size=input_shape)
+            yield [x.astype(np.float32)]
 
+    model = tf.keras.Sequential([
+        tf.keras.layers.Input(input_shape),
+        tf.keras.layers.Dense(16),
+        tf.keras.layers.ReLU(),
+        tf.keras.layers.Dense(16),
+        tf.keras.layers.ReLU(),
+        tf.keras.layers.Dense(1)
+    ])
+
+    model.summary()
+
+    model.compile(optimizer="adam", loss="mse", metrics=["mae"])
+
+    converter = tf.lite.TFLiteConverter.from_keras_model(model)
+    converter.optimizations = [tf.lite.Optimize.DEFAULT]
+    converter.representative_dataset = representative_ds
+    converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
+    converter.inference_type = tf.int8
+    converter.inference_input_type = tf.int8  
+    converter.inference_output_type = tf.int8 
+
+    tflite_quant_model = converter.convert()
+
+    return tflite_quant_model
+
+
+if __name__ == "__main__":
+    model = converter_issue()

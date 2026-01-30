@@ -1,22 +1,27 @@
-# torch.rand(1, 3, 224, 224, dtype=torch.float32) ← Add a comment line at the top with the inferred input shape
-
+py
 import torch
-import torch.nn as nn
+import torch_tensorrt
 import torchvision.models as models
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.resnet18 = models.resnet18().eval()
+model = models.resnet18().eval().cuda()
+input = torch.randn((1, 3, 224, 224)).to("cuda")
+compile_spec = {
+        "inputs": [
+            torch_tensorrt.Input(
+                min_shape=(1, 3, 224, 224),
+                opt_shape=(4, 3, 224, 224),
+                max_shape=(8, 3, 224, 224),
+                dtype=torch.float32,
+                name="x",
+            )
+        ],
+        "ir": "dynamo",
+        "min_block_size": 1,
+        "cache_built_engines": False,
+        "reuse_cached_engines": False,
+    }
 
-    def forward(self, x):
-        return self.resnet18(x)
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn((1, 3, 224, 224), dtype=torch.float32)
-
+exp_program = torch_tensorrt.dynamo.trace(model, **compile_spec)
+trt_module = torch_tensorrt.dynamo.compile(exp_program, **compile_spec)
+torch_tensorrt.save(trt_module, "./trt.ep", inputs=[input])
+ep = torch_tensorrt.load("./trt.ep")

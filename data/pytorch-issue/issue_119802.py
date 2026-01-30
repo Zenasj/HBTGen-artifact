@@ -1,23 +1,9 @@
-# torch.rand(2, 100, device=device) ← Add a comment line at the top with the inferred input shape
 import os
-import torch
+import torch.cuda
 import torch.nn as nn
 import torch.distributed as dist
 import torch.multiprocessing as mp
 from torch.distributed.fsdp import FullyShardedDataParallel
-
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.linear = nn.Linear(100, 50)
-
-    def forward(self, x):
-        return self.linear(x)
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    model = MyModel()
-    return model
 
 def get_sharded_state_dict_context(module):
     from torch.distributed.fsdp.api import ShardedOptimStateDictConfig, ShardedStateDictConfig, StateDictType
@@ -32,12 +18,6 @@ def get_sharded_state_dict_context(module):
     )
     return state_dict_type_context  # type: ignore[return-value]
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    device = torch.device("cuda", 0)  # Assuming rank 0 for simplicity
-    x = torch.rand(2, 100, device=device)
-    return x
-
 def work(rank):
     os.environ["MASTER_ADDR"] = "127.0.0.1"
     os.environ["MASTER_PORT"] = "1234"
@@ -45,9 +25,9 @@ def work(rank):
     torch.cuda.set_device(rank)
     device = torch.device("cuda", rank)
 
-    model = my_model_function().to(device)
+    model = nn.Linear(100, 50).to(device)
     model = FullyShardedDataParallel(model)
-    x = GetInput()
+    x = torch.rand(2, 100, device=device)
 
     y = model(x)
 
@@ -61,4 +41,3 @@ def run():
 
 if __name__ == "__main__":
     run()
-

@@ -1,29 +1,20 @@
-# torch.rand(B, C, C, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape (B: batch size, C: matrix size)
-
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, A):
-        try:
-            Ainv = torch.linalg.inv(A)
-            identity = torch.eye(A.size(-1), device=A.device)
-            dist = torch.dist(A @ Ainv, identity)
-            return dist
-        except torch._C._LinAlgError as e:
-            print(f"Error: {e}")
-            return None
+A = torch.randn(4, 4)
+Ainv = torch.linalg.inv(A)
+torch.dist(A @ Ainv, torch.eye(4))
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+A = torch.randn(2, 3, 4, 4)  # Batch of matrices
+Ainv = torch.linalg.inv(A)
+torch.dist(A @ Ainv, torch.eye(4))
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    B, C = 2, 4  # Example batch size and matrix size
-    A = torch.randn(B, C, C, dtype=torch.float32)
-    return A
+A = torch.randn(4, 4, dtype=torch.complex128)  # Complex matrix
+Ainv = torch.linalg.inv(A)
+torch.dist(A @ Ainv, torch.eye(4))
 
+def squareCheckInputs(self, f_name):
+    assert self.dim() >= 2, f"{f_name}: The input tensor must have at least 2 dimensions."
+    # TODO: I think the error message has the -2 and -1 swapped.  If you fix
+    # it fix the C++ squareCheckInputs too
+    assert self.size(-1) == self.size(-2), \
+        f"{f_name}: A must be batches of square matrices, but they are {self.size(-1)} by {self.size(-2)} matrices"

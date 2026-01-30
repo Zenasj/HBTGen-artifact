@@ -1,18 +1,41 @@
-# torch.rand(1, 1000, dtype=torch.float32)
+import torch.nn as nn
+
+torch.load(save_file, map_location=0)
+
+torch.load(save_file, map_location=1)
+
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.param = nn.Parameter(torch.randn(1000, 1000))
-    
-    def forward(self, x):
-        return x @ self.param  # Example forward pass using the parameter
+def save_dummy(path):
+    torch.save([torch.nn.Parameter(torch.randn(1000, 1000))], path)
 
-def my_model_function():
-    return MyModel()
+def load_saved(path, map_location):
+    restored_var = torch.load(path, map_location)
+    return restored_var
 
-def GetInput():
-    return torch.rand(1, 1000, dtype=torch.float32)
+save_dummy('foo.pt')
+restored = load_saved('foo.pt', map_location=torch.device(1))
 
+import torch
+
+def save_dummy(path):
+    torch.save([torch.nn.Parameter(torch.randn(1000, 1000))], path)
+
+def load_saved(path, map_location):
+    restored_var = torch.load(path, map_location)
+    return restored_var
+
+save_dummy('foo.pt')
+restored = load_saved('foo.pt', map_location=torch.device(0))
+
+import torch
+
+def save_dummy(path):
+    torch.save([torch.nn.Parameter(torch.randn(1000, 1000))], path)
+
+def load_saved(path, map_location):
+    restored_var = torch.load(path, map_location)
+    return restored_var
+
+save_dummy('foo.pt')
+restored = load_saved('foo.pt', map_location='cuda1')

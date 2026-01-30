@@ -1,22 +1,22 @@
-# torch.rand(5, 4, 5, dtype=torch.bfloat16)
 import torch
-from torch import nn
+from torch.autograd import forward_ad
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Exponent is a float64 tensor as in the issue example
-        self.exponent = nn.Parameter(torch.rand(1, dtype=torch.float64))
+input_tensor = torch.rand([5, 4, 5], dtype=torch.bfloat16)
+exponent_tensor = torch.rand([1], dtype=torch.float64)
 
-    def forward(self, x):
-        # Replicates the problematic torch.pow operation with dtype mismatch
-        return torch.pow(x, self.exponent)
+# backward
+input = input_tensor.clone().requires_grad_()
+exponent = exponent_tensor.clone()
+torch.pow(input, exponent).sum().backward()
+print("backward PASS")
 
-def my_model_function():
-    # Returns model instance with exponent initialized as in the issue
-    return MyModel()
+# forward
+input = input_tensor.clone().requires_grad_()
+exponent = exponent_tensor.clone()
+with forward_ad.dual_level():
+    tangent = torch.rand_like(input)
+    dual_input = forward_ad.make_dual(input, tangent)
+    dual_output = torch.pow(dual_input, exponent)
 
-def GetInput():
-    # Returns input tensor with shape (5,4,5) and bfloat16 dtype
-    return torch.rand(5, 4, 5, dtype=torch.bfloat16)
-
+# backward PASS
+# RuntimeError: expected scalar type c10::BFloat16 but found double

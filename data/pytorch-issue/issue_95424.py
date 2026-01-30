@@ -1,21 +1,30 @@
-# torch.rand(4, 4, dtype=torch.float32)
+import torch.nn as nn
+
 import torch
+import torch._dynamo
 import numpy as np
 
-class MyModel(torch.nn.Linear):
+class MyModule(torch.nn.Linear):
+
     def __init__(self):
-        # Compute input shape product explicitly as integer to avoid symbolic tracing issues
-        in_features_val = np.array([4, 4, 1]).prod().item()
-        super().__init__(in_features_val, in_features_val)  # Initialize Linear layer
-        self.in_features_val = in_features_val  # Store as explicit integer attribute
+        super().__init__(np.array([4, 4, 1]).prod(), np.array([4, 4, 1]).prod())
 
     def forward(self, x):
-        # Explicitly use stored integer to avoid FakeTensor wrapping during reshape
-        return x.reshape((self.in_features_val,))
+        # return x.reshape(1, self.in_features). # This line passed
+        return x.reshape(self.in_features)
 
-def my_model_function():
-    return MyModel()
+x = torch.rand([4, 4])
+model = MyModule()
+print(model(x))
+opt_model = torch._dynamo.optimize("eager")(model)
+print(opt_model(x))
 
-def GetInput():
-    return torch.rand([4, 4], dtype=torch.float32)
+self.in_features
 
+UnspecializedPythonVariable
+
+FakeTensor
+
+reshape
+
+FakeTensor

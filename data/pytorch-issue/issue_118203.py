@@ -1,25 +1,23 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Inferred input shape: (1, 3, 224, 224)
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.linear = nn.Linear(3*224*224, 10)  # Example layer to trigger Dynamo's analysis
+class UserFunctionVariable(BaseUserFunctionVariable):
+    """Some unsupported user-defined global function"""
 
-    def problematic_instance_method(self, x):
-        # Simulates an instance method call that Dynamo might mishandle
-        return x.view(x.size(0), -1)
+    @classmethod
+    def create_with_source(cls, value, source):
+        return cls(
+            value,
+            source=source,
+        )
 
-    def forward(self, x):
-        # Calls an instance method which Dynamo may incorrectly treat as a function
-        x = self.problematic_instance_method(x)
-        return self.linear(x)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Returns a 4D tensor matching the expected input shape
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
-
+    def __init__(self, fn, is_constant=False, **kwargs):
+        super().__init__(**kwargs)
+        if getattr(fn, "_dynamo_marked_constant", False):
+            # This method should be treated as a constant for the purposes of compilation
+            self.is_constant = True
+        else:
+            self.is_constant = False
+        
+        assert isinstance(
+            fn, (types.FunctionType, torch.jit.ScriptFunction)
+        ), f"expected FunctionType found {typestr(fn)} {fn}"

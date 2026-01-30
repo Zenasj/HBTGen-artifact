@@ -1,26 +1,22 @@
-# torch.rand(B, C, H, W, dtype=...)  # Add a comment line at the top with the inferred input shape
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+import torch
+
+class CustomModel(nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
-        self.selu = nn.SELU(inplace=True)
-
+        super(CustomModel, self).__init__()
     def forward(self, inputs):
-        return self.selu(inputs)
+        return torch.nn.SELU(inplace=True)(inputs)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+input_tensor = torch.empty(0)
+cuda_inputs = input_tensor.clone().to('cuda')
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # In this case, we use an empty tensor to match the issue description
-    return torch.empty(0, device='cuda')
+mymodel = CustomModel()
+# Create the model
+no_op_info= mymodel(input_tensor)
+print(no_op_info)
 
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
-
+# torch._dynamo.reset()
+mymodel.to('cuda')
+op_info = torch.compile(mymodel)(cuda_inputs)
+print(no_op_info)

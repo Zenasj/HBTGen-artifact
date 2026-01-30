@@ -1,17 +1,11 @@
 import torch
-import torchvision.transforms.v2 as transforms
 import torch.nn as nn
+import torchvision
 
-# torch.rand(B, C, H, W, dtype=torch.float32)
-class MyModel(nn.Module):
+class MyPreprocess(nn.Module):
     def forward(self, img):
-        w = max(img.shape[1], img.shape[2])  # Matches original code's logic (even if potentially incorrect)
-        return transforms.CenterCrop(size=(w, w))(img)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Returns a 4D tensor (B, C, H, W) compatible with the model's forward logic
-    return torch.rand(1, 3, 256, 256, dtype=torch.float32)
-
+        w = max(img.shape[1], img.shape[2])
+        return torchvision.transforms.v2.CenterCrop(size = (w, w))(img)
+pm = MyPreprocess()
+inputs = (imag,)
+ex_orogram = torch.export.export(pm, inputs)

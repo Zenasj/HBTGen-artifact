@@ -1,30 +1,40 @@
-# tf.random.normal((5,), dtype=tf.float32) ← Input shape inferred as [5], float32 values for random normal samples
+import random
 
+# Graph mode
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # No trainable parameters needed for demonstration
-        # The model outputs a new random normal tensor each call, simulating randomness inside the model
-        # This mimics behavior discussed in the issue where tf.random.normal should yield different values on each call
-        # The seed is not set to ensure different output per call in eager mode
-        self._shape = (5,)  # fixed input shape / output shape; could be parameterized
+x = tf.random.normal([5], seed=1)
 
-    def call(self, inputs=None):
-        # Inputs are ignored, this model generates random normal vectors
-        # to mimic random internal operation behavior.
-        # Note: inputs argument allows compatibility in case inputs are provided
-        return tf.random.normal(self._shape)
+with tf.Session() as sess:
+    for i in range(3):
+        print(sess.run(x))
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+# Output
+# [-0.8113182   1.4845988   0.06532937 -2.4427042   0.0992484 ]
+# [-0.36332107 -0.07205155 -0.5527937   0.10289733 -0.39558855]
+# [-0.666205   -0.416783    1.8211031   0.680353   -0.26143482]
 
-def GetInput():
-    # Return a dummy input compatible with MyModel call
-    # MyModel does not use inputs, so can pass None or any tensor; here we pass None.
-    # To keep consistent with Keras signature, often a batch dimension can be added if needed.
-    # Since MyModel ignores inputs, None is fine.
-    return None
+# Eager mode
+import tensorflow as tf
 
+tf.enable_eager_execution()
+x = tf.random.normal([5], seed=1)
+
+for i in range(3):
+    print(x.numpy())
+
+# Output
+# [-0.8113182   1.4845988   0.06532937 -2.4427042   0.0992484 ]
+# [-0.8113182   1.4845988   0.06532937 -2.4427042   0.0992484 ]
+# [-0.8113182   1.4845988   0.06532937 -2.4427042   0.0992484 ]
+
+import tensorflow as tf
+from tensorflow.python.framework import test_util
+
+@test_util.run_all_in_graph_and_eager_modes
+class DownSampleTest(tf.test.TestCase):
+    def testRand(self):
+        x = tf.random.normal([5], seed=1)
+        y1 = self.evaluate(x)
+        y2 = self.evaluate(x)
+        # ... check that y1 not equals y2

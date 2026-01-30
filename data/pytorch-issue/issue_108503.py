@@ -1,56 +1,93 @@
-# torch.rand(1, 2, 600, 80, dtype=torch.float32)
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
+token_sequence = torch.randn(1, 2, 600, 80)
 
-    def forward(self, x):
-        x = x.cuda().bfloat16()  # Convert to CUDA and bfloat16 as in the example
+sub_sequence_1 = token_sequence[:, :, :128, :].cuda().bfloat16()
+sub_sequence_2 = token_sequence[:, :, 128:256, :].cuda().bfloat16()
+sub_sequence_3 = token_sequence[:, :, 256:384, :].cuda().bfloat16()
+sub_sequence_4 = token_sequence[:, :, 543:, :].cuda().bfloat16()
 
-        # Split into four sub_sequences along the sequence dimension (third dimension)
-        sub1 = x[:, :, :128, :]
-        sub2 = x[:, :, 128:256, :]
-        sub3 = x[:, :, 256:384, :]
-        sub4 = x[:, :, 543:, :]
+sub_seq_1_self_att = F.scaled_dot_product_attention(sub_sequence_1, sub_sequence_1, sub_sequence_1)
+sub_seq_2_self_att = F.scaled_dot_product_attention(sub_sequence_2, sub_sequence_2, sub_sequence_2)
+sub_seq_3_self_att = F.scaled_dot_product_attention(sub_sequence_3, sub_sequence_3, sub_sequence_3)
+sub_seq_4_self_att = F.scaled_dot_product_attention(sub_sequence_4, sub_sequence_4, sub_sequence_4)
 
-        # Compute individual attentions without scale parameter (replicates the bug scenario)
-        att1 = F.scaled_dot_product_attention(sub1, sub1, sub1)
-        att2 = F.scaled_dot_product_attention(sub2, sub2, sub2)
-        att3 = F.scaled_dot_product_attention(sub3, sub3, sub3)
-        att4 = F.scaled_dot_product_attention(sub4, sub4, sub4)
+#create a mask to do all sequences in parallel
+mask = torch.zeros(1, 2, 600, 600)
+#change mask to be all False
+mask = mask.bool()
+#let sub_sequence_1 only attend to sub_sequence_1
+mask[:, :, :128, :128] = True
+#let sub_sequence_2 only attend to sub_sequence_2
+mask[:, :, 128:256, 128:256] = True
+#let sub_sequence_3 only attend to sub_sequence_3
+mask[:, :, 256:384, 256:384] = True
+#let sub_sequence_4 only attend to sub_sequence_4
+mask[:, :, 543:, 543:] = True
 
-        # Create mask to enforce self-attention within each sub-sequence
-        B, N, S, E = x.shape
-        mask = torch.zeros(B, N, S, S, device=x.device, dtype=torch.bool)
-        mask[:, :, :128, :128] = True
-        mask[:, :, 128:256, 128:256] = True
-        mask[:, :, 256:384, 256:384] = True
-        mask[:, :, 543:, 543:] = True
 
-        # Compute full attention with mask (without scale parameter)
-        full_att = F.scaled_dot_product_attention(x, x, x, attn_mask=mask)
+seq_self_att2 = F.scaled_dot_product_attention(token_sequence.cuda().bfloat16(), token_sequence.cuda().bfloat16(), token_sequence.cuda().bfloat16(), attn_mask=mask.cuda().bfloat16())
 
-        # Extract corresponding parts from full_att
-        part1 = full_att[:, :, :128, :]
-        part2 = full_att[:, :, 128:256, :]
-        part3 = full_att[:, :, 256:384, :]
-        part4 = full_att[:, :, 543:, :]
+#check difference
+print((torch.abs(sub_seq_2_self_att - seq_self_att2[:, :, 128:256, :]).max()))
 
-        # Compare using allclose with atol=1e-6
-        close1 = torch.allclose(att1, part1, atol=1e-6)
-        close2 = torch.allclose(att2, part2, atol=1e-6)
-        close3 = torch.allclose(att3, part3, atol=1e-6)
-        close4 = torch.allclose(att4, part4, atol=1e-6)
+#check if they're close
+print(torch.allclose(sub_seq_2_self_att, seq_self_att2[:, :, 128:256, :], atol=1e-6))
+print(torch.allclose(sub_seq_1_self_att, seq_self_att2[:, :, :128, :], atol=1e-6))
+print(torch.allclose(sub_seq_3_self_att, seq_self_att2[:, :, 256:384, :], atol=1e-6))
+print(torch.allclose(sub_seq_4_self_att, seq_self_att2[:, :, 543:, :], atol=1e-6))
 
-        # Return True only if all comparisons are close (should return False due to the bug)
-        return torch.all(torch.tensor([close1, close2, close3, close4], device=x.device))
+tensor(0.5547, device='cuda:0', dtype=torch.bfloat16)
+False
+False
+False
+False
 
-def my_model_function():
-    return MyModel()
+Python
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.backends.cuda import sdp_kernel
 
-def GetInput():
-    return torch.rand(1, 2, 600, 80, dtype=torch.float32)
+def main():
+    token_sequence = torch.randn(1, 1, 600, 80)
 
+    sub_sequence_1 = token_sequence[:, :, :128, :].cuda().bfloat16()
+    sub_sequence_2 = token_sequence[:, :, 128:256, :].cuda().bfloat16()
+    sub_sequence_3 = token_sequence[:, :, 256:384, :].cuda().bfloat16()
+    sub_sequence_4 = token_sequence[:, :, 543:, :].cuda().bfloat16()
+
+    sub_seq_1_self_att = F.scaled_dot_product_attention(sub_sequence_1, sub_sequence_1, sub_sequence_1, scale=1)
+    sub_seq_2_self_att = F.scaled_dot_product_attention(sub_sequence_2, sub_sequence_2, sub_sequence_2, scale=1)
+    sub_seq_3_self_att = F.scaled_dot_product_attention(sub_sequence_3, sub_sequence_3, sub_sequence_3, scale=1)
+    sub_seq_4_self_att = F.scaled_dot_product_attention(sub_sequence_4, sub_sequence_4, sub_sequence_4, scale=1)
+
+    #create a mask to do all sequences in parallel
+    mask = torch.zeros(1, 1, 600, 600)
+    #change mask to be all False
+    mask = mask.bool()
+    #let sub_sequence_1 only attend to sub_sequence_1
+    mask[:, :, :128, :128] = True
+    #let sub_sequence_2 only attend to sub_sequence_2
+    mask[:, :, 128:256, 128:256] = True
+    #let sub_sequence_3 only attend to sub_sequence_3
+    mask[:, :, 256:384, 256:384] = True
+    #let sub_sequence_4 only attend to sub_sequence_4
+    mask[:, :, 543:, 543:] = True
+
+
+    seq_self_att2 = F.scaled_dot_product_attention(token_sequence.cuda().bfloat16(), token_sequence.cuda().bfloat16(), token_sequence.cuda().bfloat16(), attn_mask=mask.cuda().bfloat16(), scale=1)
+
+    #check difference
+    print((torch.abs(sub_seq_2_self_att - seq_self_att2[:, :, 128:256, :]).max()))
+
+    #check if they're close
+    torch.testing.assert_close(sub_seq_2_self_att, seq_self_att2[:, :, 128:256, :])
+    torch.testing.assert_close(sub_seq_1_self_att, seq_self_att2[:, :, :128, :])
+    torch.testing.assert_close(sub_seq_3_self_att, seq_self_att2[:, :, 256:384, :])
+    torch.testing.assert_close(sub_seq_4_self_att, seq_self_att2[:, :, 543:, :],)
+
+if __name__ == "__main__":
+    main()

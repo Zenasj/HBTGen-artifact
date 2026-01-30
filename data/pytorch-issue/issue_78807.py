@@ -1,20 +1,24 @@
-# torch.rand(1, 1, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.linear = nn.Linear(1, 1)
+import torch
+import copy
 
-    def forward(self, x):
-        return self.linear(x)
+x = torch.rand(1, 1)
+L = torch.nn.Linear(1, 1)
+adam = torch.optim.Adam(L.parameters(), foreach=False, amsgrad=True)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+L2 = copy.deepcopy(L)
+adam2 = torch.optim.Adam(L2.parameters(), foreach=True, amsgrad=True)
+for i in range(2):
+    y = L(x).sum()
+    adam.zero_grad()
+    y.backward()
+    adam.step()
+print(adam.state)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(1, 1, dtype=torch.float32)
-
+for i in range(2):
+    y = L2(x).sum()
+    adam2.zero_grad()
+    y.backward()
+    adam2.step()
+print(adam2.state)

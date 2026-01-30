@@ -1,37 +1,11 @@
-# torch.randint(0, 5500, (50, 128), dtype=torch.int32) ← Add a comment line at the top with the inferred input shape
+import torch.nn as nn
+
 import torch
-from collections import OrderedDict
 
-class MyModel(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
 
-        input_size = 300
-        layers = [('embedding',
-                   torch.nn.Embedding(5500, input_size))]
+encoder_layer = torch.nn.TransformerEncoderLayer(d_model=512, nhead=8)
+transformer_encoder = torch.nn.TransformerEncoder(encoder_layer, num_layers=6)
+src = torch.rand(10, 32, 512)
+out = transformer_encoder(src)
 
-        transformerLayer = torch.nn.TransformerEncoderLayer(
-            d_model=input_size,
-            nhead=10,
-            dim_feedforward=input_size,
-            dropout=0.1,
-            activation='relu',
-            batch_first=True
-        )
-
-        layers += [('transformerStack',
-                   torch.nn.TransformerEncoder(transformerLayer, num_layers=2))]
-
-        self.nn = torch.nn.Sequential(OrderedDict(layers))
-
-    def forward(self, X):
-        return self.nn(X)
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randint(0, 5500, (50, 128), dtype=torch.int32)
-
+torch.onnx.export(encoder_layer, src, "_transformer_encoder.onnx", opset_version=17)

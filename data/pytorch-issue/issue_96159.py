@@ -1,17 +1,26 @@
-# torch.rand(3, 3, dtype=torch.float32, device='cuda')
 import torch
-import torchaudio  # Required to trigger symbol conflict
+import torchaudio
 
-class MyModel(torch.nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        return torch.sin(x) + torch.cos(x)
+supported_dtypes = [torch.float32]
 
-def my_model_function():
-    return MyModel()
+def foo(x: torch.Tensor) -> torch.Tensor:
+    return torch.sin(x) + torch.cos(x)
 
-def GetInput():
-    return torch.rand(3, 3, dtype=torch.float32, device='cuda')
+for dtype in supported_dtypes:
+    print(f"Testing smoke_test_compile for {dtype}")
+    x = torch.rand(3, 3, device="cuda").type(dtype)
+    x_eager = foo(x)
+    x_pt2 = torch.compile(foo)(x)
+    print(torch.allclose(x_eager, x_pt2))
 
+import torch
+
+@torch.compile
+def foo(x: torch.Tensor) -> torch.Tensor:
+    return torch.sin(x) + torch.cos(x)
+
+if __name__ == "__main__":
+    import sys
+    import ctypes
+    sys.setdlopenflags(sys.getdlopenflags() | ctypes.RTLD_GLOBAL)
+    print(foo(torch.rand(3, 3, device='cuda')))

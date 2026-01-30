@@ -1,151 +1,80 @@
-# torch.rand(B, 3, 512, 512, dtype=torch.float32)
+import math
+
+if ceil_mode == 1:
+    out_h = math.ceil(((in_h + pad_hl + pad_hr - kernel_size) / stride) + 1)
+    out_w = math.ceil(((in_w + pad_wl + pad_wr - kernel_size) / stride) + 1)
+else:
+    out_h = int((in_h + pad_hl + pad_hr - kernel_size) / stride + 1)
+    out_w = int((in_w + pad_wl + pad_wr - kernel_size) / stride + 1)
+
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 
-class BasicConv2d(nn.Module):
-    def __init__(self, in_channels, out_channels, **kwargs):
-        super(BasicConv2d, self).__init__()
-        self.conv = nn.Conv2d(in_channels, out_channels, bias=False, **kwargs)
-        self.bn = nn.BatchNorm2d(out_channels, eps=1e-5)
+from models.faceboxes import FaceBoxes
 
-    def forward(self, x):
-        x = self.conv(x)
-        x = self.bn(x)
-        return F.relu(x, inplace=True)
+img_dim = (720, 1280)
+rgb_mean = (104, 117, 123) # bgr order
+num_classes = 2
+model_path = "weights/Final_FaceBoxes.pth"
+onnx_path = "weights/Final_FaceBoxes.onnx"
 
-class CRelu(nn.Module):
-    def __init__(self, in_channels, out_channels, **kwargs):
-        super(CRelu, self).__init__()
-        self.conv = nn.Conv2d(in_channels, out_channels, bias=False, **kwargs)
-        self.bn = nn.BatchNorm2d(out_channels, eps=1e-5)
+# Create the model and load the weights
+model = FaceBoxes('test', img_dim, num_classes)
 
-    def forward(self, x):
-        x = self.conv(x)
-        x = self.bn(x)
-        x = torch.cat([x, -x], 1)
-        x = F.relu(x, inplace=True)
-        return x
+state_dict = torch.load(model_path)
+model.load_state_dict(state_dict, strict=False)
 
-class Inception(nn.Module):
-    def __init__(self):
-        super(Inception, self).__init__()
-        self.branch1x1 = BasicConv2d(128, 32, kernel_size=1, padding=0)
-        self.branch1x1_2 = BasicConv2d(128, 32, kernel_size=1, padding=0)
-        self.branch3x3_reduce = BasicConv2d(128, 24, kernel_size=1, padding=0)
-        self.branch3x3 = BasicConv2d(24, 32, kernel_size=3, padding=1)
-        self.branch3x3_reduce_2 = BasicConv2d(128, 24, kernel_size=1, padding=0)
-        self.branch3x3_2 = BasicConv2d(24, 32, kernel_size=3, padding=1)
-        self.branch3x3_3 = BasicConv2d(32, 32, kernel_size=3, padding=1)
+# Create dummy input
+dummy_input = torch.rand(1, 3, img_dim[0], img_dim[1])
 
-    def forward(self, x):
-        branch1x1 = self.branch1x1(x)
-        branch1x1_pool = F.avg_pool2d(x, kernel_size=3, stride=1, padding=1)
-        branch1x1_2 = self.branch1x1_2(branch1x1_pool)
-        branch3x3_reduce = self.branch3x3_reduce(x)
-        branch3x3 = self.branch3x3(branch3x3_reduce)
-        branch3x3_reduce_2 = self.branch3x3_reduce_2(x)
-        branch3x3_2 = self.branch3x3_2(branch3x3_reduce_2)
-        branch3x3_3 = self.branch3x3_3(branch3x3_2)
-        outputs = [branch1x1, branch1x1_2, branch3x3, branch3x3_3]
-        return torch.cat(outputs, 1)
+# Define input / output names
+input_names = ["actual_input_1"]
+output_names = ["output1", "353"]
 
-class MyModel(nn.Module):  # Renamed from FaceBoxes
-    def __init__(self, phase='test', size=None, num_classes=2):
-        super(MyModel, self).__init__()
-        self.phase = phase
-        self.num_classes = num_classes
-        self.size = size
+# Convert the PyTorch model to ONNX
+torch.onnx.export(model,
+                  dummy_input,
+                  onnx_path,
+                  verbose=True,
+                  input_names=input_names,
+                  output_names=output_names)
 
-        self.conv1 = CRelu(3, 24, kernel_size=7, stride=4, padding=3)
-        self.conv2 = CRelu(48, 64, kernel_size=5, stride=2, padding=2)
-        self.inception1 = Inception()
-        self.inception2 = Inception()
-        self.inception3 = Inception()
-        self.conv3_1 = BasicConv2d(128, 128, kernel_size=1, stride=1, padding=0)
-        self.conv3_2 = BasicConv2d(128, 256, kernel_size=3, stride=2, padding=1)
-        self.conv4_1 = BasicConv2d(256, 128, kernel_size=1, stride=1, padding=0)
-        self.conv4_2 = BasicConv2d(128, 256, kernel_size=3, stride=2, padding=1)
-        self.loc, self.conf = self.multibox(num_classes)
+import torch
 
-        if self.phase == 'test':
-            self.softmax = nn.Softmax(dim=-1)
+from models.faceboxes import FaceBoxes
 
-        if self.phase == 'train':
-            for m in self.modules():
-                if isinstance(m, nn.Conv2d):
-                    if m.bias is not None:
-                        nn.init.xavier_normal_(m.weight.data)
-                        m.bias.data.fill_(0.02)
-                    else:
-                        m.weight.data.normal_(0, 0.01)
-                elif isinstance(m, nn.BatchNorm2d):
-                    m.weight.data.fill_(1)
-                    m.bias.data.zero_()
+img_dim = (720, 1280)
+rgb_mean = (104, 117, 123)  # bgr order
+num_classes = 2
+model_path = "weights/Final_FaceBoxes.pth"
+onnx_path = "weights/Final_FaceBoxes.onnx"
 
-    def multibox(self, num_classes):
-        loc_layers = []
-        conf_layers = []
-        loc_layers += [nn.Conv2d(128, 21 * 4, kernel_size=3, padding=1)]
-        conf_layers += [nn.Conv2d(128, 21 * num_classes, kernel_size=3, padding=1)]
-        loc_layers += [nn.Conv2d(256, 1 * 4, kernel_size=3, padding=1)]
-        conf_layers += [nn.Conv2d(256, 1 * num_classes, kernel_size=3, padding=1)]
-        loc_layers += [nn.Conv2d(256, 1 * 4, kernel_size=3, padding=1)]
-        conf_layers += [nn.Conv2d(256, 1 * num_classes, kernel_size=3, padding=1)]
-        return nn.Sequential(*loc_layers), nn.Sequential(*conf_layers)
+# Create the model and load the weights
+model = FaceBoxes('test', img_dim, num_classes)
 
-    def forward(self, x):
-        sources = []
-        loc = []
-        conf = []
-        detection_dimension = []
+state_dict = torch.load(model_path)
+# create new OrderedDict that does not contain `module.`
+from collections import OrderedDict
+new_state_dict = OrderedDict()
+for k, v in state_dict.items():
+    head = k[:7]
+    if head == 'module.':
+        name = k[7:]  # remove `module.`
+    else:
+        name = k
+    new_state_dict[name] = v
+model.load_state_dict(new_state_dict)
 
-        x = self.conv1(x)
-        x = F.max_pool2d(x, kernel_size=3, stride=2, padding=1)
-        x = self.conv2(x)
-        x = F.max_pool2d(x, kernel_size=3, stride=2, padding=1)
-        x = self.inception1(x)
-        x = self.inception2(x)
-        x = self.inception3(x)
-        detection_dimension.append(x.shape[2:])
-        sources.append(x)
-        x = self.conv3_1(x)
-        x = self.conv3_2(x)
-        detection_dimension.append(x.shape[2:])
-        sources.append(x)
-        x = self.conv4_1(x)
-        x = self.conv4_2(x)
-        detection_dimension.append(x.shape[2:])
-        sources.append(x)
+# Create dummy input
+dummy_input = torch.rand(1, 3, img_dim[0], img_dim[1])
 
-        detection_dimension = torch.tensor(detection_dimension, device=x.device)
+# Define input / output names
+input_names = ["actual_input_1"]
+output_names = ["output1", "353"]
 
-        for (x_layer, l, c) in zip(sources, self.loc, self.conf):
-            loc.append(l(x_layer).permute(0, 2, 3, 1).contiguous())
-            conf.append(c(x_layer).permute(0, 2, 3, 1).contiguous())
-
-        loc = torch.cat([o.view(o.size(0), -1) for o in loc], 1)
-        conf = torch.cat([o.view(o.size(0), -1) for o in conf], 1)
-
-        if self.phase == "test":
-            output = (
-                loc.view(loc.size(0), -1, 4),
-                self.softmax(conf.view(-1, self.num_classes)),
-                detection_dimension,
-            )
-        else:
-            output = (
-                loc.view(loc.size(0), -1, 4),
-                conf.view(conf.size(0), -1, self.num_classes),
-                detection_dimension,
-            )
-        return output
-
-def my_model_function():
-    # Initialize with test phase and default parameters
-    return MyModel(phase='test', size=None, num_classes=2)
-
-def GetInput():
-    # Generate a random input tensor matching the expected shape (B, C, H, W)
-    return torch.rand(1, 3, 512, 512, dtype=torch.float32)
-
+# Convert the PyTorch model to ONNX
+torch.onnx.export(model,
+                  dummy_input,
+                  onnx_path,
+                  verbose=True,
+                  input_names=input_names,
+                  output_names=output_names)

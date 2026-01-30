@@ -1,35 +1,90 @@
-# torch.rand(B, C, H, W, dtype=...)  # Add a comment line at the top with the inferred input shape
-import torch
-import torch.nn as nn
-
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.pool = nn.AdaptiveMaxPool2d((1, 1))
-
-    def forward(self, x):
-        # Use torch.max which returns multiple outputs
-        max_values, indices = torch.max(x, dim=1)
-        return max_values, indices
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    B, C, H, W = 4, 3, 28, 28  # Example batch size, channels, height, width
-    return torch.rand(B, C, H, W, dtype=torch.float32)
-
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
-
-# The provided GitHub issue is about fixing the handling of call operations with multiple outputs in PyTorch's TorchScript to EdgeIR converter. It does not contain a specific PyTorch model or code that needs to be extracted and converted into a single Python file. However, I can create a simple example that demonstrates a model using an operation that returns multiple outputs, such as `torch.max`.
-# Here is a complete Python code file that includes a simple model using `torch.max` and a function to generate a random input tensor:
-# ### Explanation:
-# - **MyModel**: A simple model that uses `torch.max` to return the maximum values and their indices along a specified dimension.
-# - **my_model_function**: Returns an instance of `MyModel`.
-# - **GetInput**: Generates a random tensor with the shape `(B, C, H, W)` where `B` is the batch size, `C` is the number of channels, and `H` and `W` are the height and width of the input tensor.
-# This code can be used to demonstrate how to handle operations that return multiple outputs in a PyTorch model.
+aten._batch_norm_impl_index
+aten._batch_norm_no_update
+aten._batch_norm_with_update
+aten._batch_norm_with_update_functional
+aten._cudnn_rnn
+aten._efficient_attention_backward
+aten._efficient_attention_forward
+aten._embedding_bag
+aten._embedding_bag_forward_only
+aten._flash_attention_backward
+aten._flash_attention_forward
+aten._fused_adam
+aten._fused_dropout
+aten._fused_moving_avg_obs_fq_helper
+aten._linalg_det
+aten._linalg_eigh
+aten._linalg_slogdet
+aten._linalg_solve_ex
+aten._linalg_svd
+aten._native_batch_norm_legit
+aten._native_batch_norm_legit_functional
+aten._native_batch_norm_legit_no_training
+aten._pack_padded_sequence
+aten._prelu_kernel_backward
+aten._scaled_dot_product_efficient_attention
+aten._scaled_dot_product_efficient_attention_backward
+aten._scaled_dot_product_flash_attention
+aten._scaled_dot_product_flash_attention_backward
+aten._scaled_dot_product_flash_attention_for_cpu
+aten._scaled_dot_product_flash_attention_for_cpu_backward
+aten._thnn_fused_lstm_cell
+aten._thnn_fused_lstm_cell_backward_impl
+aten._unique2
+aten._weight_norm_interface
+aten.adaptive_max_pool2d
+aten.adaptive_max_pool3d
+aten.aminmax
+aten.batch_norm_backward
+aten.convolution_backward
+aten.cudnn_batch_norm
+aten.cudnn_batch_norm_backward
+aten.cummax
+aten.cummin
+aten.fractional_max_pool2d
+aten.frexp
+aten.grid_sampler_2d_backward
+aten.grid_sampler_3d_backward
+aten.gru
+aten.linalg_cholesky_ex
+aten.linalg_eig
+aten.linalg_inv_ex
+aten.linalg_ldl_factor_ex
+aten.linalg_lu
+aten.linalg_lu_factor_ex
+aten.linalg_qr
+aten.linear_backward
+aten.log_sigmoid_forward
+aten.lstm
+aten.lu_unpack
+aten.max
+aten.max_pool2d_with_indices
+aten.max_pool3d_with_indices
+aten.median
+aten.min
+aten.miopen_batch_norm
+aten.miopen_batch_norm_backward
+aten.mkldnn_rnn_layer
+aten.mkldnn_rnn_layer_backward
+aten.mode
+aten.multilabel_margin_loss_forward
+aten.nanmedian
+aten.native_batch_norm
+aten.native_batch_norm_backward
+aten.native_dropout
+aten.native_group_norm
+aten.native_group_norm_backward
+aten.native_layer_norm
+aten.native_layer_norm_backward
+aten.nll_loss2d_forward
+aten.nll_loss_forward
+aten.quantized_gru
+aten.quantized_lstm
+aten.rnn_relu
+aten.rnn_tanh
+aten.sort
+aten.std_mean
+aten.topk
+aten.triangular_solve
+aten.unique_dim
+aten.var_mean

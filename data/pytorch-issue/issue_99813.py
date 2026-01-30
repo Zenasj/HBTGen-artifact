@@ -1,29 +1,14 @@
-# torch.rand(B, 1, 28, 28, dtype=torch.float32)
-import torch
-import torch.nn as nn
+import torch 
+import torchvision
+import torchvision.transforms as transforms
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(1, 32, kernel_size=3, padding=1)
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
-        self.fc1 = nn.Linear(64*7*7, 128)
-        self.fc2 = nn.Linear(128, 10)
-        self.pool = nn.MaxPool2d(2, 2)
-        self.relu = nn.ReLU()
-        
-    def forward(self, x):
-        x = self.pool(self.relu(self.conv1(x)))
-        x = self.pool(self.relu(self.conv2(x)))
-        x = x.view(-1, 64*7*7)
-        x = self.relu(self.fc1(x))
-        x = self.fc2(x)
-        return x
+# Define the transformation to be applied to the images
+transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5,), (0.5,))])
 
-def my_model_function():
-    return MyModel()
+# Load the train and test datasets
+trainset = torchvision.datasets.MNIST(root='./data', train=True, download=True, transform=transform)
+testset = torchvision.datasets.MNIST(root='./data', train=False, download=True, transform=transform)
 
-def GetInput():
-    B = 64  # Matches batch_size from DataLoader in original issue's code
-    return torch.rand(B, 1, 28, 28, dtype=torch.float32)
-
+# Define the data loaders to load the data in batches
+trainloader = torch.utils.data.DataLoader(trainset, batch_size=64, shuffle=True)
+testloader = torch.utils.data.DataLoader(testset, batch_size=64, shuffle=False)

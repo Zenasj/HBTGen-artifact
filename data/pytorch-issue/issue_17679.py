@@ -1,21 +1,28 @@
-# torch.randint(0, 10, (B,), dtype=torch.long)
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.emb = nn.Embedding(10, 10)  # Matches the embedding size in the reproduce example
-        self.emb2 = nn.Embedding(10, 10)  # Second embedding for parameter group addition
+import torch
 
-    def forward(self, x):
-        # Sum of embeddings to mimic the loss computation in the reproduce code
-        return self.emb(x).sum() + self.emb2(x).sum()
+emb = torch.nn.Embedding(10,10)
+emb2 = torch.nn.Embedding(10,10)
 
-def my_model_function():
-    return MyModel()
+optim = torch.optim.Adagrad(emb.parameters())
+print(optim.state[emb.weight])  # already initialized
 
-def GetInput():
-    # Generate random indices for embeddings (shape B,)
-    return torch.randint(0, 10, (5,), dtype=torch.long)  # B=5 as minimal test case
+optim.add_param_group({'params': emb2.parameters()})
+print(optim.state[emb2.weight])  # empty dict
 
+loss = emb2.weight.sum() + emb.weight.sum()
+loss.backward()
+optim.step()  # raised KeyError
+
+model = make_model(config)
+optimizer = Adagrad(model.parameters(), lr=config.lr)
+optimizer.share_memory()
+edges = EdgeReader(config.edge_paths[0]).read()
+pool = torch.multiprocessing.Pool(config.num_workers)
+def train(model, edges, optimizer):
+    model.zero_grad()
+    loss = model(edges)
+    loss.backward()
+    optimizer.step()
+pool.starmap(train, [(model, edges[i:i + 1000], optimizer) for i in range(0, len(edges), 1000)])

@@ -1,21 +1,16 @@
-# torch.randint(0, 10, (14,), dtype=torch.int64)
 import torch
-from torch import nn
+device = torch.device('cuda')  # This will work fine
+# device = torch.device('cpu')  # This will give an error
+x = torch.arange(10, device=device)
+idx1 = torch.tensor([4, 2, 0, 8, 0, 1], device=device)
+idx2 = torch.tensor([4, 2, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], device=device)  # Too long for CPU
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.x = nn.Parameter(torch.arange(10.0))  # dtype=torch.float32
+print('idx1.numel() =', idx1.numel())
+print(x.scatter_(0, idx1, 0))
+# idx1.numel() = 6
+# tensor([0, 0, 0, 3, 0, 5, 6, 7, 0, 9], device='cuda:0')
 
-    def forward(self, indices):
-        # Clone to avoid in-place modification of parameters
-        output = self.x.clone()
-        output.scatter_(0, indices, 0.0)
-        return output
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.randint(0, 10, (14,), dtype=torch.int64)
-
+print('idx2.numel() =', idx2.numel())
+print(x.scatter_(0, idx2, 0))
+# idx2.numel() = 14
+# tensor([0, 0, 0, 3, 0, 5, 6, 7, 0, 9], device='cuda:0')

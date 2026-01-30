@@ -1,29 +1,53 @@
-# tf.constant([-0.1982182], shape=(1,), dtype=tf.float32) ← input shape and dtype inferred from the issue's example
+import tensorflow as tf
+print(tf.__version__)
+from keras import layers
+
+
+class MyModule(tf.Module):
+    def __init__(self):
+        super().__init__()
+
+    @tf.function(jit_compile=True)
+    def __call__(self, x):
+        y = tf.divide(x, x)
+        z = tf.pow(x, y)
+        return z
+
+
+
+sys_details = tf.sysconfig.get_build_info()
+print(f'cuda_version: {sys_details["cuda_version"]}')
+print(f'cudnn_version: {sys_details["cudnn_version"]}')
+print(f'cuda_compute_capabilities: {sys_details["cuda_compute_capabilities"]}')
+
+m = MyModule()
+x = tf.constant(
+    [-0.1982182], dtype=tf.float32,
+)
+with tf.device('/CPU:0'):
+    tf.config.run_functions_eagerly(True)
+    out = m(x)
+    print(out) # NOTE: RIGHT! tf.Tensor([-0.1982182], shape=(1,), dtype=float32)
+    tf.config.run_functions_eagerly(False)
+
+with tf.device('/CPU:0'):
+    out = m(x)
+    print(out) # NOTE: RIGHT! tf.Tensor([-0.1982182], shape=(1,), dtype=float32)
+
+with tf.device('/GPU:0'): # NOTE: GPU needed!
+    out = m(x)
+    print(out) # NOTE: WRONG! tf.Tensor([nan], shape=(1,), dtype=float32)
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # No additional layers needed; just use raw ops per the issue
+@tf.function(jit_compile=True)
+def div(x, y):
+    return tf.divide(x, y)
 
-    @tf.function(jit_compile=True)
-    def call(self, x):
-        # Replicating the logic from the issue:
-        # - Compute y = x / x (division)
-        # - Compute z = x ** y (power)
-        # The issue is that on XLA-GPU, y can be imprecise leading to nan in z.
-        # We output both y and z so that a caller or test can inspect intermediate imprecision.
-        y = tf.divide(x, x)
-        z = tf.pow(x, y)
-        return y, z
+x = tf.constant([-0.1982182], dtype=tf.float32)
 
-def my_model_function():
-    # Just return an instance of MyModel (no weight init needed)
-    return MyModel()
+with tf.device('/CPU:0'):
+    print( div(x, x) ) # tf.Tensor([1.], shape=(1,), dtype=float32)
 
-def GetInput():
-    # Return the tensor used in all examples from the issue: a 1D tensor with one float value.
-    # Using dtype float32 as in the original.
-    return tf.constant([-0.1982182], dtype=tf.float32)
-
+with tf.device('/GPU:0'):
+    print( div(x, x) ) # tf.Tensor([0.99999994], shape=(1,), dtype=float32) <-- imprecise result

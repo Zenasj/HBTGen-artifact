@@ -1,47 +1,43 @@
 import torch
-import torch.nn as nn
 
-# The input is a tuple of tensors with shapes: (7,), (3,), (3,), (12,4,5), (12,5,6), (12,4,6), (5,), (1,), (1,)
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
+def topk_func(input, k, out):
+  torch.topk(input, k, out=out)
 
-    def forward(self, inputs):
-        (input_topk, out_topk_values, out_topk_indices,
-         input_bmm1, input_bmm2, out_bmm,
-         input_max, out_max_values, out_max_indices) = inputs
+values = torch.empty(3)
+indices = torch.empty(3, dtype=torch.long)
+opt_model = torch.compile(topk_func)
 
-        # Perform topk with k=3
-        torch.topk(input_topk, 3, out=(out_topk_values, out_topk_indices))
+x = torch.arange(1., 6.)
+opt_model(x, 3, out=(values, indices))
 
-        # Perform bmm
-        torch.bmm(input_bmm1, input_bmm2, out=out_bmm)
+x = torch.arange(1., 8.)
+opt_model(x, 3, out=(values, indices))
 
-        # Perform max with keepdim=True
-        torch.max(input_max, 0, keepdim=True, out=(out_max_values, out_max_indices))
+def bmm_func(input, mat, out):
+  torch.bmm(input, mat, out=out)
 
-        return out_topk_values, out_bmm, out_max_values
+opt_model = torch.compile(bmm_func)
 
-def my_model_function():
-    return MyModel()
+inp1 = torch.randn(10, 3, 4)
+mat1 = torch.randn(10, 4, 5)
+out1 = torch.empty(10, 3, 5)
+opt_model(inp1, mat1, out1)
 
-def GetInput():
-    # Topk inputs (second case causing error)
-    input_topk = torch.arange(1., 8.)  # shape (7,)
-    out_topk_values = torch.empty(3)
-    out_topk_indices = torch.empty(3, dtype=torch.long)
+inp2 = torch.randn(12, 4, 5)
+mat2 = torch.randn(12, 5, 6)
+out2 = torch.empty(12, 4, 6)
+opt_model(inp2, mat2, out2)
 
-    # Bmm inputs (second case)
-    input_bmm1 = torch.randn(12, 4, 5)
-    input_bmm2 = torch.randn(12, 5, 6)
-    out_bmm = torch.empty(12, 4, 6)
+def max_func(input, out):
+  torch.max(input, 0, keepdim=True, out=out)
 
-    # Max inputs (second case)
-    input_max = torch.randn(5)
-    out_max_values = torch.empty(1)
-    out_max_indices = torch.empty(1, dtype=torch.long)
+max = torch.empty(1)
+max_indices = torch.empty(1, dtype=torch.long)
 
-    return (input_topk, out_topk_values, out_topk_indices,
-            input_bmm1, input_bmm2, out_bmm,
-            input_max, out_max_values, out_max_indices)
+opt_model = torch.compile(max_func)
 
+inp1 = torch.randn(4)
+opt_model(inp1, out=(max, max_indices))
+
+inp2 = torch.randn(5)
+opt_model(inp2, out=(max, max_indices))

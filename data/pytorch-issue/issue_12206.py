@@ -1,22 +1,25 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        # Apply clamp_min (transformed from torch.clamp with min)
-        clamped = torch.clamp_min(x, 0)
-        # Use _unique (transformed from torch.unique)
-        unique_vals = torch._unique(clamped)[0]  # Take first output as per issue's suggested fix
-        return unique_vals
+@torch.jit.script
+def f(x):
+    return torch.unique(x)
 
-def my_model_function():
-    return MyModel()
+@torch.jit.script
+def f(x):
+    return torch.clamp(x, min=0)
 
-def GetInput():
-    # Example input matching BxCxHxW (e.g., image-like tensor)
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
+@torch.jit.script
+def f(x):
+    return torch.unique(x)
 
+@torch.jit.script
+def f(x):
+    return torch._unique(x)[0]
+
+@torch.jit.script
+def f(x):
+    return torch.clamp(x, min=0)
+
+@torch.jit.script
+def f(x):
+    return torch.clamp_min(x, 0)

@@ -1,50 +1,100 @@
-# torch.rand(B, 3, 540, 960, dtype=torch.float32)  # Inferred input shape from comments
-import torch
-import torch.nn as nn
-
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Simplified structure based on RetinaFace components mentioned in the issue
-        # Backbone (placeholder for actual network like MobileNet/ResNet)
-        self.backbone = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2),
-            nn.Conv2d(64, 128, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2)
-        )
-        # FPN (Feature Pyramid Network) emulation
-        self.fpn = nn.Sequential(
-            nn.Conv2d(128, 256, kernel_size=1),
-            nn.ReLU(),
-            nn.Conv2d(256, 128, kernel_size=3, padding=1),
-            nn.ReLU()
-        )
-        # SSH modules (Simplified)
-        self.ssh1 = nn.Conv2d(128, 64, kernel_size=3, padding=1)
-        self.ssh2 = nn.Conv2d(64, 32, kernel_size=3, padding=1)
-        # Bbox/Class/Landmark heads (simplified outputs)
-        self.bbox_head = nn.Conv2d(32, 4, kernel_size=1)  # 4 coordinates
-        self.class_head = nn.Conv2d(32, 2, kernel_size=1)  # 2 classes (face/no-face)
-        self.landmark_head = nn.Conv2d(32, 10, kernel_size=1)  # 5 landmarks * 2 coordinates
-
-    def forward(self, x):
-        x = self.backbone(x)
-        x = self.fpn(x)
-        ssh_out = self.ssh2(self.ssh1(x))
-        return (
-            self.bbox_head(ssh_out),
-            self.class_head(ssh_out),
-            self.landmark_head(ssh_out)
-        )
-
-def my_model_function():
-    # Initialize a simple model instance (weights are random)
-    return MyModel()
-
-def GetInput():
-    # Generate a random input tensor matching the model's expected shape
-    return torch.rand(1, 3, 540, 960, dtype=torch.float32)
-
+memory =  619.83203125
+memory =  683.73046875
+memory =  683.73046875
+memory =  699.73046875
+memory =  746.4453125
+memory =  747.09375
+memory =  763.69140625
+memory =  779.73046875
+memory =  795.69921875
+memory =  811.73046875
+memory =  827.73046875
+memory =  843.73046875
+memory =  859.734375
+memory =  875.734375
+memory =  891.734375
+memory =  907.6796875
+memory =  923.6015625
+memory =  939.734375
+memory =  955.734375
+memory =  971.62109375
+memory =  987.734375
+memory =  1003.734375
+memory =  1019.734375
+memory =  1035.734375
+memory =  1051.734375
+memory =  1067.734375
+memory =  1083.734375
+memory =  1099.57421875
+memory =  1115.7265625
+memory =  1131.625
+memory =  1147.5859375
+memory =  1163.734375
+memory =  1179.73046875
+memory =  1195.62109375
+memory =  1211.734375
+memory =  1227.6484375
+memory =  1243.625
+memory =  1259.734375
+memory =  1275.6171875
+memory =  1291.50390625
+memory =  1307.73046875
+memory =  1323.69921875
+memory =  1339.66796875
+memory =  1355.58203125
+memory =  1371.73828125
+memory =  1387.73828125
+memory =  1403.73828125
+memory =  1419.73828125
+memory =  1435.73828125
+memory =  1451.73828125
+memory =  1467.73828125
+memory =  1483.73828125
+memory =  1499.73828125
+memory =  1515.73828125
+memory =  1531.73828125
+memory =  1547.73828125
+memory =  1563.73828125
+memory =  1579.73828125
+memory =  1595.73828125
+memory =  1611.73828125
+memory =  1627.73828125
+memory =  1643.73828125
+memory =  1659.73828125
+memory =  1675.73828125
+memory =  1691.73828125
+memory =  1707.73828125
+memory =  1723.578125
+memory =  1739.73828125
+memory =  1755.73828125
+memory =  1771.73828125
+memory =  1787.73828125
+memory =  1803.73828125
+memory =  1819.73828125
+memory =  1835.73828125
+memory =  1851.65234375
+memory =  1867.73828125
+memory =  1883.7421875
+memory =  1899.7421875
+memory =  1915.62109375
+memory =  1931.59765625
+memory =  1947.578125
+memory =  1963.7421875
+memory =  1979.7421875
+memory =  1995.7109375
+memory =  2011.7421875
+memory =  2027.7421875
+memory =  2043.7421875
+memory =  2059.67578125
+memory =  2075.7421875
+memory =  2091.7421875
+memory =  2107.671875
+memory =  2123.7421875
+memory =  2139.7421875
+memory =  2155.7421875
+memory =  2171.6796875
+memory =  2187.7421875
+memory =  2203.7421875
+memory =  2219.7421875
+memory =  2235.7421875
+memory =  2251.7421875

@@ -1,18 +1,16 @@
-# torch.rand(10, 6, 224, 224, dtype=torch.float32)
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.batch_norm = nn.BatchNorm2d(num_features=6)  # Matches the minimal repro example
-    
-    def forward(self, x):
-        return self.batch_norm(x)
+import torch
+from torch.autograd import Variable
+import torch.onnx
+import onnx
+# from onnx_tf.backend import prepare
 
-def my_model_function():
-    return MyModel()  # Returns initialized BatchNorm2d model
+dummy_input = Variable(torch.randn(10, 6, 224, 224))
+model = torch.nn.BatchNorm2d(num_features=6)
+torch.onnx.export(model, dummy_input, "flownet.onnx", verbose=True)
 
-def GetInput():
-    return torch.randn(10, 6, 224, 224)  # Matches input dimensions from issue's minimal example
-
+#no error here
+onnx_model = onnx.load("flownet.onnx")
+# Check that the IR is well formed
+onnx.checker.check_model(onnx_model)

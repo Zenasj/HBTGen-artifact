@@ -1,33 +1,30 @@
-# tf.random.uniform((32, 28, 28), dtype=tf.float32) ← inferred input shape from MNIST batch size 32 and image shape (28, 28)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define a simple feedforward model as per the described example
-        self.flatten = tf.keras.layers.Flatten(input_shape=(28, 28))
-        self.dense1 = tf.keras.layers.Dense(128, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(10)
-        
-    def call(self, inputs, training=False):
-        x = self.flatten(inputs)
-        x = self.dense1(x)
-        logits = self.dense2(x)
-        return logits
+strategy = tf.distribute.MirroredStrategy()
 
-def my_model_function():
-    # Instantiate and compile the model with the specified optimizer and loss consistent with the example
-    model = MyModel()
+with strategy.scope():
+    (x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
+    x_train, x_test = x_train / 255.0, x_test / 255.0
+    train_dataset = tf.data.Dataset.from_tensor_slices((x_train, y_train)).batch(32)
+
+    model = tf.keras.models.Sequential([
+        tf.keras.layers.Flatten(input_shape=(28, 28)),
+        tf.keras.layers.Dense(128, activation='relu'),
+        tf.keras.layers.Dense(10),
+    ])
+
     model.compile(
         optimizer=tf.keras.optimizers.SGD(),
         loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
-        metrics=['accuracy']
-    )
-    return model
+        metrics=['accuracy'])
 
-def GetInput():
-    # Generate a random input tensor that matches the input shape expected by the model: batch size 32, 28x28 images
-    # Use float32 as dtype, scaled similarly to MNIST normalized images
-    return tf.random.uniform((32, 28, 28), dtype=tf.float32)
-
+def train_step(x, y):
+    model.train_on_batch(x, y)
+    
+for x, y in train_dataset:
+    strategy.run(train_step, args=(x, y,))

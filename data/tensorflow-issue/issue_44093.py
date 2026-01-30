@@ -1,30 +1,37 @@
-# tf.random.uniform((None, 28, 28, 1), dtype=tf.float32)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
+
+import tensorflow_datasets as tfds
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define layers similar to the provided MNIST example model
-        self.conv = tf.keras.layers.Conv2D(32, 3, activation="relu", input_shape=(28, 28, 1))
-        self.pool = tf.keras.layers.MaxPooling2D()
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(64, activation="relu")
-        self.dense2 = tf.keras.layers.Dense(10)
+# This is the only functional change from the example code.
+tf.compat.v1.disable_eager_execution()
 
-    def call(self, inputs, training=False):
-        x = self.conv(inputs)
-        x = self.pool(x)
-        x = self.flatten(x)
-        x = self.dense1(x)
-        return self.dense2(x)
+# Copied from the example code at:
+# https://github.com/tensorflow/docs/blob/master/site/en/tutorials/distribute/keras.ipynb
+datasets, info = tfds.load(name="mnist", with_info=True, as_supervised=True)
+mnist_train, mnist_test = datasets["train"], datasets["test"]
+strategy = tf.distribute.MirroredStrategy()
+print("Number of devices: {}".format(strategy.num_replicas_in_sync))
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+train_dataset = mnist_train.map(lambda im, l: ((tf.cast(im, tf.float32) / 255), l)).batch(64)
 
-def GetInput():
-    # Return a random input tensor simulating a batch of grayscale 28x28 images
-    # The batch size is chosen as 64 like in the example training batch size
-    batch_size = 64
-    return tf.random.uniform((batch_size, 28, 28, 1), dtype=tf.float32)
+with strategy.scope():
+    model = tf.keras.Sequential(
+        [
+            tf.keras.layers.Conv2D(32, 3, activation="relu", input_shape=(28, 28, 1)),
+            tf.keras.layers.MaxPooling2D(),
+            tf.keras.layers.Flatten(),
+            tf.keras.layers.Dense(64, activation="relu"),
+            tf.keras.layers.Dense(10),
+        ]
+    )
 
+    model.compile(
+        loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+        optimizer=tf.keras.optimizers.Adam(),
+        metrics=["accuracy"],
+    )
+
+model.fit(train_dataset, epochs=12)

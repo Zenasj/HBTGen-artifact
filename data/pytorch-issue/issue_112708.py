@@ -1,29 +1,23 @@
-# torch.rand(10, 8, 9, dtype=torch.float32) ← Add a comment line at the top with the inferred input shape
 import torch
 import torch.nn as nn
+import traceback
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
+def forward(x, device):      
+  x = torch.floor(out=x, input=torch.rand([10, 8, 9], dtype=torch.float32).to('cpu'))        
+  return x
+input_tensor = torch.rand([10, 8, 9], dtype=torch.float32).to('cpu')
+cuda_tensor = input_tensor.clone().to('cuda')
+no_op_info = forward(input_tensor, 'cpu')
+print("build succeded")
 
-    def forward(self, x):
-        x = torch.floor(x)
-        return x
+op_info = torch.compile(forward, mode='max-autotune',fullgraph=False,dynamic=True)(cuda_tensor, 'cuda')
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(10, 8, 9, dtype=torch.float32)
-
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
-# compiled_model = torch.compile(model)
-# compiled_output = compiled_model(input_tensor)
-# print(torch.allclose(output, compiled_output, rtol=1e-3, atol=1e-3, equal_nan=True))
-
-# This code defines a simple `MyModel` class that applies the `torch.floor` function to the input tensor. The `GetInput` function generates a random tensor with the shape `(10, 8, 9)` and `dtype` of `torch.float32`, which is the input shape and type used in the original issue. The example usage is commented out to ensure the code can be copied as a single file.
+same_val = torch.allclose(no_op_info.to('cpu'), 
+                        op_info.to('cpu'), 
+                        rtol=1e-3, atol=1e-3, 
+                        equal_nan=True)
+if same_val == False : 
+    print("BUGBUG DIFFERENTIAL")
+    raise ValueError('diff value')
+else :
+    print("no_error")

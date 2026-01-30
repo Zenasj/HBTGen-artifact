@@ -1,20 +1,17 @@
-# torch.rand(1, 3, 1, 1, dtype=torch.float32)
-import torch
 import torch.nn as nn
+
+import torch
 import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.target = nn.Parameter(torch.randn(3).softmax(dim=-1))  # Shape (3,)
+# works
+shape = (3, 5)
+input = torch.randn(*shape).log_softmax(dim=-1)
+target = torch.randn(*shape).softmax(dim=-1)
+F.cross_entropy(input, target)
 
-    def forward(self, x):
-        log_probs = x.log_softmax(dim=-1)
-        return F.cross_entropy(log_probs, self.target)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.randn(3)  # 1D tensor to trigger no-batch-dimension error
-
+# crashes
+shape = (3,)
+input = torch.randn(*shape).log_softmax(dim=-1)
+target = torch.randn(*shape).softmax(dim=-1)
+F.cross_entropy(input, target)
+# IndexError:  Dimension out of range(expected to be in range of [-1, 0], but got 1)

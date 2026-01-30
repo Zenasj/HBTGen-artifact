@@ -1,19 +1,30 @@
-# torch.randint(4, (B,), dtype=torch.long, device='cuda')
 import torch
-from torch import nn
+from torch.autograd import Function
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.lut_dummy = nn.Embedding(1, 1, max_norm=1.0).to("cuda")
-        self.lut_a = nn.Embedding(22, 256, max_norm=1.0).to("cuda")
+class Flatten3(Function):
+    @staticmethod
+    def forward(ctx, x, y):
+        ctx.save_for_backward(x, y)
+        return x.view(-1), y.view(-1)
 
-    def forward(self, src):
-        return self.lut_a(src)
+    @staticmethod
+    def backward(ctx, dx, dy):
+        x, y = ctx.saved_tensors
+        return dx.view(x.shape), dy.view(y.shape)
 
-def my_model_function():
-    return MyModel()
+inputs = [torch.randn(2, 2, requires_grad=True) for _ in range(2)]
 
-def GetInput():
-    return torch.randint(4, (2,), dtype=torch.long, device='cuda')
+# a, b are all DifferentiableViewImpl with output_nr = {0, 1} respectively
+a, b = Flatten3.apply(*inputs)
 
+# Modify the counter in no_grad mode.
+# b is still a DifferentiableViewImpl with output_nr = 1 (no_grad prevents
+# a new autograd function from being created)
+with torch.no_grad():
+    b.zero_()
+
+# Throws assert because:
+# 1) b has been modified in place
+# 2) b is a view
+# 3) b's output_nr is not 0.
+z = b + a

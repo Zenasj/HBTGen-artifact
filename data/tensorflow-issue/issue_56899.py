@@ -1,27 +1,50 @@
-# tf.random.normal((1, 640, 480, 3), dtype=tf.float32) ← Input shape inferred from issue representative_data_gen
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
 import tensorflow_addons as tfa
+from tensorflow.lite.python import convert as _tf_convert
+from tensorflow.lite.toco import types_pb2 as _types_pb2
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Build a simple keras model matching the issue example:
-        # Input shape (640, 480, 3), Conv2D(64, 3x3), then GELU activation from tf-addons
-        self.conv = tf.keras.layers.Conv2D(64, kernel_size=3)
-        self.gelu = tfa.layers.GELU(False, name='gelu')
+def representative_data_gen():
+        for i in range(10):
+            yield [tf.random.normal((1, 640, 480, 3), dtype=tf.float32)]
 
-    def call(self, inputs):
-        x = self.conv(inputs)
-        x = self.gelu(x)
-        return x
+def main():
+    _input = x = tf.keras.layers.Input((640, 480, 3), dtype=tf.float32)
+    x = tf.keras.layers.Conv2D(64, kernel_size=3)(x)
+    output = tfa.layers.GELU(False, name='gelu')(x)
+    tf_model = tf.keras.Model(inputs=[_input], outputs=[output])
 
-def my_model_function():
-    # Return an instance of MyModel, mimicking the tf.keras.Model in the issue
-    return MyModel()
+    converter = tf.lite.TFLiteConverter.from_keras_model(tf_model)
+    converter.optimizations = [tf.lite.Optimize.DEFAULT]
+    converter.target_spec.supported_ops = [ tf.lite.OpsSet.EXPERIMENTAL_TFLITE_BUILTINS_ACTIVATIONS_INT16_WEIGHTS_INT8 ]
+    converter.representative_dataset = representative_data_gen
+    int16_model = converter.convert()
 
-def GetInput():
-    # Generate a random input tensor matching the model input shape expected: (1, 640, 480, 3), float32
-    # Using batch size 1 as in representative dataset generator
-    return tf.random.normal(shape=(1, 640, 480, 3), dtype=tf.float32)
+    converter = tf.lite.TFLiteConverter.from_keras_model(tf_model)
+    converter.optimizations = [tf.lite.Optimize.DEFAULT]
+    converter._experimental_calibrate_only = True
+    converter.representative_dataset = representative_data_gen
+    calibrate_model = converter.convert()
+    
+    # _types_pb2.QUANTIZED_INT16
+    quantized_model = _tf_convert.mlir_quantize(calibrate_model, inference_type=_types_pb2.QUANTIZED_INT16, denylisted_ops=['Gelu'])
+    
+    expect_quantized_model = _tf_convert.mlir_quantize(calibrate_model, denylisted_ops=['Gelu'])
 
+    with open("int16_model.tflite", 'wb') as F:
+        F.write(int16_model)
+
+    with open("calibrate_model.tflite", 'wb') as F:
+        F.write(calibrate_model)
+    
+    with open("quantized_model.tflite", 'wb') as F:
+        F.write(quantized_model)
+    
+    with open("expect_quantized_model.tflite", 'wb') as F:
+        F.write(expect_quantized_model)
+
+if __name__ == "__main__":
+    main()

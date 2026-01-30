@@ -1,37 +1,36 @@
-# torch.randn(1,5,10), torch.full((1,5), -100, dtype=torch.long) ← inferred input shapes for (logits, labels)
+from torch.nn import CrossEntropyLoss
 import torch
-from torch import nn
+torch.manual_seed(42)
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.loss_fct = nn.CrossEntropyLoss(reduction='none')
-        self.loss_fct_mean = nn.CrossEntropyLoss(reduction='mean')
-    
-    def forward(self, inputs):
-        logits, labels = inputs
-        # Compute both loss reductions
-        loss_none = self.loss_fct(
-            logits.view(-1, logits.size(-1)), 
-            labels.view(-1)
-        )
-        loss_mean = self.loss_fct_mean(
-            logits.view(-1, logits.size(-1)), 
-            labels.view(-1)
-        )
-        
-        # Check if none-reduction is all zeros and mean is NaN
-        is_loss_none_zero = torch.allclose(loss_none, torch.zeros_like(loss_none))
-        is_loss_mean_nan = torch.isnan(loss_mean)
-        
-        return torch.tensor(is_loss_none_zero and is_loss_mean_nan, dtype=torch.bool)
+loss_fct = CrossEntropyLoss(reduction='none')
+loss_fct_mean = CrossEntropyLoss(reduction='mean')
 
-def my_model_function():
-    return MyModel()
+logits = torch.randn(1,5,10)
+labels = torch.tensor([[-100,-100,-100,-100,-100]]) 
 
-def GetInput():
-    B, L, C = 1, 5, 10
-    logits = torch.randn(B, L, C)  # Matches issue's input shape
-    labels = torch.full((B, L), -100, dtype=torch.long)  # All ignored indices
-    return (logits, labels)
+nll_loss = loss_fct(
+    logits.view(-1, logits.size(-1)), labels.view(-1)
+)
 
+nll_loss_mean = loss_fct_mean(
+    logits.view(-1, logits.size(-1)), labels.view(-1)
+)
+
+print(f"nll_loss is {nll_loss}")
+print(f"nll_loss_mean is {nll_loss_mean}")
+
+# nll_loss is tensor([0., 0., 0., 0., 0.])
+# nll_loss_mean is nan
+
+input = torch.randn(2,5,2, requires_grad=False)
+w = torch.randn(2,2,requires_grad=True)
+logits = torch.matmul(input,w)
+target = torch.tensor([[-100,-100,-100,-100,-100],[-100,-100,-100,-100,-100]])
+output = loss_fct_mean(logits.view(-1, input.size(-1)), target.view(-1))
+print(output)
+output.backward()
+print(w.grad)
+
+# output: tensor(nan, grad_fn=<NllLossBackward0>)
+# output: tensor([[0., 0.],
+#               [0., 0.]])

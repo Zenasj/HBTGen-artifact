@@ -1,80 +1,103 @@
-# tf.random.uniform((None, 16000), dtype=tf.float32) ← Inferred input shape from audio waveform batch input
-
 import tensorflow as tf
 
-# A dummy placeholder get_spectrogram function; replace with actual preprocessing logic if available.
-def get_spectrogram(audio_waveform):
-    # This function should convert waveform to spectrogram.
-    # Here we simulate by adding a channel dim and returning as-is for demonstration.
-    spectrogram = tf.expand_dims(audio_waveform, axis=-1)  # shape: (batch, time, 1)
-    return spectrogram
+saved_model_obj = tf.saved_model.load(export_dir=model_path)
+
+# Load the specific concrete function from the SavedModel.
+concrete_func = saved_model_obj.signatures['serving_default']
+# Set the shape of the input in the concrete function.
+concrete_func.inputs[0].set_shape((None,))
+
+# Convert the model to a TFLite model.
+converter = tf.lite.TFLiteConverter.from_concrete_functions([concrete_func])
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+tflite_model = converter.convert()
+with open('model.tflite','wb') as f:
+    f.write(tflite_model)
+
+model = tf.saved_model.load(model_path)
+converter = tf.lite.TFLiteConverter.from_saved_model(saved_model_dir=model_dir,signature_keys=['serving_default','predict','classification'])
+tflite_model = converter.convert()
+
+with open('model.tflite','wb') as f:
+    f.write(tflite_model)
+
+model=XYZModel()
+model.load_weights(path)
+model.compute_output_shape(input_shape=(None, 240, 320, 4))  # or try model.build(input_shape)
+
+class ExportModel(tf.Module):
+  def __init__(self, model):
+    self.model = model
+
+    # Accept either a string-filename or a batch of waveforms.
+    # YOu could add additional signatures for a single wave, or a ragged-batch. 
+    self.__call__.get_concrete_function(
+        audio_input=tf.TensorSpec(shape=(), dtype=tf.string))
+    self.__call__.get_concrete_function(
+       audio_input=tf.TensorSpec(shape=[None, 16000], dtype=tf.float32))
 
 
-# A placeholder label_names tensor to simulate label lookup; in practice these come from dataset metadata.
-label_names = tf.constant([
-    "yes",
-    "no",
-    "up",
-    "down",
-    "left",
-    "right",
-    "on",
-    "off",
-    "stop",
-    "go"
-])
-
-class MyModel(tf.keras.Model):
-    """
-    Fused model based on the ExportModel example from the issue.
-    Accepts a batch of audio waveforms with shape [batch_size, 16000].
-    Converts inputs to spectrogram via get_spectrogram.
-    Applies a simple DNN for demonstration (replace with actual model).
-    Returns dict with logits and class info.
-
-    This design follows the exported SignatureDef logic and the 
-    conversion compatibility notes about using Select TF ops option.
-    """
-    def __init__(self):
-        super().__init__()
-        # Simple example model: 1D conv + dense to simulate some processing
-        self.conv1 = tf.keras.layers.Conv1D(filters=32, kernel_size=5, strides=2, activation='relu')
-        self.pool = tf.keras.layers.GlobalAveragePooling1D()
-        self.dense = tf.keras.layers.Dense(len(label_names))  # logits for classes
-
-    def call(self, audio_input, training=False):
-        """
-        Forward pass expecting audio waveforms tensor of shape [batch, 16000]
-        """
-        # Preprocessing
-        spectrogram = get_spectrogram(audio_input)  # shape [batch, time, 1]
-
-        # Model forward
-        x = self.conv1(spectrogram)
-        x = self.pool(x)
-        logits = self.dense(x)
-
-        class_ids = tf.argmax(logits, axis=-1)
-        class_names = tf.gather(label_names, class_ids)
-
-        # Return dict consistent with export signatures
-        return {
-            'predictions': logits,
+  @tf.function
+  def __call__(self, audio_input):
+    # If they pass a string, load the file and decode it. 
+    if audio_input.dtype == tf.string:
+      audio_input = tf.io.read_file(audio_input)
+      audio_input, _ = tf.audio.decode_wav(audio_input, desired_channels=1, desired_samples=16000,)
+      audio_input = tf.squeeze(audio_input, axis=-1)
+      audio_input = audio_input[tf.newaxis, :]
+    
+    audio_input = get_spectrogram(audio_input)  
+    result = self.model(audio_input, training=False)
+    
+    class_ids = tf.argmax(result, axis=-1)
+    class_names = tf.gather(label_names, class_ids)
+    return {'predictions':result,
             'class_ids': class_ids,
-            'class_names': class_names
-        }
+            'class_names': class_names}
 
+x = tf.io.read_file(tf.constant(str(data_dir/'no/01bb6a2a_nohash_0.wav')))
+x, _ = tf.audio.decode_wav(x, desired_channels=1, desired_samples=16000,)
+x = tf.squeeze(x, axis=-1)
+x = x[tf.newaxis, :]
+audio_input=x
+export(audio_input)
 
-def my_model_function():
-    # Instantiate and return the model instance
-    model = MyModel()
-    # Optionally build the model with input shape for weight initialization if needed:
-    # model.build(input_shape=(None, 16000))
-    return model
+saved_model_dir="/path/to/mydir/"
 
+no_signature_path = os.path.join(saved_model_dir, 'module_with_no_signature')
+module_with_signature_path = os.path.join(saved_model_dir, 'module_with_signature')
+module_multiple_signatures_path = os.path.join(saved_model_dir, 'module_with_multiple_signatures')
 
-def GetInput():
-    # Return a random float32 tensor simulating a batch of 1 audio waveform of length 16000.
-    # This matches expected input shape to MyModel.
-    return tf.random.uniform(shape=(1, 16000), dtype=tf.float32)
+tf.saved_model.save(export, no_signature_path)
 
+call = export.__call__.get_concrete_function(tf.constant(str(data_dir/'no/01bb6a2a_nohash_0.wav')))
+tf.saved_model.save(export, module_with_signature_path, signatures=call)
+
+signatures = {"wav_file": call,
+              "wav_pcm": export.__call__.get_concrete_function(tf.TensorSpec([1,16000], tf.float32))}
+tf.saved_model.save(export, module_multiple_signatures_path, signatures=signatures)
+
+imported = tf.saved_model.load(no_signature_path)
+print (imported.signatures)
+print (list(imported.signatures.keys()))
+
+imported = tf.saved_model.load(module_with_signature_path)
+print (imported.signatures)
+print (list(imported.signatures.keys()))
+
+imported = tf.saved_model.load(module_multiple_signatures_path)
+print (imported.signatures)
+print (list(imported.signatures.keys()))
+
+saved_model_obj = tf.saved_model.load(module_multiple_signatures_path)
+concrete_func = saved_model_obj.signatures['wav_pcm']
+converter = tf.lite.TFLiteConverter.from_concrete_functions([concrete_func])
+
+converter.target_spec.supported_ops = [
+    tf.lite.OpsSet.TFLITE_BUILTINS,  # enable TensorFlow Lite ops.
+    tf.lite.OpsSet.SELECT_TF_OPS  # enable TensorFlow ops.
+]
+
+tflite_model = converter.convert()
+with open('model-sig.tflite', 'wb') as f:
+  f.write(tflite_model)

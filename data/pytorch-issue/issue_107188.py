@@ -1,21 +1,31 @@
 import torch
-import torch.nn as nn
+import torchaudio
+from torchaudio.io import StreamReader
 
-# torch.rand(B, C, H, W, dtype=...) → Input shape is (1, 80) based on the decoder's input (80,80)
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Simulate hypotheses with scores derived from input tensor x
-        b_hypos = [{'score': x[0, i]} for i in range(x.size(1))]  # List of dictionaries with scores
-        # Extract scores into a Python list (problematic in Dynamo)
-        scores_list = [hypo['score'] for hypo in b_hypos]
-        # Convert list to tensor, which triggers the error when compiled
-        scores_tensor = torch.tensor(scores_list)
-        return scores_tensor
+bundle = torchaudio.pipelines.EMFORMER_RNNT_BASE_LIBRISPEECH
 
-def my_model_function():
-    return MyModel()
+feature_extractor = bundle.get_streaming_feature_extractor()
+decoder = bundle.get_decoder()
+token_processor = bundle.get_token_processor()
 
-def GetInput():
-    # Return a random tensor of shape (1, 80) to match the example in the original issue
-    return torch.randn(1, 80)
+# random values
+# This works
+decoder(torch.randn(80, 80), length=torch.tensor([1.0]), beam_width=10)
 
+decoder = torch.compile(decoder, fullgraph=True)
+
+# This does not work
+decoder(torch.randn(80, 80), length=torch.tensor([1.0]), beam_width=10)
+
+score = (torch.stack(torch.tensor(_get_hypo_score(h_b))).logaddexp(append_blank_score)).item()
+
+import torch
+import torch._dynamo
+
+torch._dynamo.config.capture_scalar_outputs = True
+
+@torch.compile(backend='eager', fullgraph=True)
+def f(v):
+    return torch.tensor([v.item()])
+
+f(torch.randn(1))

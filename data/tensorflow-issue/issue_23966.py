@@ -1,8 +1,18 @@
-# tf.random.uniform((1, 192, 192, 3), dtype=tf.uint8)  # Inferred input shape and dtype from usage of input image resized to (width, height)
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
 
+import argparse
 import math
-import tensorflow as tf
+import time
+from heapq import heappush, nlargest
+
 import numpy as np
+from PIL import Image
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+
+from tensorflow.contrib.lite.python import interpreter as interpreter_wrapper
 
 NUM_RESULTS = 1917
 NUM_CLASSES = 91
@@ -12,199 +22,211 @@ Y_SCALE = 10.0
 H_SCALE = 5.0
 W_SCALE = 5.0
 
-# Placeholder for box priors to be loaded externally
-box_priors = []  # Will hold 4 lists: [ycenter, xcenter, h, w] each of length NUM_RESULTS
+def load_box_priors(filename):
+  with open(filename) as f:
+    count = 0
+    for line in f:
+      row = line.strip().split(' ')
+      box_priors.append(row)
+      #print(box_priors[count][0])
+      count = count + 1
+      if count == 4:
+        return
 
+def load_labels(filename):
+  my_labels = []
+  input_file = open(filename, 'r')
+  for l in input_file:
+    my_labels.append(l.strip())
+  return my_labels
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # This model wraps a TensorFlow Lite interpreter internally
-        # Since the original script calls TFLite interpreter, here we simulate
-        # post-processing decoding and filtering in TensorFlow.
-        # The underlying TFLite model is not implemented here as TF Keras layer,
-        # because TFLite interpreter runs an external model.
-        # We'll implement the decode and NMS logic only.
+def decode_center_size_boxes(locations):
+  """calculate real sizes of boxes"""
+  for i in range(0, NUM_RESULTS):
+    ycenter = locations[i][0] / Y_SCALE * np.float(box_priors[2][i]) \
+            + np.float(box_priors[0][i])
+    xcenter = locations[i][1] / X_SCALE * np.float(box_priors[3][i]) \
+            + np.float(box_priors[1][i])
+    h = math.exp(locations[i][2] / H_SCALE) * np.float(box_priors[2][i])
+    w = math.exp(locations[i][3] / W_SCALE) * np.float(box_priors[3][i])
 
-    def call(self, inputs):
-        """
-        `inputs` is expected to be a tensor of shape [1, H, W, 3] uint8 image
-        This method will simulate output based on decoded boxes and scores.
-        Since TFLite interpreter run is external, we simulate the post-processing pipeline:
-         - dummy location predictions and class logits (simulated)
-         - decode boxes using box_priors
-         - compute pruned_predictions (scores > threshold)
-         - apply NMS
-         - return final predictions (scores, class_id, label, box coords)
+    ymin = ycenter - h / 2.0
+    xmin = xcenter - w / 2.0
+    ymax = ycenter + h / 2.0
+    xmax = xcenter + w / 2.0
 
-        For demonstration, this dummy implementation returns fixed random predictions.
-        A real-world usage expects TFLite interpreter outputs to be inputs to this logic.
-        """
+    locations[i][0] = ymin
+    locations[i][1] = xmin
+    locations[i][2] = ymax
+    locations[i][3] = xmax
+  return locations
 
-        batch_size = tf.shape(inputs)[0]
-        assert batch_size == 1, "Only batch size 1 is supported as per original script"
+def iou(box_a, box_b):
+  x_a = max(box_a[0], box_b[0])
+  y_a = max(box_a[1], box_b[1])
+  x_b = min(box_a[2], box_b[2])
+  y_b = min(box_a[3], box_b[3])
 
-        # Because this is a stub, simulate model outputs for locations and classes
-        # locations shape: [NUM_RESULTS, 4]
-        # classes shape: [NUM_RESULTS, NUM_CLASSES]
-        # We create dummy tensors to allow code flow
+  intersection_area = (x_b - x_a + 1) * (y_b - y_a + 1)
 
-        # Simulate locations with random values centered around box_priors values for demonstration
-        box_priors_tf = tf.convert_to_tensor(box_priors, tf.float32)  # shape (4, NUM_RESULTS)
-        # We'll reshape box_priors from list of lists to tensor shape [4, NUM_RESULTS]
-        # box_priors are [ycenter, xcenter, h, w], each list length NUM_RESULTS
-        
-        # If box_priors do not have NumPy-compatible shape yet, return empty output
-        if not box_priors or len(box_priors) < 4:
-            # Return empty predictions
-            return tf.constant([], shape=(0, 6), dtype=tf.float32)  # no predictions
+  box_a_area = (box_a[2] - box_a[0] + 1) * (box_a[3] - box_a[1] + 1)
+  box_b_area = (box_b[2] - box_b[0] + 1) * (box_b[3] - box_b[1] + 1)
 
-        # Extract lists
-        ycenter_prior = tf.squeeze(box_priors_tf[0])  # shape (NUM_RESULTS,)
-        xcenter_prior = tf.squeeze(box_priors_tf[1])
-        h_prior = tf.squeeze(box_priors_tf[2])
-        w_prior = tf.squeeze(box_priors_tf[3])
+  iou = intersection_area / float(box_a_area + box_b_area - intersection_area)
+  return iou
 
-        # Generate dummy "locations" around zero which later decode with prior boxes
-        # Shape: [NUM_RESULTS,4] (ycenter_adj, xcenter_adj, h_adj, w_adj)
-        # Using zeros which means decoded boxes == priors for simplicity
-        locations = tf.zeros((NUM_RESULTS, 4), dtype=tf.float32)
+def nms(p, iou_threshold, max_boxes):
+  sorted_p = sorted(p, reverse=True)
+  selected_predictions = []
+  for a in sorted_p:
+    if len(selected_predictions) > max_boxes:
+      break
+    should_select = True
+    for b in selected_predictions:
+      if iou(a[3], b[3]) > iou_threshold:
+        should_select = False
+        break
+    if should_select:
+      selected_predictions.append(a)
 
-        # locations tensor for decode_center_size_boxes: [NUM_RESULTS, 4]
-        # where each location: [ycenter, xcenter, h, w] adjusted offsets
+  return selected_predictions
 
-        # For demonstration we set locations to zeros and decode them to priors
-        decoded_boxes = self.decode_center_size_boxes(locations, ycenter_prior, xcenter_prior, h_prior, w_prior)
-        # shape: [NUM_RESULTS,4] (ymin, xmin, ymax, xmax), all normalized in [0,1]
+if __name__ == "__main__":
+  file_name = "/home/pi/tmp/image2.jpg"
+  model_file = "/home/pi/tmp/mobilenet_ssd.tflite"
+  label_file = "/home/pi/tmp/coco_labels_list.txt"
+  box_prior_file = "/home/pi/tmp/box_priors.txt"
+  input_mean = 127.5
+  input_std = 127.5
+  min_score = 20.0
+  max_boxes = 10
+  floating_model = False
+  show_image = False
+  alt_output_order = False
 
-        # Simulate class logits with random values for example (NUM_RESULTS, NUM_CLASSES)
-        class_logits = tf.random.uniform((NUM_RESULTS, NUM_CLASSES), minval=-3.0, maxval=3.0, dtype=tf.float32)
+  parser = argparse.ArgumentParser()
+  parser.add_argument("--image", help="image to be classified")
+  parser.add_argument("--graph", help=".tflite model to be executed")
+  parser.add_argument("--labels", help="name of file containing labels")
+  parser.add_argument("--input_mean", help="input_mean")
+  parser.add_argument("--input_std", help="input standard deviation")
+  parser.add_argument("--min_score", help="show only > min_score")
+  parser.add_argument("--max_boxes", help="max boxes to show")
+  parser.add_argument("--show_image", help="show image")
+  parser.add_argument("--alt_output_order", help="alternative output index")
+  args = parser.parse_args()
 
-        # Apply sigmoid to get scores
-        scores = tf.math.sigmoid(class_logits)
+  if args.graph:
+    model_file = args.graph
+  if args.image:
+    file_name = args.image
+  if args.labels:
+    label_file = args.labels
+  if args.input_mean:
+    input_mean = float(args.input_mean)
+  if args.input_std:
+    input_std = float(args.input_std)
+  if args.min_score:
+    min_score = float(args.min_score)
+  if args.max_boxes:
+    max_boxes = int(args.max_boxes)
+  if args.show_image:
+    show_image = args.show_image
+  if args.alt_output_order:
+    alt_output_order = args.alt_output_order
 
-        # Threshold for scores pruning (original set to 0.01)
-        score_threshold = 0.01
+  interpreter = interpreter_wrapper.Interpreter(model_path=model_file)
+  interpreter.allocate_tensors()
 
-        # Prepare pruned_predictions: list of (score, index, class_id, box) tuples
-        # We'll flatten and filter within TensorFlow for efficiency
+  input_details = interpreter.get_input_details()
+  output_details = interpreter.get_output_details()
+  #print(input_details)
+  #print(output_details)
 
-        # Broadcast boxes to classes:
-        # scores shape (NUM_RESULTS, NUM_CLASSES), shape compatible with boxes (NUM_RESULTS,4)
-        boxes_expanded = tf.reshape(decoded_boxes, [NUM_RESULTS, 1, 4])  # (N,1,4)
-        boxes_tiled = tf.tile(boxes_expanded, [1, NUM_CLASSES, 1])     # (N,C,4)
+  # check the type of the input tensor
+  if input_details[0]['dtype'] == type(np.float32(1.0)):
+    floating_model = True
 
-        # Mask scores above threshold only for classes (skip class 0)
-        class_indices = tf.range(NUM_CLASSES, dtype=tf.int32)
-        class_indices = class_indices[1:]  # skipping class 0 background
+  # NxHxWxC, H:1, W:2
+  height = input_details[0]['shape'][1]
+  width = input_details[0]['shape'][2]
+  img = Image.open(file_name)
+  img = img.resize((width, height))
 
-        # Gather per class
-        pruned_preds = []
-        for c in class_indices.numpy():
-            class_scores = scores[:, c]
-            score_mask = class_scores > score_threshold
-            filtered_scores = tf.boolean_mask(class_scores, score_mask)
-            filtered_boxes = tf.boolean_mask(decoded_boxes, score_mask)
-            indices = tf.where(score_mask)[:,0]
+  # add N dim
+  input_data = np.expand_dims(img, axis=0)
 
-            # For easier handling, stack info by columns: [score, index, class_id, box4]
-            class_ids = tf.fill(tf.shape(filtered_scores), c)
+  if floating_model:
+    input_data = (np.float32(input_data) - input_mean) / input_std
 
-            # Stack results for NMS: boxes, scores only needed for NMS
-            if tf.shape(filtered_scores)[0] > 0:
-                pruned_preds.append(
-                    tf.stack([
-                        filtered_scores,
-                        tf.cast(indices, tf.float32),
-                        tf.cast(class_ids, tf.float32),
-                        filtered_boxes[:,0],
-                        filtered_boxes[:,1],
-                        filtered_boxes[:,2],
-                        filtered_boxes[:,3]
-                    ], axis=1)
-                )
-        if len(pruned_preds) == 0:
-            # No predictions found
-            return tf.constant([], shape=(0,7), dtype=tf.float32)
+  interpreter.set_tensor(input_details[0]['index'], input_data)
 
-        pruned_predictions = tf.concat(pruned_preds, axis=0)
+  start_time = time.time()
+  interpreter.invoke()
+  finish_time = time.time()
+  print("time spent:", ((finish_time - start_time) * 1000))
 
-        # Now apply NMS per class with iou_threshold=0.5 and max_boxes=10
-        final_predictions = []
-        iou_threshold = 0.5
-        max_boxes = 10
+  box_priors = []
+  load_box_priors(box_prior_file)
+  labels = load_labels(label_file)
 
-        # We need to apply NMS per class
-        unique_classes = tf.unique(pruned_predictions[:,2])[0]
-        for c in unique_classes.numpy():
-            class_mask = pruned_predictions[:,2] == c
-            class_preds = tf.boolean_mask(pruned_predictions, class_mask)
+  p_index = 0
+  o_index = 1
+  if alt_output_order:
+    p_index = 1
+    o_index = 0
 
-            # Extract boxes and scores for TF NMS
-            boxes_tf = class_preds[:,3:7]  # ymin,xmin,ymax,xmax
-            scores_tf = class_preds[:,0]
+  predictions = np.squeeze( \
+                  interpreter.get_tensor(output_details[p_index]['index']))
+  output_classes = np.squeeze( \
+                     interpreter.get_tensor(output_details[o_index]['index']))
+  if not floating_model:
+    p_scale, p_mean = output_details[p_index]['quantization']
+    o_scale, o_mean = output_details[o_index]['quantization']
 
-            # tf.image.non_max_suppression expects boxes in [ymin,xmin,ymax,xmax]
-            selected_indices = tf.image.non_max_suppression(
-                boxes=boxes_tf,
-                scores=scores_tf,
-                max_output_size=max_boxes,
-                iou_threshold=iou_threshold,
-                name=None
-            )
+    predictions = (predictions - p_mean * 1.0) * p_scale
+    output_classes = (output_classes - o_mean * 1.0) * o_scale
 
-            selected = tf.gather(class_preds, selected_indices)
-            final_predictions.append(selected)
+  decode_center_size_boxes(predictions)
 
-        if len(final_predictions) == 0:
-            return tf.constant([], shape=(0,7), dtype=tf.float32)
+  pruned_predictions = [[],]
+  for c in range(1, NUM_CLASSES):
+    pruned_predictions.append([])
+    for r in range(0, NUM_RESULTS):
+      score = 1. / (1. + math.exp(-output_classes[r][c]))
+      if score > 0.01:
+        rect = (predictions[r][1] * width, predictions[r][0] * width, \
+                predictions[r][3] * width, predictions[r][2] * width)
 
-        final_predictions = tf.concat(final_predictions, axis=0)
+        pruned_predictions[c].append((output_classes[r][c], r, labels[c], rect))
 
-        # Sort final predictions by score descending, limit to max_boxes overall
-        max_final_boxes = max_boxes
-        sorted_indices = tf.argsort(final_predictions[:,0], direction='DESCENDING')
-        sorted_final = tf.gather(final_predictions, sorted_indices)[:max_final_boxes]
+  final_predictions = []
+  for c in range(1, NUM_CLASSES):
+    predictions_for_class = pruned_predictions[c]
+    suppressed_predictions = nms(predictions_for_class, 0.5, max_boxes)
+    final_predictions = final_predictions +  suppressed_predictions
 
-        # Return tensor with columns: score, index, class_id, ymin, xmin, ymax, xmax
-        return sorted_final
+  if show_image:
+    fig, ax = plt.subplots(1)
 
-    @staticmethod
-    def decode_center_size_boxes(locations, ycenter_prior, xcenter_prior, h_prior, w_prior):
-        """
-        locations: [NUM_RESULTS,4] offsets predicted by the model: (ycenter_off, xcenter_off, h_off, w_off)
-        The decode logic converts from center/size param to box coordinates: ymin,xmin,ymax,xmax.
-        Using formulas from original code.
+  final_predictions = sorted(final_predictions, reverse=True)[:max_boxes]
+  for e in final_predictions:
+    score = 100. / (1. + math.exp(-e[0]))
+    score_string = '{0:2.0f}%'.format(score)
+    print(score_string, e[2], e[3])
+    if score < min_score:
+      break
+    left, top, right, bottom = e[3]
+    rect = patches.Rectangle((left, top), (right - left), (bottom - top), \
+             linewidth=1, edgecolor='r', facecolor='none')
 
-        The box_priors vectors are shape [NUM_RESULTS], for ycenter, xcenter, h, w respectively.
+    if show_image:
+      # Add the patch to the Axes
+      ax.add_patch(rect)
+      ax.text(left, top, e[2]+': '+score_string, fontsize=6,
+              bbox=dict(facecolor='y', edgecolor='y', alpha=0.5))
 
-        Returns: tensor [NUM_RESULTS,4] => [ymin, xmin, ymax, xmax]
-        """
-
-        # Compute ycenter, xcenter, h, w decoded
-        ycenter = locations[:,0] / Y_SCALE * h_prior + ycenter_prior
-        xcenter = locations[:,1] / X_SCALE * w_prior + xcenter_prior
-
-        h = tf.exp(locations[:,2] / H_SCALE) * h_prior
-        w = tf.exp(locations[:,3] / W_SCALE) * w_prior
-
-        ymin = ycenter - h / 2.0
-        xmin = xcenter - w / 2.0
-        ymax = ycenter + h / 2.0
-        xmax = xcenter + w / 2.0
-
-        decoded = tf.stack([ymin, xmin, ymax, xmax], axis=1)
-        return decoded
-
-
-def my_model_function():
-    # Instantiate without weights (weights are inside TFLite model in original case)
-    return MyModel()
-
-
-def GetInput():
-    # Returns a dummy random input tensor simulating a uint8 RGB image resized to 192x192 with batch 1
-    # Shape inferred from original script where input image was resized to (width, height).
-    # The original example uses mobilenet_v1_0.5_192.tflite (192x192 input)
-    return tf.random.uniform(shape=(1, 192, 192, 3), minval=0, maxval=255, dtype=tf.uint8)
-
+  if show_image:
+    ax.imshow(img)
+    plt.title(model_file)
+    plt.show()

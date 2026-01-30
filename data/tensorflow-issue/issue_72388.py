@@ -1,42 +1,126 @@
-# tf.random.uniform((B, 28, 28), dtype=tf.float32) ← input shape inferred from mnist dataset (grayscale 28x28 images)
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
+import json
+import os
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Flatten input from (28,28) to (784,)
-        self.flatten = tf.keras.layers.Flatten(input_shape=(28, 28))
-        # Dense layer 128 units + ReLU
-        self.dense1 = tf.keras.layers.Dense(128, activation="relu")
-        # Note: The original bug report mentioned Dropout causing issues in multi-worker or ray context,
-        # so it's commented out here to avoid the reported reduction error.
-        # self.dropout = tf.keras.layers.Dropout(0.2)
-        # Output layer with 10 logits (for 10 classes)
-        self.dense2 = tf.keras.layers.Dense(10)
 
-    def call(self, inputs, training=False):
-        x = self.flatten(inputs)
-        x = self.dense1(x)
-        # Dropout commented out due to known issues from the report
-        # if training:
-        #     x = self.dropout(x, training=training)
-        x = self.dense2(x)
-        return x
+if bool(int(os.environ.get("TF_USE_LEGACY_KERAS", "0"))):
+    import tf_keras as keras
+else:
+    import tensorflow.keras as keras
 
-def my_model_function():
-    # Return an instance of MyModel
-    model = MyModel()
 
-    # Compile the model with a suitable optimizer and loss, as per the repro
-    loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
-    model.compile(optimizer="adam", loss=loss_fn, metrics=["accuracy"])
+print("TensorFlow version:", tf.__version__)
 
-    return model
 
-def GetInput():
-    # Return a random float32 tensor of shape (batch_size, 28, 28)
-    # Batch size chosen as 32 (arbitrary typical batch size)
-    batch_size = 32
-    return tf.random.uniform((batch_size, 28, 28), dtype=tf.float32)
+mnist = keras.datasets.mnist
 
+
+def get_address_and_port():
+    return "127.0.0.1", find_free_port()
+
+
+def find_free_port():
+    import socket
+    from contextlib import closing
+
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+        s.bind(("", 0))
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        return s.getsockname()[1]
+
+
+def _setup_tensorflow_environment(worker_addresses, index: int):
+    """Set up distributed Tensorflow training information.
+    This function should be called on each worker.
+    Args:
+        worker_addresses: Addresses of all the workers.
+        index: Index (i.e. world rank) of the current worker.
+    """
+    config = {
+        "cluster": {"worker": worker_addresses},
+        "task": {"type": "worker", "index": index},
+    }
+    os.environ["TF_CONFIG"] = json.dumps(config)
+
+
+def train_fn(worker_addresses=["127.0.0.1:12345"], index=0):
+    _setup_tensorflow_environment(worker_addresses, index)
+
+    (x_train, y_train), (x_test, y_test) = mnist.load_data()
+    x_train, x_test = x_train / 255.0, x_test / 255.0
+
+    strategy = tf.distribute.MultiWorkerMirroredStrategy()
+    with strategy.scope():
+        model = keras.models.Sequential(
+            [
+                keras.layers.Flatten(input_shape=(28, 28)),
+                keras.layers.Dense(128, activation="relu"),
+                # NOTE: This errors for some reason when running with either MP or ray
+                keras.layers.Dropout(0.2),
+                keras.layers.Dense(10),
+            ]
+        )
+        loss_fn = keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+        model.compile(optimizer="adam", loss=loss_fn, metrics=["accuracy"])
+
+    predictions = model(x_train[:1]).numpy()
+    predictions
+
+    tf.nn.softmax(predictions).numpy()
+
+    loss_fn(y_train[:1], predictions).numpy()
+
+    model.fit(x_train, y_train, epochs=5)
+
+    model.evaluate(x_test, y_test, verbose=2)
+
+    probability_model = keras.Sequential([model, keras.layers.Softmax()])
+
+    probability_model(x_test[:5])
+
+
+def get_url():
+    address, port = get_address_and_port()
+    return f"{address}:{port}"
+
+
+def run_with_ray():
+    import ray
+
+    train_fn_task = ray.remote(train_fn)
+
+    num_workers = 2
+    worker_addresses = [get_url() for _ in range(num_workers)]
+
+    ray.get([train_fn_task.remote(worker_addresses, i) for i in range(num_workers)])
+
+
+def run_with_mp():
+    from multiprocessing import Process
+
+    num_workers = 2
+    worker_addresses = [get_url() for _ in range(num_workers)]
+
+    p1 = Process(target=train_fn, args=(worker_addresses, 0))
+    p2 = Process(target=train_fn, args=(worker_addresses, 1))
+
+    p1.start()
+    p2.start()
+
+    p1.join()
+    p2.join()
+
+
+if __name__ == "__main__":
+    import sys
+
+    runner = sys.argv[1]
+    if runner == "vanilla":
+        train_fn()
+    elif runner == "ray":
+        run_with_ray()
+    elif runner == "mp":
+        run_with_mp()

@@ -1,23 +1,15 @@
-# torch.rand(1, 3, 224, 224, dtype=torch.float32)  # Example input shape from CI test scenarios
 import torch
-from torch import nn
+from textwrap import dedent
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Problematic __import__ usage from the example
-        self.fake_mod = __import__("time")  # Triggers packaging error/warning
-        # Dummy layers to form a valid model
-        self.conv = nn.Conv2d(3, 64, kernel_size=3, padding=1)
-    
-    def forward(self, x):
-        return self.conv(x)
+src = dedent(
+                """\
+                fake_name = "time"
+                __import__(fake_name) # need to throw error
 
-def my_model_function():
-    # Returns model instance with problematic __import__ in initialization
-    return MyModel()
+                def foo(mod_name: str):
+                    __import__(mod_name) # need to not throw error? this PR will flag this as an error .-.
+                """
+            )
 
-def GetInput():
-    # Matches expected input shape for the model's convolution layer
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
-
+with torch.package.PackageExporter("output", verbose=False) as e:
+    e.save_source_string('broken',  src)

@@ -1,18 +1,14 @@
-# torch.rand(1, 8, 8, 8, dtype=torch.float32)
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-    
-    def forward(self, x):
-        x = torch.sigmoid(x)
-        return torch.mean(x, dim=[-1, -2], keepdim=True)
+def fn(x):
+    x = torch.ops.aten.sigmoid.default(x)
+    return torch.ops.aten.mean.dim(x, [-1, -2], True)
 
-def my_model_function():
-    return MyModel()
+x = torch.randn((1, 8, 8, 8))
+opt_fn = torch._dynamo.optimize("inductor")(fn)
+opt_fn(x)
 
-def GetInput():
-    return torch.randn(1, 8, 8, 8, dtype=torch.float32)
-
+real_out = fn(x)
+compiled_out = opt_fn(x)
+tol = 0.0001
+print(torch.allclose(real_out, compiled_out, atol=tol, rtol=tol))

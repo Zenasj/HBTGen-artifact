@@ -1,67 +1,99 @@
-# tf.random.uniform((B, 512, 512, 1), dtype=tf.float32)
-import tensorflow as tf
-from tensorflow.keras import layers, Model
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
-# Based on the issue, the input shape is grayscale images resized to 512x512.
-# The model is a CNN with Conv2D layers and Dense layers to classify 7 classes.
-# The error was due to OOM on large inputs (512x512), typically caused by large feature maps or 
-# flattening huge maps before dense layers. 
-# So we implement the model as described but in a tf.keras.Model subclass format.
-# We'll add MaxPooling to reduce spatial size and use standard 'same' padding.
-# Assume float32 input.
+import numpy as np
+import matplotlib.pyplot as plt
+from keras.preprocessing.image import ImageDataGenerator
+from sklearn.utils import shuffle
+from sklearn.cross_validation import train_test_split
+from keras import backend as K
+#K.set_image_dim_ordering('th')
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Conv2D layers as in original Sequential model:
-        # 32 filters, 3x3, relu, padding='same'
-        self.conv1 = layers.Conv2D(32, (3,3), padding='same', activation='relu', input_shape=(512,512,1))
-        self.conv2 = layers.Conv2D(32, (3,3), padding='valid', activation='relu')  # original had conv2d(32, 3,3) - assuming valid default
-        self.pool1 = layers.MaxPooling2D((2,2))
-        self.drop1 = layers.Dropout(0.5)
-        
-        self.conv3 = layers.Conv2D(64, (3,3), padding='valid', activation='relu')
-        self.pool2 = layers.MaxPooling2D((2,2))
-        self.drop2 = layers.Dropout(0.5)
-        
-        self.flatten = layers.Flatten()
-        self.dense1 = layers.Dense(64, activation='relu')
-        self.drop3 = layers.Dropout(0.5)
-        
-        self.dense_out = layers.Dense(7, activation='softmax')
-        
-    def call(self, inputs, training=False):
-        x = self.conv1(inputs)
-        x = self.conv2(x)
-        x = self.pool1(x)
-        x = self.drop1(x, training=training)
-        
-        x = self.conv3(x)
-        x = self.pool2(x)
-        x = self.drop2(x, training=training)
-        
-        x = self.flatten(x)
-        x = self.dense1(x)
-        x = self.drop3(x, training=training)
-        out = self.dense_out(x)
-        return out
+from keras.utils import np_utils
+from keras.models import Sequential
+from keras.layers.core import Dense, Dropout, Activation, Flatten
+from keras.layers.convolutional import Conv2D, MaxPooling2D
+from keras.optimizers import SGD,RMSprop,adam
 
-def my_model_function():
-    # Return an instance of MyModel with compiled optimizer and loss as per original:
-    model = MyModel()
-    model.compile(loss='categorical_crossentropy',
-                  optimizer='rmsprop',
-                  metrics=['accuracy'])
-    return model
 
-def GetInput():
-    # Return a random input tensor matching the input shape (B, 512, 512, 1).
-    # Use batch size 32 as used in original generator.
-    # dtype float32 normalized [0,1] as per rescale=1./255.
-    batch_size = 32
-    height = 512
-    width = 512
-    channels = 1
-    # Random uniform floats simulating normalized grayscale images.
-    return tf.random.uniform((batch_size, height, width, channels), dtype=tf.float32)
+train_datagen = ImageDataGenerator(
+        rescale=1./255,
+        shear_range=0.2,
+        zoom_range=0.2,
+        horizontal_flip=True)
+#
+valid_datagen = ImageDataGenerator(
+        rescale=1./255,
+        shear_range=0.2,
+        zoom_range=0.2,
+        horizontal_flip=True)
+#
+test_datagen = ImageDataGenerator(rescale=1./255)
+#
+train_generator = train_datagen.flow_from_directory(
+    directory=r"E:\databasetest\train",
+    target_size=(512, 512),
+    color_mode="grayscale",
+    batch_size=32,
+    class_mode="categorical",
+    shuffle=True,
+    seed=42
+)
+#
+valid_generator = valid_datagen.flow_from_directory(
+   directory=r"E:\databasetest\validation",
+    target_size=(512, 512),
+    color_mode="grayscale",
+    batch_size=32,
+    class_mode="categorical",
+    shuffle=True,
+    seed=42
+)
+#
+test_generator = test_datagen.flow_from_directory(
+    directory=r"E:\databasetest\test",
+    target_size=(512, 512),
+    color_mode="grayscale",
+    batch_size=16,
+    class_mode=None,
+    shuffle=False,
+    seed=42
+)
+#
+## neural network model
+model = Sequential()
+model.add(Conv2D(32, (3,3),border_mode='same', input_shape = (512, 512, 1), activation = 'relu'))
+model.add(Activation('relu'))
+model.add(Conv2D(32, 3, 3))
+model.add(Activation('relu'))
+model.add(MaxPooling2D(pool_size=(2, 2)))
+model.add(Dropout(0.5))
 
+model.add(Conv2D(64, 3, 3))
+model.add(Activation('relu'))
+#model.add(Convolution2D(64, 3, 3))
+#model.add(Activation('relu'))
+model.add(MaxPooling2D(pool_size=(2, 2)))
+model.add(Dropout(0.5))
+
+model.add(Flatten())
+model.add(Dense(64))
+model.add(Activation('relu'))
+model.add(Dropout(0.5))
+model.add(Dense(7))
+model.add(Activation('softmax'))
+
+model.summary()
+
+model.compile(loss = 'categorical_crossentropy',
+              optimizer = 'rmsprop',
+              metrics = ['accuracy'])
+STEP_SIZE_TRAIN=train_generator.n//train_generator.batch_size
+STEP_SIZE_VALID=valid_generator.n//valid_generator.batch_size
+model.fit_generator(generator=train_generator,
+                    steps_per_epoch=STEP_SIZE_TRAIN,
+                    validation_data=valid_generator,
+                    validation_steps=STEP_SIZE_VALID,
+                    epochs=10
+)

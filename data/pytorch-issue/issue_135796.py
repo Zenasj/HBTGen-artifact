@@ -1,28 +1,28 @@
-# torch.rand(1, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
+import torch.nn as nn
 
 import torch
-from torch import nn
+from triton.testing import do_bench
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
+torch.set_default_device("cuda")
+
+def f(x, y):
+    return x.repeat([2])
+
+x = torch.randn(20)
+torch._dynamo.mark_dynamic(x, 0)
+so_path = torch._export.aot_compile(f, (x, True))
+fn = torch._export.aot_load(so_path, "cuda")
+out = fn(torch.randn(40), True) 
+assert out.shape[0] == 80 # Returns 40(!) instead of 80
+
+class MyModule(torch.nn.Module):
     def forward(self, x):
         return x.repeat([2])
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    x = torch.randn(20)
-    torch._dynamo.mark_dynamic(x, 0)
-    return x
-
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
-# assert output.shape[0] == 40  # The input tensor is repeated, so the output should be twice the size
-
+x = torch.randn(20)
+torch._dynamo.mark_dynamic(x, 0)
+ep = torch.export.export(MyModule(), (x,))
+so_path =  torch._inductor.aoti_compile_and_package(ep)
+fn = torch._inductor.aoti_load_package(so_path)
+out = fn(torch.randn(40), True) 
+assert out.shape[0] == 80 # Returns 40(!) instead of 80

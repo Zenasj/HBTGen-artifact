@@ -1,22 +1,32 @@
-# torch.rand(4, 10, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
+import torch.nn as nn
 
 import torch
 from torch import nn
-from torch.nn.utils.parametrizations import spectral_norm
+from torch.nn.utils import spectral_norm as sn1
+from torch.nn.utils.parametrizations import spectral_norm as sn2
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.discriminator = spectral_norm(nn.Linear(10, 1))
 
-    def forward(self, x):
-        return self.discriminator(x)
+def run_with_spectral(spectral):
+    discriminator = spectral(nn.Linear(10, 1))
+    optim = torch.optim.Adam(discriminator.parameters())
+    loss = nn.L1Loss()
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+    X = torch.ones(4, 10)
+    real = torch.ones(4, 1)
+    fake = torch.zeros(4, 1)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(4, 10, dtype=torch.float32)
+    optim.zero_grad()
+    generated = torch.rand(4, 10)
 
+    loss_real = loss(discriminator(X), real)
+    loss_fake = loss(discriminator(generated), fake)
+
+    l = loss_real + loss_fake
+
+    l.backward()
+    optim.step()
+
+
+if __name__ == "__main__":
+    run_with_spectral(sn1)
+    run_with_spectral(sn2)

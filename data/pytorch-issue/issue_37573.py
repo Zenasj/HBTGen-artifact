@@ -1,24 +1,23 @@
-# torch.rand(1, 3, dtype=torch.float32)  # Dummy input shape (1,3) to satisfy structure requirements
-import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.x = nn.Parameter(torch.randn(3))  # Parameters from original repro code
-        self.y = nn.Parameter(torch.randn(3))
-        self.z = nn.Parameter(torch.randn(3))
-        
-    def forward(self, input):
-        # Dummy forward pass to fulfill module requirements
-        # Actual computations in original issue are parameter-based, not input-dependent
-        return input  # Pass-through for compatibility
+import torch as th
 
-def my_model_function():
-    # Returns model instance with parameters from original repro scenario
-    return MyModel()
+th.autograd.set_detect_anomaly(True)
 
-def GetInput():
-    # Returns dummy input matching required shape (1,3)
-    return torch.rand(1, 3, dtype=torch.float32)
+x = th.nn.Parameter(th.randn(3))
+y = th.nn.Parameter(th.randn(3))
+z = th.nn.Parameter(th.randn(3))
 
+optim_a = th.optim.Adam([x, y], 1e-3)
+optim_b = th.optim.Adam([y, z], 1e-3)
+
+loss_a = ((x+y)**2).sum()
+
+loss_b = (y**2).sum()
+#loss_b = ((y+z)**2).sum() # Oddly, if you compute this instead, there is no inplace error.
+
+loss_a.backward(retain_graph=True)
+optim_a.step()
+
+# If you move the computation of `loss_b` down here instead, there is also no inplace error.
+loss_b.backward()

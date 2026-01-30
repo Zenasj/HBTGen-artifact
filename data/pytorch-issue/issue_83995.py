@@ -1,0 +1,1 @@
+TORCH_INTERNAL_ASSERT(dst.nbytes() >= (dst.storage_offset() * dst.element_size()));

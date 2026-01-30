@@ -1,29 +1,58 @@
-# torch.rand(B, 512, dtype=torch.long)  # Input shape: batch_size x sequence_length
+import torch.nn as nn
+
+from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
+from srcnew.utils.tokenizerT5 import get_default_tokenizer, tokenizer_T5_special_tokens
 import torch
-from torch import nn
+import os
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Mimicking Codet5-base encoder structure based on common Seq2SeqLM patterns
-        self.embedding = nn.Embedding(30522, 768)  # Vocabulary size and hidden dimension
-        self.encoder_layers = nn.ModuleList([
-            nn.TransformerEncoderLayer(d_model=768, nhead=12) for _ in range(12)
-        ])
+torch.backends.cudnn.enabled = False
+os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# device = torch.device("cpu")
+# 模型和分词器路径
+model_path = "/home/liuwenlong/KKCMG/RACE/saved_model/codet5/chronicle/checkpoint-best-bleu/pytorch_model.bin"
+
+
+encoder, tokenizer = None, None
+
+def load_encoder(model_name="Salesforce/codet5-base", model_path=None, special_tokens=None):
+    # 加载分词器和模型
+    tokenizer = get_default_tokenizer(model_name=model_name, special_tokens=special_tokens)
+    model = AutoModelForSeq2SeqLM.from_pretrained(model_name).to(device)
+    model.resize_token_embeddings(len(tokenizer))
     
-    def forward(self, input_ids):
-        x = self.embedding(input_ids)
-        for layer in self.encoder_layers:
-            x = layer(x)
-        return x  # Return last_hidden_state as in HuggingFace's BaseModelOutput
+    # 加载模型权重
+    if model_path:
+        model.load_state_dict(torch.load(model_path))
+    
+    
+    return model.get_encoder(), tokenizer
 
-def my_model_function():
-    model = MyModel()
-    # Load weights with CPU mapping (uncomment and provide path when using actual model)
-    # model.load_state_dict(torch.load('/path/to/pytorch_model.bin', map_location='cpu'))
-    return model.to('cpu')  # Explicitly ensure model is on CPU
+def get_hidden_representation(encoder, tokenizer, input_text):
+    # 准备输入
+    # inputs = tokenizer(input_text, return_tensors="pt").to(device)
+    inputs = tokenizer(input_text, return_tensors="pt", max_length=512, truncation=True).to(device)
+    
+    # 获取编码器输出
+    with torch.no_grad():
+        encoder_outputs = encoder(**inputs)
+        text_vector = encoder_outputs.last_hidden_state  # (batch_size, sequence_length, hidden_size)
+    
+    # 取最后一个序列的 hidden_size
+    last_hidden = text_vector[0][0]
+    # print(torch.cuda.memory_summary(device=device, abbreviated=True))
+    torch.cuda.empty_cache()
+    return text_vector, last_hidden
 
-def GetInput():
-    # Generate random input_ids tensor matching expected input dimensions
-    return torch.randint(0, 30522, (1, 512), dtype=torch.long)
-
+def get_batch_hidden_representation(encoder, tokenizer, input_text_list):
+    # 准备输入
+    inputs = tokenizer(input_text_list, return_tensors="pt", padding=True, truncation=True).to(device)
+    
+    # 获取编码器输出
+    with torch.no_grad():
+        encoder_outputs = encoder(**inputs)
+        text_vector = encoder_outputs.last_hidden_state  # (batch_size, sequence_length, hidden_size)
+    
+    # 取最后一个序列的 hidden_size
+    last_hidden = text_vector[:, 0, :]
+    return text_vector, last_hidden

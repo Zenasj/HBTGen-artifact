@@ -1,26 +1,31 @@
-# tf.random.uniform((1, 1), dtype=tf.float32)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
+import numpy as np
 import tensorflow as tf
+import platform
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Single Dense layer with 1 output unit and linear activation (as in the original example)
-        self.dense = tf.keras.layers.Dense(1, activation="linear")
+print()
+print(f"PLATFORM:\n---------\n{platform.platform()}")
+print("\nTENSORFLOW:\n----------")
+for a in tf.version.__all__:
+    print(f"{a}: {getattr(tf.version, a)}")
 
-    def call(self, inputs):
-        # Forward pass through the dense layer
-        return self.dense(inputs)
+print(f"\nNUMPY:\n-----\n{np.version.version}")
 
-def my_model_function():
-    # Return an instance of MyModel, compiled the same way as original example
-    model = MyModel()
-    # As in the original code, "sgd" optimizer and "mse" loss were used on compiling
-    model.compile(optimizer="sgd", loss="mse")
-    return model
+print(f"\nPYTHON:\n-------\n{sys.version}\n")
 
-def GetInput():
-    # Original example used shape (1,1) random uniform input
-    # Using tf.float32 dtype (TensorFlow default)
-    return tf.random.uniform((1, 1), dtype=tf.float32)
+np.random.seed(0)
+tf.random.set_seed(0)
 
+
+model = tf.keras.models.Sequential([
+    tf.keras.layers.Dense(1, activation="linear")
+])
+model.compile(optimizer="sgd", loss="mse")
+
+x = np.random.uniform(size=(1,1))
+y = np.random.uniform(size=(1,))
+model.fit(x, y, epochs=1)

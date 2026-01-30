@@ -1,63 +1,78 @@
-import torch
-import torch.nn as nn
+py
+@hl.generator(name="kernel")
+class Kernel:
+    in_ptr0 = hl.InputBuffer(hl.Float(32), 1)
+    out_ptr3 = hl.OutputBuffer(hl.Float(32), 2)
 
-# torch.rand(B, C, H, W, dtype=...) ← Add a comment line at the top with the inferred input shape
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
+    def generate(g):
+        in_ptr0 = g.in_ptr0
+        out_ptr3 = g.out_ptr3
+        xindex = hl.Var('xindex')
+        rindex = hl.Var('rindex')
+        r1 = rindex
+        x0 = xindex
+        idom = hl.RDom([hl.Range(0, 16), hl.Range(0, 32)])
+        odom = hl.RDom([hl.Range(0, 16)])
+        rdom = hl.RDom([hl.Range(0, 32)])
+        xindex_idom = idom.x
+        xindex_odom = odom.x
+        rindex_idom = idom.y
+        r1_idom = rindex_idom
+        x0_idom = xindex_idom
+        x0_odom = xindex_odom
+        tmp0 = hl.Func('tmp0')
+        tmp0[rindex, xindex] = in_ptr0[r1 + (32*x0)]
+        tmp1 = hl.Func('tmp1')
+        tmp1[xindex] = hl.maximum(rdom, tmp0[rdom, xindex])
+        tmp2 = hl.Func('tmp2')
+        tmp2[rindex, xindex] = tmp0[rindex, xindex] - tmp1[xindex]
+        tmp3 = hl.Func('tmp3')
+        tmp3[rindex, xindex] = hl.fast_exp(hl.cast(hl.Float(32), tmp2[rindex, xindex])) if tmp2.type().bits() <= 32 else hl.exp(tmp2[rindex, xindex])
+        tmp4 = hl.Func('tmp4')
+        tmp4[xindex] = hl.sum(rdom, tmp3[rdom, xindex])
+        tmp5 = hl.Func('tmp5')
+        tmp5[rindex, xindex] = tmp3[rindex, xindex] / tmp4[xindex]
+        out_ptr3_i0 = hl.Var('out_ptr3_i0')
+        out_ptr3_i1 = hl.Var('out_ptr3_i1')
+        out_ptr3[out_ptr3_i0, out_ptr3_i1] = hl.cast(out_ptr3.type(), tmp5[out_ptr3_i0, out_ptr3_i1])
 
-    def forward(self, x):
-        # Reshape the input to (B, C, H*W)
-        B, C, H, W = x.shape
-        x = x.view(B, C, H * W)
+        assert g.using_autoscheduler()
+        in_ptr0.set_estimates([hl.Range(0, 512)])
+        out_ptr3.set_estimates([hl.Range(0, 32), hl.Range(0, 16)])
 
-        # Compute the maximum value along the last dimension
-        max_val = torch.max(x, dim=-1, keepdim=True)[0]
+py
+@hl.generator(name="kernel")
+class Kernel:
+    in_ptr0 = hl.InputBuffer(hl.Float(32), 2)
+    out_ptr3 = hl.OutputBuffer(hl.Float(32), 2)
 
-        # Subtract the maximum value from the input
-        x = x - max_val
+    def generate(g):
+        in_ptr0 = g.in_ptr0
+        out_ptr3 = g.out_ptr3
+        h0 = hl.Var('h0')
+        h1 = hl.Var('h1')
+        rdom = hl.RDom([hl.Range(0, 32)])
+        hr1 = rdom[0]
+        tmp0 = hl.Func('tmp0')
+        tmp0[h0, h1] = in_ptr0[h0, h1,]
+        tmp1 = hl.Func('tmp1')
+        tmp1[h1] = hl.maximum(rdom, tmp0[hr1, h1])
+        tmp2 = hl.Func('tmp2')
+        tmp2[h0, h1] = tmp0[h0, h1] - tmp1[h1]
+        tmp3 = hl.Func('tmp3')
+        tmp3[h0, h1] = hl.fast_exp(hl.cast(hl.Float(32), tmp2[h0, h1])) if tmp2.type().bits() <= 32 else hl.exp(tmp2[h0, h1])
+        tmp4 = hl.Func('tmp4')
+        tmp4[h1] = hl.sum(rdom, tmp3[hr1, h1])
+        tmp5 = hl.Func('tmp5')
+        tmp5[h0, h1] = tmp3[h0, h1] / tmp4[h1]
+        out_ptr3[h0, h1,] = hl.cast(hl.Float(32), tmp5[h0, h1])
 
-        # Apply the exponential function
-        x = torch.exp(x)
-
-        # Normalize the result
-        sum_exp = torch.sum(x, dim=-1, keepdim=True)
-        x = x / sum_exp
-
-        # Reshape back to (B, C, H, W)
-        x = x.view(B, C, H, W)
-
-        return x
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    B, C, H, W = 1, 32, 16, 32
-    return torch.rand(B, C, H, W, dtype=torch.float32)
-
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
-
-# The provided GitHub issue is about a change in the Halide backend for PyTorch, specifically related to dimension-based indexing. The issue does not contain a complete PyTorch model or any specific model structure. However, we can infer that the code is related to a transformation of input data and generating an output. 
-# Given the context, I will create a simple PyTorch model that mimics the operations described in the Halide code. The operations include:
-# 1. Reshaping the input.
-# 2. Computing the maximum value along a dimension.
-# 3. Subtracting the maximum value from the input.
-# 4. Applying the exponential function.
-# 5. Normalizing the result.
-# Here is the complete Python code file:
-# ### Explanation:
-# - **Input Shape**: The input shape is inferred to be `(B, C, H, W)`, where `B` is the batch size, `C` is the number of channels, and `H` and `W` are the height and width of the input tensor.
-# - **Model Operations**:
-#   - The input tensor is reshaped to `(B, C, H*W)` to facilitate the operations.
-#   - The maximum value along the last dimension is computed and subtracted from the input.
-#   - The exponential function is applied to the resulting tensor.
-#   - The tensor is normalized by dividing by the sum of the exponentials.
-#   - The tensor is reshaped back to `(B, C, H, W)` before returning the output.
-# - **GetInput Function**: Generates a random tensor with the shape `(1, 32, 16, 32)` and `dtype=torch.float32`.
-# This code should be ready to use with `torch.compile(MyModel())(GetInput())`.
+        assert g.using_autoscheduler()
+        in_ptr0.dim(0).set_min(0)
+        in_ptr0.dim(0).set_stride(1)
+        in_ptr0.dim(0).set_extent(32)
+        in_ptr0.dim(1).set_min(0)
+        in_ptr0.dim(1).set_stride(32)
+        in_ptr0.dim(1).set_extent(16)
+        in_ptr0.set_estimates([hl.Range(0, 32), hl.Range(0, 16)])
+        out_ptr3.set_estimates([hl.Range(0, 32), hl.Range(0, 16)])

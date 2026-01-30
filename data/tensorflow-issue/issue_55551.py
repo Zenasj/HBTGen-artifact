@@ -1,164 +1,227 @@
-# tf.random.uniform((BATCH_SIZE, IMG_SIZE, IMG_SIZE, 3), dtype=tf.float32) ← Input shape inferred from original model usage
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
+import numpy as np
+import os
 
 IMG_SIZE = 32
 NUM_CLASSES = 10
-NUM_FEATURES = 1 * 1 * 1280  # flattened feature size from MobileNetV2 base output
-BATCH_SIZE = 32  # batch size used in training and inference
+NUM_FEATURES = 1 * 1 * 1280
+BATCH_SIZE = 32
 
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
+class TransferLearningModel(tf.Module):
+
+    def __init__(self, learning_rate=0.01):
         """
-        This model fuses the base MobileNetV2 (feature extractor) with a small
-        head dense model for transfer learning classification.
+        Initializes a transfer learning model instance.
 
-        The base_model outputs feature maps of shape (None, 1, 1, 1280).
-        These are reshaped to (None, 1280) before feeding into the head_model.
-
-        This matches the functionality of the original TransferLearningModel tf.Module,
-        adapted into a single Keras.Model subclass for better composability and
-        easier TFLite conversion.
-
-        Assumptions:
-        - Input images are float32 normalized to [0,1].
-        - Head model uses two dense layers with relu and linear outputs.
-        - Output logits are raw, so softmax needs to be applied externally or in infer method.
+        Parameters:
+            learning_rate (float) : A learning rate for the optimzer.
         """
-        super().__init__()
-        # Load MobileNetV2 with imagenet weights, exclude top layers, fixed input shape
+
+        # - head model
+        # ? DEBATABLE IF THE INPUT SHAPE SHOULD BE DECLARED ON THE FIRST LAYER
+        self.head_model = tf.keras.Sequential([
+            tf.keras.layers.Dense(128, activation='relu', name='dense_1', input_shape=([NUM_FEATURES])),
+            tf.keras.layers.Dense(NUM_CLASSES, name='dense_2')])
+
+        # - base model
         self.base_model = tf.keras.applications.MobileNetV2(
             input_shape=(IMG_SIZE, IMG_SIZE, 3),
             alpha=1.0,
             include_top=False,
-            weights='imagenet'
-        )
-        # Freeze base model
-        self.base_model.trainable = False
+            weights='imagenet')
 
-        # Head model: two dense layers as classifier
-        self.head_model = tf.keras.Sequential([
-            tf.keras.layers.Dense(128, activation='relu', input_shape=(NUM_FEATURES,)),
-            tf.keras.layers.Dense(NUM_CLASSES)  # logits output
-        ])
+        # ? from_logits = True or False
+        # - loss function
+        self.loss_fn = tf.keras.losses.CategoricalCrossentropy(from_logits=True)
 
-    @tf.function(input_signature=[tf.TensorSpec([None, IMG_SIZE, IMG_SIZE, 3], tf.float32)])
-    def call(self, inputs):
+        # - optimizer
+        self.optimizer = tf.keras.optimizers.SGD(learning_rate=learning_rate)
+
+        self.head_model.compile(optimizer=self.optimizer,
+                                loss=self.loss_fn)
+
+    @tf.function(input_signature=[tf.TensorSpec([None, IMG_SIZE, IMG_SIZE, 3], tf.float32), ])
+    # * TESTED
+    def load(self, feature):
         """
-        Forward pass for inference or training.
+        Generates and loads bottleneck features from the given image batch.
 
         Parameters:
-            inputs: Input images tensor, shape (batch, 32, 32, 3), float32, normalized [0,1].
-
+            feature: A tensor of image feature batch to generate the bottleneck from.
         Returns:
-            Dictionary with key 'output' and softmax probabilities as the value,
-            shape (batch, NUM_CLASSES).
+            Map of the bottleneck.
         """
-        # MobileNetV2 preprocessing expects images in [-1,1].
-        x = tf.keras.applications.mobilenet_v2.preprocess_input(inputs * 255.0)
-        features = self.base_model(x, training=False)  # (batch,1,1,1280)
-        bottleneck = tf.reshape(features, (-1, NUM_FEATURES))  # flatten (batch,1280)
-        logits = self.head_model(bottleneck)  # (batch, NUM_CLASSES)
-        probs = tf.nn.softmax(logits)
-        return {'output': probs}
 
+        # - Preprocesses a tensor or Numpy array encoding a batch of images.
+        x = tf.keras.applications.mobilenet_v2.preprocess_input(
+            tf.multiply(feature, 255))
+
+        # - reshapes the base_model output to 1,1*1*1280(1 is image size downsampled five times
+        # - and 1280 is the number of features extracted)
+        base_model_output = self.base_model(x, training=False)
+        bottleneck = tf.reshape(
+            base_model_output, (-1, NUM_FEATURES))
+
+        return {'bottleneck': bottleneck}
+
+    # - passes the bottleneck features trought the head model
+    # * TESTED
     @tf.function(input_signature=[
         tf.TensorSpec([None, NUM_FEATURES], tf.float32),
-        tf.TensorSpec([None, NUM_CLASSES], tf.float32)
-    ])
-    def train_step(self, bottleneck, label):
+        tf.TensorSpec([None, NUM_CLASSES], tf.float32), ])
+    def train(self, bottleneck, label):
         """
-        Performs one training step using bottleneck features.
+        Runs one training step with the given bottleneck features and labels.
 
         Parameters:
-            bottleneck: Tensor of shape (batch, 1280), float32 bottleneck features.
-            label: One-hot labels tensor of shape (batch, 10), float32.
-
+            bottleneck: A tensor of bottleneck features generated from the base model.
+            label: A tensor of class labels for the given batch.
         Returns:
-            Dictionary with "loss" and gradients keyed by variable name.
+            Map of the training loss.
         """
+
         with tf.GradientTape() as tape:
             logits = self.head_model(bottleneck)
             prediction = tf.nn.softmax(logits)
-            # Use predefined categorical crossentropy loss
-            loss_fn = tf.keras.losses.CategoricalCrossentropy(from_logits=True)
-            loss = loss_fn(label, logits)
+
+            loss = self.head_model.loss(prediction, label)
+            # ? loss=self.loss_fn(prediction,label)
+
         gradients = tape.gradient(loss, self.head_model.trainable_variables)
-        # Use SGD optimizer with fixed learning rate like original
-        optimizer = tf.keras.optimizers.SGD(learning_rate=0.01)
-        optimizer.apply_gradients(zip(gradients, self.head_model.trainable_variables))
+
+        self.head_model.optimizer.apply_gradients(
+            zip(gradients, self.head_model.trainable_variables))
+        # ? self.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
 
         result = {"loss": loss}
-        for var, grad in zip(self.head_model.trainable_variables, gradients):
-            if grad is not None:
-                result[var.name] = grad
+        for grad in gradients:
+            result[grad.name] = grad
         return result
 
-    @tf.function(input_signature=[tf.TensorSpec(shape=[], dtype=tf.string)])
-    def save_head_weights(self, checkpoint_path: str):
+    # * TESTED
+    @tf.function(input_signature=[tf.TensorSpec([None, IMG_SIZE, IMG_SIZE, 3], tf.float32)])
+    def infer(self, image):
         """
-        Save head model weights to a checkpoint file.
+        Invokes an inference on the given image.
 
         Parameters:
-            checkpoint_path: string path filename.
-
+                feature: A tensor of image feature batch to invoke an inference on.
         Returns:
-            Dict with checkpoint_path for confirmation.
+                Map of the softmax output.
         """
-        tensor_names = [w.name for w in self.head_model.weights]
-        tensors_to_save = [w.read_value() for w in self.head_model.weights]
+        x = tf.keras.applications.mobilenet_v2.preprocess_input(
+            tf.multiply(image, 255))
+        bottleneck = tf.reshape(
+            self.base_model(x, training=False), (-1, NUM_FEATURES))
+        logits = self.head_model(bottleneck)
+        return {'output': tf.nn.softmax(logits)}
+
+    # * TESTED
+    @tf.function(input_signature=[tf.TensorSpec(shape=[], dtype=tf.string)])
+    def save(self, checkpoint_path: str):
+        """
+        Saves the trainable weights to the given checkpoint file.
+
+        Parameters:
+                checkpoint_path (String) : A file path to save the model.
+        Returns:
+                Map of the checkpoint file path.
+        """
+
+        tensor_names = [weight.name for weight in self.head_model.weights]
+        tensors_to_save = [weight.read_value() for weight in self.head_model.weights]
         tf.raw_ops.Save(
             filename=checkpoint_path,
             tensor_names=tensor_names,
             data=tensors_to_save,
             name='save')
+
         return {'checkpoint_path': checkpoint_path}
 
+    # * TESTED
     @tf.function(input_signature=[tf.TensorSpec(shape=[], dtype=tf.string)])
-    def restore_head_weights(self, checkpoint_path: str):
+    def restore(self, checkpoint_path):
         """
-        Restore head model weights from a checkpoint file.
+        Restores the serialized trainable weights from the given checkpoint file.
 
-        Parameters:
-            checkpoint_path: string path filename.
-
+        Paramaters:
+            checkpoint_path (String) : A path to a saved checkpoint file.
         Returns:
-            Dictionary of restored tensors keyed by their variable names.
+            Map of restored weights and biases.
         """
         restored_tensors = {}
         for tensor in self.head_model.weights:
-            restored = tf.raw_ops.Restore(
-                file_pattern=checkpoint_path,
-                tensor_name=tensor.name,
-                dt=tensor.dtype,
-                name='restore')
+            restored = tf.raw_ops.Restore(file_pattern=checkpoint_path,
+                                          tensor_name=tensor.name,
+                                          dt=tensor.dtype,
+                                          name='restore')
             tensor.assign(restored)
             restored_tensors[tensor.name] = restored
+
         return restored_tensors
 
+    # * TESTED
     @tf.function
-    def extract_head_weights(self):
+    def extract_weights(self):
         """
-        Extract trainable weights of the head model.
+        Extracts the traininable weights of the head model as a list of numpy arrays.
+
+        Paramaters:
 
         Returns:
-            Dictionary mapping variable names to their values.
+            Map of extracted weights and biases.
         """
-        weights_dict = {}
-        for weight in self.head_model.weights:
-            weights_dict[weight.name] = weight.read_value()
-        return weights_dict
+        tmp_dict = {}
+        tensor_names = [weight.name for weight in self.head_model.weights]
+        tensors_to_save = [weight.read_value() for weight in self.head_model.weights]
+        for index, layer in enumerate(tensors_to_save):
+            tmp_dict[tensor_names[index]] = layer
+
+        return tmp_dict
 
 
-def my_model_function():
-    # Returns an instance of MyModel with MobileNetV2 base + head
-    return MyModel()
+def convert_and_save(saved_model_dir='saved_model_new'):
+    """
+    Converts and saves the TFLite Transfer Learning model.
 
+    Parameters:
+        saved_model_dir: A directory path to save a converted model.
+    Returns:
+        NONE
+    """
+    transfer_learning_model = TransferLearningModel()
 
-def GetInput():
-    # Return a batch of random images with shape (BATCH_SIZE, IMG_SIZE, IMG_SIZE, 3),
-    # dtype float32 normalized in [0,1]
-    return tf.random.uniform(
-        (BATCH_SIZE, IMG_SIZE, IMG_SIZE, 3), minval=0.0, maxval=1.0, dtype=tf.float32)
+    tf.saved_model.save(
+        transfer_learning_model,
+        saved_model_dir,
+        signatures={
+            'load': transfer_learning_model.load.get_concrete_function(),
+            'train': transfer_learning_model.train.get_concrete_function(),
+            'infer': transfer_learning_model.infer.get_concrete_function(),
+            'save': transfer_learning_model.save.get_concrete_function(),
+            'restore': transfer_learning_model.restore.get_concrete_function(),
+            'extract': transfer_learning_model.extract_weights.get_concrete_function()
+        })
 
+    # Convert the model
+    converter = tf.lite.TFLiteConverter.from_saved_model(saved_model_dir)
+    converter.target_spec.supported_ops = [
+        tf.lite.OpsSet.TFLITE_BUILTINS,  # enable TensorFlow Lite ops.
+        tf.lite.OpsSet.SELECT_TF_OPS  # enable TensorFlow ops.
+    ]
+
+    converter.experimental_enable_resource_variables = True
+    tflite_model = converter.convert()
+
+    model_file_path = os.path.join('model.tflite')
+    with open(model_file_path, 'wb') as model_file:
+        model_file.write(tflite_model)
+
+if __name__ == '__main__':
+    model = TransferLearningModel()
+    convert_and_save()

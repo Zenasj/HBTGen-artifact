@@ -1,87 +1,98 @@
-# tf.random.uniform((B,)) ← Input shape is a batch of strings (text samples) as 1D tensors of dtype tf.string
+from tensorflow import keras
 
+epochs = 10
+history = model.fit( train_ds, validation_data=val_ds, epochs=epochs)
+
+import matplotlib.pyplot as plt
+import os
+import re
+import shutil
+import string
 import tensorflow as tf
 from tensorflow.keras import layers
+from tensorflow.keras import losses
 
-# Custom standardization function used for TextVectorization
+import matplotlib.pyplot as plt
+import os
+import re
+import shutil
+import string
+import tensorflow as tf
+
+from tensorflow.keras import layers
+from tensorflow.keras import losses
+
+url = "https://ai.stanford.edu/~amaas/data/sentiment/aclImdb_v1.tar.gz"
+
+dataset = tf.keras.utils.get_file("aclImdb_v1", url,
+                                    untar=True, cache_dir='.',
+                                    cache_subdir='')
+dataset_dir = os.path.join(os.path.dirname(dataset), 'aclImdb')
+train_dir = os.path.join(dataset_dir, 'train')
+remove_dir = os.path.join(train_dir, 'unsup')
+shutil.rmtree(remove_dir)
+
+batch_size = 32
+seed = 42
+raw_train_ds = tf.keras.utils.text_dataset_from_directory(
+    'aclImdb/train', 
+    batch_size=batch_size, 
+    validation_split=0.2, 
+    subset='training', 
+    seed=seed)
+raw_val_ds = tf.keras.utils.text_dataset_from_directory(
+    'aclImdb/train', 
+    batch_size=batch_size, 
+    validation_split=0.2, 
+    subset='validation', 
+    seed=seed)
+raw_test_ds = tf.keras.utils.text_dataset_from_directory(
+    'aclImdb/test', 
+    batch_size=batch_size)
 def custom_standardization(input_data):
-    import re
-    import string
-    lowercase = tf.strings.lower(input_data)
-    stripped_html = tf.strings.regex_replace(lowercase, '<br />', ' ')
-    return tf.strings.regex_replace(stripped_html,
-                                    '[%s]' % re.escape(string.punctuation),
-                                    '')
+  lowercase = tf.strings.lower(input_data)
+  stripped_html = tf.strings.regex_replace(lowercase, '<br />', ' ')
+  return tf.strings.regex_replace(stripped_html,
+                                  '[%s]' % re.escape(string.punctuation),
+                                  '')
+def vectorize_text(text, label):
+  text = tf.expand_dims(text, -1)
+  return vectorize_layer(text), label
 
-class MyModel(tf.keras.Model):
-    def __init__(self, max_features=10000, embedding_dim=16, sequence_length=250):
-        super().__init__()
-        # Text vectorization layer - converts raw text string to int sequences
-        self.vectorize_layer = layers.TextVectorization(
-            standardize=custom_standardization,
-            max_tokens=max_features,
-            output_mode='int',
-            output_sequence_length=sequence_length)
+max_features = 10000
+sequence_length = 250
 
-        # Embedding and classifier layers following the original sequential model structure
-        self.embedding = layers.Embedding(max_features + 1, embedding_dim)
-        self.dropout1 = layers.Dropout(0.2)
-        self.global_avg_pool = layers.GlobalAveragePooling1D()
-        self.dropout2 = layers.Dropout(0.2)
-        self.dense = layers.Dense(1)  # Output logits for binary classification
+vectorize_layer = layers.TextVectorization(
+    standardize=custom_standardization,
+    max_tokens=max_features,
+    output_mode='int',
+    output_sequence_length=sequence_length)
+train_text = raw_train_ds.map(lambda x, y: x)
+vectorize_layer.adapt(train_text)
+text_batch, label_batch = next(iter(raw_train_ds))
+first_review, first_label = text_batch[0], label_batch[0]
+train_ds = raw_train_ds.map(vectorize_text)
+val_ds = raw_val_ds.map(vectorize_text)
+test_ds = raw_test_ds.map(vectorize_text)
+AUTOTUNE = tf.data.AUTOTUNE
 
-        # Internal flag to check if vectorize_layer is adapted, since adapt must be called before use
-        self._adapted = False
+train_ds = train_ds.cache().prefetch(buffer_size=AUTOTUNE)
+val_ds = val_ds.cache().prefetch(buffer_size=AUTOTUNE)
+test_ds = test_ds.cache().prefetch(buffer_size=AUTOTUNE)
+embedding_dim = 16
+model = tf.keras.Sequential([
+  layers.Embedding(max_features + 1, embedding_dim),
+  layers.Dropout(0.2),
+  layers.GlobalAveragePooling1D(),
+  layers.Dropout(0.2),
+  layers.Dense(1)])
 
-    def adapt(self, text_dataset):
-        # Adapt the vectorization layer on a dataset consisting of text strings
-        self.vectorize_layer.adapt(text_dataset)
-        self._adapted = True
-
-    def call(self, inputs, training=False):
-        # inputs expected as batch of raw text strings: shape (batch_size,)
-        if not self._adapted:
-            raise RuntimeError("Vectorization layer is not adapted. Call adapt() before using the model.")
-
-        # Vectorize text input to integer sequence tokens
-        x = self.vectorize_layer(inputs)
-        x = self.embedding(x)
-        x = self.dropout1(x, training=training)
-        x = self.global_avg_pool(x)
-        x = self.dropout2(x, training=training)
-        x = self.dense(x)
-        return x
-
-
-def my_model_function():
-    # Instantiate MyModel with default parameters
-    model = MyModel()
-
-    # For demonstration, we mimic adapting the vectorize_layer on some dummy data
-    # In practice, call `model.adapt(train_text)` with real training text dataset (tf.data.Dataset)
-    sample_text = tf.data.Dataset.from_tensor_slices([
-        "This is a sample sentence.",
-        "TensorFlow is great for ML.",
-        "This text is for vectorization adapt step."
-    ])
-    model.adapt(sample_text)
-
-    # Compile the model similarly to the original example
-    model.compile(
-        loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
-        optimizer='adam',
-        metrics=[tf.keras.metrics.BinaryAccuracy(threshold=0.0)]
-    )
-    return model
-
-def GetInput():
-    # Return a batch of raw text samples as input tensor
-    # For example: batch size 4 of strings
-    sample_texts = [
-        "This movie was fantastic! I loved it.",
-        "Terrible movie. Waste of time.",
-        "I think it was okay, could be better.",
-        "An excellent film with great visuals!"
-    ]
-    return tf.constant(sample_texts, dtype=tf.string)
-
+model.summary()
+model.compile(loss=losses.BinaryCrossentropy(from_logits=True),
+              optimizer='adam',
+              metrics=tf.metrics.BinaryAccuracy(threshold=0.0))
+epochs = 10
+history = model.fit(
+    train_ds,
+    validation_data=val_ds,
+    epochs=epochs)

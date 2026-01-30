@@ -1,24 +1,48 @@
-# torch.rand(1, 16, 32, 32, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
+import torch.nn as nn
+import torch.nn.functional as F
 
 import torch
-import torch.nn as nn
+from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv_zeros = nn.Conv2d(16, 16, 3, padding=1, padding_mode='zeros')
-        self.conv_circular = nn.Conv2d(16, 16, 3, padding=1, padding_mode='circular')
+m = nn.Conv2d(1, 1, 1, 1, padding=1, padding_mode='circular')
+x = torch.rand(1, 1, 5, 5)
 
-    def forward(self, x):
-        out_zeros = self.conv_zeros(x)
-        out_circular = self.conv_circular(x)
-        return out_zeros, out_circular
+print(m(x).shape)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+expanded_padding = ((self.padding[1] + 1) // 2, self.padding[1] // 2,
+                                (self.padding[0] + 1) // 2, self.padding[0] // 2)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(1, 16, 32, 32, dtype=torch.float32)
+from torch import nn
 
+x = torch.rand(1, 16, 32, 32)
+
+filter_pzeros = nn.Conv2d(16, 16, 3, padding=1, padding_mode='zeros')
+filter_pcircular = nn.Conv2d(16, 16, 3, padding=1, padding_mode='circular')
+
+print(filter_pzeros(x).shape)
+print(filter_pcircular(x).shape)
+
+torch.Size([1, 16, 32, 32])
+torch.Size([1, 16, 30, 30])
+
+expanded_padding = ((self.padding[1] + 1) // 2, self.padding[1] // 2,
+                                (self.padding[0] + 1) // 2, self.padding[0] // 2)
+
+from torch.nn import functional as F
+
+x = torch.rand(1, 16, 32, 32)
+
+y_pconstant = F.pad(x, (1, 0, 1, 0), mode='constant')
+y_preplicate = F.pad(x, (1, 0, 1, 0), mode='replicate')
+y_preflect = F.pad(x, (1, 0, 1, 0), mode='reflect')
+y_pcircular = F.pad(x, (1, 0, 1, 0), mode='circular')
+
+print(y_pconstant.shape)
+print(y_preplicate.shape)
+print(y_preflect.shape)
+print(y_pcircular.shape)
+
+torch.Size([1, 16, 33, 33])
+torch.Size([1, 16, 33, 33])
+torch.Size([1, 16, 33, 33])
+torch.Size([1, 16, 32, 32])

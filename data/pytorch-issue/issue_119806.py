@@ -1,25 +1,19 @@
-# torch.rand(6, 192, 30, 96, dtype=torch.float32, device="cuda")
+import torch.nn as nn
+
+import time
 import torch
-from torch import nn
+from torch.utils.flop_counter import FlopCounterMode
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv_transpose = nn.ConvTranspose2d(
-            in_channels=192,
-            out_channels=384,
-            kernel_size=(2, 2),
-            stride=2
-        )
-    
-    def forward(self, x):
-        return self.conv_transpose(x)
 
-def my_model_function():
-    model = MyModel()
-    model.to("cuda")  # Matches device used in original issue's example
-    return model
+if __name__ == "__main__":
+    x = torch.rand(6, 192, 30, 96, device="cuda")
+    model = torch.nn.ConvTranspose2d(192, 384, (2, 2), stride=2).to("cuda")
 
-def GetInput():
-    return torch.rand(6, 192, 30, 96, dtype=torch.float32, device="cuda")
+    with FlopCounterMode(model):
+        start = time.time()
+        for i in range(500):
+            out = model(x)
+            out.sum().backward()
 
+        torch.cuda.synchronize()
+        print(f"Elapsed: {time.time() - start}")

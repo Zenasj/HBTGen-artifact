@@ -1,14 +1,14 @@
-# torch.rand(B, 150528, dtype=torch.float32)
-import torch
+from torch.ao.quantization.fuse_modules import fuse_modules
 import torch.nn as nn
 
-class MyModel(nn.Module):
+
+class M(nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
-        self.fc1 = nn.Linear(3 * 224 * 224, 64)  # Input shape 3x224x224 flattened
-        self.bn1 = nn.BatchNorm1d(64)
-        self.fc2 = nn.Linear(64, 64)
-        self.bn2 = nn.BatchNorm1d(64)
+        super(M, self).__init__()
+        self.fc1 = nn.Linear(3 * 224 * 224, 64)  # Linear layer with appropriate input and output dimensions
+        self.bn1 = nn.BatchNorm1d(64)  # Use BatchNorm1d for 1D input
+        self.fc2 = nn.Linear(64, 64)  # Linear layer with appropriate input and output dimensions
+        self.bn2 = nn.BatchNorm1d(64)  # Use BatchNorm1d for 1D input
 
     def forward(self, x):
         x = self.fc1(x)
@@ -17,9 +17,11 @@ class MyModel(nn.Module):
         x = self.bn2(x)
         return x
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    return torch.rand(1, 3 * 224 * 224)  # Batch size 1, input shape (150528,)
+m = M().eval()
 
+modules_to_fuse = ['fc1', 'bn1']
+
+print(m)
+fused_m = fuse_modules(m, modules_to_fuse)
+print(fused_m)

@@ -1,20 +1,9 @@
-# torch.rand(2, 7, dtype=torch.int32).cuda()
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, src):
-        # Replicate the destination tensor and its as_strided view
-        dst = torch.full((7, 2), -1, device=src.device, dtype=src.dtype)
-        dst_view = dst.as_strided((7, 2), (1, 2))  # stride (1,2) creates overlapping elements
-        src_t = src.t()  # transpose to 7x2
-        dst_view.copy_(src_t)  # perform copy with potential data race
-        return dst
+dst = torch.full([7, 2], -1).int().cuda()
+dst_with_bizarre_stride = torch.as_strided(dst, [7, 2], [1,2])
 
-def my_model_function():
-    return MyModel()
+src = torch.tensor([[1, 2, 3, 4, 5, 6, 7], [8, 9, 10, 11, 12, 13, 14]]).int().cuda()
+src_t = src.t()
 
-def GetInput():
-    # Generate a random input matching the original example's src tensor
-    return torch.randint(0, 15, (2, 7), dtype=torch.int32).cuda()
-
+dst_with_bizarre_stride.copy_(src_t)

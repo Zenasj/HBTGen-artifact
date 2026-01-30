@@ -1,32 +1,32 @@
-# tf.random.uniform((B, 3), dtype=tf.complex64) ← Based on example input shape (batch size arbitrary, width 3), complex64 dtype
+import math
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # This model replicates the BasicLayer from the issue:
-        # a simple learned complex64 weight vector of shape (3,)
-        self.w = self.add_weight(
-            name='w',
-            shape=(3,),
-            initializer=tf.keras.initializers.Zeros(),
-            dtype=tf.complex64,
-            trainable=True,
-        )
+class BasicLayer(tf.keras.layers.Layer):
+  def build(self, input_shape):
+    self.w = self.add_weight(name='w', shape=(3,),
+                             initializer=tf.keras.initializers.Zeros())
 
-    def call(self, inputs):
-        # Element-wise multiply inputs by the learned weight vector
-        return inputs * self.w
+  def call(self, inputs):
+    return inputs * self.w
 
-def my_model_function():
-    # Return an instance of MyModel with initialized weights
-    return MyModel()
+# Input/output data.
+x = tf.constant([[1. + 2.j, 2. + 3.j, 3. + 4.j]])
+y = x
 
-def GetInput():
-    # Generate a random complex64 input tensor with shape (batch_size, 3)
-    # Batch size is arbitrarily chosen here as 1, matching issue example
-    real = tf.random.uniform((1, 3), minval=-1.0, maxval=1.0, dtype=tf.float32)
-    imag = tf.random.uniform((1, 3), minval=-1.0, maxval=1.0, dtype=tf.float32)
-    return tf.complex(real, imag)
+# Create and compile model caling this layer.
+input = tf.keras.Input(shape=(3,), dtype='complex64')
+layer = BasicLayer(dtype='complex64')
+model = tf.keras.Model(input, layer(input))
+model.compile('rmsprop', 'mse')
+model.train_on_batch(x, y)
 
+import tensorflow as tf
+
+tf.debugging.set_log_device_placement(True)
+
+x = tf.constant(1.0 + 2.0j, dtype=tf.complex64)
+y = tf.constant(1.0 + 2.0j, dtype=tf.complex64)
+x = tf.math.sqrt(tf.math.square(x) + tf.math.square(y))

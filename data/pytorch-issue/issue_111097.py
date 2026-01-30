@@ -1,45 +1,44 @@
-# torch.rand(B, C, H, W, dtype=...) ← Add a comment line at the top with the inferred input shape
-import torch
-import torch.nn as nn
+import onnx
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1)
-        self.relu = nn.ReLU()
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
-        self.fc = nn.Linear(64 * 16 * 16, 10)
+def compute_tensor_size(tensor):
+    # Compute the size of the tensor based on its shape and data type
+    size = tensor.size * tensor.itemsize
+    return size
 
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.relu(x)
-        x = self.pool(x)
-        x = x.view(-1, 64 * 16 * 16)
-        x = self.fc(x)
-        return x
+def sum_constant_and_initializer_sizes(model_path):
+    # Load the ONNX model
+    model = onnx.load(model_path)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+    total_size = 0
+    initializer_size = 0
+    constant_size = 0
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    B, C, H, W = 1, 3, 32, 32  # Batch size, channels, height, width
-    return torch.rand(B, C, H, W, dtype=torch.float32)
+    # Compute the size of constant nodes
+    for node in model.graph.node:
+        if node.op_type == 'Constant':
+            constant_value = node.attribute[0].t
+            # Convert constant value to numpy array
+            constant_array = onnx.numpy_helper.to_array(constant_value)
+            # Compute the size of the constant tensor
+            tensor_size = compute_tensor_size(constant_array)
+            total_size += tensor_size
+            constant_size += tensor_size
 
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
+    # Compute the size of initializer nodes that are not graph inputs
+    for initializer in model.graph.initializer:
+        if initializer.name not in [input.name for input in model.graph.input]:
+            # Convert the shape and data type information to calculate size
+            # tensor = onnx.helper.tensor_value_info_to_tensor(input)
+            tensor = onnx.numpy_helper.to_array(initializer)
+            tensor_size = compute_tensor_size(tensor)
+            total_size += tensor_size
+            initializer_size += tensor_size
 
-# The provided GitHub issue and comments do not contain a PyTorch model or any related code. Instead, it discusses a fix for calculating the size of ONNX models, particularly focusing on the size of constant nodes and initializers.
-# Since there is no PyTorch model or related code to extract, I will create a simple example of a PyTorch model and its input generation function as per the given requirements. This example will be a basic convolutional neural network (CNN) with a random input tensor.
-# ### Explanation:
-# 1. **MyModel Class**:
-#    - A simple CNN with one convolutional layer, ReLU activation, max pooling, and a fully connected layer.
-#    - The input shape is assumed to be `(B, C, H, W) = (1, 3, 32, 32)`.
-# 2. **my_model_function**:
-#    - Returns an instance of `MyModel`.
-# 3. **GetInput Function**:
-#    - Generates a random tensor with the shape `(1, 3, 32, 32)` and `dtype=torch.float32`.
-# This code can be used to create a PyTorch model and generate a valid input tensor. The model and input are designed to be simple and illustrative, as the original issue did not provide a specific model or input details.
+    return total_size, constant_size, initializer_size
+
+model_path = '/path/to/model.onnx'
+total_size, constant_size, initializer_size = sum_constant_and_initializer_sizes(model_path)
+
+print("Total size of constant nodes in bytes:", constant_size)
+print("Total size of initializer nodes (excluding graph inputs) in bytes:", initializer_size)
+print("Total size of constant and initializer nodes (excluding graph inputs) in bytes:", total_size)

@@ -1,46 +1,55 @@
-# tf.random.uniform((1, 256, 256, 3), dtype=tf.float32) ← Assumed input shape from the issue's Input shape=(256,256,3)
-
 import tensorflow as tf
-from tensorflow.keras import layers, Model, Input
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
-# Note: U2NET model details are not provided in the issue.
-# We reconstruct a simplified U2NET-like placeholder model here for the purpose of demonstrating quantization aware training compatibility.
-# In practice, replace this with the actual U2NET implementation.
+quantize_model = tfmot.quantization.keras.quantize_model
 
-class SimpleU2NET(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Example backbone layers inspired by U2NET structure (simplified)
-        self.conv1 = layers.Conv2D(64, kernel_size=3, padding='same', activation='relu')
-        self.conv2 = layers.Conv2D(128, kernel_size=3, padding='same', activation='relu')
-        self.conv3 = layers.Conv2D(64, kernel_size=3, padding='same', activation='relu')
-        self.conv4 = layers.Conv2D(1, kernel_size=1, padding='same', activation='sigmoid')  # output single channel mask
+net_input = Input(shape=(256,256,3))
 
-    def call(self, x, training=False):
-        x = self.conv1(x)
-        x = self.conv2(x)
-        x = self.conv3(x)
-        x = self.conv4(x)
-        return x
+model_output = U2NET(net_input)
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # The base network (e.g., U2NET) 
-        self.backbone = SimpleU2NET()
+model = Model(inputs = net_input, outputs = model_output)
 
-        # This model is designed to be compatible with quantization aware training (QAT).
-        # Quantization ops are added externally (e.g., tfmot.quantization.keras.quantize_model).
+qa_model = quantize_model(model)
+lr = 1e-3
 
-    def call(self, inputs, training=False):
-        return self.backbone(inputs, training=training)
+opt = tf.keras.optimizers.Adam(learning_rate = lr)
 
-def my_model_function():
-    # Returns an instance of MyModel (mirroring U2NET functionality)
-    return MyModel()
+bce = BinaryCrossentropy()
 
-def GetInput():
-    # Returns a random input tensor with shape (1, 256, 256, 3), dtype float32 for the model input
-    # Batch size 1 assumed for demonstration, can be changed as needed.
-    return tf.random.uniform((1, 256, 256, 3), dtype=tf.float32)
+qa_model.compile(optimizer = opt, loss = loss, metrics = None)
 
+#quantize_model = tfmot.quantization.keras.quantize_model
+
+net_input = Input(shape=(256,256,3))
+
+model_output = U2NET(net_input)
+
+model = Model(inputs = net_input, outputs = model_output)
+
+#qa_model = quantize_model(model)
+lr = 1e-3
+
+opt = tf.keras.optimizers.Adam(learning_rate = lr)
+
+bce = BinaryCrossentropy()
+
+#qa_model.compile(optimizer = opt, loss = loss, metrics = None)
+
+model.compile(optimizer = opt, loss = loss, metrics = None)
+
+number_of_classes = 10
+
+inputs = tf.keras.Input(shape=(51))
+embedding = landmarks_to_embedding(inputs)
+
+layer = keras.layers.Dense(128, activation="relu")(embedding)
+layer = keras.layers.Dropout(0.5)(layer)
+layer = keras.layers.Dense(64, activation="relu")(layer)
+outputs = keras.layers.Dense(number_of_classes, activation="softmax")(layer)
+
+model = keras.Model(inputs, outputs)
+quant_aware_model = tfmot.quantization.keras.quantize_model(model)
+
+model.summary()

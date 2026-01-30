@@ -1,43 +1,41 @@
-# tf.random.uniform((1, 224, 224, 3), dtype=tf.float32)
-import tensorflow as tf
+from tensorflow import keras
 from tensorflow.keras import layers
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Base MobileNetV2 model without pretrained weights and no top
-        self.base_model = tf.keras.applications.MobileNetV2(
-            include_top=False, weights=None, input_shape=(224, 224, 3)
-        )
-        self.base_model.trainable = True
-        
-        # Rescaling layer as in original model: scale input pixels from [0..255] to [-1..1]
-        self.rescale = tf.keras.layers.experimental.preprocessing.Rescaling(1./127.5, offset=-1)
-        
-        # Global average pooling after base model features extraction
-        self.global_avg_pool = layers.GlobalAveragePooling2D()
-        
-        # Dense + Dropout layers as per original model
-        self.dense1 = layers.Dense(512, activation="relu")
-        self.dropout = layers.Dropout(0.5)
-        self.classifier = layers.Dense(30, activation="softmax")
+import tensorflow as tf
+from tensorflow.keras.applications import MobileNetV2
+from tensorflow.keras.layers import *
 
-    def call(self, inputs, training=False):
-        x = self.rescale(inputs)
-        # The original issue was that training=True caused problems during TFLite conversion,
-        # so here we keep training flag passed through call accordingly
-        features = self.base_model(x, training=training)
-        pooled = self.global_avg_pool(features)
-        dense_out = self.dense1(pooled)
-        dropped = self.dropout(dense_out, training=training)
-        return self.classifier(dropped)
+def get_student_model():
+    base_model = MobileNetV2(weights=None, include_top=False,
+                input_shape=(224, 224, 3))
+    base_model.trainable = True
+    inputs = Input(shape=(224, 224, 3)) 
+    x = experimental.preprocessing.Rescaling(1./127.5, offset=-1)(inputs)
+    y = base_model(x, training=True)
+    y = GlobalAveragePooling2D()(y)
+    y = Dense(512, activation="relu")(y)
+    y = Dropout(0.5)(y)
+    outputs = Dense(30, activation='softmax')(y)
+    model = tf.keras.Model(inputs, outputs)
+    return model
 
-def my_model_function():
-    # Return an instance of MyModel (untrained, weights=None as in original)
-    return MyModel()
+import tensorflow as tf
 
-def GetInput():
-    # Input shape: batch_size 1, height 224, width 224, channels 3
-    # Value range: typical uint8 image values [0..255]; we generate float since rescale expects float
-    return tf.random.uniform((1, 224, 224, 3), minval=0, maxval=255, dtype=tf.float32)
+converter = tf.lite.TFLiteConverter.from_saved_model("mobilenetv2_student_no_true_labels_e_125_t_2")
+converter.experimental_new_converter = False
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
 
+tflite_model = converter.convert()
+open("student_mobilenetv2.tflite", 'wb').write(tflite_model)
+print('Model size is %f MBs.' % (len(tflite_model) / 1024 / 1024.0))
+
+converter = tf.lite.TFLiteConverter.from_saved_model("mobilenetv2_student_no_true_labels_e_125_t_2")
+converter._enable_tflite_resource_variables = True
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.target_spec.supported_ops = [
+  tf.lite.OpsSet.TFLITE_BUILTINS, # enable TensorFlow Lite ops.
+  tf.lite.OpsSet.SELECT_TF_OPS # enable TensorFlow ops.
+]
+tflite_model = converter.convert()
+open("student_mobilenetv2.tflite", 'wb').write(tflite_model)
+print('Model size is %f MBs.' % (len(tflite_model) / 1024 / 1024.0))

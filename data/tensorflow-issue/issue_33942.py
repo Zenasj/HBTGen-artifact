@@ -1,40 +1,63 @@
-# tf.random.uniform((32, 64, 64, 3), dtype=tf.float64)
-import tensorflow as tf
-from tensorflow.keras.layers import Conv2D, Flatten, Dense
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
+ipt = Input(batch_shape=batch_shape)
+x   = Conv2D(6, (8, 8), strides=(2, 2), activation='relu')(ipt)
+x   = Flatten()(x)
+out = Dense(6, activation='softmax')(x)
+
+ipt = Input(batch_shape=batch_shape)
+x   = Conv2D(6, (8, 8), strides=(2, 2), activation='relu')(ipt)
+x   = Conv2D(6, (8, 8), strides=(2, 2), activation='relu')(x)
+x   = Flatten()(x)
+out = Dense(6, activation='softmax')(x)
+
+one_epoch_loss = [1.6814, 1.6018, 1.6577, 1.6789, 1.6878, 1.7022, 1.6689]
+one_epoch_acc  = [0.2630, 0.3213, 0.2991, 0.3185, 0.2583, 0.2463, 0.2815]
+
+batch_shape = (32, 64, 64, 3)
+num_samples = 1152
+
+ipt = Input(batch_shape=batch_shape)
+x   = Conv2D(6, (8, 8), strides=(2, 2), activation='relu')(ipt)
+x   = Conv2D(6, (8, 8), strides=(2, 2), activation='relu')(x)
+x   = Flatten()(x)
+out = Dense(6, activation='softmax')(x)
+model = Model(ipt, out)
+model.compile('adam', 'sparse_categorical_crossentropy')
+
+X = np.random.randn(num_samples, *batch_shape[1:])
+y = np.random.randint(0, 6, (num_samples, 1))
+
+reset_seeds()
+model.fit(x_train, y_train, epochs=5, shuffle=False)
+
+import os
+os.environ['PYTHONHASHSEED'] = '0'
+os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 import numpy as np
+np.random.seed(1)
+import random
+random.seed(2)
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Following the example from the issue:
-        # Two Conv2D layers with 6 filters, (8,8) kernel, stride 2, relu activation
-        # Flatten then Dense with 6 output units and softmax activation
-        # Use float64 dtype to match the issue setup
-        self.conv1 = Conv2D(
-            filters=6, kernel_size=(8, 8), strides=(2, 2), activation='relu', dtype=tf.float64)
-        self.conv2 = Conv2D(
-            filters=6, kernel_size=(8, 8), strides=(2, 2), activation='relu', dtype=tf.float64)
-        self.flatten = Flatten(dtype=tf.float64)
-        self.dense = Dense(6, activation='softmax', dtype=tf.float64)
+import tensorflow as tf
+session_conf = tf.ConfigProto(
+      intra_op_parallelism_threads=1,
+      inter_op_parallelism_threads=1)
+sess = tf.Session(config=session_conf) # single-threading; TF1-only
 
-    def call(self, inputs):
-        x = self.conv1(inputs)
-        x = self.conv2(x)
-        x = self.flatten(x)
-        out = self.dense(x)
-        return out
+def reset_seeds():
+    np.random.seed(1)
+    random.seed(2)
+    if tf.__version__[0] == '2':
+        tf.random.set_seed(3)
+    else:
+        tf.set_random_seed(3)
+    print("RANDOM SEEDS RESET")
+reset_seeds()
 
+from keras.layers import Input, Dense, Conv2D, Flatten
+from keras.models import Model
+import keras.backend as K
 
-def my_model_function():
-    # Return an instance of MyModel, weights will be randomly initialized.
-    # Note: The original reproducibility issue mentions seeds but that is outside this scope.
-    # This instance is ready for use and can be compiled/train as needed.
-    return MyModel()
-
-
-def GetInput():
-    # Return a random tensor input matching the input expected by MyModel:
-    # Batch size 32, height 64, width 64, channels 3
-    # Use float64 since model layers expect it for reproducibility issues in the original code
-    return tf.random.uniform((32, 64, 64, 3), dtype=tf.float64)
-
+K.set_floatx('float64')

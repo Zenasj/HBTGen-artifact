@@ -1,21 +1,11 @@
-# torch.rand(3, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
-
 import torch
-import torch.nn as nn
+x = torch.randn(3, requires_grad=True)
+def f(inp):
+    return (x + inp).sum()
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.x = nn.Parameter(torch.randn(3, requires_grad=True))
+tf = torch.jit.trace(f, (torch.randn(1),))
+f(torch.randn(1))
+# expected output: tensor(-1.2899, grad_fn=<SumBackward0>) result requires grad
 
-    def forward(self, inp):
-        return (self.x + inp).sum()
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(3, dtype=torch.float32)
-
+tf(torch.randn(1))
+# got output: tensor(-3.6019), result does not require grad!

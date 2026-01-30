@@ -1,25 +1,52 @@
-# tf.random.uniform((1, 9), dtype=tf.float32) ← The original input is a flat vector of 9 floats, reshaped in model to (1, 3, 3, 1)
-import tensorflow as tf
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
 
-class MyModel(tf.keras.Model):
+import os
+import tensorflow as tf
+tf.keras.utils.set_random_seed(42)
+tf.random.set_seed(42)
+
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+
+
+x = tf.constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0], dtype=tf.float32)
+inputs = [x]
+
+
+
+class Model(tf.keras.Model):
+
     def __init__(self):
-        super(MyModel, self).__init__()
-        # Conv2D layer with kernel size 4x4, padding='valid', 1 filter, ReLU activation
+        super(Model, self).__init__()
         self.conv = tf.keras.layers.Conv2D(filters=1, kernel_size=4, padding='valid', activation='relu')
 
-    @tf.function(jit_compile=True)
     def call(self, x):
-        # Expect input 'x' to be shape [1, 9], reshape to [1, 3, 3, 1] to match 2D conv input
         x = tf.reshape(x, [1, 3, 3, 1])
         x = self.conv(x)
         return x
 
-def my_model_function():
-    # Returns an instance of the model, freshly initialized weights
-    return MyModel()
 
-def GetInput():
-    # Generate a random tensor of shape [1, 9] to be reshaped inside the model to [1, 3, 3, 1]
-    # Using float32 as per original code
-    return tf.random.uniform([1, 9], dtype=tf.float32)
+model = Model()
+model(*inputs)
+print("succeed on eager")
 
+
+
+class Model(tf.keras.Model):
+
+    def __init__(self):
+        super(Model, self).__init__()
+        self.conv = tf.keras.layers.Conv2D(filters=1, kernel_size=4, padding='valid', activation='relu')
+
+    @tf.function(jit_compile=True)
+    def call(self, x):
+        x = tf.reshape(x, [1, 3, 3, 1])
+        x = self.conv(x)
+        return x
+
+
+model = Model()
+model(*inputs)
+print("succeed on XLA")

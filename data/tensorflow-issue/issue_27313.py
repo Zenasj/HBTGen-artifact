@@ -1,124 +1,119 @@
-# tf.random.uniform((B, 650), dtype=tf.float32) ← Input shape inferred from X_train and X_test in issue (batch varies, feature dim 650)
-
+import math
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
 
-class MyModel(tf.keras.Model):
-    def __init__(self, sequence_len=650, classes=10000):
-        """
-        Reconstructed model based on the Conv1D architecture described in the issue.
-        Input shape: (batch_size, sequence_len=650)
-        Output shape: (batch_size, 1) regression output (linear activation)
-        
-        Note: `classes` is set to a default 10000 but unused in current embedding, kept for similarity 
-        with original code snippet naming but embedding input dim clarified later as well.
-        
-        Here, the input is a sequence of token indices, with sequence_len=650.
-        """
-        super().__init__()
-        self.embedding = tf.keras.layers.Embedding(input_dim=classes, output_dim=8, input_length=sequence_len)
-        
-        # Conv1D stack as per description with BatchNorm + ReLU activations and pooling
-        self.conv1 = tf.keras.layers.Conv1D(128, 7, padding='valid')
-        self.bn1 = tf.keras.layers.BatchNormalization()
-        self.act1 = tf.keras.layers.Activation('relu')
-        
-        self.conv2 = tf.keras.layers.Conv1D(128, 3, padding='valid')
-        self.bn2 = tf.keras.layers.BatchNormalization()
-        self.act2 = tf.keras.layers.Activation('relu')
-        
-        self.conv3 = tf.keras.layers.Conv1D(128, 3, padding='valid')
-        self.bn3 = tf.keras.layers.BatchNormalization()
-        self.act3 = tf.keras.layers.Activation('relu')
-        
-        self.pool = tf.keras.layers.MaxPooling1D(3)
-        
-        self.conv4 = tf.keras.layers.Conv1D(256, 3, padding='valid')
-        self.bn4 = tf.keras.layers.BatchNormalization()
-        self.act4 = tf.keras.layers.Activation('relu')
-        
-        self.conv5 = tf.keras.layers.Conv1D(256, 3, padding='valid')
-        self.bn5 = tf.keras.layers.BatchNormalization()
-        self.act5 = tf.keras.layers.Activation('relu')
-        
-        self.conv6 = tf.keras.layers.Conv1D(256, 3, padding='valid')
-        self.bn6 = tf.keras.layers.BatchNormalization()
-        self.act6 = tf.keras.layers.Activation('relu')
-        
-        self.global_pool = tf.keras.layers.GlobalAveragePooling1D()
-        
-        self.dense1 = tf.keras.layers.Dense(256)
-        self.bn7 = tf.keras.layers.BatchNormalization()
-        self.act7 = tf.keras.layers.Activation('relu')
-        
-        self.dense2 = tf.keras.layers.Dense(1)
-        self.final_act = tf.keras.layers.Activation('linear')
-    
-    def call(self, inputs, training=False):
-        """
-        Forward pass of the model.
-        inputs: tf.int32 tensor of shape (batch_size, 650), token indices
-        returns: tf.float32 tensor of shape (batch_size, 1), regression output
-        """
-        x = self.embedding(inputs)
-        
-        x = self.conv1(x)
-        x = self.bn1(x, training=training)
-        x = self.act1(x)
-        
-        x = self.conv2(x)
-        x = self.bn2(x, training=training)
-        x = self.act2(x)
-        
-        x = self.conv3(x)
-        x = self.bn3(x, training=training)
-        x = self.act3(x)
-        
-        x = self.pool(x)
-        
-        x = self.conv4(x)
-        x = self.bn4(x, training=training)
-        x = self.act4(x)
-        
-        x = self.conv5(x)
-        x = self.bn5(x, training=training)
-        x = self.act5(x)
-        
-        x = self.conv6(x)
-        x = self.bn6(x, training=training)
-        x = self.act6(x)
-        
-        x = self.global_pool(x)
-        
-        x = self.dense1(x)
-        x = self.bn7(x, training=training)
-        x = self.act7(x)
-        
-        x = self.dense2(x)
-        x = self.final_act(x)
-        
-        return x
+def train_on_TPU_regression(model,model_save_loc, X_train, y_train, X_test, y_test, batch_size=1024, epochs=25, save_best_only=True, period=1, train_patience=5, mse=True):
+ 
+  #Identify TPU worker
+  TPU_WORKER = 'grpc://' + os.environ['COLAB_TPU_ADDR']
+  tf.logging.set_verbosity(tf.logging.INFO)
+  
+  #Useful to avoid clutter from old models / layers.
+  tf.keras.backend.clear_session()
 
-def my_model_function():
-    """
-    Return an instance of MyModel.
-    The sequence_len=650 and classes=some large integer are assumed from original code snippet.
-    """
-    SEQUENCE_LEN = 650
-    CLASSES = 10000  # placeholder, adjust if needed
-    return MyModel(sequence_len=SEQUENCE_LEN, classes=CLASSES)
+  #Convert model to TPU model
+  tpu_model = tf.contrib.tpu.keras_to_tpu_model(model,strategy=tf.contrib.tpu.TPUDistributionStrategy(tf.contrib.cluster_resolver.TPUClusterResolver(TPU_WORKER)))
+  
+  print("\n")
 
-def GetInput():
-    """
-    Return a random input tensor compatible with MyModel.
-    The model expects integer token indices in shape (batch_size, 650). 
-    The tokens should be within [0, CLASSES).
-    For demonstration, generate token indices uniformly randomly.
-    """
-    batch_size = 128  # Typical batch size divisible by TPU cores (e.g., 8, 128, 1024)
-    sequence_len = 650
-    classes = 10000  # Matches the embedding input_dim
-    
-    # Random integers for token indices in range [0, classes)
-    inp = tf.random.uniform(shape=(batch_size, sequence_len), minval=0, maxval=classes, dtype=tf.int32)
-    return inp
+  if mse:
+    #Compile the model
+    tpu_model.compile(
+      optimizer=tf.train.AdamOptimizer(), 
+      loss=tf.keras.losses.mean_squared_error,
+      metrics=['mse']
+    )
+  else:
+    #Compile the model
+    tpu_model.compile(
+      optimizer=tf.train.AdamOptimizer(), 
+      loss=tf.keras.losses.mean_absolute_error,
+      metrics=['mae']
+    )
+  
+  #Configure how to save model and early stopping
+  callbacks_list = [
+      tf.keras.callbacks.ModelCheckpoint(
+          filepath=model_save_loc,
+          save_weights_only=True,
+          monitor='val_loss', 
+          save_best_only=save_best_only,
+          mode='auto',
+          period=period),
+      tf.keras.callbacks.EarlyStopping(monitor='val_loss', 
+                                       patience=train_patience,
+                                       mode='auto')
+  ]
+  
+  history = tpu_model.fit(X_train,
+                          y_train,
+                          validation_data=(X_test,y_test),
+                          epochs=epochs,
+                          batch_size=batch_size,
+                          callbacks=callbacks_list,
+                          verbose=1)
 
+  return tpu_model, history
+
+print(X_train.shape)
+print(y_train_scaled.shape)
+print(X_test.shape)
+print(y_test_scaled.shape)
+
+(6533755, 650)
+(6533755,)
+(1153031, 650)
+(1153031,)
+
+inputs = tf.keras.layers.Input(shape=(SEQUENCE_LEN,))
+
+x = tf.keras.layers.Embedding(CLASSES, 8, input_length=SEQUENCE_LEN)(inputs) 
+x = tf.keras.layers.Conv1D(128, 7)(x)
+x = tf.keras.layers.BatchNormalization()(x)
+x = tf.keras.layers.Activation("relu")(x)
+x = tf.keras.layers.Conv1D(128, 3)(x)
+x = tf.keras.layers.BatchNormalization()(x)
+x = tf.keras.layers.Activation("relu")(x)
+x = tf.keras.layers.Conv1D(128, 3)(x)
+x = tf.keras.layers.BatchNormalization()(x)
+x = tf.keras.layers.Activation("relu")(x)
+
+x = tf.keras.layers.MaxPooling1D(3)(x)
+x = tf.keras.layers.Conv1D(256, 3)(x)
+x = tf.keras.layers.BatchNormalization()(x)
+x = tf.keras.layers.Activation("relu")(x)
+x = tf.keras.layers.Conv1D(256, 3)(x)
+x = tf.keras.layers.BatchNormalization()(x)
+x = tf.keras.layers.Activation("relu")(x)
+x = tf.keras.layers.Conv1D(256, 3)(x)
+x = tf.keras.layers.BatchNormalization()(x)
+x = tf.keras.layers.Activation("relu")(x)
+
+x = tf.keras.layers.GlobalAveragePooling1D()(x)
+x = tf.keras.layers.Dense(256)(x)
+x = tf.keras.layers.BatchNormalization()(x)
+x = tf.keras.layers.Activation("relu")(x)
+x = tf.keras.layers.Dense(1)(x)
+x = tf.keras.layers.Activation("linear")(x)
+
+model = tf.keras.Model(inputs=inputs, outputs=x)
+model.summary()
+
+tpu_model, history = train_on_TPU_regression(model,model_saves_folder_location+"model_#01_08.hdf5", X_train[:10000], y_train_scaled[:10000], X_test, y_test_scaled, train_patience=10, batch_size=1024)
+
+tpu_model, history = train_on_TPU_regression(model,model_saves_folder_location+"model_#01_08.hdf5", X_train[:10000], y_train_scaled[:10000], X_test[:-7], y_test_scaled[:-7], train_patience=10, batch_size=1024)
+
+model.fit_generator(train_data,
+                    steps_per_epoch = steps_per_epoch,
+                    epochs = 30,
+                    callbacks=callbacks,
+                    validation_data = validation_data,
+                    validation_steps = validation_steps,
+                    use_multiprocessing = True,
+                    workers = 8,
+                    max_queue_size = 24
+                   )
+
+def __len__(self):
+        return math.ceil(len(self.datas) / float(self.batch_size))-1

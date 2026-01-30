@@ -1,21 +1,36 @@
-# torch.rand(B, 2, dtype=torch.float32, device='cuda')  # Inferred input shape from the issue's example
+import os
 import torch
 import torch.nn as nn
+from torch.multiprocessing import Process
 
-class MyModel(nn.Module):
+class Model(nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
+        super(Model, self).__init__()
         self.embedding = nn.Embedding(10, 3, sparse=True)
         self.net = nn.Linear(2, 3)
 
     def forward(self, x):
-        # Fixed index 0 for embedding as per original model's forward logic
-        return self.net(x) + self.embedding(torch.tensor(0, device=x.device))
+        return self.net(x) + self.embedding(torch.tensor(0).cuda())
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    # Returns a CUDA tensor matching the input shape expected by MyModel
-    return torch.rand(20, 2, dtype=torch.float32, device='cuda')
+def init_processes(rank, size, backend='gloo'):
+    os.environ['MASTER_ADDR'] = '127.0.0.1'
+    os.environ['MASTER_PORT'] = '29500'
+    torch.distributed.init_process_group(backend, rank=rank, world_size=size)
+    torch.cuda.set_device(rank)
+    model = nn.parallel.DistributedDataParallel(Model().cuda(), device_ids=[rank], output_device=0)
+    x = torch.rand(20, 2).cuda()
+    y = model(x)
+    y.mean().backward()
 
+
+if __name__ == "__main__":
+    size = 2
+    processes = []
+    for rank in range(size):
+        p = Process(target=init_processes, args=(rank, size))
+        p.start()
+        processes.append(p)
+
+    for p in processes:
+        p.join()

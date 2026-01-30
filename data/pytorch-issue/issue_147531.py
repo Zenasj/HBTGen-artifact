@@ -1,20 +1,25 @@
-# torch.rand(1, dtype=torch.float32)
-import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
+import torch
+import torch.distributed
+from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+import os
+
+class Model(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.a = torch.nn.Parameter(torch.tensor([1.0]))
-        self.batch_size = 128  # Matches original Model's batch size
-        
-    def forward(self, x):
-        # x is a dummy argument required for FSDP compatibility
-        return torch.randn(self.batch_size, dtype=self.a.dtype, device=self.a.device) * self.a
+        self.batch_size = 128
+    def forward(self):
+        return torch.randn(self.batch_size) * self.a
 
-def my_model_function():
-    return MyModel()
+def main():
+    local_rank = int(os.environ['LOCAL_RANK'])
+    torch.distributed.init_process_group()
+    device = f'cuda:{local_rank}'
+    model = Model().to(device)
+    model = FSDP(model)
+    print(model())
 
-def GetInput():
-    return torch.rand(1, dtype=torch.float32)  # Dummy input to satisfy FSDP's forward signature
-
+if __name__ == '__main__':
+    main()

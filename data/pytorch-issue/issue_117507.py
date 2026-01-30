@@ -1,17 +1,20 @@
-# Input is a tuple of (a, b) where a.shape=(1, 3, 2) and b.shape=(1, 3, 6250000)
 import torch
-from torch import nn
+a = torch.rand(1, 3, 2)
+b = torch.rand(1, 3, 2500*2500) # 1 x 3 x 6250000
+# no error
+torch.linalg.lstsq(a, b)
+# error
+torch.linalg.lstsq(a.cuda(), b.cuda())
+# no error if making b smaller
+torch.linalg.lstsq(a.cuda(), b[:, :, :65536].cuda())
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        a, b = x
-        return torch.linalg.lstsq(a, b)
+import torch
+print (torch.__version__)
+print (torch.version.cuda)
+print (torch.cuda.get_device_properties (0))
 
-def my_model_function():
-    return MyModel()
+_ = torch.manual_seed (2024)
 
-def GetInput():
-    a = torch.rand(1, 3, 2, device='cuda')
-    b = torch.rand(1, 3, 2500 * 2500, device='cuda')
-    return (a, b)
-
+a = torch.rand(1, 3, 2)
+b = torch.rand(1, 3, 2500*2500) # 1 x 3 x 6250000
+torch.linalg.lstsq(a.cuda(), b.cuda())

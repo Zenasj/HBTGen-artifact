@@ -1,72 +1,64 @@
-# tf.random.uniform((64, 32, 32, 3), dtype=tf.float32)  ← inferred from CIFAR-100 input shape (32x32 RGB images), batch size 64 used in example
+from tensorflow.keras import models
 
-import tensorflow as tf
 from tensorflow.keras import layers
+from tensorflow.keras import optimizers
+from tensorflow.keras.datasets import cifar100
+import numpy as np
+import tensorflow as tf
+from tensorflow import keras
+keras.backend.clear_session()
+keras.backend.set_learning_phase(0)
+from tensorflow.python.compiler.tensorrt import trt_convert as trt
+import os
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # This model replicates the architecture in the issue:
-        # - Several Conv2D layers with BatchNorm + LeakyReLU
-        # - Final conv layer expands channels to 512*100 as in original
-        # - Flatten and Dense to intermediate 5*128 shape
-        # - Reshape to (5,128) to feed an LSTM layer
-        # - LSTM layer followed by flattening
-        # - Final Dense to 100 classes with softmax activation
-        
-        self.conv1 = layers.Conv2D(128, 3, padding='same', strides=(2,2))
-        self.bn1 = layers.BatchNormalization()
-        self.act1 = layers.LeakyReLU(0.2)
-        
-        self.conv2 = layers.Conv2D(256, 3, padding='same', strides=(2,2))
-        self.bn2 = layers.BatchNormalization()
-        self.act2 = layers.LeakyReLU(0.2)
-        
-        self.conv3 = layers.Conv2D(512*100, 3, padding='same', strides=(2,2))
-        self.bn3 = layers.BatchNormalization()
-        self.act3 = layers.LeakyReLU(0.2)
-        
-        self.flatten1 = layers.Flatten()
-        self.dense1 = layers.Dense(5*128)
-        # Reshape to sequence for LSTM: (batch, 5, 128)
-        self.reshape = layers.Reshape((5, 128))
-        self.lstm = layers.LSTM(128)
-        self.flatten2 = layers.Flatten()
-        
-        self.output_dense = layers.Dense(100, activation='softmax')
-    
-    def call(self, inputs, training=False):
-        x = self.conv1(inputs)
-        x = self.bn1(x, training=training)
-        x = self.act1(x)
-        
-        x = self.conv2(x)
-        x = self.bn2(x, training=training)
-        x = self.act2(x)
-        
-        x = self.conv3(x)
-        x = self.bn3(x, training=training)
-        x = self.act3(x)
-        
-        x = self.flatten1(x)
-        x = self.dense1(x)
-        x = self.reshape(x)
-        x = self.lstm(x)
-        x = self.flatten2(x)
-        
-        return self.output_dense(x)
+os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 
-def my_model_function():
-    # Instantiate and return the model as per the original architecture.
-    model = MyModel()
-    # The model requires an input shape to build weights; build the model
-    # with input shape (64, 32, 32, 3) batch size 64 as used in example
-    dummy_input = tf.random.uniform((64, 32, 32, 3), dtype=tf.float32)
-    _ = model(dummy_input, training=False)
-    return model
+(x_train, y_train), (x_test, y_test) = cifar100.load_data()
+x_train = np.float32(x_train)[:64*(x_train.shape[0]//64)]
+x_train /= 255.0
+i_shape = x_train[0].shape
 
-def GetInput():
-    # Return a dummy tensor input that matches expected input shape (batch, height, width, channels)
-    # CIFAR-100 images 32x32x3, batch size 64 is used in example data preparation
-    return tf.random.uniform((64, 32, 32, 3), dtype=tf.float32)
+inputs = layers.Input(i_shape)
+base_model = keras.models.Sequential([
+    layers.Conv2D(128, 3, padding='same', strides=(2, 2)),
+    layers.BatchNormalization(),
+    layers.LeakyReLU(0.2),
 
+    layers.Conv2D(256, 3, padding='same', strides=(2, 2)),
+    layers.BatchNormalization(),
+    layers.LeakyReLU(0.2),
+
+    layers.Conv2D(512*100, 3, padding='same', strides=(2, 2)),
+    layers.BatchNormalization(),
+    layers.LeakyReLU(0.2),
+    layers.Flatten(),
+    layers.Dense(5*128),
+    layers.Reshape((5, 128)),
+    layers.LSTM(128),
+    layers.Flatten(),
+])(inputs)
+
+prediction = layers.Dense(100, activation='softmax')(base_model)
+model = keras.Model(inputs=inputs, outputs=prediction)
+optimizer = optimizers.Adam(0.00001)
+model.compile(optimizer, 'categorical_crossentropy', metrics=['accuracy'])
+print(model.summary())
+saved_model_dir = os.getcwd()
+output_directory = os.getcwd()
+tf.saved_model.save(model, saved_model_dir)
+
+# graph quantization
+loaded = tf.saved_model.load(saved_model_dir)
+
+params = trt.DEFAULT_TRT_CONVERSION_PARAMS._replace(
+    precision_mode='FP16',
+    is_dynamic_op=True,
+    maximum_cached_engines=16)
+converter = trt.TrtGraphConverterV2(
+    input_saved_model_dir=saved_model_dir,
+    input_saved_model_tags="serve",
+    input_saved_model_signature_key="serving_default",
+    conversion_params=params)
+converter.convert()
+saved_model_dir_trt = output_directory
+converter.save(saved_model_dir_trt)

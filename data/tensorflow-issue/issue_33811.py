@@ -1,64 +1,67 @@
-# tf.random.uniform((BATCH_SIZE, 150, 150, 3), dtype=tf.float32)
-import tensorflow as tf
 import numpy as np
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Replicating the Sequential CNN model used in the issue
-        self.conv1 = tf.keras.layers.Conv2D(32, (3, 3), activation='relu', input_shape=(150, 150, 3))
-        self.pool1 = tf.keras.layers.MaxPooling2D(2, 2)
+BATCH_SIZE = 100
+IMG_SHAPE  = 150
 
-        self.conv2 = tf.keras.layers.Conv2D(64, (3, 3), activation='relu')
-        self.pool2 = tf.keras.layers.MaxPooling2D(2, 2)
+image_gen = ImageDataGenerator(rescale=1./255, horizontal_flip=True)
+train_data_gen = image_gen.flow_from_directory(batch_size=BATCH_SIZE,
+                                               directory=train_dir,
+                                               shuffle=True,
+                                               target_size=(IMG_SHAPE,IMG_SHAPE))
+val_data_gen = image_gen.flow_from_directory(batch_size=BATCH_SIZE,
+                                               directory=val_dir,
+                                               shuffle=True,
+                                               target_size=(IMG_SHAPE,IMG_SHAPE))
+model = tf.keras.models.Sequential([
+    tf.keras.layers.Conv2D(32, (3,3), activation='relu', input_shape=(150, 150, 3)),
+    tf.keras.layers.MaxPooling2D(2, 2),
 
-        self.conv3 = tf.keras.layers.Conv2D(128, (3, 3), activation='relu')
-        self.pool3 = tf.keras.layers.MaxPooling2D(2, 2)
+    tf.keras.layers.Conv2D(64, (3,3), activation='relu'),
+    tf.keras.layers.MaxPooling2D(2,2),
 
-        self.conv4 = tf.keras.layers.Conv2D(128, (3, 3), activation='relu')
-        self.pool4 = tf.keras.layers.MaxPooling2D(2, 2)
+    tf.keras.layers.Conv2D(128, (3,3), activation='relu'),
+    tf.keras.layers.MaxPooling2D(2,2),
 
-        self.dropout = tf.keras.layers.Dropout(0.5)
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(512, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(2, activation='softmax')  # 2 classes for dogs vs cats
+    tf.keras.layers.Conv2D(128, (3,3), activation='relu'),
+    tf.keras.layers.MaxPooling2D(2,2),
 
-    def call(self, inputs, training=False):
-        x = self.conv1(inputs)
-        x = self.pool1(x)
+    tf.keras.layers.Dropout(0.5),
+    tf.keras.layers.Flatten(),
+    tf.keras.layers.Dense(512, activation='relu'),
+    tf.keras.layers.Dense(2, activation='softmax')
+])
+model.compile(optimizer='adam',
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
+epochs = 100
+model.fit(
+    train_data_gen,
+    steps_per_epoch=int(np.ceil(total_train / float(BATCH_SIZE))),
+    epochs=epochs,
+    validation_data=val_data_gen, 
+    validation_steps=int(np.ceil(total_val / float(BATCH_SIZE)))
+)
 
-        x = self.conv2(x)
-        x = self.pool2(x)
+from tensorflow.python.keras.engine import data_adapter
+from tensorflow.python.keras.engine.data_adapter import ListsOfScalarsDataAdapter
+from tensorflow.python.keras.engine.data_adapter import TensorLikeDataAdapter
+from tensorflow.python.keras.engine.data_adapter import GenericArrayLikeDataAdapter
+from tensorflow.python.keras.engine.data_adapter import DatasetAdapter
+from tensorflow.python.keras.engine.data_adapter import GeneratorDataAdapter
+from tensorflow.python.keras.engine.data_adapter import CompositeTensorDataAdapter
 
-        x = self.conv3(x)
-        x = self.pool3(x)
+data_adapter.ALL_ADAPTER_CLS = [
+ ListsOfScalarsDataAdapter,
+ TensorLikeDataAdapter,
+ GenericArrayLikeDataAdapter,
+ DatasetAdapter,
+ GeneratorDataAdapter,
+#  tensorflow.python.keras.engine.data_adapter.KerasSequenceAdapter,
+ CompositeTensorDataAdapter      
+]
 
-        x = self.conv4(x)
-        x = self.pool4(x)
-
-        x = self.dropout(x, training=training)
-        x = self.flatten(x)
-        x = self.dense1(x)
-        x = self.dense2(x)
-        return x
-
-
-def my_model_function():
-    # Return an instance of MyModel
-    model = MyModel()
-    # Compile with the same configuration from the issue
-    model.compile(
-        optimizer='adam',
-        loss='sparse_categorical_crossentropy',
-        metrics=['accuracy']
-    )
-    return model
-
-
-def GetInput():
-    # Generate random input tensor matching shape (BATCH_SIZE, 150, 150, 3)
-    # Using float32 and range [0,1] as the ImageDataGenerator rescales by 1./255
-    BATCH_SIZE = 100
-    IMG_SHAPE = 150
-    return tf.random.uniform((BATCH_SIZE, IMG_SHAPE, IMG_SHAPE, 3), dtype=tf.float32)
-
+data_adapter.ALL_ADAPTER_CLS

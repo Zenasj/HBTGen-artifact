@@ -1,21 +1,17 @@
-# torch.rand(B, 5, 1, 1, dtype=torch.float16)  # Shape inferred from 2x5 example; dtype can be float16 or bfloat16
 import torch
-from torch import nn
+results = dict()
+input_tensor = torch.tensor([[0.5786, 0.1719, 0.3760, 0.2939, 0.3984],
+        [0.5361, 0.7104, 0.8765, 0.0903, 0.0483]], dtype=torch.float16)
+results["res_1"] = torch.std_mean(input_tensor.clone()) # same for var_mean
+results["res_2"] = input_tensor.clone().mean()
+print(results)
+# {'res_1': (tensor(0.2700, dtype=torch.float16), tensor(0.4080, dtype=torch.float16)), 'res_2': tensor(0.4082, dtype=torch.float16)}
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Compute mean via std_mean and direct mean, return their absolute difference
-        mean_std, _ = torch.std_mean(x)
-        mean_direct = x.mean()
-        return torch.abs(mean_std - mean_direct)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    B, C, H, W = 2, 5, 1, 1  # Matches 2x5 example shape as 4D tensor
-    dtypes = [torch.float16, torch.bfloat16]
-    import random
-    dtype = random.choice(dtypes)  # Randomly choose between the two dtypes
-    return torch.rand(B, C, H, W, dtype=dtype)
-
+import torch
+results = dict()
+input_tensor = torch.tensor([[0.5078, 0.7773, 0.6836, 0.3438, 0.3672],
+        [0.0352, 0.5742, 0.7266, 0.7656, 0.7422]], dtype=torch.bfloat16)
+results["res_1"] = torch.std_mean(input_tensor.clone()) # same for var_mean
+results["res_2"] = input_tensor.clone().mean()
+print(results)
+# {'res_1': (tensor(0.2422, dtype=torch.bfloat16), tensor(0.5508, dtype=torch.bfloat16)), 'res_2': tensor(0.5547, dtype=torch.bfloat16)}

@@ -1,45 +1,144 @@
-# tf.random.uniform((B, N), dtype=tf.float32) ← Input is a 2D float tensor matching TF-IDF vector shape
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
+
+x_train = vectorizer.fit_transform(train_texts).todense()
+x_val = vectorizer.transform(val_texts).todense()
+
+[obsolete]
+
+import numpy as np
+
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.feature_selection import SelectKBest
+from sklearn.feature_selection import f_classif
+
+from tensorflow.python.keras import models
+from tensorflow.python.keras.layers import Dense
+from tensorflow.python.keras.layers import Dropout
 
 import tensorflow as tf
-from tensorflow.keras import layers
 
-class MyModel(tf.keras.Model):
-    def __init__(self, units=64, dropout_rate=0.2, output_units=1, output_activation='sigmoid'):
-        super().__init__()
-        # Based on the original model defined by a simple MLP with dropout and dense layers.
-        # Dropout is kept without input_shape here, expecting input shape to be defined on call/build.
-        self.dropout1 = layers.Dropout(rate=dropout_rate)
-        self.dense1 = layers.Dense(units=units, activation='relu')
-        self.dropout2 = layers.Dropout(rate=dropout_rate)
-        self.dense2 = layers.Dense(units=units, activation='relu')
-        self.dropout3 = layers.Dropout(rate=dropout_rate)
-        self.output_layer = layers.Dense(units=output_units, activation=output_activation)
+NGRAM_RANGE = (1, 2)
+TOP_K = 20000
+TOKEN_MODE = 'word'
+MIN_DOCUMENT_FREQUENCY = 2
 
-    def call(self, inputs, training=False):
-        # inputs expected: dense Tensor with shape (batch_size, features)
-        x = self.dropout1(inputs, training=training)
-        x = self.dense1(x)
-        x = self.dropout2(x, training=training)
-        x = self.dense2(x)
-        x = self.dropout3(x, training=training)
-        return self.output_layer(x)
+def load_dataset():
+    train_texts = [
+        "the movie was great",
+        "I loved the movie",
+        "very entertaining",
+        "best movie ever",
+        "5 stars",
+        "awful movie",
+        "hated it",
+        "boring",
+        "stupid story",
+        "waste of time"
+    ]
+    train_labels = [1, 1, 1, 1, 1, 0, 0, 0, 0, 0]
+    test_texts, test_labels = train_texts, train_labels 
 
-def my_model_function():
-    # Return an instance of MyModel with default initialization
-    return MyModel()
+    return ((train_texts, np.array(train_labels)),
+            (test_texts, np.array(test_labels)))
 
-def GetInput():
-    # The original vectorizer transforms texts to a sparse tf-idf vector of shape (batch_size, vocab_size).
-    # Assumptions:
-    # - Using a small vocab size to keep this simple (e.g. 50 features)
-    # - Batch size is 4 as in training example
-    # - Input dtype float32 (tf-idf vector)
-    batch_size = 4
-    vocab_size = 50  # assumed max features selected by SelectKBest / TF-IDF
+def ngram_vectorize(train_texts, train_labels, val_texts):
+    """Vectorizes texts as n-gram vectors.
 
-    # Create a random dense tensor simulating vectorized input (e.g., tf-idf scores)
-    # Range [0,1) to simulate tf-idf normalized values
-    input_tensor = tf.random.uniform(
-        shape=(batch_size, vocab_size), dtype=tf.float32)
-    return input_tensor
+    1 text = 1 tf-idf vector the length of vocabulary of unigrams + bigrams.
 
+    # Arguments
+        train_texts: list, training text strings.
+        train_labels: np.ndarray, training labels.
+        val_texts: list, validation text strings.
+
+    # Returns
+        x_train, x_val: vectorized training and validation texts
+    """
+    # Create keyword arguments to pass to the 'tf-idf' vectorizer.
+    kwargs = {
+            'ngram_range': NGRAM_RANGE,  # Use 1-grams + 2-grams.
+            'dtype': 'int32',
+            'strip_accents': 'unicode',
+            'decode_error': 'replace',
+            'analyzer': TOKEN_MODE,  # Split text into word tokens.
+            'min_df': MIN_DOCUMENT_FREQUENCY,
+    }
+    vectorizer = TfidfVectorizer(**kwargs)
+
+    # Learn vocabulary from training texts and vectorize training texts.
+    x_train = vectorizer.fit_transform(train_texts) # .todense()
+
+    # Vectorize validation texts.
+    x_val = vectorizer.transform(val_texts) # .todense()
+
+    # Select top 'k' of the vectorized features.
+    selector = SelectKBest(f_classif, k=min(TOP_K, x_train.shape[1]))
+    selector.fit(x_train, train_labels)
+    x_train = selector.transform(x_train).astype('float32')
+    x_val = selector.transform(x_val).astype('float32')
+    return x_train, x_val
+
+def train_ngram_model(data,
+                      learning_rate=1e-3,
+                      epochs=1000,
+                      batch_size=128,
+                      layers=2,
+                      units=64,
+                      dropout_rate=0.2):
+    """Trains n-gram model on the given dataset.
+
+    # Arguments
+        data: tuples of training and test texts and labels.
+        learning_rate: float, learning rate for training model.
+        epochs: int, number of epochs.
+        batch_size: int, number of samples per batch.
+        layers: int, number of `Dense` layers in the model.
+        units: int, output dimension of Dense layers in the model.
+        dropout_rate: float: percentage of input to drop at Dropout layers.
+
+    # Raises
+        ValueError: If validation data has label values which were not seen
+            in the training data.
+    """
+    # Get the data.
+    (train_texts, train_labels), (val_texts, val_labels) = data
+
+    # Vectorize texts.
+    x_train, x_val = ngram_vectorize(
+        train_texts, train_labels, val_texts)
+
+    # Create model instance.
+    op_units, op_activation = 1, 'sigmoid'
+    model = models.Sequential()
+    model.add(Dropout(rate=dropout_rate, input_shape=x_train.shape[1:]))
+
+    for _ in range(2):
+        model.add(Dense(units=units, activation='relu'))
+        model.add(Dropout(rate=dropout_rate))
+
+    model.add(Dense(units=op_units, activation=op_activation))
+
+    # Compile model with learning parameters.
+    optimizer = tf.keras.optimizers.Adam(lr=learning_rate)
+    model.compile(optimizer=optimizer, loss='binary_crossentropy', metrics=['acc'])
+
+    # Train and validate model.
+    history = model.fit(
+            x_train,
+            train_labels,
+            epochs=epochs,
+            validation_data=(x_val, val_labels),
+            verbose=2,  # Logs once per epoch.
+            batch_size=batch_size)
+
+if __name__ == "__main__":
+    data = load_dataset()
+    train_ngram_model(data,
+                      learning_rate=1e-3,
+                      epochs=10,
+                      batch_size=4,
+                      layers=2,
+                      units=64,
+                      dropout_rate=0.2)

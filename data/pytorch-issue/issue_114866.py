@@ -1,30 +1,29 @@
-# torch.rand(4, dtype=torch.float32)
+import math
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.a = nn.Parameter(torch.tensor(12.0, dtype=torch.float32), requires_grad=False)
-        self.b = nn.Parameter(torch.tensor(1.0, dtype=torch.float32), requires_grad=False)
+def func(x, a, b):
+    c = 0
+    c = c + math.sqrt(a)
+    c = c + math.cos(a)
+    c = c + math.cosh(a)
+    c = c + math.sin(a)
+    c = c + math.sinh(a)
+    c = c + math.tan(a)
+    c = c + math.tanh(a)
+    c = c + math.asin(b)
+    c = c + math.acos(b)
+    c = c + math.atan(a)
+    y = x + c
+    return y
 
-    def forward(self, x):
-        c = torch.tensor(0.0, dtype=self.a.dtype, device=self.a.device)
-        c += torch.sqrt(self.a)
-        c += torch.cos(self.a)
-        c += torch.cosh(self.a)
-        c += torch.sin(self.a)
-        c += torch.sinh(self.a)
-        c += torch.tan(self.a)
-        c += torch.tanh(self.a)
-        c += torch.asin(self.b)
-        c += torch.acos(self.b)
-        c += torch.atan(self.a)
-        return x + c
 
-def my_model_function():
-    return MyModel()
+cfunc = torch.compile(func, dynamic=True, fullgraph=True)
 
-def GetInput():
-    return torch.rand(4, dtype=torch.float32)
+device = "cpu"  # or "cuda"
+x = torch.tensor([0, 1, 2, 3], dtype=torch.float32, device=device)
+a = 12
+b = 1
 
+out = cfunc(x, a, b)
+expected = func(x, a, b)
+torch.testing.assert_close(out, expected)

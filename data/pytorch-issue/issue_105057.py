@@ -1,21 +1,22 @@
-# torch.rand(B, C, L, dtype=torch.float32)
+import torch.nn as nn
+
 import torch
 from torch import nn
 
 class MyModel(nn.Module):
     def __init__(self):
-        super().__init__()
+        super(MyModel, self).__init__()
         self.fc = nn.Linear(in_features=16, out_features=16)
-        self.avg = nn.AdaptiveAvgPool1d(output_size=[0])  # Output size 0 as in original code
+        self.avg = nn.AdaptiveAvgPool1d(output_size=[0])
 
     def forward(self, x):
         x = self.fc(x)
+        print('fc', x.size())
         x = self.avg(x)
+        
         return x
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(16, 16, 16, dtype=torch.float32)
-
+md = MyModel()
+ip = torch.rand([16,16,16])
+md(ip) ## No Error
+torch.compile(md)(ip)

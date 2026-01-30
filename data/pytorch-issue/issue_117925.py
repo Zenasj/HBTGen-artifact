@@ -1,11 +1,11 @@
-# torch.rand(1, dtype=torch.float32)  # Inferred input shape based on the example (single scalar input)
+import torch.nn as nn
 
+py
 import torch
-from typing import Tuple, Union
 
-Gradients = Union[torch.Tensor, Tuple[torch.Tensor, ...]]
+Gradients = torch.Tensor | tuple[torch.Tensor, ...]
 
-class MyModel(torch.nn.Module):
+class MyModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.some_param = torch.nn.Parameter(torch.tensor(1.0))
@@ -22,11 +22,14 @@ class MyModel(torch.nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x * self.some_param
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+model = MyModule()
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.tensor(5.0, requires_grad=True)
+output = model.forward(torch.tensor(5))
+loss = output.sum()
 
+print("model.some_param.grad:", model.some_param.grad)
+
+print("calling backward")
+loss.backward()
+
+print("model.some_param.grad:", model.some_param.grad)

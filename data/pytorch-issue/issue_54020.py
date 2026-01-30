@@ -1,24 +1,63 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Assumed input shape (batch, channels, height, width)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Placeholder module since no actual model structure was described in the issue
-        self.identity = nn.Identity()
-        # Added to satisfy potential type-checking requirements mentioned in the issue
-        self.type = torch.Tensor  # Example type annotation as per DataPipe typing discussion
+py
+class DP(IterableDataset["invalid_type"]):
+    def __iter__(self) -> "invalid_type":
+        ...
 
-    def forward(self, x):
-        return self.identity(x)
+class DP(IterableDataset[str]):
+    def __iter__(self) -> str:
+        ...
 
-def my_model_function():
-    # Returns a minimal model instance with inferred type annotations
-    model = MyModel()
-    return model
+class DP(IterableDataset[str]):
+    def __iter__(self) -> Iterator[int]:
+        ...
 
-def GetInput():
-    # Generate a random input tensor matching the assumed shape (B=1, C=3, H=224, W=224)
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
+py
+# 1
+class DS(IterableDataset["invalid_type"]):  # Raise Exception from the evaluation `eval("invalid_type", globals, locals)`
+    def __iter__(self) -> "invalid_type":
+        ...
 
+# 2
+class DS(IterableDataset[str]):
+    def __iter__(self) -> str:  # Raise `TypeError: Expected 'Iterator' as the return annotation for '__iter__' of DS, but found str`
+        ...
+
+# 3
+class DS(IterableDataset[str]):
+    def __iter__(self) -> Iterator[int]:  # Raise `TypeError: Expected return type of '__iter__' is a subtype of str, but found int`
+        ...
+
+# 4
+class DS(IterableDataset[str], metaclass=MyMeta):  # Raise `TypeError: metaclass conflict: the metaclass of a derived class must be a (non-strict) subclass of the metaclasses of all its bases`
+    pass
+
+py
+class DP:
+    def __init__(self, dp: DataFrameDataPipe["name": str, "val": float]):
+        ...
+
+py
+class GenericNamedTuple(Generic[T_co], NamedTuple):  # TypeError: metaclass conflict
+    name: str
+    data: T_co
+
+py
+class GenericNamedTuple(Generic[T_co], NamedTuple):
+    name: str
+    data: T_co
+class DP(IterableDataset["GenericNamedTuple[torch.Tensor]"]):  # Use string
+   ...
+
+py
+class GenericNamedTuple(Generic[T_co], NamedTuple):  # TypeError: metaclass conflict
+    name: str
+    data: T_co
+
+py
+class GenericNamedTuple(Generic[T_co], NamedTuple):
+    name: str
+    data: T_co
+class DP(IterableDataset["GenericNamedTuple[torch.Tensor]"]):  # TypeError: 'type' object is not subscriptable
+   ...

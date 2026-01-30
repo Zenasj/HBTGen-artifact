@@ -1,42 +1,83 @@
-# torch.rand(B, C, H, W, dtype=...) ← Add a comment line at the top with the inferred input shape
 import torch
-import torch.nn as nn
+device = torch.device('cuda')
+# works very well, no error occured .
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1)
-        self.relu = nn.ReLU()
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
-        self.fc = nn.Linear(64 * 16 * 16, 10)  # Assuming input size is 32x32
+import os
+import re
+import sys
+import platform
+import subprocess
+import torch
 
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.relu(x)
-        x = self.pool(x)
-        x = x.view(-1, 64 * 16 * 16)  # Flatten the tensor
-        x = self.fc(x)
-        return x
+from setuptools import setup, Extension
+from setuptools.command.build_ext import build_ext
+from distutils.version import LooseVersion
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # Assuming batch size (B) is 1, channels (C) is 3, height (H) is 32, width (W) is 32
-    B, C, H, W = 1, 3, 32, 32
-    return torch.rand(B, C, H, W, dtype=torch.float32)
+class CMakeExtension(Extension):
+    def __init__(self, name, sourcedir=''):
+        Extension.__init__(self, name, sources=[])
+        self.sourcedir = os.path.abspath(sourcedir)
 
-# The provided issue does not contain any PyTorch model code or structure. Instead, it describes a CMake configuration problem related to linking libtorch with protobuf when using CUDA. Since the issue does not provide a PyTorch model, I will create a simple example of a PyTorch model and input generation function that can be used as a starting point.
-# Here is the complete Python code file based on the given requirements:
-# ### Explanation:
-# 1. **MyModel Class**:
-#    - A simple convolutional neural network (CNN) with one convolutional layer, ReLU activation, max pooling, and a fully connected layer.
-#    - The input shape is assumed to be (B, C, H, W) where B is the batch size, C is the number of channels, H is the height, and W is the width.
-#    - The forward method processes the input through the layers and returns the output.
-# 2. **my_model_function**:
-#    - This function returns an instance of `MyModel`.
-# 3. **GetInput Function**:
-#    - This function generates a random tensor with the shape (1, 3, 32, 32) and dtype `torch.float32`, which is a common input shape for image classification tasks.
-# This code can be used as a starting point for a simple PyTorch model and input generation. If you have specific requirements or a different model structure, please provide more details.
+
+class CMakeBuild(build_ext):
+    def run(self):
+        try:
+            out = subprocess.check_output(['cmake', '--version'])
+        except OSError:
+            raise RuntimeError("CMake must be installed to build the following extensions: " +
+                               ", ".join(e.name for e in self.extensions))
+
+        if platform.system() == "Windows":
+            cmake_version = LooseVersion(re.search(r'version\s*([\d.]+)', out.decode()).group(1))
+            if cmake_version < '3.1.0':
+                raise RuntimeError("CMake >= 3.1.0 is required on Windows")
+
+        for ext in self.extensions:
+            self.build_extension(ext)
+
+    def build_extension(self, ext):
+        extdir = os.path.abspath(os.path.dirname(self.get_ext_fullpath(ext.name)))
+        cmake_args = ['-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=' + extdir,
+                      '-DPYTHON_EXECUTABLE=' + sys.executable
+                      # '-DProtobuf_DIR=.../tmp_install/cmake'
+        ]
+
+        #if hasattr(torch.utils, "cmake_prefix_path"):
+        #    cmake_args.append('-DCMAKE_PREFIX_PATH=' + torch.utils.cmake_prefix_path)
+        #    print(f'torch cmake:: {torch.utils.cmake_prefix_path}')
+        cmake_args.append('-DCMAKE_PREFIX_PATH=' + '/workspace/work_dir/libtorch_gpu/libtorch')
+        # cmake_args.append('-DProtobuf_DIR=' + '/opt/conda/envs/final_01/lib/python3.8/site-packages/torch/lib/tmp_install/cmake')
+        # /opt/conda/envs/final_01/lib/python3.8/site-packages/torch/lib/tmp_install
+        cfg = 'Debug' if self.debug else 'Release'
+        build_args = ['--config', cfg]
+
+        if platform.system() == "Windows":
+            cmake_args += ['-DCMAKE_LIBRARY_OUTPUT_DIRECTORY_{}={}'.format(cfg.upper(), extdir)]
+            if sys.maxsize > 2**32:
+                cmake_args += ['-A', 'x64']
+            build_args += ['--', '/m']
+        else:
+            cmake_args += ['-DCMAKE_BUILD_TYPE=' + cfg]
+            build_args += ['--', '-j2']
+
+        env = os.environ.copy()
+        env['CXXFLAGS'] = '{} -DVERSION_INFO=\\"{}\\"'.format(env.get('CXXFLAGS', '--std=c++17'),
+                                                              self.distribution.get_version())
+        if not os.path.exists(self.build_temp):
+            os.makedirs(self.build_temp)
+        subprocess.check_call(['cmake', ext.sourcedir] + cmake_args, cwd=self.build_temp, env=env)
+        subprocess.check_call(['cmake', '--build', '.'] + build_args, cwd=self.build_temp)
+
+
+setup(
+    name='some_name',
+    version='0.0.4',
+    author='some_named',
+    description='some library',
+    keywords='some keywords',
+    long_description='some library',
+    ext_modules=[CMakeExtension('target_name')],
+    cmdclass=dict(build_ext=CMakeBuild),
+    zip_safe=False,
+)

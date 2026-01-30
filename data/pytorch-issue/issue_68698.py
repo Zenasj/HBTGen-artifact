@@ -1,25 +1,14 @@
-# torch.rand(B, C, dtype=torch.float32), torch.randint(0, C, (B,), dtype=torch.long)
-import torch
+import numpy as np
+import torch 
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.loss = nn.NLLLoss().cuda()  # Matches user's CUDA setup
+tmp_log = np.load("./tmp_log.npy")
+labels = np.load("./proj_labels.npy")
 
-    def forward(self, x):
-        inputs, targets = x  # Unpack input tuple
-        return self.loss(inputs, targets)
+log = torch.from_numpy(tmp_log).cuda()
+labels = torch.from_numpy(labels).long().cuda()
+loss = nn.NLLLoss().cuda()
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    B = 10  # Inferred batch size (example value)
-    C = 5   # Inferred num_classes (example value)
-    # Generate log probabilities (log_softmax of random logits)
-    logits = torch.randn(B, C, dtype=torch.float32, device='cuda')
-    log_probs = torch.nn.functional.log_softmax(logits, dim=1)
-    targets = torch.randint(0, C, (B,), dtype=torch.long, device='cuda')
-    return (log_probs, targets)  # Tuple matches model's input requirements
-
+for i in range(50):
+    output = loss(log, labels)
+    print(i, output.item())

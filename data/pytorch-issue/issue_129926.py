@@ -1,26 +1,66 @@
-# torch.rand(B, 1, dtype=torch.float)
+import ray
 import torch
-import torch.nn as nn
+import torch.distributed as dist
+from ray.air.util.torch_dist import (
+    TorchDistributedWorker,
+    init_torch_dist_process_group,
+    shutdown_torch_dist_process_group,
+)
+from ray.util.scheduling_strategies import PlacementGroupSchedulingStrategy
 
-class MyModel(nn.Module):
+@ray.remote(num_gpus=1)
+class TestWorker(TorchDistributedWorker):
     def __init__(self):
-        super(MyModel, self).__init__()
-        # Encapsulates distributed setup logic using corrected grouping method
-        # Submodules represent the two groups from case4 (groups [0,1] and [2,3])
-        # Note: Actual distributed setup must be initialized at runtime
-        self.group0 = nn.Parameter(torch.empty(0))  # Placeholder for group0 logic
-        self.group1 = nn.Parameter(torch.empty(0))  # Placeholder for group1 logic
+        super().__init__()
 
-    def forward(self, x):
-        # Dummy forward pass (original code used broadcast for communication)
-        # Actual distributed operations would use the groups here
-        return x
+    def run(self):
+        rank = torch.distributed.get_rank()
+        dev = f"cuda:{ray.get_gpu_ids()[0]}"
+        tensor = torch.tensor([rank]).to(dev)
 
-def my_model_function():
-    # Returns model instance with proper initialization
-    return MyModel()
+        # case 1: whole group, part workers => blocking
+        if rank > 1:
+            group = dist.new_group([0, 1, 2, 3])
+            dist.broadcast(tensor, 2, group)
 
-def GetInput():
-    # Returns a tensor matching the expected input shape (scalar per sample)
-    return torch.rand(1, 1, dtype=torch.float)
+        # case 2: part group, all workers => success
+        group = dist.new_group([2, 3])
+        dist.broadcast(tensor, 2, group)
 
+        # case 3: part group, part workers => success
+        if rank > 1:
+            group = dist.new_group([2, 3])
+            dist.broadcast(tensor, 2, group)
+
+        # case 4: different groups, all workers => error
+        if rank < 2:
+            group = dist.new_group([0, 1])
+            dist.broadcast(tensor, 0, group)
+        else:
+            group = dist.new_group([2, 3])
+            dist.broadcast(tensor, 2, group)
+
+        return tensor
+
+def run_workers():
+    placement_group = ray.util.placement_group(
+        [{"CPU": 1, "GPU": 1}] * 4,
+        strategy="STRICT_PACK",
+    )
+    ray.get(placement_group.ready(), timeout=1000)
+
+    workers = [
+        TestWorker.options(
+            scheduling_strategy=PlacementGroupSchedulingStrategy(
+                placement_group=placement_group
+            )
+        ).remote()
+        for _ in range(4)
+    ]
+
+    init_torch_dist_process_group(workers, backend="nccl")
+    ray.get([w.run.remote() for w in workers])
+    shutdown_torch_dist_process_group(workers)
+
+if __name__ == "__main__":
+    run_workers()

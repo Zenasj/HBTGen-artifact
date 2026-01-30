@@ -1,26 +1,30 @@
-# torch.rand(B, 3, 256, 256, dtype=torch.float32)  # Inferred input shape based on typical image processing tasks
+#!/usr/bin/env python3
+import os
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Standard layers (example for Flownet-like architecture)
-        self.conv = nn.Conv2d(3, 64, kernel_size=3, padding=1)
-        # Placeholder for custom CUDA layer (e.g., Resample2d from flownet2)
-        # Note: Actual implementation requires compiled 'resample2d_cuda' extension
-        self.custom_layer = nn.Identity()  # Replace with real layer if available
-        
-    def forward(self, x):
-        x = self.conv(x)
-        x = self.custom_layer(x)
-        return x
+from setuptools import setup, find_packages
+from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 
-def my_model_function():
-    # Returns model instance with standard initialization
-    return MyModel()
+cxx_args = ['-std=c++11']
 
-def GetInput():
-    # Generates a 4D tensor matching expected input dimensions
-    return torch.rand(1, 3, 256, 256, dtype=torch.float32)
+nvcc_args = [
+'-gencode', 'arch=compute_50,code=sm_50',
+'-gencode', 'arch=compute_52,code=sm_52',
+'-gencode', 'arch=compute_60,code=sm_60',
+'-gencode', 'arch=compute_61,code=sm_61',
+'-gencode', 'arch=compute_70,code=sm_70',
+'-gencode', 'arch=compute_70,code=compute_70',
+'-D__CUDA_NO_HALF_OPERATORS__' # <-- Just add this line
+]
 
+setup(
+name='correlation_cuda',
+ext_modules=[
+CUDAExtension('correlation_cuda', [
+'correlation_cuda.cc',
+'correlation_cuda_kernel.cu'
+], extra_compile_args={'cxx': cxx_args, 'nvcc': nvcc_args})
+],
+cmdclass={
+'build_ext': BuildExtension
+})

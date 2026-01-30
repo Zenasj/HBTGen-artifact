@@ -1,16 +1,12 @@
-# torch.rand(3, 4, dtype=torch.uint8) ← Add a comment line at the top with the inferred input shape
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return ~x
+def foo(x):
+    return ~x
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+y = torch.jit.trace(foo, torch.zeros(3,4, dtype=torch.uint8))
+print(y.code)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randint(0, 2, (3, 4), dtype=torch.uint8)
-
+def foo(x: Tensor) -> Tensor:
+  _0 = torch.empty([3, 4], dtype=0, layout=0, device=torch.device("cpu"), pin_memory=False)
+  _1 = torch.sub_(torch.fill_(_0, 1), x, alpha=1)
+  return _1

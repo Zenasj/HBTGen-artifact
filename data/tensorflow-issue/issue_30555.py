@@ -1,29 +1,52 @@
-# tf.random.uniform((4, 2), dtype=tf.uint8) ← Input shape inferred from XOR training_data input (4 samples, 2 features)
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
+import numpy as np
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Simple XOR Keras model replicated from the issue:
-        # - first Dense layer: 16 units, relu activation, no bias, input dim=2
-        # - second Dense layer: 1 unit, sigmoid activation, no bias
-        self.dense1 = tf.keras.layers.Dense(16, use_bias=False, activation='relu', input_shape=(2,))
-        self.dense2 = tf.keras.layers.Dense(1, use_bias=False, activation='sigmoid')
-        
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        return x
+training_data = np.array([[0,0],[0,1],[1,0],[1,1]], "uint8")
+target_data = np.array([[0],[1],[1],[0]], "uint8")
 
-def my_model_function():
-    # Return an instance of MyModel; weights will be randomly initialized for now,
-    # since original weights are from TF1 checkpoint, and conversion is outside this scope.
-    return MyModel()
+model = Sequential()
+model.add(Dense(16, input_dim=2, use_bias=False, activation='relu'))
+model.add(Dense(1, use_bias=False, activation='sigmoid'))
 
-def GetInput():
-    # Returns a batch of 4 XOR-like inputs matching the original input used.
-    # Use uint8 as in the original numpy input, but convert to TF float32 for model input.
-    xor_data = tf.constant([[0,0],[0,1],[1,0],[1,1]], dtype=tf.float32)
-    return xor_data
+session = tf.keras.backend.get_session()
+tf.contrib.quantize.create_training_graph(session.graph)
+session.run(tf.global_variables_initializer())
 
+model.compile(loss='mean_squared_error',
+              optimizer='adam',
+              metrics=['binary_accuracy'])
+
+model.fit(training_data, target_data, nb_epoch=1000, verbose=2)
+print(model.predict(training_data).round())
+model.summary()
+
+saver = tf.train.Saver()
+saver.save(keras.backend.get_session(), 'xor-keras.ckpt')
+
+import numpy as np
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense
+
+model = Sequential()
+model.add(Dense(16, input_dim=2, use_bias=False, activation='relu'))
+model.add(Dense(1, use_bias=False, activation='sigmoid')) 
+
+
+ #<Load the model into a new session>
+
+session = tf.keras.backend.get_session()
+
+saver = tf.train.Saver()
+saver.restore(session, 'xor-keras.ckpt')
+
+tf.contrib.quantize.create_eval_graph(session.graph)
+
+tf.io.write_graph(session.graph, '.', 'xor-keras-eval.pb', as_text=False)

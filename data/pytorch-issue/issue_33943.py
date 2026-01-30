@@ -1,20 +1,20 @@
-# torch.rand(B, 100, dtype=torch.float32)  # Inferred input shape for a simple linear model
-import torch
-import torch.nn as nn
+import mpi4py
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.fc = nn.Linear(100, 10)  # Matches input shape's 100 features
-    
-    def forward(self, x):
-        return self.fc(x)
+mpi4py.rc(initialize=False, finalize=False)
 
-def my_model_function():
-    # Returns a simple linear model with random initialization
-    return MyModel()
+from mpi4py import MPI
 
-def GetInput():
-    B = 4  # Arbitrary batch size, can be adjusted based on MPI world size
-    return torch.rand(B, 100, dtype=torch.float32)  # Matches the input shape comment
+import torch.distributed as dist1
 
+MPI.Init()
+
+comm = MPI.COMM_WORLD
+
+rank = comm.Get_rank()
+size = comm.Get_size()
+
+dist1.init_process_group("mpi", rank=rank, world_size=size)
+
+print("Rank {} Size {}".format(rank, size))
+
+MPI.Finalize()

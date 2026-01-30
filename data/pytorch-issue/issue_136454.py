@@ -1,24 +1,21 @@
-# torch.rand(B, C, H, dtype=torch.float32)
 import torch
-from torch import nn, linalg
+from torch import linalg
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        has_mut = False
-        has_must = False
-        try:
-            linalg.norm(x, ord='fro', dim=(0, 1, 2))
-        except RuntimeError as e:
-            has_mut = 'mut' in str(e)
-        try:
-            linalg.norm(x, ord=2, dim=(0, 1, 2))
-        except RuntimeError as e:
-            has_must = 'must' in str(e)
-        return torch.tensor([1.0 if has_mut and has_must else 0.0])
+my_tensor = torch.tensor([[[8., -3., 0., 1.]]])
+                           # ↓ ↓ ↓ ↓ ↓
+linalg.norm(input=my_tensor, ord='fro', dim=(0, 1, 2)) # Error
+                           # ↓ ↓ ↓ ↓ ↓
+linalg.norm(input=my_tensor, ord='nuc', dim=(0, 1, 2)) # Error
 
-def my_model_function():
-    return MyModel()
+import torch
+from torch import linalg
 
-def GetInput():
-    return torch.rand(1, 1, 4, dtype=torch.float32)
+my_tensor = torch.tensor([[[8., -3., 0., 1.]]])
+                           # ↓ ↓ ↓ ↓
+linalg.norm(input=my_tensor, ord=None, dim=(0, 1, 2)) # Error
+                           # ↓ ↓ ↓
+linalg.norm(input=my_tensor, ord=2, dim=(0, 1, 2)) # Error
 
+import torch
+
+torch.__version__ # 2.4.1+cu121

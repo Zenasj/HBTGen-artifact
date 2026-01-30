@@ -1,28 +1,35 @@
-# torch.rand(10, 10, dtype=torch.float32) ← Add a comment line at the top with the inferred input shape
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+import torch
+
+
+def autocast_func_forward(orig_fwd):
+    @torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16)
+    def new_fwd(*args, **kwargs):
+        return orig_fwd(*args, **kwargs)
+
+    return new_fwd
+
+class BasicModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.linear1 = nn.Linear(10, 10)
-        self.linear1.forward = self.autocast_func_forward(self.linear1.forward)
+        self.linear1 = torch.nn.Linear(10, 10)
+        self.linear1.forward = autocast_func_forward(self.linear1.forward)
 
     def forward(self, x):
         return self.linear1(x)
 
-    @staticmethod
-    def autocast_func_forward(orig_fwd):
-        @torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16)
-        def new_fwd(*args, **kwargs):
-            return orig_fwd(*args, **kwargs)
-        return new_fwd
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+x = torch.rand(10, 10)
+m = BasicModule()
+opt_m = torch.compile(backend="eager")(m)
+res = opt_m(x)
+print(res)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(10, 10, dtype=torch.float32)
+torch._dynamo.exc.Unsupported: 'inline in skipfiles: autocast_func_forward.<locals>.new_fwd | decorate_autocast /home/ybliang/local/pytorch/torch/amp/autocast_mode.py, skipped according skipfiles.SKIP_DIRS'
 
+torch.autocast
+
+torch.amp.autocast_mode.autocast
+
+autocast_decorator

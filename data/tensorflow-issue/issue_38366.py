@@ -1,47 +1,63 @@
-# tf.random.uniform((N, 1), dtype=tf.float32)  # N is batch size for single scalar input
+from tensorflow.keras import optimizers
 
+import numpy as np
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+import matplotlib.pyplot as plt
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Seven stacked Dense layers with tanh activation and one output layer (Dense 1)
-        self.dense_layers = [tf.keras.layers.Dense(100, activation='tanh') for _ in range(7)]
-        self.out_layer = tf.keras.layers.Dense(1, name='y')
-    
-    @tf.function
-    def call(self, x, training=False):
-        # x shape: (batch_size, 1)
-        # We want to compute yhat = model(x) and dyhat = dyhat/dx
-        with tf.GradientTape() as tape:
-            tape.watch(x)
-            y = x
-            for layer in self.dense_layers:
-                y = layer(y)
-            yhat = self.out_layer(y)
-        dyhat = tape.gradient(yhat, x)
-        return yhat, dyhat
+N = 1000
+x = tf.convert_to_tensor(np.linspace(0, 1, num=N), dtype=tf.float32)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+with tf.GradientTape() as t:
+    x_inp = keras.Input(shape=(1,), name='indvar')
+    t.watch(x_inp)
+    dense = layers.Dense(100, activation='tanh')(x_inp)
+    dense = layers.Dense(100, activation='tanh')(dense)
+    dense = layers.Dense(100, activation='tanh')(dense)
+    dense = layers.Dense(100, activation='tanh')(dense)
+    dense = layers.Dense(100, activation='tanh')(dense)
+    dense = layers.Dense(100, activation='tanh')(dense)
+    dense = layers.Dense(100, activation='tanh')(dense)
+    yhat = layers.Dense(1, name='y')(dense)
+    dyhat = t.gradient(yhat, x_inp)
+    model = keras.Model(inputs=x_inp, outputs=[yhat, dyhat])
+    opt=tf.keras.optimizers.Adam()
+    model.compile(optimizer=opt, loss='MSE')
+    model.summary()
+    model.fit(x=x, y=[x, np.sin(10*x)], epochs=10000, batch_size=N)
+    y, dy = model(x)
+    plt.plot(x, np.array(y))
+    plt.plot(x, np.array(dy))
+    plt.show()
 
-def GetInput():
-    # Return a random input tensor matching the model input shape (batch_size, 1)
-    # Using batch size 1000 matching example
-    N = 1000
-    x = tf.random.uniform((N, 1), dtype=tf.float32)
-    return x
+import numpy as np
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+import matplotlib.pyplot as plt
 
-# ---
-# ### Explanation / Assumptions
-# - From the issue contents, the input shape is `(batch_size, 1)` since input `x_inp` has `shape=(1,)`.
-# - The model is a stack of 7 Dense layers with activation `tanh` followed by a Dense(1) output.
-# - The forward pass must return both the predicted output `yhat` and the derivative `dyhat` with respect to input.
-# - Derivative is computed with `tf.GradientTape`.
-# - The task relates to analyzing the discrepancy between a function `y` and its derivative `dy` produced by the model.
-# - No training or compilation code included as the focus is on the model structure and forward pass that matches original code logic.
-# - `GetInput()` returns a batch of inputs with shape `(1000,1)`, similar to the original code's number of points N=1000.
-# - The model class is compatible with TensorFlow 2.20.0 and can be JIT compiled via `@tf.function(jit_compile=True)` outside this snippet.
-#   
-# This code snippet neatly integrates the core elements from the examples and discussion in the issue, enforcing Keras Model subclassing, including gradient calculation w.r.t inputs, and matches the input/output conventions.
+N = 1000
+x = np.linspace(0, 1, num=N)
+
+with tf.GradientTape() as t:
+    x_inp = keras.Input(shape=(1,), name='indvar')
+    t.watch(x_inp)
+    reg=tf.keras.regularizers.l2(l=0.01)
+    dense = layers.Dense(100, activation='tanh', kernel_regularizer=reg)(x_inp)
+    for i in range(2):
+        dense = layers.Dense(100, activation='tanh', kernel_regularizer=reg)(dense)
+    yhat = layers.Dense(1, name='y')(dense)
+    dyhat = t.gradient(yhat, x_inp)
+    model = keras.Model(inputs=x_inp, outputs=[yhat, dyhat])
+    opt=tf.keras.optimizers.Adam()
+    model.compile(optimizer=opt, loss=[lambda y, y_act: 0,'MSE'])
+    model.summary()
+    model.fit(x=x, y=[x, x*x], epochs=1, batch_size=N)  #with this line,  numerical derivative will differ from analytical
+    y, dy = model(x)
+    dy_num = np.gradient(np.array(y).squeeze(), x)
+    plt.plot(x, y)
+    plt.plot(x, dy)
+    plt.plot(x, dy_num)
+    plt.legend(['y', 'dy', 'dynum'])
+    plt.show()

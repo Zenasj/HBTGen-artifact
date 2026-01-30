@@ -1,47 +1,32 @@
-# tf.random.uniform((B, 784), dtype=tf.float32) ← Input shape inferred as (batch_size, 784) for a flattened 28x28 image vector
-
 import tensorflow as tf
+from tensorflow.keras import layers
 
-class MyModel(tf.keras.Model):
-    def __init__(self, output_dim=10):
-        super(MyModel, self).__init__(name="MyModel")
-        self.output_dim = output_dim
-        # Replicating the functional model architecture as submodules
-        self.dense_1 = tf.keras.layers.Dense(64, activation='relu', name='dense_1')
-        self.dense_2 = tf.keras.layers.Dense(64, activation='relu', name='dense_2')
-        self.dense_3 = tf.keras.layers.Dense(output_dim, name='predictions')
+# Create a simple functional model
+inputs = keras.Input(shape=(784,), name='digits')
+x = keras.layers.Dense(64, activation='relu', name='dense_1')(inputs)
+x = keras.layers.Dense(64, activation='relu', name='dense_2')(x)
+outputs = keras.layers.Dense(10, name='predictions')(x)
+functional_model = keras.Model(inputs=inputs, outputs=outputs, name='3_layer_mlp')
 
-        # Submodel mimicking the "functional model" from issue for weight copying demonstration
-        self.functional_layers = [
-            tf.keras.layers.Dense(64, activation='relu', name='func_dense_1'),
-            tf.keras.layers.Dense(64, activation='relu', name='func_dense_2'),
-            tf.keras.layers.Dense(output_dim, name='func_predictions')
-        ]
+# Define a subclassed model with the same architecture
+class SubclassedModel(keras.Model):
+  def __init__(self, output_dim, name=None):
+    super(SubclassedModel, self).__init__(name=name)
+    self.output_dim = output_dim
+    self.dense_1 = keras.layers.Dense(64, activation='relu', name='dense_1')
+    self.dense_2 = keras.layers.Dense(64, activation='relu', name='dense_2')
+    self.dense_3 = keras.layers.Dense(output_dim, name='predictions')
+  def call(self, inputs):
+    x = self.dense_1(inputs)
+    x = self.dense_2(x)
+    x = self.dense_3(x)
+    return x
+  def get_config(self):
+    return {'output_dim': self.output_dim, 'name': self.name}
 
-    def call(self, inputs):
-        # Forward pass through the subclassed model path
-        x_sub = self.dense_1(inputs)
-        x_sub = self.dense_2(x_sub)
-        x_sub = self.dense_3(x_sub)
+subclassed_model = SubclassedModel(10)
+# Call the subclassed model once to create the weights.
+subclassed_model(tf.ones((1, 784)))
 
-        # Forward pass through the functional-like model path
-        x_func = inputs
-        for layer in self.functional_layers:
-            x_func = layer(x_func)
-
-        # Compare outputs numerically (L2 norm of difference)
-        diff = tf.norm(x_sub - x_func, ord='euclidean', axis=-1, keepdims=True)
-
-        # Output the difference tensor as numeric to reflect comparison
-        # This shows how close the two submodels are in predictions
-        return diff
-
-def my_model_function():
-    # Return an instance of MyModel with default output dimension 10
-    return MyModel()
-
-def GetInput():
-    # Return a random input tensor with shape (batch_size=1, 784) matching expected input
-    # This simulates a flattened 28x28 image vector with float32 values
-    return tf.random.uniform((1, 784), dtype=tf.float32)
-
+# Copy weights from functional_model to subclassed_model.
+subclassed_model.set_weights(functional_model.get_weights())

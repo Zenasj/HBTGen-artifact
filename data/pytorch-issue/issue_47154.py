@@ -1,24 +1,26 @@
-# torch.rand(32, 512, 64, dtype=torch.float), torch.rand(32, 64, 128, dtype=torch.float)  # scaled by 1e4
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        x1, x2 = inputs
-        # Compute via batch matrix multiplication (torch.bmm equivalent)
-        ans1 = x1 @ x2
-        # Compute via explicit batched torch.mm
-        ans2 = torch.stack([x1[i] @ x2[i] for i in range(x1.size(0))])
-        # Calculate differences
-        diff = ans2 - ans1
-        return diff.abs().mean(), diff.abs().max()
 
-def my_model_function():
-    return MyModel()
+def diff(x1, x2):
+    ans1 = x1 @ x2
+    ans2 = []
+    for i in range(x1.size(0)):
+        ans2.append(x1[i] @ x2[i])
+    ans2 = torch.stack(ans2)
 
-def GetInput():
-    B, M, K, N = 32, 512, 64, 128
-    x1 = torch.randn(B, M, K) * 1e4  # Match original scaling
-    x2 = torch.randn(B, K, N) * 1e4
-    return (x1, x2)
+    print('diff_mean =', (ans2 - ans1).abs().mean())
+    print('diff_max =', (ans2 - ans1).abs().max())
+    print()
 
+
+if __name__ == '__main__':
+    torch.manual_seed(0)
+    x1 = torch.randn(32, 512, 64).cuda() * 1e4
+    x2 = torch.randn(32, 64, 128).cuda() * 1e4
+
+    diff(x1[:, :1, :], x2)
+    diff(x1[:, :128 * 1, :], x2)
+    diff(x1[:, :128 * 2, :], x2)
+    diff(x1[:, :128 * 3, :], x2)
+    diff(x1[:, :128 * 4, :], x2)
+    diff(x1, x2)

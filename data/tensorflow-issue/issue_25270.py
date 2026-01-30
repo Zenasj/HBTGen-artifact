@@ -1,31 +1,31 @@
-# tf.random.uniform((B, 28, 28), dtype=tf.float32) ← Input shape is (batch_size, 28, 28), grayscale images normalized in [0,1]
+from tensorflow.keras import layers
 
 import tensorflow as tf
+from tensorflow import keras
+import os
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Flatten layer to convert 28x28 images to 784 vector
-        self.flatten = tf.keras.layers.Flatten(input_shape=(28, 28))
-        # Dense layer with 128 units and ReLU activation
-        self.dense1 = tf.keras.layers.Dense(128, activation='relu')
-        # Output Dense layer with 10 units and softmax activation for classification
-        self.dense2 = tf.keras.layers.Dense(10, activation='softmax')
+USE_CPU = 1
+if USE_CPU == 1:
+    os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  
+    os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
-    def call(self, inputs, training=False):
-        x = self.flatten(inputs)
-        x = self.dense1(x)
-        x = self.dense2(x)
-        return x
+fashion_mnist = keras.datasets.fashion_mnist
+(train_images, train_labels), (test_images, test_labels) = fashion_mnist.load_data()
 
-def my_model_function():
-    # Returns an instance of MyModel
-    return MyModel()
+train_images = train_images / 255.0
+test_images = test_images / 255.0
 
-def GetInput():
-    # Generate a batch of random inputs consistent with the expected input shape (batch_size, 28, 28)
-    # Assume batch size is 32 for example
-    batch_size = 32
-    # Uniform random float tensor in range [0,1], like normalized image input
-    return tf.random.uniform((batch_size, 28, 28), dtype=tf.float32)
+model = keras.Sequential([
+    keras.layers.Flatten(input_shape=(28, 28)),
+    keras.layers.Dense(128, activation=tf.nn.relu),
+    keras.layers.Dense(10, activation=tf.nn.softmax)
+])
 
+
+model.compile(optimizer='adam',
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy']
+              )
+model.fit(train_images, train_labels, epochs=5)
+test_loss, test_acc = model.evaluate(test_images, test_labels)
+print('Test accuracy:', test_acc)

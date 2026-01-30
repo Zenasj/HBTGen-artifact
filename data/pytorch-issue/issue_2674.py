@@ -1,41 +1,55 @@
-# torch.randint(0, 50000, (B, 150), dtype=torch.long)
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+class SymbolModule(nn.Module):
+    # MINIBATCH in: [64, 150]
+    # LABEL: [64]
     def __init__(self):
-        super(MyModel, self).__init__()
-        self.max_features = 50000  # Vocabulary size
-        self.embedding_dim = 128    # Embedding size
-        self.hidden_size = 128      # Hidden layer size
-        self.embedding = nn.Embedding(
-            num_embeddings=self.max_features,
-            embedding_dim=self.embedding_dim
-        )
-        self.gru = nn.GRU(
-            input_size=self.embedding_dim,
-            hidden_size=self.hidden_size,
-            num_layers=1,
-            batch_first=True,
-            bidirectional=False
-        )
-        self.l_out = nn.Linear(self.hidden_size, 2)  # Output layer for 2 classes
+        super(SymbolModule, self).__init__()
+        # Output: (mini-batch, W, embedding_dim)
+        self.embedding = nn.Embedding(num_embeddings=MAXFEATURES,
+                                      embedding_dim=EMBEDSIZE)
+        self.lstm = nn.LSTM(input_size=EMBEDSIZE, 
+                            hidden_size=NUMHIDDEN)
+        self.l_out = nn.Linear(NUMHIDDEN, 2)
 
     def forward(self, x):
         embeds = self.embedding(x)
-        batch_size = x.size(0)
-        h0 = torch.zeros(1, batch_size, self.hidden_size, device=x.device)
-        output, _ = self.gru(embeds, h0)
-        last_timestep = output[:, -1, :]
-        return self.l_out(last_timestep)
+        #print(embeds.size(0), embeds.size(1), embeds.size(2))
+        # (64, 150, 125)
+        _batch_size = embeds.size(1)  # 150
+        # init hidden-state for each element in batch
+        h0 = Variable(torch.zeros(1, _batch_size, NUMHIDDEN).cuda())
+        # init cell-state for each element in batch
+        c0 = Variable(torch.zeros(1, _batch_size, NUMHIDDEN).cuda())
+        # output for each t, (last_hidden-state, last_cell-state)
+        lstm_out, (hn, cn) = self.lstm(embeds, (h0, c0))
+        #print(hn.size(0), hn.size(1))
+        # (1, 150)
+        hn1 = hn.transpose(0, 1).contiguous().view(_batch_size, -1)
+        #print(hn1.size(0))
+        # 150
+        out = self.l_out(hn1)
+        #print(out.size(0), out.size(1))
+        # (150, 2)
+        return out
 
-def my_model_function():
-    return MyModel()
+print(x_train.shape, x_test.shape, y_train.shape, y_test.shape)
+(25000, 150) (25000, 150) (25000,) (25000,)
 
-def GetInput():
-    return torch.randint(
-        0, 50000,
-        (64, 150),
-        dtype=torch.long
-    )
-
+for j in range(EPOCHS):
+    for data, target in yield_mb(x_train, y_train, BATCHSIZE, shuffle=True):
+        # Get samples
+        data = Variable(torch.LongTensor(data).cuda())
+        target = Variable(torch.LongTensor(target).cuda())
+        # Init
+        optimizer.zero_grad()
+        # Clear out hidden state of lstm
+        sym.hidden = sym.init_hidden()
+        # Forwards
+        output = sym(data)
+        # Loss
+        loss = criterion(output, target)
+        # Back-prop
+        loss.backward()
+        optimizer.step()

@@ -1,0 +1,1 @@
+output = loaded_trt_module.module()(lhs1, rhs1)

@@ -1,36 +1,36 @@
-# torch.rand(B, 3, 224, 224, dtype=torch.float32)
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Simulated encoder (CNN for image features)
-        self.encoder = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2),
-            nn.Conv2d(64, 128, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2),
-            nn.Flatten(),
-            nn.Linear(128 * 56 * 56, 256)  # 224x224 input → 56x56 after pooling
-        )
-        # Simulated decoder (LSTM for caption generation)
-        self.decoder = nn.LSTM(256, 512, batch_first=True)  # Expects sequence input
+def save_checkpoint(encoder, decoder, encoder_optimizer, decoder_optimizer):
+    ## take all the things that are used in forward pass as function inputs
+    ## build a dictionary from all of them.
+    ## save them using `torch.save()`
+    state = {
+        'encoder': encoder,
+        'decoder': decoder,
+        'encoder_optimizer': encoder_optimizer,
+        'decoder_optimizer': decoder_optimizer
+    }
+    filename = 'image_captioning_checkpoint_' + str(epoch) + '.pth'
+    torch.save(state, filename)
 
-    def forward(self, x):
-        # Forward through encoder (image processing)
-        features = self.encoder(x)
-        # Example interface for decoder (requires sequence input not provided here)
-        # Return just encoder output for simplicity in this minimal example
-        return features
+# location to the checkpoint file
+checkpoint = 'image_captioning_checkpoint_8.pth'
 
-def my_model_function():
-    # Returns combined model with placeholder initialization
-    return MyModel()
+if checkpoint:
+    checkpoint = torch.load(checkpoint)
 
-def GetInput():
-    # Generates random image tensor (batch size 32, RGB, 224x224)
-    return torch.rand(32, 3, 224, 224, dtype=torch.float32)
+    encoder = checkpoint['encoder']
+    decoder = checkpoint['decoder']
+    encoder_optimizer = checkpoint['encoder_optimizer']
+    decoder_optimizer = checkpoint['decoder_optimizer']
 
+encoder = encoder.to(device)
+decoder = decoder.to(device)
+
+# lr scheduler
+encoder_lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(encoder_optimizer, mode='max', factor=lr_decay_factor, patience=lr_decay_patience) if fine_tune_encoder else None
+decoder_lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(decoder_optimizer, mode='max', factor=lr_decay_factor, patience=lr_decay_patience)
+
+# criterion for loss
+criterion = nn.CrossEntropyLoss().to(device)

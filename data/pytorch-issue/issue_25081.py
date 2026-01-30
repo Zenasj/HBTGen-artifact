@@ -1,65 +1,173 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
-
 import torch
 import torch.nn as nn
-from torch.cuda.amp import autocast, GradScaler
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, padding=1)
-        self.relu = nn.ReLU()
-        self.fc = nn.Linear(64 * 32 * 32, 10)
+@contextlib.contextmanager
+def autocast(whitelist_type=torch.float16, enabled=True):
+    old_whitelist_type, old_status = torch.get_autocasting_state()
+    torch.set_autocasting_state(whitelist_type, enabled)
+    try:
+        yield
+    finally:
+        torch.set_autocasting_state(original_whitelist_type, old_status)
 
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.relu(x)
-        x = x.view(x.size(0), -1)
-        x = self.fc(x)
-        return x
+with autocast():
+    output = model(input)
+    loss = loss_fn(output, target)
+# The backward pass should be invoked outside the context manager.  All casting has been appropriately recorded as part of the forward pass.
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+def forward(self, x):
+    x = self.layer_permitting_autocasting(x)
+    with autocast(enabled=False):
+        x = x.float()
+        x = self.explicitly_float_layer(x)
+    x = self.another_layer_permitting_autocasting(x)
+    return x
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    B, C, H, W = 4, 3, 32, 32  # Batch size, channels, height, width
-    return torch.rand(B, C, H, W, dtype=torch.float32).cuda()
+scaler = torch.cuda.amp.AmpScaler()
 
-# Example usage
-if __name__ == "__main__":
-    model = my_model_function().cuda()
-    criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
-    scaler = GradScaler()
-
-    input_tensor = GetInput()
-    target = torch.randint(0, 10, (input_tensor.size(0),)).cuda()
-
-    with autocast():
-        output = model(input_tensor)
-        loss = criterion(output, target)
-
+for input, target in data:
+    optimizer.zero_grad()
+    output = model(input)
+    loss = loss_fn(output, target)
     scaler.scale(loss).backward()
     scaler.step(optimizer)
     scaler.update()
 
-# The provided GitHub issue discusses the implementation of automatic mixed precision (AMP) for PyTorch, including auto-casting and gradient scaling. The discussion is detailed and covers various aspects of the feature, but it does not provide a specific model or code structure that can be directly extracted into a single Python file.
-# However, I can create a minimal example that demonstrates the use of AMP with a simple model. This example will include:
-# 1. A simple `MyModel` class.
-# 2. A function to return an instance of `MyModel`.
-# 3. A function to generate a random input tensor.
-# 4. The use of `torch.cuda.amp` for auto-casting and gradient scaling.
-# Here is the complete Python code:
-# ### Explanation:
-# 1. **MyModel Class**:
-#    - A simple convolutional neural network with one convolutional layer, a ReLU activation, and a fully connected layer.
-#    - The input shape is assumed to be `(B, 3, 32, 32)` where `B` is the batch size, and the input has 3 channels (e.g., RGB images).
-# 2. **my_model_function**:
-#    - Returns an instance of `MyModel`.
-# 3. **GetInput**:
-#    - Generates a random tensor of shape `(B, 3, 32, 32)` with `dtype=torch.float32` and moves it to the GPU.
-# 4. **Example Usage**:
-#    - Demonstrates how to use the model with AMP, including the use of `autocast` and `GradScaler` for gradient scaling.
-# This code provides a complete, self-contained example of using AMP with a simple model in PyTorch.
+torch.autograd.backward(scaler.scale((output0, output1)), grad_tensors=(grad0, grad1))
+
+torch.autograd.grad(scaler.scale((output0, output1)), model.parameters(), grad_outputs=(grad0, grad1))
+
+scaler = AmpScaler()
+...
+for input, target in data:
+    optimizer.zero_grad()
+    with autocast():
+        output = model(input)
+        loss = loss_fn(output, target)
+    scaler.scale(loss).backward()
+    scaler.step(optimizer)
+    scaler.update()
+
+scaler = AmpScaler()
+...
+for input, target in data:
+    optimizer.zero_grad()
+    with autocast():
+        output = model(input)
+        loss = loss_fn(output, target)
+    scaler.scale(loss).backward()
+
+    # Gradients are scaled, so we clip to max_norm*scale
+    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm*scaler.get_scale())
+
+    scaler.step(optimizer)
+    scaler.update()
+
+scaler = AmpScaler()
+...
+for input, target in data:
+    optimizer.zero_grad()
+    with autocast():
+        output = model(input)
+        loss = loss_fn(output, target)
+    scaler.scale(loss).backward()
+
+    scaler.unscale(optimizer)
+    # Since the optimizer's owned gradients are unscaled, we can clip to max_norm directly:
+    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm)
+
+    scaler.step(optimizer)
+    scaler.update()
+
+scaler = AmpScaler()
+...
+for input, target in data:
+    optimizer.zero_grad()
+    with autocast():
+        output = model(input)
+        loss = loss_fn(output, target)
+
+    # We should scale outputs for the out-of-place backward pass
+    grad_params = torch.autograd.grad(scaler.scale(loss), model.parameters(), create_graph=True)
+
+    # In general, the penalty term may depend nonlinearly on the out-of-place gradients, so to be safe,
+    # manually unscale them before computing the penalty.  This unscale should be autograd-exposed.
+    grad_params = [p*(1./scaler.get_scale()) for p in grad_params]
+
+    # Compute the penalty term and add it to the loss.
+    # The penalty term computation is effectively another snippet of forward pass, so it makes
+    # sense to enable autocasting for this section as well:
+    with autocast():
+        grad_norm = 0
+        for grad in grad_params:
+            grad_norm += grad.pow(2).sum()
+        grad_norm = grad_norm.sqrt()
+        loss = loss + grad_norm
+
+    # The usual scaling for backward will now accumulate leaf gradients that are appropriately scaled.
+    scaler.scale(loss).backward()
+    scaler.step(optimizer)
+    scaler.update()
+
+scaler = torch.cuda.amp.AmpScaler()
+...
+for input, target in data:
+    optimizer0.zero_grad()
+    optimizer1.zero_grad()
+    with autocast():
+        output0 = model0(input)
+        output1 = model1(input)
+        loss0 = loss_fn(2 * output0 + 3 * output1, target)
+        loss1 = loss_fn(3 * output0 - 5 * output1, target)
+
+    scaler.scale(loss0).backward(retain_graph=True)
+    scaler.scale(loss1).backward()
+
+    # Users can choose which optimizers receive explicit unscaling
+    scaler.unscale(optimizer0)
+
+    scaler.step(optimizer0)
+    scaler.step(optimizer1)
+    scaler.update()
+
+scaler = AmpScaler()
+...
+for i, (input, target) in enumerate(data):
+    with autocast():
+        output = model(input)
+        loss = loss_fn(output, target)
+        loss = loss/iters_to_accumulate
+    scaler.scale(loss).backward()
+    if (i + 1) % iters_to_accumulate == 0:
+        scaler.step(optimizer)
+        scaler.update()
+        optimizer.zero_grad()
+
+scaler = AmpScaler(enabled=args.use_mixed_precision)
+...
+for input, target in data:
+    optimizer.zero_grad()
+    with autocast(enabled=args.use_mixed_precision):
+        output = model(input)
+        loss = loss_fn(output, target)
+    scaler.scale(loss).backward()
+    scaler.step(optimizer)
+    scaler.update()
+
+scaler = AmpScaler()
+...
+for input, target in data:
+    # Replay the batch, updating the scale if necessary, until we receive gradients that aren't inf/nan.
+    while True:
+        optimizer.zero_grad()
+        with autocast():
+            output = model(input)
+            loss = loss_fn(output, target)
+        scaler.scale(loss).backward()
+        scaler.unscale(optimizer)
+        if scaler._found_inf(optimizer).item():
+            scaler.update()
+        else:
+            break
+    scaler.step(optimizer)
+    scaler.update()

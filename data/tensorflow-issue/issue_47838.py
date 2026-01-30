@@ -1,92 +1,82 @@
-# tf.random.uniform((1, 20), dtype=tf.float32) ← inferred input shape and dtype from training data
+import random
+from tensorflow.keras import layers
 
 import tensorflow as tf
+from tensorflow import keras
 import tensorflow_model_optimization as tfmot
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Baseline model: simple sequential with Dense(20) + Flatten
-        # The input shape is (20,)
-        self.base_model = tf.keras.Sequential([
-            tf.keras.layers.Dense(20, input_shape=(20,)),
-            tf.keras.layers.Flatten()
-        ])
-        # Wrap the baseline model with pruning wrapper for pruned model
-        self.prune_low_magnitude = tfmot.sparsity.keras.prune_low_magnitude
-        self.pruned_model = self.prune_low_magnitude(self.base_model)
-        
-        # For comparison, we replicate the "stripped" pruned model,
-        # but we do that in the call function by stripping pruning from pruned_model.
-        # The stripped model corresponds to model_for_export in original code.
+from tensorflow.compat.v1 import ConfigProto
+from tensorflow.compat.v1 import InteractiveSession
 
-    def call(self, inputs, training=False):
-        # Run baseline model
-        base_out = self.base_model(inputs, training=training)
-        # Run pruned model (with pruning wrappers active if training)
-        pruned_out = self.pruned_model(inputs, training=training)
-        # Strip pruning wrappers from pruned model for export comparison after call
-        # Here we simulate stripping on the fly by calling tfmot strip_pruning method,
-        # but it expects a model to strip, not a call output.
-        # So, we replicate the logic and return the stripped model output as a call:
+config = ConfigProto()
+config.gpu_options.allow_growth = True
+session = InteractiveSession(config=config)
 
-        # However, stripping pruning is typically done offline (not on the fly).
-        # Here for demonstration, we just call baseline model again to simulate stripping,
-        # since stripping returns a model with same weights but without pruning masks.
-        # The stripped model should behave like baseline but internally have pruned weights.
-
-        # In this context, to meet requirements, return a tuple with:
-        # (baseline output, pruned output, stripped model output)
-
-        # Note: stripped model = tfmot.sparsity.keras.strip_pruning(pruned_model)
-        # But can't do it inside call. We will simulate by using a stripped model attribute.
-
-        # We rely on a pre-stripped model instance (assigned externally or inside a method)
-        if hasattr(self, "stripped_model"):
-            stripped_out = self.stripped_model(inputs, training=False)
-        else:
-            # fallback: just re-use base model output as placeholder for stripped output
-            stripped_out = base_out
-
-        return base_out, pruned_out, stripped_out
-
-    def setup_stripped_model(self):
-        # Create a stripped version of the pruned model to simulate export
-        self.stripped_model = tfmot.sparsity.keras.strip_pruning(self.pruned_model)
+import numpy as np
+import tempfile
+import os
+import zipfile
 
 
-def my_model_function():
-    model = MyModel()
-    # Setup stripped model (simulate export stripping pruning wrappers)
-    model.setup_stripped_model()
+def get_gzipped_model_size(model):
+  # Returns size of gzipped model, in bytes.
+  import os
+  import zipfile
 
-    # Compile and "pretrain" weights on dummy data (mimicking original code)
-    x_train = tf.random.normal((1, 20), dtype=tf.float32)
-    # dummy one-hot labels with num_classes=20
-    y_train = tf.one_hot([0], depth=20, dtype=tf.float32)
+  _, keras_file = tempfile.mkstemp('.h5')
+  model.save(keras_file, include_optimizer=False)
 
-    model.base_model.compile(
-        loss=tf.keras.losses.CategoricalCrossentropy(),
-        optimizer='adam',
-        metrics=['accuracy']
-    )
-    # Train the baseline model for one step to initialize weights roughly like original
-    model.base_model.fit(x_train, y_train, epochs=1, verbose=0)
-    # Load the trained weights into pruned_model wrappers by calling prune_low_magnitude again
-    # The pruned model weights are linked to baseline model weights inside wrapper,
-    # so they share weights. No extra loading needed here.
+  _, zipped_file = tempfile.mkstemp('.zip')
+  with zipfile.ZipFile(zipped_file, 'w', compression=zipfile.ZIP_DEFLATED) as f:
+    f.write(keras_file)
 
-    # Compile pruned_model as well (optional, pruning requires compile for finetuning)
-    model.pruned_model.compile(
-        loss=tf.keras.losses.CategoricalCrossentropy(),
-        optimizer='adam',
-        metrics=['accuracy']
-    )
-
-    return model
+  return os.path.getsize(zipped_file)
 
 
-def GetInput():
-    # Return a random input tensor with shape (1, 20), dtype float32, to match model input
-    return tf.random.uniform((1, 20), dtype=tf.float32)
+input_shape = [20]
+x_train = np.random.randn(1, 20).astype(np.float32)
+y_train = tf.keras.utils.to_categorical(np.random.randn(1), num_classes=20)
 
+
+def setup_model():
+  model = tf.keras.Sequential([
+      tf.keras.layers.Dense(20, input_shape=input_shape),
+      tf.keras.layers.Flatten()
+  ])
+  return model
+
+def setup_pretrained_weights():
+  model = setup_model()
+
+  model.compile(
+      loss=tf.keras.losses.categorical_crossentropy,
+      optimizer='adam',
+      metrics=['accuracy']
+  )
+
+  model.fit(x_train, y_train)
+
+  _, pretrained_weights = tempfile.mkstemp('.tf')
+
+  model.save_weights(pretrained_weights)
+
+  return pretrained_weights
+
+
+pretrained_weights = setup_pretrained_weights()
+
+
+def test():
+    base_model = setup_model()
+    base_model.load_weights(pretrained_weights)
+    model_for_pruning = tfmot.sparsity.keras.prune_low_magnitude(base_model)
+
+    model_for_export = tfmot.sparsity.keras.strip_pruning(model_for_pruning)
+
+    print("Size of gzipped baseline model: %.2f bytes" % (get_gzipped_model_size(base_model)))
+    print("Size of gzipped pruned model without stripping: %.2f bytes" % (get_gzipped_model_size(model_for_pruning)))
+    print("Size of gzipped pruned model with stripping: %.2f bytes" % (get_gzipped_model_size(model_for_export)))
+
+
+if __name__ == "__main__":
+    test()

@@ -1,36 +1,27 @@
-# torch.rand(3, dtype=torch.float32)  # Inferred input shape (batch size of 3)
-
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
+x1 = torch.tensor([0.0, 2.0, 3.0], requires_grad=True)
+x2 = torch.tensor([0.0, 2.0, 3.0], requires_grad=True)
 
-    def forward(self, x):
-        y1 = torch.where(x > 2, torch.log2(x), 2 * x)
-        return y1
+# Use torch.where to conditionally apply an operation
+y1 = torch.where(x1 > 2, torch.log2(x1), 2*x1)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+# Equaivalent code
+y2 = x2.clone().detach()
+for i in range(len(x2)):
+    if x2[i] > 2:
+        y2[i] = torch.log2(x2[i])
+    else:
+        y2[i] = 2*x2[i]
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.tensor([0.0, 2.0, 3.0], requires_grad=True)
+z1 = y1.sum()
+z2 = y2.sum()
 
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
-# output.sum().backward()
-# print(input_tensor.grad)
+z1.backward()
+z2.backward()
 
-# ### Explanation:
-# - **MyModel**: The model is defined to replicate the behavior of the `torch.where` operation as described in the issue. The `forward` method applies the `torch.where` function to the input tensor.
-# - **my_model_function**: This function returns an instance of `MyModel`.
-# - **GetInput**: This function generates a tensor with the same shape and values as the example in the issue, ensuring it can be used directly with `MyModel`.
-# ### Assumptions:
-# - The input tensor is a 1D tensor with a batch size of 3, as shown in the example.
-# - The model is designed to demonstrate the behavior of `torch.where` with the given conditions and operations.
-# This code can be used to reproduce the behavior and gradients as described in the issue.
+# Check the gradients
+print('y1 =',y1)
+print('x1.grad =', x1.grad)
+print('y2 =',y2)
+print('x2.grad = ', x2.grad)

@@ -1,17 +1,12 @@
-# torch.rand(5000, 5000, dtype=torch.float32)
 import torch
-from torch import nn
+from tqdm import trange
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        
-    def forward(self, x):
-        return x @ x  # Matrix multiplication as per original computation
+DTYPE = torch.float32
+MAT_SIZE = 5000
+DEVICE = ["cpu", "mps"][0]      # it's CPU now
 
-def my_model_function():
-    return MyModel()
+mat = torch.randn([MAT_SIZE, MAT_SIZE], dtype=DTYPE, device=DEVICE)
 
-def GetInput():
-    return torch.randn(5000, 5000, dtype=torch.float32)
-
+for i in trange(N_ITER := 100):
+    mat @= mat                  # <--- Main Computation HERE
+    print(mat[0, 0], end="")    # avoid sync-issue when using 'mps'

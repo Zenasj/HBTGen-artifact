@@ -1,20 +1,16 @@
-# torch.rand(2, 3, 4, dtype=torch.float32)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self, other=1, alpha=2):
-        super().__init__()
-        self.other = other
-        self.alpha = alpha
-    
-    def forward(self, inputs):
-        out = torch.empty_like(inputs)
-        return torch.add(inputs, self.other, alpha=self.alpha, out=out)
 
-def my_model_function():
-    return MyModel()
+def fn(inputs, other, alpha, out):
+    res = torch.add(inputs, other, alpha=alpha, out=out)
+    return res
 
-def GetInput():
-    return torch.randn(2, 3, 4)
 
+if __name__ == "__main__":
+    inputs = torch.randn(2, 3, 4)
+    other = 1
+    alpha = 2
+    out = torch.empty(2, 3, 4)
+    compl_fn = torch.compile(fn, dynamic=True)
+    res = compl_fn(inputs, other, alpha, out)
+    print(res)

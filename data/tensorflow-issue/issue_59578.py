@@ -1,148 +1,122 @@
-# tf.random.uniform((B, 128, 128, 3), dtype=tf.float32)  # Assuming channel last, RGB images of 128x128 for segmentation
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
-from tensorflow.keras import layers
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import *
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Encoder
-        # Block 1
-        self.conv1_1 = layers.Conv2D(64, (3, 3), activation='relu', padding='same')
-        self.bn1_1 = layers.BatchNormalization()
-        self.conv1_2 = layers.Conv2D(64, (3, 3), activation='relu', padding='same')
-        self.bn1_2 = layers.BatchNormalization()
-        self.pool1 = layers.MaxPooling2D((2, 2))
+# Set the input shape of the images (adjust based on the input image size)
+input_shape = (128, 128, 3)  # Adjust based on the input image size
 
-        # Block 2
-        self.conv2_1 = layers.Conv2D(128, (3, 3), activation='relu', padding='same')
-        self.bn2_1 = layers.BatchNormalization()
-        self.conv2_2 = layers.Conv2D(128, (3, 3), activation='relu', padding='same')
-        self.bn2_2 = layers.BatchNormalization()
-        self.pool2 = layers.MaxPooling2D((2, 2))
+# Set the number of segmentation classes 
+n_classes = 1  # Number of segmentation classes
 
-        # Block 3
-        self.conv3_1 = layers.Conv2D(256, (3, 3), activation='relu', padding='same')
-        self.bn3_1 = layers.BatchNormalization()
-        self.conv3_2 = layers.Conv2D(256, (3, 3), activation='relu', padding='same')
-        self.bn3_2 = layers.BatchNormalization()
-        self.pool3 = layers.MaxPooling2D((2, 2))
+# Define the model architecture
+inputs = Input(shape=input_shape)  # Define the input layer with the specified input shape
 
-        # Block 4
-        self.conv4_1 = layers.Conv2D(512, (3, 3), activation='relu', padding='same')
-        self.bn4_1 = layers.BatchNormalization()
-        self.conv4_2 = layers.Conv2D(512, (3, 3), activation='relu', padding='same')
-        self.bn4_2 = layers.BatchNormalization()
-        self.drop4 = layers.Dropout(0.5)
-        self.pool4 = layers.MaxPooling2D((2, 2))
+# Encoder
+conv1 = Conv2D(64, (3, 3), activation='relu', padding='same')(inputs)  # First convolutional layer with 64 filters
+conv1 = BatchNormalization()(conv1)  # Apply batch normalization to normalize the activations
+conv1 = Conv2D(64, (3, 3), activation='relu', padding='same')(conv1)  # Second convolutional layer with 64 filters
+conv1 = BatchNormalization()(conv1)  # Apply batch normalization to normalize the activations
+pool1 = MaxPooling2D((2, 2))(conv1)  # Max pooling layer with a pool size of (2, 2)
 
-        # Block 5 (Bottleneck)
-        self.conv5_1 = layers.Conv2D(1024, (3, 3), activation='relu', padding='same')
-        self.bn5_1 = layers.BatchNormalization()
-        self.conv5_2 = layers.Conv2D(1024, (3, 3), activation='relu', padding='same')
-        self.bn5_2 = layers.BatchNormalization()
-        self.drop5 = layers.Dropout(0.5)
+conv2 = Conv2D(128, (3, 3), activation='relu', padding='same')(pool1)  # Convolutional layer with 128 filters
+conv2 = BatchNormalization()(conv2)  # Apply batch normalization to normalize the activations
+conv2 = Conv2D(128, (3, 3), activation='relu', padding='same')(conv2)  # Convolutional layer with 128 filters
+conv2 = BatchNormalization()(conv2)  # Apply batch normalization to normalize the activations
+pool2 = MaxPooling2D((2, 2))(conv2)  # Max pooling layer with a pool size of (2, 2)
 
-        # Decoder
-        self.up6 = layers.UpSampling2D((2, 2))
-        self.conv6_1 = layers.Conv2D(512, (3, 3), activation='relu', padding='same')
-        self.bn6_1 = layers.BatchNormalization()
-        self.conv6_2 = layers.Conv2D(512, (3, 3), activation='relu', padding='same')
-        self.bn6_2 = layers.BatchNormalization()
+conv3 = Conv2D(256, (3, 3), activation='relu', padding='same')(pool2)  # Convolutional layer with 256 filters
+conv3 = BatchNormalization()(conv3)  # Apply batch normalization to normalize the activations
+conv3 = Conv2D(256, (3, 3), activation='relu', padding='same')(conv3)  # Convolutional layer with 256 filters
+conv3 = BatchNormalization()(conv3)  # Apply batch normalization to normalize the activations
+pool3 = MaxPooling2D((2, 2))(conv3)  # Max pooling layer with a pool size of (2, 2)
 
-        self.up7 = layers.UpSampling2D((2, 2))
-        self.conv7_1 = layers.Conv2D(256, (3, 3), activation='relu', padding='same')
-        self.bn7_1 = layers.BatchNormalization()
-        self.conv7_2 = layers.Conv2D(256, (3, 3), activation='relu', padding='same')
-        self.bn7_2 = layers.BatchNormalization()
+conv4 = Conv2D(512, (3, 3), activation='relu', padding='same')(pool3)  # Convolutional layer with 512 filters
+conv4 = BatchNormalization()(conv4)  # Apply batch normalization to normalize the activations
+conv4 = Conv2D(512, (3, 3), activation='relu', padding='same')(conv4)  # Convolutional layer with 512 filters
+conv4 = BatchNormalization()(conv4)  # Apply batch normalization to normalize the activations
+drop4 = Dropout(0.5)(conv4)  # Apply dropout regularization with a rate of 0.5
+pool4 = MaxPooling2D((2, 2))(drop4)  # Max pooling layer with a pool size of (2, 2)
 
-        self.up8 = layers.UpSampling2D((2, 2))
-        self.conv8_1 = layers.Conv2D(128, (3, 3), activation='relu', padding='same')
-        self.bn8_1 = layers.BatchNormalization()
-        self.conv8_2 = layers.Conv2D(128, (3, 3), activation='relu', padding='same')
-        self.bn8_2 = layers.BatchNormalization()
+conv5 = Conv2D(1024, (3, 3), activation='relu', padding='same')(pool4)  # Convolutional layer with 1024 filters
+conv5 = BatchNormalization()(conv5)  # Apply batch normalization to normalize the activations
+conv5 = Conv2D(1024, (3, 3), activation='relu', padding='same')(conv5)  # Convolutional layer with 1024 filters
+conv5 = BatchNormalization()(conv5)  # Apply batch normalization to normalize the activations
+drop5 = Dropout(0.5)(conv5)  # Apply dropout regularization with a rate of 0.5
 
-        self.up9 = layers.UpSampling2D((2, 2))
-        self.conv9_1 = layers.Conv2D(64, (3, 3), activation='relu', padding='same')
-        self.bn9_1 = layers.BatchNormalization()
-        self.conv9_2 = layers.Conv2D(64, (3, 3), activation='relu', padding='same')
-        self.bn9_2 = layers.BatchNormalization()
+# Decoder
+up6 = concatenate([UpSampling2D((2, 2))(drop5), conv4], axis=-1)  # Upsampling layer with a scale factor of (2, 2)
+conv6 = Conv2D(512, (3, 3), activation='relu', padding='same')(up6)  # Convolutional layer with 512 filters
+conv6 = BatchNormalization()(conv6)  # Apply batch normalization to normalize the activations
+conv6 = Conv2D(512, (3, 3), activation='relu', padding='same')(conv6)  # Convolutional layer with 512 filters
+conv6 = BatchNormalization()(conv6)  # Apply batch normalization to normalize the activations
 
-        # Output layer
-        self.output_conv = layers.Conv2D(1, (1, 1), activation='softmax')  # 1 class with softmax per channel
+up7 = concatenate([UpSampling2D((2, 2))(conv6), conv3], axis=-1)  # Upsampling layer with a scale factor of (2, 2)
+conv7 = Conv2D(256, (3, 3), activation='relu', padding='same')(up7)  # Convolutional layer with 256 filters
+conv7 = BatchNormalization()(conv7)  # Apply batch normalization to normalize the activations
+conv7 = Conv2D(256, (3, 3), activation='relu', padding='same')(conv7)  # Convolutional layer with 256 filters
+conv7 = BatchNormalization()(conv7)  # Apply batch normalization to normalize the activations
 
-    def call(self, inputs, training=False):
-        # Encoder
-        x1 = self.conv1_1(inputs)
-        x1 = self.bn1_1(x1, training=training)
-        x1 = self.conv1_2(x1)
-        x1 = self.bn1_2(x1, training=training)
-        p1 = self.pool1(x1)
+up8 = concatenate([UpSampling2D((2, 2))(conv7), conv2], axis=-1)  # Upsampling layer with a scale factor of (2, 2)
+conv8 = Conv2D(128, (3, 3), activation='relu', padding='same')(up8)  # Convolutional layer with 128 filters
+conv8 = BatchNormalization()(conv8)  # Apply batch normalization to normalize the activations
+conv8 = Conv2D(128, (3, 3), activation='relu', padding='same')(conv8)  # Convolutional layer with 128 filters
+conv8 = BatchNormalization()(conv8)  # Apply batch normalization to normalize the activations
 
-        x2 = self.conv2_1(p1)
-        x2 = self.bn2_1(x2, training=training)
-        x2 = self.conv2_2(x2)
-        x2 = self.bn2_2(x2, training=training)
-        p2 = self.pool2(x2)
+up9 = concatenate([UpSampling2D((2, 2))(conv8), conv1], axis=-1)  # Upsampling layer with a scale factor of (2, 2)
+conv9 = Conv2D(64, (3, 3), activation='relu', padding='same')(up9)  # Convolutional layer with 64 filters
+conv9 = BatchNormalization()(conv9)  # Apply batch normalization to normalize the activations
+conv9 = Conv2D(64, (3, 3), activation='relu', padding='same')(conv9)  # Convolutional layer with 64 filters
+conv9 = BatchNormalization()(conv9)  # Apply batch normalization to normalize the activations
 
-        x3 = self.conv3_1(p2)
-        x3 = self.bn3_1(x3, training=training)
-        x3 = self.conv3_2(x3)
-        x3 = self.bn3_2(x3, training=training)
-        p3 = self.pool3(x3)
+outputs = Conv2D(n_classes, (1, 1), activation='softmax')(conv9)  # Convolutional layer for output
 
-        x4 = self.conv4_1(p3)
-        x4 = self.bn4_1(x4, training=training)
-        x4 = self.conv4_2(x4)
-        x4 = self.bn4_2(x4, training=training)
-        d4 = self.drop4(x4, training=training)
-        p4 = self.pool4(d4)
+# Create the model
+model = Model(inputs=inputs, outputs=outputs)
 
-        x5 = self.conv5_1(p4)
-        x5 = self.bn5_1(x5, training=training)
-        x5 = self.conv5_2(x5)
-        x5 = self.bn5_2(x5, training=training)
-        d5 = self.drop5(x5, training=training)
-
-        # Decoder with skip connections
-        up6 = self.up6(d5)
-        concat6 = tf.concat([up6, d4], axis=-1)
-        c6 = self.conv6_1(concat6)
-        c6 = self.bn6_1(c6, training=training)
-        c6 = self.conv6_2(c6)
-        c6 = self.bn6_2(c6, training=training)
-
-        up7 = self.up7(c6)
-        concat7 = tf.concat([up7, x3], axis=-1)
-        c7 = self.conv7_1(concat7)
-        c7 = self.bn7_1(c7, training=training)
-        c7 = self.conv7_2(c7)
-        c7 = self.bn7_2(c7, training=training)
-
-        up8 = self.up8(c7)
-        concat8 = tf.concat([up8, x2], axis=-1)
-        c8 = self.conv8_1(concat8)
-        c8 = self.bn8_1(c8, training=training)
-        c8 = self.conv8_2(c8)
-        c8 = self.bn8_2(c8, training=training)
-
-        up9 = self.up9(c8)
-        concat9 = tf.concat([up9, x1], axis=-1)
-        c9 = self.conv9_1(concat9)
-        c9 = self.bn9_1(c9, training=training)
-        c9 = self.conv9_2(c9)
-        c9 = self.bn9_2(c9, training=training)
-
-        outputs = self.output_conv(c9)
-        return outputs
+# Print the model summary
+model.summary()
 
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+# Set the optimizer for the model
+optimizer = tf.keras.optimizers.Adam(lr=1e-4)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # Assume batch size 1 for the random input and float32 dtype
-    return tf.random.uniform((1, 128, 128, 3), dtype=tf.float32)
+# Compile the model with loss function and metrics
+model.compile(optimizer=optimizer, loss='binary_crossentropy', metrics=['accuracy'])
 
+images_path = '/kaggle/input/coco-2014-dataset-for-yolov3/coco2014/images/val2014'
+masks_path = '/kaggle/working/mask_val_2014'
+batch_size = 8
+
+val_generator = CustomDataGenerator(images_path, masks_path, batch_size)
+
+
+# Fit the model with the training generator
+train_steps =  len(os.listdir( "/kaggle/working/mask_train_2014/"))/batch_size
+model.fit(train_generator,validation_data = val_generator, steps_per_epoch = train_steps , epochs=20)
+
+def print_preprocessed_image_shapes(model, generator):
+    """
+    Print the shapes of preprocessed images generated by the provided model and generator.
+
+    Args:
+        model (tf.keras.Model): The trained model.
+        generator (CustomDataGenerator): Instance of the CustomDataGenerator class.
+    """
+    for i in range(len(generator)):
+        # Get a batch of preprocessed images from the generator
+        batch_images, batch_masks = generator[i]
+
+        # Print the shapes of the preprocessed images
+        for image in batch_images:
+            print(f"Shape of preprocessed image: {image.shape}")
+        for mask in batch_maskss:
+
+             print(f"Shape of preprocessed image: {mask.shape}")
+            
+# Print the shapes of preprocessed images
+print_preprocessed_image_shapes(model, val_generator)

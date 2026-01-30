@@ -1,23 +1,31 @@
-# torch.rand(B, S, D, dtype=torch.float32)  # B=32, S=20, D=64
+import torch.nn as nn
+
+py
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.encoder_layer = torch.nn.TransformerEncoderLayer(
-            d_model=64,
-            nhead=4,
-            bias=False,
-            batch_first=True
-        ).eval()  # Matches original issue's configuration
 
-    def forward(self, x):
-        return self.encoder_layer(x)
+batch_size = 32
+seqlen = 20
+d_model = 64
+nhead = 4
 
-def my_model_function():
-    return MyModel()
+encoder_layer = torch.nn.TransformerEncoderLayer(d_model, nhead, bias=False, batch_first=True).eval()
+x = torch.randn(batch_size, seqlen, d_model)
 
-def GetInput():
-    return torch.randn(32, 20, 64)  # Matches original input dimensions (batch_size, seqlen, d_model)
+y = encoder_layer(x)  # AttributeError: 'NoneType' object has no attribute 'device'
 
+tensor_args = (
+              src,
+              self.self_attn.in_proj_weight,
+              self.self_attn.in_proj_bias,
+              self.self_attn.out_proj.weight,
+              self.self_attn.out_proj.bias,
+              self.norm1.weight,
+              self.norm1.bias,
+              self.norm2.weight,
+              self.norm2.bias,
+              self.linear1.weight,
+              self.linear1.bias,
+              self.linear2.weight,
+              self.linear2.bias,
+          )

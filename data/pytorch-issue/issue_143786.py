@@ -1,31 +1,46 @@
-# torch.rand(8, 10, dtype=torch.float32)  # Inferred input shape
-
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+import torch
+
+def custom_add_direct(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+    return a + b
+
+@torch.library.custom_op("mylib::custom_add", mutates_args=(),
+                         device_types="cuda",
+                         )
+def _(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+    return custom_add_direct(a,b)
+
+@torch.library.register_fake("mylib::custom_add")
+def _(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+    return torch.empty_like(a)
+
+class Model(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.fc1 = nn.Linear(10, 16)
-        self.relu = nn.ReLU()
-        self.fc2 = nn.Linear(16, 1)
-        self.sigmoid = nn.Sigmoid()
+        self.fc1 = torch.nn.Linear(10, 16)
+        self.relu = torch.nn.ReLU()
+        self.fc2 = torch.nn.Linear(16, 1)
+        self.sigmoid = torch.nn.Sigmoid()
 
     def forward(self, x):
         x = self.fc1(x)
         y = self.relu(x)
-        x = self.fc2(torch.add(x, y))  # Replaced custom_add with torch.add
+        x = self.fc2(torch.ops.mylib.custom_add(x, y))
         x = self.sigmoid(x)
         return x
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
+with torch.no_grad():
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    return torch.randn(8, 10, device=device)
+    model = Model().to(device=device)
+    example_inputs = (torch.randn(8, 10, device=device),)
 
-# The model can be used with `torch.compile(MyModel())(GetInput())`
+    # Export the model                                                                               
+    exported = torch.export.export(model, example_inputs)
 
+    # Compile the model                                                                              
+    output_path = torch._inductor.aoti_compile_and_package(
+        exported,
+        example_inputs,
+        package_path="model.pt2",
+    )

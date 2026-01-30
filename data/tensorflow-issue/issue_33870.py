@@ -1,57 +1,135 @@
-# tf.random.uniform((1, 224, 224, 3), dtype=tf.float32)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        self.input_shape_ = (224, 224, 3)
+shape = (224, 224, 3)
 
-        # Base MobileNetV2 feature extractor without top layers, pretrained on imagenet.
-        # This block is inference only with pretrained weights.
-        self.base_model = tf.keras.applications.MobileNetV2(
-            include_top=False, weights="imagenet", input_shape=self.input_shape_)
+# sequential model
+model1 = tf.keras.Sequential(
+            [
+                tf.keras.Input(shape=shape, name="input"),
+                tf.keras.applications.MobileNetV2(include_top=False, weights="imagenet", input_shape=shape),
+                tf.keras.layers.GlobalAveragePooling2D(),
+                tf.keras.layers.Dense(256, activation="relu", name="descriptor"),
+                tf.keras.layers.Dense(2, activation="softmax", name="probs"),
+            ]
+        )
 
-        # Pooling & classification head consistent with the functional/sequential examples in the issue.
-        self.global_pool = tf.keras.layers.GlobalAveragePooling2D()
-        self.dense1 = tf.keras.layers.Dense(256, activation="relu", name="descriptor")
-        self.dense2 = tf.keras.layers.Dense(2, activation="softmax", name="probs")
+# functional model
+base_model2 = tf.keras.applications.MobileNetV2(include_top=False, weights="imagenet", input_shape=shape)
+inputs = tf.keras.Input(shape=shape, name="input")
+x = base_model2(inputs)
+x = tf.keras.layers.GlobalAveragePooling2D()(x)
+x = tf.keras.layers.Dense(256, activation="relu", name="descriptor")(x)
+outputs = tf.keras.layers.Dense(2, activation="softmax", name="probs")(x)
+model2 = tf.keras.Model(inputs=inputs, outputs=outputs)
 
-    def call(self, inputs, training=False):
-        """
-        Forward pass.
+tf.saved_model.save(model1, "test1")
+tf.saved_model.save(model2, "test2")
+#model2.save("test2", include_optimizer=False, save_format="tf")
 
-        This matches the functional model described in the issue:
-            Inputs (batch, 224, 224, 3)
-            -> MobileNetV2 base (no top)
-            -> GlobalAveragePooling2D
-            -> Dense(256, relu)
-            -> Dense(2, softmax)
+model_1 = tf.keras.models.load_model('test1')
 
-        Compatible with tf2.20.0 and XLA compilation.
-        """
-        x = self.base_model(inputs, training=training)
-        x = self.global_pool(x)
-        x = self.dense1(x)
-        outputs = self.dense2(x)
-        return outputs
+# THIS RAISES exception 
+model_2 = tf.keras.models.load_model('test2')
 
+import tensorflow as tf
 
-def my_model_function():
-    """
-    Returns a new instance of the MyModel class
-    """
-    return MyModel()
+shape = (224, 224, 3)
 
+# sequential model
+model1 = tf.keras.Sequential(
+            [
+                tf.keras.Input(shape=shape, name="input"),
+                tf.keras.applications.MobileNetV2(include_top=False, weights="imagenet", input_shape=shape),
+                tf.keras.layers.GlobalAveragePooling2D(),
+                tf.keras.layers.Dense(256, activation="relu", name="descriptor"),
+                tf.keras.layers.Dense(2, activation="softmax", name="probs"),
+            ]
+        )
 
-def GetInput():
-    """
-    Returns a single batch input tensor matching the expected input shape (1, 224, 224, 3)
-    with values sampled uniformly in [0, 1).
+# functional model
+base_model2 = tf.keras.applications.MobileNetV2(include_top=False, weights="imagenet", input_shape=shape)
+inputs = tf.keras.Input(shape=shape, name="input")
+x = base_model2(inputs)
+x = tf.keras.layers.GlobalAveragePooling2D()(x)
+x = tf.keras.layers.Dense(256, activation="relu", name="descriptor")(x)
+outputs = tf.keras.layers.Dense(2, activation="softmax", name="probs")(x)
+model2 = tf.keras.Model(inputs=inputs, outputs=outputs)
 
-    This input tensor is compatible with the MyModel call method.
-    """
-    # Batch size of 1 for example input
-    batch_size = 1
-    input_shape = (batch_size, 224, 224, 3)
-    return tf.random.uniform(input_shape, dtype=tf.float32)
+tf.saved_model.save(model1, "test1")
+tf.saved_model.save(model2, "test2")
+#model2.save("test2", include_optimizer=False, save_format="tf")
 
+#model_1 = tf.keras.models.load_model('test1')
+model_1 = tf.saved_model.load('test1')
+
+# THIS RAISES exception 
+#model_2 = tf.keras.models.load_model('test2')
+model_2 = tf.saved_model.load('test2')
+
+import tensorflow as tf
+
+shape = (224, 224, 3)
+
+# sequential model
+model1 = tf.keras.Sequential(
+    [
+        tf.keras.Input(shape=shape, name="input"),
+        tf.keras.applications.MobileNetV2(include_top=False, weights="imagenet", input_shape=shape),
+        tf.keras.layers.GlobalAveragePooling2D(),
+        tf.keras.layers.Dense(256, activation="relu", name="descriptor"),
+        tf.keras.layers.Dense(2, activation="softmax", name="probs"),
+    ]
+)
+
+# functional model
+base_model2 = tf.keras.applications.MobileNetV2(include_top=False, weights="imagenet", input_shape=shape)
+inputs = tf.keras.Input(shape=shape, name="input")
+x = base_model2(inputs)
+x = tf.keras.layers.GlobalAveragePooling2D()(x)
+x = tf.keras.layers.Dense(256, activation="relu", name="descriptor")(x)
+outputs = tf.keras.layers.Dense(2, activation="softmax", name="probs")(x)
+model2 = tf.keras.Model(inputs=inputs, outputs=outputs)
+
+tf.keras.models.save_model(model1, "test1.h5", include_optimizer=False)
+tf.keras.models.save_model(model2, "test2.h5", include_optimizer=False)
+
+model_1 = tf.keras.models.load_model("test1.h5")
+
+# THIS is passing
+model_2 = tf.keras.models.load_model("test2.h5")
+
+import tensorflow as tf
+
+shape = (224, 224, 3)
+
+# sequential model
+model1 = tf.keras.Sequential(
+    [
+        tf.keras.Input(shape=shape, name="input"),
+        tf.keras.applications.MobileNetV2(include_top=False, weights="imagenet", input_shape=shape),
+        tf.keras.layers.GlobalAveragePooling2D(),
+        tf.keras.layers.Dense(256, activation="relu", name="descriptor"),
+        tf.keras.layers.Dense(2, activation="softmax", name="probs"),
+    ]
+)
+
+# functional model
+base_model2 = tf.keras.applications.MobileNetV2(include_top=False, weights="imagenet", input_shape=shape)
+inputs = tf.keras.Input(shape=shape, name="input")
+x = base_model2(inputs)
+x = tf.keras.layers.GlobalAveragePooling2D()(x)
+x = tf.keras.layers.Dense(256, activation="relu", name="descriptor")(x)
+outputs = tf.keras.layers.Dense(2, activation="softmax", name="probs")(x)
+model2 = tf.keras.Model(inputs=inputs, outputs=outputs)
+
+tf.keras.models.save_model(model1, "test1", include_optimizer=False)
+tf.keras.models.save_model(model2, "test2", include_optimizer=False)
+
+model_1 = tf.keras.models.load_model("test1")
+
+# FAILS
+model_2 = tf.keras.models.load_model("test2")

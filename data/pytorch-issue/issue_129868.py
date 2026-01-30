@@ -1,24 +1,31 @@
-# torch.rand(B, 3, 224, 224, dtype=torch.float32)  # Assumed input shape for a typical CNN
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+import gc
+import os
+import subprocess
+import time
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1)
-        self.pool = nn.MaxPool2d(2, 2)
-        self.fc = nn.Linear(16 * 112 * 112, 10)  # Example output for classification
+import torch.distributed as dist
 
-    def forward(self, x):
-        x = self.pool(F.relu(self.conv1(x)))
-        x = x.view(-1, 16 * 112 * 112)
-        return self.fc(x)
 
-def my_model_function():
-    return MyModel()
+if __name__ == "__main__":
+    assert dist.is_available()
 
-def GetInput():
-    B = 4  # Batch size (arbitrary choice)
-    return torch.rand(B, 3, 224, 224, dtype=torch.float32)
+    dist.init_process_group()
 
+    for i in range(10):
+        grp = dist.new_group(backend="gloo")
+
+        cmd = ["lsof", "-l", "-p", str(os.getpid())]
+        out = subprocess.run(cmd, capture_output=True, text=True)
+
+        print(
+            f"Process {dist.get_rank()}, iteration {i + 1}:",
+            len(out.stdout.split("\n")),
+            "open FDs",
+        )
+
+        del grp
+        gc.collect()
+
+        # FDs are not released, even though group should have been torn down?
+
+        time.sleep(0.1)

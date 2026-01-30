@@ -1,24 +1,23 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Example shape: (2, 3, 224, 224)
+import os
 import torch
-import torch.nn as nn
+import torch.distributed as dist
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Simple CNN structure for compatibility with distributed training scenarios
-        self.conv = nn.Conv2d(3, 16, kernel_size=3, padding=1)
-        self.pool = nn.MaxPool2d(2, 2)
-        self.fc = nn.Linear(16 * 112 * 112, 10)  # Adjusted for input size (224x224)
+def distributed_init(rank, local_rank, world_size):
+    dist.init_process_group('nccl', init_method='env://', rank=rank, world_size=world_size)
+    
+    if torch.cuda.is_available():
+        torch.cuda.set_device(local_rank)
+        dist.all_reduce(torch.zeros(1).cuda())
 
-    def forward(self, x):
-        x = self.pool(torch.relu(self.conv(x)))
-        x = x.view(x.size(0), -1)
-        return self.fc(x)
+def distributed_main(rank, local_rank, world_size):
+    distributed_init(rank, local_rank, world_size)
+    tmp_ranks = list(range(world_size))
+    tmp_group = dist.new_group(tmp_ranks)
+    dist.barrier(tmp_group)
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Returns a random input tensor matching the expected shape for MyModel
-    return torch.rand(2, 3, 224, 224, dtype=torch.float32)
-
+if __name__ == "__main__":
+    world_size = int(os.environ['WORLD_SIZE'])
+    rank = int(os.environ['RANK'])
+    local_rank = int(os.environ['LOCAL_RANK'])
+    print("rank: ", rank, "local_rank: ", local_rank, "world_size: ", world_size)
+    distributed_main(rank, local_rank, world_size)

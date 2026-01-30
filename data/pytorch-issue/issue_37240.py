@@ -1,8 +1,11 @@
-# torch.rand(10, dtype=torch.float32)
 import torch
-from torch import nn, autograd
+from torch import autograd
+autograd.set_detect_anomaly(True)
 
-return_nan = True  # Control variable from the original code
+import warnings
+warnings.simplefilter("always")
+
+return_nan = True
 
 class MyBadFn(autograd.Function):
     @staticmethod
@@ -15,16 +18,12 @@ class MyBadFn(autograd.Function):
         inp, = ctx.saved_tensors
         res = 2 * grad_out * inp
         if return_nan:
-            res = grad_out / 0 * 0  # Intentional NaN
+            res = grad_out / 0 * 0
         return res
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return MyBadFn.apply(x)
 
-def my_model_function():
-    return MyModel()
+inp = torch.rand(10, requires_grad=True)
 
-def GetInput():
-    return torch.rand(10, dtype=torch.float32, requires_grad=True)
+out = MyBadFn.apply(inp)
 
+out.sum().backward()

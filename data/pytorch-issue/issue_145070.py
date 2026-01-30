@@ -1,32 +1,25 @@
-# torch.rand(1, 3, 8, 3, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
+import torch
+
+print(torch.__version__)
+
+sym_0 = (1, 3, 8, 3)
+sym_1 = torch.strided
+sym_2 = 'cuda'
+sym_3 = (1, 48)
+
+v0 = torch.randn(size=sym_0, dtype=None, layout=sym_1, device=sym_2)
+v1 = torch.rand(size=sym_3, device=sym_2)
+torch.ops.aten._adaptive_avg_pool2d_backward(grad_output=v0, self=v1)
 
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.pool = nn.AdaptiveAvgPool2d((1, 1))
+print(torch.__version__)
 
-    def forward(self, x):
-        return self.pool(x)
+sym_0 = (1, 3, 8, 3)
+sym_1 = torch.strided
+sym_2 = 'cpu'
+sym_3 = (1, 48)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(1, 3, 8, 3, dtype=torch.float32)
-
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
-# print(output)
-
-# ### Explanation:
-# - **MyModel**: This class defines a simple model with an `nn.AdaptiveAvgPool2d` layer. The input shape is inferred from the provided example, which is `(1, 3, 8, 3)`.
-# - **my_model_function**: This function returns an instance of `MyModel`.
-# - **GetInput**: This function generates a random tensor with the shape `(1, 3, 8, 3)` and `dtype` of `torch.float32`, which is the expected input for `MyModel`.
-# This code should be ready to use with `torch.compile(MyModel())(GetInput())`. The original issue described a problem with `torch.ops.aten._adaptive_avg_pool2d_backward`, but this code focuses on the forward pass and does not include the backward pass to avoid the described issues.
+v0 = torch.randn(size=sym_0, dtype=None, layout=sym_1, device=sym_2)
+v1 = torch.rand(size=sym_3, device=sym_2)
+torch.ops.aten._adaptive_avg_pool2d_backward(grad_output=v0, self=v1)

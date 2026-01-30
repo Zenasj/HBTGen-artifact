@@ -1,29 +1,35 @@
-# torch.rand(1, 2, dtype=torch.float32)
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+SEED = 0
+
+
 class Model(nn.Module):
-    def forward(self, x):
-        return F.dropout(x, p=0.5)
 
-class MyModel(nn.Module):
     def __init__(self):
-        super().__init__()
-        self.original = Model()
-        self.original.eval()  # Ensure eval mode as in the original issue
-        self.compiled = torch.compile(self.original)  # Encapsulate both models
+        super(Model, self).__init__()
 
     def forward(self, x):
-        original_out = self.original(x)
-        compiled_out = self.compiled(x)
-        # Return a boolean tensor indicating if outputs differ
-        difference = not torch.allclose(original_out, compiled_out)
-        return torch.tensor(difference, dtype=torch.bool)
+        x = F.dropout(x, p=0.5)  # set training=False can avoid the issue
+        return x
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    return torch.randn(1, 2)
+with torch.no_grad():
+    torch.manual_seed(SEED)
+    model = Model().eval().cuda()
+    torch.manual_seed(SEED)
+    c_model = torch.compile(model).cuda()
 
+    torch.manual_seed(SEED)
+    input_tensor = torch.randn(1, 2)
+    inputs = [input_tensor]
+
+    for i in range(10):
+        print(f"round {i}")
+        torch.manual_seed(SEED)
+        print(model(*inputs))
+
+    torch.manual_seed(SEED)
+    c_output = c_model(*inputs)
+print(f"compiled_output\n{c_output}")

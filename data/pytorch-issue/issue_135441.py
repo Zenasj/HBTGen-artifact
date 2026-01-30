@@ -1,18 +1,20 @@
-# torch.rand(4, dtype=torch.float32)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # In-place operation causing versioning issues when compiled
-        x[...] = 0
-        return x
+@torch.compile()
+def version_bump_test(x):
+    x[...] = 0
 
-def my_model_function():
-    # Returns a model that performs in-place tensor mutation
-    return MyModel()
+x = torch.ones(4)
+print("v0", x._version)  # Expected: 0
+version_bump_test(x)
+print("v1", x._version)  # Expected: 1, Actual: 0
+print(x)  # Expected: tensor([0., 0., 0., 0.])
 
-def GetInput():
-    # Returns a 1D tensor of shape (4,) with random values
-    return torch.rand(4, dtype=torch.float32)
+import torch
 
+@torch.compile()
+def version_bump_test(x):
+    x[...] = 0
+
+x = torch.ones(4, requires_grad = True)
+version_bump_test(x)

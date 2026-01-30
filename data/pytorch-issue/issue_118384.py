@@ -1,28 +1,22 @@
-# torch.rand(100, 16, 744, 744, dtype=torch.float32)  # B=100, C=16, H=744, W=744
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv = nn.Conv2d(
-            in_channels=16,
-            out_channels=16,
-            kernel_size=31,
-            stride=1,
-            padding=15,
-            padding_mode="circular",
-            bias=False
-        )
-        # Initialize weights as in the original code
-        nn.init.normal_(self.conv.weight)  # Matches torch.randn initialization
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    def forward(self, x):
-        return self.conv(x)
+i, j, k = 744, 744, 16
+m = 31
+l = 100
 
-def my_model_function():
-    return MyModel()
+# Initialise Layer and Input Tensor
+conv_layer = nn.Conv2d(in_channels=k, out_channels=k, kernel_size=m, stride=1, padding=15, padding_mode="circular", bias=False)
+conv_layer.to(device)
 
-def GetInput():
-    return torch.rand(100, 16, 744, 744, dtype=torch.float32)
+conv_layer.weight.data = torch.randn(k, k, m, m, device=device)
 
+input_tensor = torch.randn(l, k, i, j, device=device)
+
+# Loop for convolutions
+for x in range(300): # Problem Around Here
+    output = conv_layer(input_tensor)
+    del output
+    print(x)

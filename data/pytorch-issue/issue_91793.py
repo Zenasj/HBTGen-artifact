@@ -1,22 +1,16 @@
-# torch.rand(0, 5, 2, 2, 2, dtype=torch.float64) ← Add a comment line at the top with the inferred input shape
-
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Using a small number of features to avoid OOM
-        self.bn = nn.BatchNorm3d(5, eps=0.001, momentum=0.3, affine=False)
-
-    def forward(self, x):
-        return self.bn(x)
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(0, 5, 2, 2, 2, dtype=torch.float64)
-
+import torch
+import numpy as np
+arg_1 = 3431068031
+arg_2 = 0.001
+arg_3 = 0.3
+arg_4 = False
+arg_class = torch.nn.BatchNorm3d(arg_1,arg_2,arg_3,arg_4,)
+arg_5_0_tensor = torch.rand([0, 5, 2, 2, 2], dtype=torch.float64)
+arg_5_0 = arg_5_0_tensor.clone()
+arg_5 = [arg_5_0,]
+try:
+  res = arg_class(*arg_5)
+except Exception as e:
+  print("Error:"+str(e))

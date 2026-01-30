@@ -1,29 +1,55 @@
-# tf.random.normal((2, 3), dtype=tf.float32) ← inferred from example usage in the issue's example code
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+
+self._thread_local = threading.local()
+
+import pickle
+import threading
+pickle.dumps(threading.local())
 
 import tensorflow as tf
+import dill
 import threading
+def extractfromlocal(model): #extracts attributes from the local thrading container
+    model._thread_local=model._thread_local.__dict__
+    for attr in model.__dict__.values():
+        if '_thread_local' in dir(attr):
+            extractfromlocal(attr)
 
-class MyModel(tf.keras.Model):
+def loadtolocal(model): #puts attributes back to the local threading container
+    aux=threading.local()
+    aux.__dict__.update(model._thread_local)
+    model._thread_local = aux
+    for attr in model.__dict__.values():
+        if '_thread_local' in dir(attr):
+            loadtolocal(attr)
+            
+def save_tf_model(model): #saves the model
+    extractfromlocal(model)
+    with open('mymodel.pkl','wb') as f:
+        dill.dump(model,f)
+    loadtolocal(model)
+
+def load_tf_model(model):#loads the model
+    with open('mymodel.pkl','rb') as f:
+        model=dill.load(f)
+        loadtolocal(model)
+    return model
+
+#just a quick example of this working
+class Model(tf.keras.Model):
     def __init__(self):
-        super(MyModel, self).__init__()
-        self.dense = tf.keras.layers.Dense(2)
-
-        # This _thread_local attribute causes pickling issues due to threading.local()
-        # It is created by tf.keras.Model internally for tracking but is not serializable by pickle.
-        # We keep it here to match the behavior and preserve model functionality.
-        self._thread_local = threading.local()
+        super(Model, self).__init__()
+        self.d = tf.keras.layers.Dense(2)
 
     def call(self, x):
-        return self.dense(x)
+        return self.d(x)
 
-
-def my_model_function():
-    # Return an instance of MyModel with default initialization
-    return MyModel()
-
-
-def GetInput():
-    # Return a random tensor input that matches the expected input shape of MyModel
-    # In the example, input was shape (2, 3)
-    return tf.random.normal((2, 3))
-
+data=tf.random.normal((2, 3))
+model = Model()
+print('Before saving',model(data))
+save_tf_model(model)
+print('After saving',model(data))
+model=load_tf_model(model)
+print('After loading',model(data))

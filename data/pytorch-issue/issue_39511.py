@@ -1,30 +1,17 @@
-# torch.rand(B, C, H, W, dtype=...)  # Add a comment line at the top with the inferred input shape
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.dropout = nn.Dropout()
+import torch
 
-    def forward(self, x):
-        return self.dropout(x)
+flag = True
+torch._C._jit_set_profiling_mode(flag)
+torch._C._jit_set_profiling_executor(flag)
+torch._C._jit_override_can_fuse_on_cpu(False)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+def dropout_training(x):
+    return torch.nn.functional.dropout(x)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(100, 100, requires_grad=True, device="cuda")
-
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
-
-# ### Explanation:
-# - **MyModel**: This class defines a simple model with a single `nn.Dropout` layer.
-# - **my_model_function**: This function returns an instance of `MyModel`.
-# - **GetInput**: This function generates a random tensor with the shape (100, 100) and places it on the CUDA device, which is consistent with the input used in the provided script.
-# This code should be ready to use with `torch.compile(MyModel())(GetInput())`.
+x = torch.randn(100, 100, requires_grad=True, device="cuda")
+scripted = torch.jit.script(dropout_training)
+o = scripted(x)
+o = scripted(x)
+print("training graph: ", scripted.graph_for(x))

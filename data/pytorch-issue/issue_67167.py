@@ -1,29 +1,42 @@
-# (torch.rand(B, C, W, dtype=torch.float, device='cuda'), torch.randint(0, C, (B, W), dtype=torch.long, device='cuda'))
+import torch.nn as nn
+
 import torch
-from torch import nn
+from torch import tensor
 import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        
-    def forward(self, inputs):
-        x, t = inputs
-        x0 = x[:, :, 0]  # Extract first slice along dim=2
-        x3 = x[:, :, -1]  # Extract last slice along dim=2
-        t0 = t[:, 0]
-        t3 = t[:, -1]
-        r0 = F.cross_entropy(x0, t0, reduction='none')
-        r3 = F.cross_entropy(x3, t3, reduction='none')
-        # Return 1.0 if outputs are close, 0.0 otherwise
-        return torch.tensor([float(torch.allclose(r0, r3))], device=r0.device)
+x = tensor([[[ 0.2417,  0.2417,  0.2417,  0.2417],
+         [-0.9447, -0.9447, -0.9447, -0.9447],
+         [-0.3489, -0.3489, -0.3489, -0.3489],
+         [-0.7771, -0.7771, -0.7771, -0.7771],
+         [ 0.3623,  0.3623,  0.3623,  0.3623],
+         [-0.2784, -0.2784, -0.2784, -0.2784],
+         [-0.6569, -0.6569, -0.6569, -0.6569],
+         [-0.6070, -0.6070, -0.6070, -0.6070],
+         [ 0.6800,  0.6800,  0.6800,  0.6800],
+         [-0.9125, -0.9125, -0.9125, -0.9125]],
 
-def my_model_function():
-    return MyModel()
+        [[-0.3978, -0.3978, -0.3978, -0.3978],
+         [-0.9430, -0.9430, -0.9430, -0.9430],
+         [-0.6744, -0.6744, -0.6744, -0.6744],
+         [ 0.2603,  0.2603,  0.2603,  0.2603],
+         [-0.9106, -0.9106, -0.9106, -0.9106],
+         [-0.8146, -0.8146, -0.8146, -0.8146],
+         [ 0.1472,  0.1472,  0.1472,  0.1472],
+         [-0.7629, -0.7629, -0.7629, -0.7629],
+         [ 0.7943,  0.7943,  0.7943,  0.7943],
+         [-0.8969, -0.8969, -0.8969, -0.8969]]], device='cuda:0')
 
-def GetInput():
-    B, C, W = 2, 10, 4  # Inferred from original issue's example
-    x = torch.rand(B, C, W, dtype=torch.float, device='cuda')
-    t = torch.randint(0, C, (B, W), dtype=torch.long, device='cuda')
-    return (x, t)
+t = tensor([[0, 0, 0, 0],
+        [5, 5, 5, 5]], device='cuda:0')
 
+x0 = x[:, :, 0]
+x3 = x[:, :, 3]
+assert torch.allclose(x0, x3)
+
+t0 = t[:, 0]
+t3 = t[:, 3]
+assert torch.allclose(t0, t3)
+
+r0 = F.cross_entropy(x0, t0, reduction='none')
+r3 = F.cross_entropy(x3, t3, reduction='none')
+assert torch.allclose(r0, r3) # this line raises an error.

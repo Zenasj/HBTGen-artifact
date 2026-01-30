@@ -1,18 +1,25 @@
-# torch.rand(5, dtype=torch.float32)  # Input shape is (5,) with float32
-
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        
-    def forward(self, x):
-        return x * x
+def pack_hook(x):
+    return (x.device, x.cpu())
 
-def my_model_function():
-    return MyModel()
+def unpack_hook(packed):
+    device, tensor = packed
+    return tensor.to(device)
 
-def GetInput():
-    return torch.randn(5, requires_grad=True)
+def f(a):
+    return a * a
 
+# Works if opt_f = f
+# Error if opt_f = torch.compile(f)
+opt_f = torch.compile(f) 
+
+x = torch.randn(5, requires_grad=True)
+with torch.autograd.graph.saved_tensors_hooks(pack_hook, unpack_hook):
+    y = opt_f(x)
+y.sum().backward()
+
+print(torch.allclose(x.grad, (2 * x))) # Expect: True
+
+[tasklist]
+### Tasks

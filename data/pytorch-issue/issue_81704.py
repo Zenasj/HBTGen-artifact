@@ -1,44 +1,79 @@
-# torch.rand(B, C, H, W, dtype=...)  # Add a comment line at the top with the inferred input shape
+from __future__ import print_function
+
+import argparse
+import logging
+import os
+
+from torchvision import datasets, transforms
 import torch
+import torch.distributed as dist
 import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(1, 32, kernel_size=3, stride=1, padding=1)
-        self.relu = nn.ReLU()
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
-        self.fc1 = nn.Linear(32 * 14 * 14, 128)
-        self.fc2 = nn.Linear(128, 10)
+WORLD_SIZE = int(os.environ.get("WORLD_SIZE", 1))
+RANK = int(os.environ.get("RANK", 0))
 
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.relu(x)
-        x = self.pool(x)
-        x = x.view(-1, 32 * 14 * 14)
-        x = self.fc1(x)
-        x = self.relu(x)
-        x = self.fc2(x)
-        return x
+def main():
+    # Training settings
+    parser = argparse.ArgumentParser(description="PyTorch MNIST Example")
+    parser.add_argument("--batch-size", type=int, default=64, metavar="N",
+                        help="input batch size for training (default: 64)")
+    parser.add_argument("--test-batch-size", type=int, default=1000, metavar="N",
+                        help="input batch size for testing (default: 1000)")
+    parser.add_argument("--epochs", type=int, default=10, metavar="N",
+                        help="number of epochs to train (default: 10)")
+    parser.add_argument("--lr", type=float, default=0.01, metavar="LR",
+                        help="learning rate (default: 0.01)")
+    parser.add_argument("--momentum", type=float, default=0.5, metavar="M",
+                        help="SGD momentum (default: 0.5)")
+    parser.add_argument("--no-cuda", action="store_true", default=False,
+                        help="disables CUDA training")
+    parser.add_argument("--seed", type=int, default=1, metavar="S",
+                        help="random seed (default: 1)")
+    parser.add_argument("--log-interval", type=int, default=10, metavar="N",
+                        help="how many batches to wait before logging training status")
+    parser.add_argument("--log-path", type=str, default="",
+                        help="Path to save logs. Print to StdOut if log-path is not set")
+    parser.add_argument("--save-model", action="store_true", default=False,
+                        help="For Saving the current Model")
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+    if dist.is_available():
+        parser.add_argument("--backend", type=str, help="Distributed backend",
+                            choices=[dist.Backend.GLOO, dist.Backend.NCCL, dist.Backend.MPI],
+                            default=dist.Backend.GLOO)
+    args = parser.parse_args()
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # Assuming input shape (B, C, H, W) = (1, 1, 28, 28) for MNIST dataset
-    return torch.rand(1, 1, 28, 28, dtype=torch.float32)
+    print(args)
 
-# The provided issue describes a distributed PyTorch setup using the Gloo backend, which is hanging during the `init_process_group` call. The issue is related to the Istio sidecar injection in a Kubeflow cluster. The solution involves preventing Istio sidecar injection.
-# Since the issue does not provide a complete model or any specific model structure, I will create a simple PyTorch model and a function to generate a random input tensor. The model will be a basic convolutional neural network (CNN) for demonstration purposes.
-# Here is the complete Python code file:
-# ### Explanation:
-# 1. **MyModel Class**:
-#    - A simple CNN with one convolutional layer, ReLU activation, max pooling, and two fully connected layers.
-#    - The input shape is assumed to be (1, 1, 28, 28) for the MNIST dataset.
-# 2. **my_model_function**:
-#    - Returns an instance of `MyModel`.
-# 3. **GetInput Function**:
-#    - Generates a random tensor with the shape (1, 1, 28, 28) and `dtype=torch.float32`.
-# This code can be used to create a model and generate a valid input tensor. The model is ready to use with `torch.compile(MyModel())(GetInput())`.
+    # Use this format (%Y-%m-%dT%H:%M:%SZ) to record timestamp of the metrics.
+    # If log_path is empty print log to StdOut, otherwise print log to the file.
+    if args.log_path == "":
+        logging.basicConfig(
+            format="%(asctime)s %(levelname)-8s %(message)s",
+            datefmt="%Y-%m-%dT%H:%M:%SZ",
+            level=logging.DEBUG)
+    else:
+        logging.basicConfig(
+            format="%(asctime)s %(levelname)-8s %(message)s",
+            datefmt="%Y-%m-%dT%H:%M:%SZ",
+            level=logging.DEBUG,
+            filename=args.log_path)
+
+    use_cuda = not args.no_cuda and torch.cuda.is_available()
+    if use_cuda:
+        print("Using CUDA")
+
+    torch.manual_seed(args.seed)
+
+    print("Using distributed PyTorch with {} backend".format(args.backend))
+    print(WORLD_SIZE, RANK)
+    dist.init_process_group(backend=args.backend, world_size=WORLD_SIZE, rank=RANK)
+    print(f"rank: {dist.get_rank()}")
+    print(f"worl_size: {dist.get_world_size()}")
+    print("Initialized")
+
+
+if __name__ == "__main__":
+    print("this is main")
+    main()

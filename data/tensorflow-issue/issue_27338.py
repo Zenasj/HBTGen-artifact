@@ -1,9 +1,19 @@
-# tf.random.uniform((B, 200, 1), dtype=tf.float32)
+import random
 
-import tensorflow as tf
+3
 import numpy as np
 
-class CustomGenerator(tf.keras.utils.Sequence):
+import tensorflow as tf
+import tensorflow.keras as tfk
+Sequence = tfk.utils.Sequence
+
+Dense = tfk.layers.Dense
+Input = tfk.layers.Input
+Flatten = tfk.layers.Flatten
+Model = tfk.models.Model
+
+
+class CustomGenerator(Sequence):
     def __init__(self, batch_size, shuffle, steps_per_epoch, data):
         self.inputs = data[0]
         self.labels = data[1]
@@ -20,8 +30,10 @@ class CustomGenerator(tf.keras.utils.Sequence):
 
     def _get_exploration_order(self, idx_list):
         """
-        Shuffle (if applicable) and find exploration order.
+        :param idx_list:
+        :return:
         """
+        # shuffle (if applicable) and find exploration order
         if self.shuffle is True:
             idx_list = np.copy(idx_list)
             np.random.shuffle(idx_list)
@@ -34,10 +46,6 @@ class CustomGenerator(tf.keras.utils.Sequence):
         return x, y
 
     def __getitem__(self, index):
-        # Guard against overshoot - wrap around or reset index if needed
-        if self.current_idx + self.batch_size > len(self.idx_list):
-            # Reset for safety to avoid empty batches (key problem in issue)
-            self.on_epoch_end()
         x, y = self._data_generation(self.inputs,
                                      self.labels,
                                      self.idx_list[self.current_idx:self.current_idx + self.batch_size])
@@ -50,34 +58,33 @@ class CustomGenerator(tf.keras.utils.Sequence):
         # reset counter
         self.current_idx = 0
 
+# Model 1 which does not have Flatten
+input_tensor = Input(shape=[200], name='input')
+output_tensor = Dense(units=10, name='output')(input_tensor)
+neuralnet = Model(inputs=input_tensor, outputs=output_tensor)
+neuralnet.compile(loss='mse', optimizer='adam')
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define layers matching the Flatten-containing model (from issue)
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense = tf.keras.layers.Dense(units=10)
+# Model 2 which has Flatten
+input_tensor = Input(shape=[200, 1], name='input')
+flat = Flatten()(input_tensor)
+output_tensor = Dense(units=10, name='output')(flat)
+neuralnet_flat = Model(inputs=input_tensor, outputs=output_tensor)
+neuralnet_flat.compile(loss='mse', optimizer='adam')
 
-    def call(self, inputs, training=False):
-        # inputs shape expected: (batch, 200, 1)
-        x = self.flatten(inputs)
-        x = self.dense(x)
-        return x
+3
+predgen = CustomGenerator(batch_size=64, shuffle=True, steps_per_epoch=10, data=[np.random.normal(size=(700, 200, 1)), np.random.normal(size=(700, 10))])
 
+neuralnet_flat.fit_generator(generator=predgen, epochs=5)
 
-def my_model_function():
-    # Return an instance of MyModel
-    model = MyModel()
-    model.compile(loss='mse', optimizer='adam')
-    return model
+3
+predgen = CustomGenerator(batch_size=64, shuffle=True, steps_per_epoch=10, data=[np.random.normal(size=(700, 200)), np.random.normal(size=(700, 10))])
+valgen = CustomGenerator(batch_size=64, shuffle=True, steps_per_epoch=1, data=[np.random.normal(size=(64, 200)), np.random.normal(size=(64, 10))])
 
+neuralnet.fit_generator(generator=predgen, validation_data=valgen, epochs=5)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # According to the issue: input shape (batch, 200, 1)
-    B = 64  # batch size
-    H = 200
-    W = 1
-    # Use float32 as typical default dtype in Keras
-    return tf.random.uniform((B, H, W), dtype=tf.float32)
+3
+predgen = CustomGenerator(batch_size=64, shuffle=True, steps_per_epoch=10, data=[np.random.normal(size=(700, 200, 1)), np.random.normal(size=(700, 10))])
+valgen = CustomGenerator(batch_size=64, shuffle=True, steps_per_epoch=1, data=[np.random.normal(size=(64, 200, 1)), np.random.normal(size=(64, 10))])
 
+# does not work
+neuralnet_flat.fit_generator(generator=predgen, validation_data=valgen, epochs=5)

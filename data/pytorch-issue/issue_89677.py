@@ -1,36 +1,34 @@
-# torch.randint(0, 100, (57,), dtype=torch.int64)
+import torch.nn as nn
+
 import torch
-from torch import nn
-import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Weight tensor (vocabulary size 100, embedding dim 5)
-        self.weight = nn.Parameter(torch.rand(100, 5, dtype=torch.float32), requires_grad=False)
-        # Predefined offsets with last value < input length (53 < 57)
-        self.register_buffer('offsets', torch.tensor(
-            [0, 6, 12, 15, 25, 32, 40, 42, 46, 53, 53], 
-            dtype=torch.int64
-        ))
-    
-    def forward(self, input):
-        return F.embedding_bag(
-            input,
-            self.weight,
-            self.offsets,
-            norm_type=2.0,
-            scale_grad_by_freq=False,
-            mode='mean',
-            sparse=True,
-            include_last_offset=True,
-            padding_idx=61
-        )
+self = torch.tensor([2, 4, 8, 8, 7, 3, 1, 8, 7, 8, 1, 1, 0, 0, 3, 1, 0, 2, 1, 5, 8, 7, 9, 7, 0, 0, 7, 6, 5, 5, 9, 1, 6, 2, 9, 1, 4, 3, 2, 3, 1, 1, 0, 6, 3, 9, 3, 9, 6, 6, 9, 2, 8, 5, 7])
+weight = torch.rand([100, 5], dtype=torch.float32)
+offsets = torch.tensor([0,  6, 12, 15, 25, 32, 40, 42, 46, 53, 53])
 
-def my_model_function():
-    return MyModel()
+res = torch.nn.functional.embedding_bag(
+    self, weight, offsets,
+    norm_type = 2.0,
+    scale_grad_by_freq = False,
+    mode = 'mean',
+    sparse = True,
+    include_last_offset = True,
+    padding_idx = 61
+)
 
-def GetInput():
-    # Generate input tensor matching the problematic length (57 elements)
-    return torch.randint(0, 100, (57,), dtype=torch.int64)
+import torch
 
+self = torch.tensor([2, 4, 8, 8, 7, 3, 1, 8, 7, 8, 1, 1, 0, 0, 3, 1, 0, 2, 1, 5, 8, 7, 9, 7, 0, 0, 7, 6, 5, 5, 9, 1, 6, 2, 9, 1, 4, 3, 2, 3, 1, 1, 0, 6, 3, 9, 3, 9, 6, 6, 9, 2, 8, 5, 7])
+weight = torch.rand([100, 5], dtype=torch.float32)
+offsets = torch.tensor([0,  6, 12, 15, 25, 32, 40, 42, 46, 53, 53])
+
+res = torch.nn.functional.embedding_bag(
+    self, weight, offsets,
+    norm_type = 2.0,
+    scale_grad_by_freq = False,
+    mode = 'mean',
+    sparse = True,
+    include_last_offset = True,
+    padding_idx = 61
+)
+print('still alive')

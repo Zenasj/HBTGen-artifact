@@ -1,10 +1,10 @@
-# torch.rand(B, 16, dtype=torch.float32)
-import torch
-import torch.nn as nn
+import torch 
+import torch.nn as nn 
+import torch.distributed.checkpoint as dcp 
 
-class MyModel(nn.Module):
+class ToyModel(nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
+        super(ToyModel, self).__init__()
         self.net1 = nn.Linear(16, 16)
         self.relu = nn.ReLU()
         self.net2 = nn.Linear(16, 8)
@@ -12,10 +12,11 @@ class MyModel(nn.Module):
     def forward(self, x):
         return self.net2(self.relu(self.net1(x)))
 
-def my_model_function():
-    return MyModel()
+model = ToyModel()
 
-def GetInput():
-    B = 1  # Batch size (can be adjusted)
-    return torch.rand(B, 16, dtype=torch.float32)
+state_dict = {"model": model.state_dict()}
 
+# Change to this a path you have write access to 
+path = "s3://<path to folder>" # or GCS path 
+
+dcp.save(state_dict, checkpoint_id=path)

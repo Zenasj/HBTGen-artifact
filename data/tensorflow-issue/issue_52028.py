@@ -1,29 +1,33 @@
-# tf.random.uniform((1, 1, 126), dtype=tf.float32) ← inferred input shape based on the issue example
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
 
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # The model contains a single Reshape layer which reshapes the input from (1, 1, 126)
-        # to (1, -1, 21). The -1 here means the dimension is inferred, expected 6 given input of 126.
-        # This is the core model from the issue.
-        self.reshape = tf.keras.layers.Reshape(target_shape=(-1, 21))
+inputs = tf.keras.Input(shape=(1, 126))
+outputs = tf.keras.layers.Reshape((-1, 21))(inputs)
+#outputs = tf.reshape(inputs, (-1, 21))
+model = tf.keras.Model(inputs=inputs, outputs=outputs)
 
-    def call(self, inputs, training=False):
-        # Forward pass applies the reshape layer
-        return self.reshape(inputs)
+model.summary()
 
-def my_model_function():
-    # Instantiate and return the MyModel instance
-    model = MyModel()
-    # Model weights are untrained (random); the example issue runs one epoch of fit, 
-    # but no saved weights provided. So we return fresh instance.
-    return model
+model.compile(optimizer='sgd', loss='mean_squared_error')
 
-def GetInput():
-    # Return a random (1, 1, 126) float32 tensor as input matching the model input signature
-    # This matches the input shape in the original code:
-    # inputs = np.random.rand(126).reshape((1, 1, 126))
-    return tf.random.uniform(shape=(1, 1, 126), dtype=tf.float32)
+inputs = np.random.rand(126).reshape((1, 1, 126))
+outputs = np.random.rand(126).reshape((1, 6, 21))
 
+model.fit(x=inputs, y=outputs, epochs=1)
+
+def representative_dataset_gen():
+  for input in inputs:
+    input = input.astype(np.float32)
+    yield [input]
+
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.representative_dataset = representative_dataset_gen
+
+tflite_model = converter.convert()
+with open('model.tflite', 'wb') as f:
+  f.write(tflite_model)

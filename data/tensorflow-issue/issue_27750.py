@@ -1,47 +1,44 @@
-# tf.random.uniform((BATCHSIZE, SEQLEN), dtype=tf.float32) ← Inferred input shape from the RNN model example: input is a batch of sequences with length SEQLEN
-
 import tensorflow as tf
-from tensorflow.keras import layers as l
+from tensorflow import keras
+from tensorflow.keras import optimizers
 
-# Constants inferred from issue code snippets and context
-SEQLEN = 16          # Sequence length (as per Reshape layer input)
-RNN_CELLSIZE = 32    # Number of GRU units
-
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Model layers matching the given Keras Sequential model
-        
-        # Reshape input shape [BATCHSIZE, SEQLEN] → [BATCHSIZE, SEQLEN, 1]
-        self.reshape = l.Reshape([SEQLEN, 1], input_shape=[SEQLEN])
-        
-        # Two stacked GRU layers
-        self.gru1 = l.GRU(RNN_CELLSIZE, return_sequences=True)
-        self.gru2 = l.GRU(RNN_CELLSIZE)
-        
-        # Final Dense layer outputting single value
-        self.dense = l.Dense(1)
-        
-        # Define Root Mean Square Error as metric (not needed for forward pass)
-        # But kept here for completeness if compiling outside estimator
-        def rmse(y_true, y_pred):
-            return tf.sqrt(tf.reduce_mean(tf.square(y_pred - y_true)))
-        self.rmse = rmse
+def compile_keras_sequential_model(list_of_layers, msg):
+  
+    # a tf.keras.Sequential model is a sequence of layers
+    model = tf.keras.Sequential(list_of_layers)
     
-    def call(self, inputs, training=False):
-        x = self.reshape(inputs)
-        x = self.gru1(x, training=training)
-        x = self.gru2(x, training=training)
-        output = self.dense(x)
-        return output
+    # keras does not have a pre-defined metric for Root Mean Square Error. Let's define one.
+    def rmse(y_true, y_pred): # Root Mean Squared Error
+      return tf.sqrt(tf.reduce_mean(tf.square(y_pred - y_true)))
+    
+    print('\nModel ', msg)
+    
+    #Optimizer
+    sgd = tf.keras.optimizers.SGD(lr=0.1, decay=1e-6, momentum=0.9, nesterov=True)
+    
+    # to finalize the model, specify the loss, the optimizer and metrics
+    model.compile(
+       loss = 'mean_squared_error',
+       optimizer = sgd,
+#         optimizer=tf.keras.optimizers.SGD(lr=0.0001, momentum=0.9),
+       metrics = [rmse])
+    
+    # this prints a description of the model
+    model.summary()
+    
+    return model
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+#Create Keras model
+def model_fn_keras():
+    
+    # RNN model (RMSE: 0.164 after 10 epochs)
+    model_layers_RNN = [
+        l.Reshape([SEQLEN, 1], input_shape=[SEQLEN,]), # [BATCHSIZE, SEQLEN, 1] is necessary for RNN model
+        l.GRU(RNN_CELLSIZE, return_sequences=True),  # output shape [BATCHSIZE, SEQLEN, RNN_CELLSIZE]
+        l.GRU(RNN_CELLSIZE), # keep only last output in sequence: output shape [BATCHSIZE, RNN_CELLSIZE]
+        l.Dense(1) # output shape [BATCHSIZE, 1]
+    ]
 
-def GetInput():
-    # Return a random tensor input matching [batch_size, SEQLEN] dtype float32
-    # Batch size chosen as 32 (common default), type float32 as GRU expects floats
-    BATCHSIZE = 32
-    return tf.random.uniform((BATCHSIZE, SEQLEN), dtype=tf.float32)
-
+    model_RNN = compile_keras_sequential_model(model_layers_RNN, "RNN")
+    
+    return(model_RNN)

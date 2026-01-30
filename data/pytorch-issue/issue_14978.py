@@ -1,10 +1,11 @@
-# torch.randn(1, 3, 32, 32, dtype=torch.float32)
+py
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+class AlexCifarNet(nn.Module):
+
     def __init__(self):
-        super(MyModel, self).__init__()
+        super(AlexCifarNet, self).__init__()
         self.features = nn.Sequential(
             nn.Conv2d(3, 64, kernel_size=5, stride=1, padding=2),
             nn.ReLU(inplace=True),
@@ -29,9 +30,6 @@ class MyModel(nn.Module):
         x = self.classifier(x)
         return x
 
-def my_model_function():
-    return MyModel()
+net = AlexCifarNet().cuda()
 
-def GetInput():
-    return torch.randn(1, 3, 32, 32, dtype=torch.float32)
-
+torch.jit.trace(net, torch.randn(1, 3, 32, 32).cuda())

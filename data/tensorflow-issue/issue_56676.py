@@ -1,68 +1,101 @@
-# tf.random.uniform((B, 10), dtype=tf.int64) ← Inferred input shape from Demo model input
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
+import tensorflow.distribute as tf_dist
+from tensorflow.python.distribute import distribute_lib
+from tensorflow.python.ops import array_ops
 import numpy as np
+import os
 
-# This function mimics _get_current_replica_id_in_group_sync() from the issue,
-# to get the replica id within the MirroredStrategy context.
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
+
 def _get_current_replica_id_in_group_sync():
-    replica_ctx = tf.distribute.get_replica_context()
+    replica_ctx = tf_dist.get_replica_context()
     if replica_ctx:
         replica_id = replica_ctx.replica_id_in_sync_group
     else:
-        # fallback if no replica context
-        replica_id = tf.constant(0, dtype=tf.int32)
+        replica_id = distribute_lib.get_update_replica_id()
+    if replica_id is None:
+        replica_id = array_ops.constant(0, dtype=array_ops.dtypes.int32)
     return replica_id
 
-# A test function used inside TestLayer call
 def test(values):
     global_replica_id = _get_current_replica_id_in_group_sync()
-    # Print the replica id tensor, to confirm distributed behavior
     tf.print("global_replica_id: {}".format(global_replica_id))
-    # Return a zero tensor with the same shape as input values
-    vector = tf.zeros_like(values)
+    vector  = tf.zeros_like(values)
     return vector
+
 
 class TestLayer(tf.keras.layers.Layer):
     def __init__(self, **kwargs):
         super(TestLayer, self).__init__(**kwargs)
 
+    # @tf.function
     def call(self, inputs, training=False):
-        # Call the test function that prints replica id and returns zeros of input shape
-        emb_vector = test(values=inputs)
+        emb_vector = test(values = inputs)
         return emb_vector
 
-class MyModel(tf.keras.Model):
+class Demo(tf.keras.models.Model):
     def __init__(self, **kwargs):
-        super(MyModel, self).__init__(**kwargs)
-        # Instantiate the custom TestLayer
-        self.test_layer = TestLayer()
-        # Dense layer as described, 1 unit, no activation, weights initialized to ones and zeros
-        self.dense_layer = tf.keras.layers.Dense(
-            units=1,
-            activation=None,
-            kernel_initializer="ones",
-            bias_initializer="zeros"
-        )
+        super(Demo, self).__init__(**kwargs)
+        
+        self.test_layer = TestLayer()        
+        self.dense_layer = tf.keras.layers.Dense(units=1, activation=None,
+                                                 kernel_initializer="ones",
+                                                 bias_initializer="zeros")
 
-    def call(self, inputs, training=False):
-        # Pass inputs through test_layer which prints replica id and outputs zeros
+    def call(self, inputs):
         vector = self.test_layer(inputs)
-        # Then through dense layer for final logits
         logit = self.dense_layer(vector)
         return logit, vector
 
     def summary(self):
-        # Provide a Keras model summary by wrapping call method
         inputs = tf.keras.Input(shape=(10,), dtype=tf.int64)
-        model = tf.keras.Model(inputs=inputs, outputs=self.call(inputs))
+        model = tf.keras.models.Model(inputs=inputs, outputs=self.call(inputs))
         return model.summary()
 
-# Helper function to create randomized dataset inputs matching input shape
-def GetInput():
-    # Following the dataset shape (batch_size, 10) from issue's dataset function
-    batch_size = 16  # small batch size for example
-    # Input dtype is int64 as per model input and dataset usage
-    input_tensor = tf.random.uniform(shape=(batch_size, 10), minval=0, maxval=100, dtype=tf.int64)
-    return input_tensor
+@tf.function
+def _step(inputs, labels, model):
+    logit, vector = model(inputs)
+    return logit, vector
 
+def tf_dataset(keys, labels, batchsize, repeat):
+    dataset = tf.data.Dataset.from_tensor_slices((keys, labels))
+    dataset = dataset.repeat(repeat)
+    dataset = dataset.batch(batchsize, drop_remainder=True)
+    return dataset
+
+def _dataset_fn(input_context):
+    global_batch_size = 16384
+    keys = np.ones((global_batch_size, 10))
+    labels = np.random.randint(low=0, high=2, size=(global_batch_size, 1))
+    replica_batch_size = input_context.get_per_replica_batch_size(global_batch_size)
+    dataset = tf_dataset(keys, labels, batchsize=replica_batch_size, repeat=1)
+    dataset = dataset.shard(input_context.num_input_pipelines, input_context.input_pipeline_id)
+    return dataset
+
+# Save model within MirroredStrategy scope
+strategy = tf.distribute.MirroredStrategy(["GPU:0", "GPU:1", "GPU:2", "GPU:3"])
+with strategy.scope():
+    model = Demo()
+model.compile()
+model.summary()
+dataset = strategy.distribute_datasets_from_function(_dataset_fn)
+for i, (key_tensors, replica_labels) in enumerate(dataset):
+    print("-" * 30, "step ", str(i), "-" * 30)
+    logit, vector = strategy.run(_step, args=(key_tensors, replica_labels, model))
+# model(tf.keras.Input(shape=(10,), dtype=tf.int64))
+model.save("demo")
+
+# Load model within MirroredStrategy scope
+with strategy.scope():
+    model2 = tf.keras.models.load_model("demo")
+dataset = strategy.distribute_datasets_from_function(_dataset_fn)
+for i, (key_tensors, replica_labels) in enumerate(dataset):
+    print("-" * 30, "step ", str(i), "-" * 30)
+    logit, vector = strategy.run(_step, args=(key_tensors, replica_labels, model2))
+
+# print(logit)

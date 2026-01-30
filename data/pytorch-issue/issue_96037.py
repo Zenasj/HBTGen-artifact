@@ -1,25 +1,16 @@
-# torch.rand(3, 2, 2, dtype=torch.float32)  # for each of the three input tensors (c, a, b)
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        c, a, b = inputs
-        # Create an uninitialized out tensor filled with NaNs
-        out = torch.empty_like(c)
-        out[:] = float('nan')
-        # Perform baddbmm with beta=0 (should overwrite out entirely)
-        result = torch.baddbmm(c, a, b, alpha=1, beta=0, out=out)
-        # Return the number of NaNs remaining in the output (non-zero indicates bug)
-        return result.isnan().sum()
+a, b, c, z = [torch.rand((3,2,2)) for _ in range(4)]
 
-def my_model_function():
-    return MyModel()
+z[:] = torch.nan
+torch.addcmul(c, a, b, out=z)
+print(z.isnan().sum())   # -> tensor(0), NaNs overwritten, great
 
-def GetInput():
-    # Generate three tensors of shape (3,2,2) as required by the model
-    c = torch.rand(3, 2, 2, dtype=torch.float32)
-    a = torch.rand(3, 2, 2, dtype=torch.float32)
-    b = torch.rand(3, 2, 2, dtype=torch.float32)
-    return (c, a, b)
+z[:] = torch.nan
+torch.baddbmm(c, a, b, alpha=1, beta=0, out=z)
+print(z.isnan().sum())   # -> tensor(12), `z` is all NaNs
 
+z = c
+z[1,1,1] = z[0,0,0] = torch.nan   # plant two NaNs
+torch.baddbmm(c, a, b, alpha=1, beta=0, out=z)
+print(z.isnan().sum())   # -> tensor(2)  two NaNs preserved

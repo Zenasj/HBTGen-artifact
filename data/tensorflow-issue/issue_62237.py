@@ -1,45 +1,57 @@
-# tf.random.normal((6, 10, 10, 1), dtype=tf.float32) ← input shape inferred from how tensor is used in the original call
+import math
+import random
 
 import tensorflow as tf
+import traceback
 
-class MyModel(tf.keras.Model):
+def replace_special_values(tensor):
+    # Convert tensor to tf.float32 if it's not a supported dtype
+    supported_dtypes = [tf.float16, tf.float32, tf.float64, tf.bfloat16]
+    if tensor.dtype not in supported_dtypes:
+        original_dtype = tensor.dtype
+        tensor = tf.cast(tensor, tf.float32)
+    else :
+        original_dtype = None
+    
+    # Replace NaNs with zeros
+    tensor = tf.where(tf.math.is_nan(tensor), tf.zeros_like(tensor), tensor)
+    
+    # Replace positive infinities with a large number (e.g., 1e30)
+    tensor = tf.where(tf.math.is_inf(tensor), 100, tensor)
+    
+    # Replace negative infinities with a small number (e.g., -1e30)
+    tensor = tf.where(tf.math.is_inf(tensor) & tf.math.less(tensor, 0), -100, tensor)
+    
+    # Convert tensor back to its original dtype
+    if original_dtype is not None :
+        tensor = tf.cast(tensor, original_dtype)
+    return tensor
+
+class Network(tf.Module):
     def __init__(self):
         super().__init__()
 
     @tf.function(jit_compile=True)
-    def call(self, x):
-        # The operation:
-        # original tensor (called `tensor` in the issue) is given as input x and used as raw_ops.Zeta q input
-        # The issue originally generated the random tensor inside the call, which caused nondeterminism in XLA.
-        # We'll assume input x matches that "tensor".
-        # Then compute zeta(q=x, x=tensor_input) with tensor_input = x itself.
-        # From the original code the signature is: tf.raw_ops.Zeta(q=..., x=...)
-        # In the issue example q=x_input, x=tensor(random normal)
-        
-        # The original code used:
-        # x = tf.raw_ops.Zeta(q=x, x=tensor)
-        # then x = tf.raw_ops.Cosh(x=x)
-        # return x
-        
-        # So to keep the same logic:
-        zeta_result = tf.raw_ops.Zeta(q=x, x=x)  # Using same tensor for q and x as input for deterministic behavior
-        cosh_result = tf.raw_ops.Cosh(x=zeta_result)
-        return cosh_result
+    def __call__(self, x):
+      tensor = tf.random.normal([10, 10, 6, 1], dtype=tf.float32)
+      x = tf.raw_ops.Zeta(q=x, x=tensor)        
+      x = tf.raw_ops.Cosh(x=x, )        
+      return x
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+is_valid = True
+inf = float('inf')
+m = Network()
+tensor = tf.random.normal([6, 10, 10, 1, 8], dtype=tf.float32)
+inp = {
+    "x": tensor,
+}
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # According to the original issue, the random normal tensor passed as input to the model's call is of shape `[6, 10, 10, 1, 8]`
-    # But inside the call, tensor is shape `[10, 10, 6, 1]` - likely the op shapes are broadcastable or reordered.
-    #
-    # The actual tf.raw_ops.Zeta requires "q" and "x" to be broadcast compatible.
-    # The original input shape for "q" was `[6,10,10,1,8]`, "x" was `[10,10,6,1]`.
-    # To keep it consistent and simpler for the fused model, let's input a shape that matches the largest dimension with float32.
-    #
-    # Because MyModel uses the input tensor both as q and x in the op, shapes must be broadcast compatible.
-    # Let's choose shape consistent with original input q: [6,10,10,1,8]
-    return tf.random.normal(shape=(6, 10, 10, 1, 8), dtype=tf.float32)
-
+with tf.device('/CPU:0'):
+    tf.config.run_functions_eagerly(True)
+    no_op_res = m(**inp)
+    tf.config.run_functions_eagerly(False)
+    with tf.device('/CPU:0'):
+        op_res = m(**inp)
+    no_op_res = replace_special_values(no_op_res)
+    op_res = replace_special_values(op_res)
+    tf.debugging.assert_near(tf.cast(no_op_res, tf.float64), tf.cast(op_res, tf.float64), atol=0.001, rtol=0.001)

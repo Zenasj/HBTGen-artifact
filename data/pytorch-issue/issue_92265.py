@@ -1,20 +1,21 @@
-# torch.rand(B, 1, dtype=torch.float32)
 import torch
-from torch import nn
+from torch.utils.data import TensorDataset, DataLoader
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.layer = nn.Linear(1, 1)  # Simple linear layer for demonstration
+if torch.backends.mps.is_available():
+    device = torch.device("mps")
+    print("MPS is available")
+else:
+    device = torch.device("cpu")
+    print("MPS is not available")
 
-    def forward(self, x):
-        return self.layer(x)
+inputs = torch.randn(3, 1, device=device)
+targets = torch.tensor([1, 2, 3], device=device)
 
-def my_model_function():
-    return MyModel()
+dataset = TensorDataset(inputs, targets)
 
-def GetInput():
-    # Generate a random input tensor with shape (batch_size, 1)
-    # Using batch size 1 as in the original DataLoader example
-    return torch.rand(1, 1, dtype=torch.float32)
+dataloader = DataLoader(dataset, batch_size=1)
 
+# Iterating over the dataloader
+for i, (input, target) in enumerate(dataloader):
+    print(
+        f'DataLoader: batch {i} => target {target.item()} but should be {i+1}')

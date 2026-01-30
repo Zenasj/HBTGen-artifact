@@ -1,198 +1,217 @@
-# tf.random.uniform((B, 20), dtype=tf.int32), tf.random.uniform((B, 4096), dtype=tf.float32)
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
-import tensorflow as tf
-from tensorflow.keras import layers, regularizers, backend as K, losses, Model, Input, optimizers
+import pdb
 
-class MyModel(tf.keras.Model):
-    def __init__(self, max_length=20, image_embed_size=4096, latent_dim=64,
-                 reg_lambda=0.05, fnd_lambda=0.3, embedding_matrix=None):
-        super().__init__()
+import tensorflow
+from keras import regularizers
+from keras import objectives, backend as K
+from keras.layers import Dropout, Reshape, Concatenate, Flatten, Bidirectional, Dense, Embedding, Input, Lambda, LSTM, \
+    RepeatVector, TimeDistributed
+from keras.models import Model
+from keras.callbacks import ReduceLROnPlateau, LearningRateScheduler, ModelCheckpoint, TensorBoard
+from keras.optimizers import Adam, RMSprop
+import keras
+import numpy as np
+import os
+from sklearn.metrics import precision_score, accuracy_score, precision_recall_fscore_support
+
+# tensorflow.config.experimental_run_functions_eagerly(True)
+
+
+class MVAE(object):
+
+    def create(self, max_length, image_embed_size, latent_dim, reg_lambda, fnd_lambda, embed_matrix):
+        self.encoder = None
+        self.decoder = None
+        self.fnd = None
+        self.autoencoder = None
+        self.embedding_matrix = embed_matrix
+        self.vocab_size = self.embedding_matrix.shape[0]
         self.max_length = max_length
-        self.image_embed_size = image_embed_size
         self.latent_dim = latent_dim
         self.reg_lambda = reg_lambda
         self.fnd_lambda = fnd_lambda
+        self.image_embed_size = image_embed_size
 
-        self.vocab_size = embedding_matrix.shape[0]
-        self.embedding_matrix = embedding_matrix
+        input_txt = Input(shape=(self.max_length,), name='input_txt')
+        input_img = Input((image_embed_size,), name='input_img')
 
-        # Encoder text embedding (non-trainable)
-        self.txt_embed = layers.Embedding(
-            input_dim=self.vocab_size,
-            output_dim=32,
-            input_length=self.max_length,
-            weights=[self.embedding_matrix],
-            trainable=False,
-            name='txt_embed'
-        )
+        vae_ce_loss, vae_mse_loss, encoded = self._build_encoder(input_txt, input_img)
+        self.encoder = Model(inputs=[input_txt, input_img], outputs=encoded)
 
-        # Encoder text layers
-        self.lstm_txt_1 = layers.Bidirectional(
-            layers.LSTM(32, return_sequences=True, activation='tanh',
-                        kernel_regularizer=regularizers.l2(self.reg_lambda)),
-            merge_mode='concat', name='lstm_txt_1')
-        self.lstm_txt_2 = layers.Bidirectional(
-            layers.LSTM(32, return_sequences=False, activation='tanh',
-                        kernel_regularizer=regularizers.l2(self.reg_lambda)),
-            merge_mode='concat', name='lstm_txt_2')
-        self.fc_txt = layers.Dense(32, activation='tanh',
-                                   kernel_regularizer=regularizers.l2(self.reg_lambda),
-                                   name='dense_txt')
+        encoded_input = Input(shape=(self.latent_dim,))
+        predicted_outcome = self._build_fnd(encoded_input)
+        self.fnd = Model(encoded_input, predicted_outcome)
 
-        # Encoder image layers
-        self.fc_img_1 = layers.Dense(1024, activation='tanh',
-                                     kernel_regularizer=regularizers.l2(self.reg_lambda),
-                                     name='fc_img_1')
-        self.fc_img_2 = layers.Dense(32, activation='tanh',
-                                     kernel_regularizer=regularizers.l2(self.reg_lambda),
-                                     name='fc_img_2')
+        decoded_txt, decoded_img = self._build_decoder(encoded_input)
+        self.decoder = Model(encoded_input, [decoded_txt, decoded_img])
 
-        # Shared layer after concatenation
-        self.shared = layers.Dense(64, activation='tanh',
-                                   kernel_regularizer=regularizers.l2(self.reg_lambda),
-                                   name='shared')
+        decoder_output = self._build_decoder(encoded)
 
-        # Latent variables layers
-        self.z_mean_layer = layers.Dense(self.latent_dim, activation='linear', name='z_mean')
-        self.z_log_var_layer = layers.Dense(self.latent_dim, activation='linear', name='z_log_var')
+        self.autoencoder = Model(inputs=[input_txt, input_img],
+                                 outputs=[decoder_output[0], decoder_output[1], self._build_fnd(encoded)])
+        self.autoencoder.compile(optimizer=Adam(1e-5),
+                                 loss=['sparse_categorical_crossentropy', vae_mse_loss, 'binary_crossentropy'],
+                                 metrics=['accuracy'])
+        self.get_features = K.function([input_txt, input_img], [encoded])
+        print(self.autoencoder.summary())
 
-        # Decoder text layers
-        self.dec_fc_txt = layers.Dense(32, activation='tanh',
-                                       kernel_regularizer=regularizers.l2(self.reg_lambda),
-                                       name='dec_fc_txt')
-        self.repeat_vec = layers.RepeatVector(self.max_length)
-        self.dec_lstm_txt_1 = layers.LSTM(32, return_sequences=True, activation='tanh',
-                                          kernel_regularizer=regularizers.l2(self.reg_lambda),
-                                          name='dec_lstm_txt_1')
-        self.dec_lstm_txt_2 = layers.LSTM(32, return_sequences=True, activation='tanh',
-                                          kernel_regularizer=regularizers.l2(self.reg_lambda),
-                                          name='dec_lstm_txt_2')
-        self.decoded_txt_layer = layers.TimeDistributed(
-            layers.Dense(self.vocab_size, activation='softmax'), name='decoded_txt')
+    def _build_encoder(self, input_txt, input_img, latent_dim=64):
+        txt_embed = Embedding(self.vocab_size, 32, input_length=self.max_length, name='txt_embed', trainable=False,
+                              weights=[self.embedding_matrix])(input_txt)
+        lstm_txt_1 = Bidirectional(LSTM(32, return_sequences=True, name='lstm_txt_1', activation='tanh',
+                                        kernel_regularizer=regularizers.l2(self.reg_lambda)), merge_mode='concat')(
+            txt_embed)
+        lstm_txt_2 = Bidirectional(LSTM(32, return_sequences=False, name='lstm_txt_2', activation='tanh',
+                                        kernel_regularizer=regularizers.l2(self.reg_lambda)), merge_mode='concat')(
+            lstm_txt_1)
+        fc_txt = Dense(32, activation='tanh', name='dense_txt', kernel_regularizer=regularizers.l2(self.reg_lambda))(
+            lstm_txt_2)
 
-        # Decoder image layers
-        self.dec_fc_img_1 = layers.Dense(32, activation='tanh',
-                                        kernel_regularizer=regularizers.l2(self.reg_lambda),
-                                        name='dec_fc_img_1')
-        self.dec_fc_img_2 = layers.Dense(1024, activation='tanh',
-                                        kernel_regularizer=regularizers.l2(self.reg_lambda),
-                                        name='dec_fc_img_2')
-        self.decoded_img_layer = layers.Dense(4096, activation='sigmoid', name='decoded_img')
+        fc_img_1 = Dense(1024, name='fc_img_1', activation='tanh', kernel_regularizer=regularizers.l2(self.reg_lambda))(
+            input_img)
+        fc_img_2 = Dense(32, name='fc_img_2', activation='tanh', kernel_regularizer=regularizers.l2(self.reg_lambda))(
+            fc_img_1)
 
-        # FND (fake news detector) layers
-        self.fnd_dense_1 = layers.Dense(64, activation='tanh',
-                                        kernel_regularizer=regularizers.l2(self.fnd_lambda))
-        self.fnd_dense_2 = layers.Dense(32, activation='tanh',
-                                        kernel_regularizer=regularizers.l2(self.fnd_lambda))
-        self.fnd_output_layer = layers.Dense(1, activation='sigmoid', name='fnd_output')
+        h = Concatenate(axis=-1, name='concat')([fc_txt, fc_img_2])
+        h = Dense(64, name='shared', activation='tanh', kernel_regularizer=regularizers.l2(self.reg_lambda))(h)
 
-    def sampling(self, z_mean, z_log_var):
-        # Sampling z ~ N(z_mean, exp(z_log_var))
-        batch = tf.shape(z_mean)[0]
-        dim = self.latent_dim
-        epsilon = tf.random.normal(shape=(batch, dim), mean=0., stddev=0.01)
-        return z_mean + tf.exp(0.5 * z_log_var) * epsilon
+        def sampling(args):
+            z_mean_, z_log_var_ = args
+            batch_size = K.shape(z_mean_)[0]
+            epsilon = K.random_normal(shape=(batch_size, latent_dim), mean=0., stddev=0.01)
+            return z_mean_ + K.exp(0.5 * z_log_var_) * epsilon
 
-    def call(self, inputs, training=False):
-        # inputs: tuple of (text, image_embed)
-        input_txt, input_img = inputs  # Expect shapes: (B, max_length), (B, 4096)
+        z_mean = Dense(latent_dim, name='z_mean', activation='linear')(h)
+        z_log_var = Dense(latent_dim, name='z_log_var', activation='linear')(h)
 
-        # Encoder forward pass
-        x_txt = self.txt_embed(input_txt)  # (B, max_length, 32)
-        x_txt = self.lstm_txt_1(x_txt)     # (B, max_length, 64)
-        x_txt = self.lstm_txt_2(x_txt)     # (B, 64)
-        x_txt = self.fc_txt(x_txt)          # (B, 32)
+        def vae_mse_loss(x, x_decoded_mean):
+            mse_loss = objectives.mse(x, x_decoded_mean)
+            kl_loss = - 0.5 * K.mean(1 + z_log_var - K.square(z_mean) - K.exp(z_log_var), axis=-1)
+            return mse_loss + kl_loss
 
-        x_img = self.fc_img_1(input_img)   # (B, 1024)
-        x_img = self.fc_img_2(x_img)       # (B, 32)
+        def vae_ce_loss(x, x_decoded_mean):
+            x = K.flatten(x)
+            x_decoded_mean = K.flatten(x_decoded_mean)
+            xent_loss = objectives.binary_crossentropy(x, x_decoded_mean)
+            kl_loss = - 0.5 * K.mean(1 + z_log_var - K.square(z_mean) - K.exp(z_log_var), axis=-1)
+            return xent_loss + kl_loss
 
-        x = tf.concat([x_txt, x_img], axis=-1)  # (B, 64)
-        x = self.shared(x)  # (B, 64)
+        return (
+        vae_ce_loss, vae_mse_loss, Lambda(sampling, output_shape=(latent_dim,), name='lambda')([z_mean, z_log_var]))
 
-        z_mean = self.z_mean_layer(x)      # (B, latent_dim)
-        z_log_var = self.z_log_var_layer(x) # (B, latent_dim)
-        z = self.sampling(z_mean, z_log_var)  # (B, latent_dim)
+    def _build_decoder(self, encoded):
+        dec_fc_txt = Dense(32, name='dec_fc_txt', activation='tanh',
+                           kernel_regularizer=regularizers.l2(self.reg_lambda))(encoded)
+        repeated_context = RepeatVector(self.max_length)(dec_fc_txt)
+        dec_lstm_txt_1 = LSTM(32, return_sequences=True, activation='tanh', name='dec_lstm_txt_1',
+                              kernel_regularizer=regularizers.l2(self.reg_lambda))(repeated_context)
+        dec_lstm_txt_2 = LSTM(32, return_sequences=True, activation='tanh', name='dec_lstm_txt_2',
+                              kernel_regularizer=regularizers.l2(self.reg_lambda))(dec_lstm_txt_1)
+        decoded_txt = TimeDistributed(Dense(self.vocab_size, activation='softmax'), name='decoded_txt')(dec_lstm_txt_2)
 
-        # Decoder forward pass (text)
-        d_txt = self.dec_fc_txt(z)                # (B, 32)
-        d_txt = self.repeat_vec(d_txt)            # (B, max_length, 32)
-        d_txt = self.dec_lstm_txt_1(d_txt)        # (B, max_length, 32)
-        d_txt = self.dec_lstm_txt_2(d_txt)        # (B, max_length, 32)
-        decoded_txt = self.decoded_txt_layer(d_txt)  # (B, max_length, vocab_size)
+        dec_fc_img_1 = Dense(32, name='dec_fc_img_1', activation='tanh',
+                             kernel_regularizer=regularizers.l2(self.reg_lambda))(encoded)
+        dec_fc_img_2 = Dense(1024, name='dec_fc_img_2', activation='tanh',
+                             kernel_regularizer=regularizers.l2(self.reg_lambda))(dec_fc_img_1)
+        decoded_img = Dense(4096, name='decoded_img', activation='sigmoid')(dec_fc_img_2)
 
-        # Decoder forward pass (image)
-        d_img = self.dec_fc_img_1(z)               # (B, 32)
-        d_img = self.dec_fc_img_2(d_img)           # (B, 1024)
-        decoded_img = self.decoded_img_layer(d_img)  # (B, 4096)
+        return decoded_txt, decoded_img
 
-        # FND forward pass
-        h = self.fnd_dense_1(z)
-        h = self.fnd_dense_2(h)
-        fnd_output = self.fnd_output_layer(h)     # (B, 1)
-
-        # For loss calculation externally we need z_mean and z_log_var,
-        # but Keras Model outputs expected to be tensors,
-        # so include them in outputs for easy access (caller can slice if needed).
-        # Here, we return only autoencoder outputs (3 heads): decoded_txt, decoded_img, fnd_output.
-
-        return decoded_txt, decoded_img, fnd_output, z_mean, z_log_var
-
-    def compute_loss(self, x_txt, x_img, y_txt, y_img, y_fnd):
-        # Custom loss combining reconstruction loss and latent loss
-
-        decoded_txt, decoded_img, fnd_output, z_mean, z_log_var = self((x_txt, x_img), training=True)
-
-        # Reconstruction categorical crossentropy for text (sparse)
-        txt_recon_loss = losses.sparse_categorical_crossentropy(y_true=y_txt, y_pred=decoded_txt)
-        txt_recon_loss = tf.reduce_mean(txt_recon_loss)
-
-        # Reconstruction mse loss for image
-        img_recon_loss = tf.reduce_mean(tf.square(y_img - decoded_img), axis=-1)
-        img_recon_loss = tf.reduce_mean(img_recon_loss)
-
-        # KL Divergence latent loss
-        kl_loss = -0.5 * tf.reduce_mean(
-            1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var)
-        )
-
-        # Combined VAE losses for text and image decoders
-        vae_loss_txt = txt_recon_loss + kl_loss
-        vae_loss_img = img_recon_loss + kl_loss
-
-        # Binary cross-entropy loss for fnd_output
-        fnd_loss = losses.binary_crossentropy(y_true=y_fnd, y_pred=fnd_output)
-        fnd_loss = tf.reduce_mean(fnd_loss)
-
-        # Total loss: sum or weighted sum as per original code (weights managed externally)
-        # Return all components for monitoring or weighted sum usage
-        return vae_loss_txt, vae_loss_img, fnd_loss, decoded_txt, decoded_img, fnd_output
-
-def my_model_function():
-    # For demo purposes, initialize embedding_matrix to random uniform matrix
-    # Assume vocab_size = 10000 to be compatible:
-    import numpy as np
-    vocab_size = 10000
-    embedding_matrix = np.random.uniform(-0.05, 0.05, (vocab_size, 32)).astype('float32')
-
-    return MyModel(max_length=20, image_embed_size=4096, latent_dim=64,
-                   reg_lambda=0.05, fnd_lambda=0.3, embedding_matrix=embedding_matrix)
+    def _build_fnd(self, encoded):
+        h = Dense(64, activation='tanh', kernel_regularizer=regularizers.l2(self.fnd_lambda))(encoded)
+        h = Dense(32, activation='tanh', kernel_regularizer=regularizers.l2(self.fnd_lambda))(h)
+        return Dense(1, activation='sigmoid', name='fnd_output')(h)
 
 
-def GetInput():
-    # Return a tuple compatible with MyModel inputs:
-    # text input shape: (batch_size, max_length) with integer token indices [0,vocab_size-1]
-    # image input shape: (batch_size, 4096), float32 values in [0,1] (normalized embeddings)
+def train(sequence_length, image_embed_size, latent_dim, reg_lambda, fnd_lambda, path):
+    text = np.load('data/train_text.npy')
+    im = np.load('data/train_image_embed.npy')
+    label = np.load('data/train_label.npy')[:, 1]
 
-    batch_size = 8
-    max_length = 20
-    vocab_size = 10000
-    text_input = tf.random.uniform(shape=(batch_size, max_length),
-                                   minval=0,
-                                   maxval=vocab_size,
-                                   dtype=tf.int32)
-    img_input = tf.random.uniform(shape=(batch_size, 4096),
-                                  minval=0.0,
-                                  maxval=1.0,
-                                  dtype=tf.float32)
-    return text_input, img_input
+    test_text = np.load('data/test_text.npy')
+    test_im = np.load('data/test_image_embed.npy')
+    test_label = np.load('data/test_label.npy')[:, 1]
 
+    embed_matrix = np.load('data/embedding_matrix.npy')
+    vocab_size = embed_matrix.shape[0]
+
+    # temp = np.zeros((text.shape[0], sequence_length, vocab_size))
+    # temp[np.expand_dims(np.arange(text.shape[0]), axis=0).reshape(text.shape[0], 1), np.repeat(np.array([np.arange(sequence_length)]), text.shape[0], axis=0), text] = 1
+    # text_one_hot = temp
+    #
+    # temp = np.zeros((test_text.shape[0], sequence_length, vocab_size))
+    # temp[np.expand_dims(np.arange(test_text.shape[0]), axis=0).reshape(test_text.shape[0], 1), np.repeat(np.array([np.arange(sequence_length)]), test_text.shape[0], axis=0), test_text] = 1
+    # test_text_one_hot = temp
+
+    if not os.path.exists(path):
+        os.makedirs(path)
+    if not os.path.exists(path + '/tb'):
+        os.makedirs(path + '/tb')
+    if not os.path.exists(path + '/weights'):
+        os.makedirs(path + '/weights')
+    tensorboard = TensorBoard(log_dir=path + '/tb', write_graph=True, write_images=True)
+    checkpoint = ModelCheckpoint(path + '/weights/{epoch:02d}.hdf5', monitor='loss', verbose=1, save_best_only=True,
+                                 mode='auto')
+    reduce_lr = ReduceLROnPlateau(monitor='fnd_output_loss', factor=0.2, patience=6, min_lr=1e-7)
+
+    model = MVAE()
+    model.create(sequence_length, image_embed_size, latent_dim, reg_lambda, fnd_lambda, embed_matrix)
+    model.autoencoder.fit(x=[text, im],
+                          y={'decoded_txt': np.expand_dims(text, -1), 'decoded_img': im, 'fnd_output': label},
+                          batch_size=128, epochs=300, callbacks=[checkpoint, tensorboard, reduce_lr], shuffle=True,
+                          validation_data=([test_text, test_im],
+                                           {'decoded_txt': np.expand_dims(test_text, -1), 'decoded_img': test_im,
+                                            'fnd_output': test_label}))
+
+
+def save_features(sequence_length, image_embed_size, latent_dim, reg_lambda, fnd_lambda, path):
+    test_text = np.load('../data/test_text.npy')
+    test_im = np.load('../data/test_image_embed.npy')
+
+    embed_matrix = np.load('../data/embedding_matrix.npy')
+    vocab_size = embed_matrix.shape[0]
+
+    model = MVAE()
+    model.create(sequence_length, image_embed_size, latent_dim, reg_lambda, fnd_lambda, embed_matrix)
+    model.autoencoder.load_weights(path + '/weights/286.hdf5')
+
+    if not os.path.exists(path + '/features'):
+        os.makedirs(path + '/features')
+
+    learnt_features = np.array([]).reshape(0, 64)
+    for i in range(test_text.shape[0]):
+        text_batch = test_text[i:i + 1]
+        im_batch = test_im[i:i + 1]
+        batch = model.get_features([text_batch, im_batch])[0]
+        learnt_features = np.concatenate([learnt_features, batch])
+    np.save(path + '/features/vae_fnd', learnt_features)
+
+
+def test(sequence_length, image_embed_size, latent_dim, reg_lambda, fnd_lambda, path):
+    test_text = np.load('data/test_text.npy')
+    test_im = np.load('data/test_image_embed.npy')
+    test_label = np.load('data/test_label.npy')[:, 1]
+
+    embed_matrix = np.load('data/embedding_matrix.npy')
+    vocab_size = embed_matrix.shape[0]
+
+    model = MVAE()
+    model.create(sequence_length, image_embed_size, latent_dim, reg_lambda, fnd_lambda, embed_matrix)
+    model.autoencoder.load_weights(path + '/weights/224.hdf5')
+    for i in range(10):
+        pred = model.autoencoder.predict([test_text, test_im])[-1]
+        pred[pred > 0.5] = 1
+        pred[pred <= 0.5] = 0
+        print(accuracy_score(test_label, pred))
+        print(precision_recall_fscore_support(test_label, pred))
+
+    pdb.set_trace()
+
+
+if __name__ == '__main__':
+    train(20, 4096, 64, 0.05, 0.3, 'models/vae_fnd_0.05_0.3')
+    test(20, 4096, 64, 0.05, 0.3, 'models/vae_fnd_0.05_0.3')
+    save_features(20, 4096, 64, 0.05, 0.3, '../models/vae_fnd_0.05_0.3')

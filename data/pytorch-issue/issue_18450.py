@@ -1,21 +1,10 @@
-# torch.rand(100, 100, dtype=torch.double)
+import numpy as np
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Compute problematic logdet and correct method (sum(log(svd eigenvalues)))
-        logdet_val = torch.logdet(x)
-        _, s, _ = torch.svd(x)
-        correct_val = torch.sum(torch.log(s))
-        return logdet_val - correct_val  # Returns difference between methods
+evals = torch.logspace(-4, -3, 100, dtype=torch.double)
+cov = torch.diag(evals)
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Generate diagonal matrix with eigenvalues between 1e-4 and 1e-3
-    evals = torch.logspace(-4, -3, 100, dtype=torch.double)
-    cov = torch.diag(evals)
-    return cov
-
+print(torch.logdet(cov))
+print(torch.sum(torch.log(torch.svd(cov)[1])))
+print(torch.log(torch.prod(torch.svd(cov)[1])))
+print(np.linalg.slogdet(cov)[1])

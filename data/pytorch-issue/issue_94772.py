@@ -1,39 +1,41 @@
-# torch.rand(B, C, H, W, dtype=...)  # The input shape is not directly relevant to the issue, but we will use a placeholder for demonstration purposes.
-
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.fc_layer = nn.Linear(in_features=784, out_features=10, bias=False)
+import torch
+from torchvision import datasets, transforms
 
-    def forward(self, x):
-        x = x.view(x.shape[0], -1)
-        logits = self.fc_layer(x)
-        return logits
+SEED = 123
+torch.manual_seed(SEED)
+torch.cuda.manual_seed(SEED)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    batch_size = 512
-    num_features = 28**2
-    inputs = torch.rand(batch_size, 1, 28, 28, dtype=torch.float32)
-    return inputs
+batch_size = 512
+num_classes = 10
+num_features = 28**2
+loss_fn = torch.nn.CrossEntropyLoss()
 
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
-# loss_fn = torch.nn.CrossEntropyLoss()
-# targets = torch.randint(0, 10, (batch_size,), dtype=torch.long)
-# loss = loss_fn(output, targets)
-# loss.backward()
-# vec_grad = torch.flatten(model.fc_layer.weight.grad)
-# precond_adagrad = torch.outer(vec_grad, vec_grad)
-# evals_adagrad, evecs_adagrad = torch.linalg.eigh(precond_adagrad.cpu())  # This should work on CPU
-# evals_adagrad, evecs_adagrad = torch.linalg.eigh(precond_adagrad)  # This may fail on GPU
+tforms = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
+dataset = datasets.MNIST("~/data/", download=False, train=True, transform=tforms)
+train_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=False)
 
+fc_layer = torch.nn.Linear(in_features=num_features, out_features=num_classes, bias=False).to(DEVICE)
+
+for batch_ix, (inputs, targets) in enumerate(train_loader):
+
+    inputs, targets = inputs.to(DEVICE), targets.to(DEVICE)
+
+    fc_layer.weight.grad = None
+    logits = fc_layer(inputs.view(inputs.shape[0], -1))
+    loss = loss_fn(logits, targets)
+    loss.backward()
+
+    vec_grad = torch.flatten(fc_layer.weight.grad)
+    precond_adagrad = torch.outer(vec_grad, vec_grad)
+
+    # CPU computation works fine
+    evals_adagrad, evecs_adagrad = torch.linalg.eigh(precond_adagrad.cpu())
+
+    # But eigh computation on GPU fails
+    evals_adagrad, evecs_adagrad = torch.linalg.eigh(precond_adagrad)

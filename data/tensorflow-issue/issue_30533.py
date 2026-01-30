@@ -1,55 +1,85 @@
-# tf.random.uniform((B, T), dtype=tf.int32) ← Input shape inferred roughly as (batch_size, time_steps)
-# The input is integer token indices, padded with zeros, with masking handled separately.
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
+import numpy as np
 
-class MyModel(tf.keras.Model):
+class lstm(tf.keras.Model):
     def __init__(self):
-        super(MyModel, self).__init__()
-        # Masking layer to ignore zero-padding tokens
-        self.masking = tf.keras.layers.Masking(mask_value=0)
-        # Embedding layer with vocabulary size 300 and embedding dimension 2, trainable=True as per original model
-        self.embedding = tf.keras.layers.Embedding(300, 2, trainable=True)
-        # LSTM layer with 2 units, "tanh" activation to use cuDNN implementation (avoids Unsupported Type: 21 error)
-        # Returns sequences and no states (for compatibility with original code)
-        self.encoder = tf.keras.layers.LSTM(2,
-                                            activation="tanh",
-                                            return_sequences=True,
-                                            return_state=False)
+        super(lstm, self).__init__()
 
-    @tf.function(jit_compile=True)
+        self.embedding = tf.keras.layers.Embedding(300, 2, mask_zero=True, trainable=True)
+        self.encoder = tf.keras.layers.LSTM(2, return_sequences=True, return_state=False)
+
     def call(self, inputs):
-        # inputs expected as integer token indices padded with zeros
-        x = self.masking(inputs)
-        x = self.embedding(x)
-        x = self.encoder(x)
-        # The original code returns output[0] but encoder returns tensor directly since return_state=False
-        # So just return x directly
-        return x
+        output = self.embedding(inputs)
+        output = self.encoder(output)
+        return output[0]
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+input_questions = np.array([[5, 12, 13, 189, 10, 95, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]]).astype(float)
+output = np.array([[-0.00299482, 0.00096033]])
 
-def GetInput():
-    # Generate a random integer tensor simulating token indices including padding zeros
-    # Assumptions:
-    # - batch size = 1 (as in original example)
-    # - sequence length = 22 (from input_questions shape)
-    # - token indices range from 0 (padding) to 299 (vocab size)
-    batch_size = 1
-    sequence_length = 22
-    vocab_size = 300
+dataset = tf.data.Dataset.from_tensor_slices((input_questions, output)).shuffle(2).batch(1)
 
-    # Generate a random integer tensor with zeros included for padding
-    # We generate tokens in [1, vocab_size-1] plus some zeros
-    import numpy as np
-    np.random.seed(0)
+model = lstm()
+model.compile(tf.keras.optimizers.Adadelta(1.0), tf.keras.losses.MeanSquaredError())
+model.fit(dataset, epochs=10, verbose=2)
+for sample, target in dataset.take(1):
+    model(sample)
 
-    # For simplicity, produce mostly non-zero tokens, with trailing zeros as padding
-    tokens = np.random.randint(1, vocab_size, size=(batch_size, sequence_length))
-    # Zero-pad last few positions (simulate padding tokens)
-    tokens[0, 15:] = 0
+import tensorflow as tf
+import numpy as np
 
-    return tf.convert_to_tensor(tokens, dtype=tf.int32)
+class lstm(tf.keras.Model):
+    def __init__(self):
+        super(lstm, self).__init__()
 
+        self.masking = tf.keras.layers.Masking()
+        self.embedding = tf.keras.layers.Embedding(300, 2, trainable=True)
+        self.encoder = tf.keras.layers.LSTM(2, "sigmoid", return_sequences=True, return_state=False)
+
+    def call(self, inputs):
+        output = self.masking(inputs)
+        output = self.embedding(output)
+        output = self.encoder(output)
+        return output[0]
+
+input_questions = np.array([[5, 12, 13, 189, 10, 95, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]]).astype(float)
+output = np.array([[-0.00299482, 0.00096033]])
+
+dataset = tf.data.Dataset.from_tensor_slices((input_questions, output)).shuffle(2).batch(1)
+
+model = lstm()
+model.compile(tf.keras.optimizers.Adadelta(1.0), tf.keras.losses.MeanSquaredError())
+model.fit(dataset, epochs=10, verbose=2)
+for sample, target in dataset.take(1):
+    model(sample)
+
+import tensorflow as tf
+import numpy as np
+
+class lstm(tf.keras.Model):
+    def __init__(self):
+        super(lstm, self).__init__()
+
+        self.masking = tf.keras.layers.Masking()
+        self.embedding = tf.keras.layers.Embedding(300, 2, trainable=True)
+        self.encoder = tf.keras.layers.LSTM(2, "tanh", return_sequences=True, return_state=False)
+
+    def call(self, inputs):
+        output = self.masking(inputs)
+        output = self.embedding(output)
+        output = self.encoder(output)
+        return output[0]
+
+input_questions = np.array([[5, 12, 13, 189, 10, 95, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]]).astype(float)
+output = np.array([[-0.00299482, 0.00096033]])
+
+dataset = tf.data.Dataset.from_tensor_slices((input_questions, output)).shuffle(2).batch(1)
+
+model = lstm()
+model.compile(tf.keras.optimizers.Adadelta(1.0), tf.keras.losses.MeanSquaredError())
+model.fit(dataset, epochs=10, verbose=2)
+for sample, target in dataset.take(1):
+    model(sample)

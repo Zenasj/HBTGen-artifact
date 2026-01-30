@@ -1,29 +1,30 @@
-# torch.rand(1, 3, 224, 224, dtype=torch.float32)  # Inferred input shape for a typical CNN model
-
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1)
-        self.relu1 = nn.ReLU()
-        self.conv2 = nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1)
-        self.relu2 = nn.ReLU()
-        self.fc = nn.Linear(128 * 224 * 224, 10)  # Simplified FC layer for example
+class OnnxDispatcher:
+    def __init__():
+        self.dispatch_table = { 
+            "placeholder": dispatch_placeholder,
+            "call_function": dispatch_call_function,
+            "output": dispatch_output,
+            "call_method": dispatch_call_method,
+            "call_module": dispatch_call_module,
+            "get_attr": dispatch_get_attr
+        }
 
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.relu1(x)
-        x = self.conv2(x)
-        x = self.relu2(x)
-        x = x.view(x.size(0), -1)
-        x = self.fc(x)
-        return x
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
-
+    def dispatch_placeholder():
+        pass
+    def dispatch_call_function():
+        pass
+    def dispatch_output():
+        pass
+    def dispatch_call_method():
+        pass
+    def dispatch_call_module():
+        pass
+    def dispatch_get_attr():
+        pass
+    def dispatch(self, graph_module, onnxscript_graph, node: torch.fx.Node):
+        try:
+            self.dispatch_table[node.op](...)
+        except KeyError:
+            raise RuntimeError(f"Found node type not defined in torch.fx: {node.op}")

@@ -1,19 +1,26 @@
-# torch.rand(8, 4, 16, dtype=torch.float32)
+import torch.nn as nn
+
+3
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.gru = nn.GRU(16, 16)  # Input/hidden size = 16 as in the issue's 'size' variable
-    
-    def forward(self, x):
-        # Forward pass matches GRU usage in the issue (without hidden state for simplicity)
-        return self.gru(x)
+# Constants
+size = 16
+batch_size = 4
+seq_len = 8
+device = torch.device('cuda')
+input_ = torch.randn(seq_len, batch_size, size).to(device)
+hidden = torch.randn(1, batch_size, size).to(device)
 
-def my_model_function():
-    return MyModel()
+gru = torch.nn.GRU(size, size).to(device)
 
-def GetInput():
-    return torch.rand(8, 4, 16, dtype=torch.float32)  # seq_len=8, batch_size=4, input_size=16
+# Update weight with a `torch.tensor`
+# NOTE: Similar weight update as torch.nn.utils.weight_nrom
+data = gru.weight_hh_l0.data
+del gru._parameters['weight_hh_l0']
+setattr(gru, 'weight_hh_l0', torch.tensor(data))
 
+# Optional call to resolve parameter shapes
+gru.flatten_parameters()
+
+# Run forward pass
+_, output = gru(input_, hidden)

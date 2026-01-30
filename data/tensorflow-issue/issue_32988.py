@@ -1,22 +1,42 @@
-# tf.random.uniform((1, 256, 256, 3), dtype=tf.float32)
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Simple Conv2D layer as per the original model in the issue
-        self.conv = tf.keras.layers.Conv2D(filters=32, kernel_size=3, padding='valid')
+inputs = tf.keras.Input(shape=(256, 256, 3), name='model_input')
+outputs = tf.keras.layers.Conv2D(filters=32, kernel_size=3)(inputs)
+model = tf.keras.Model(inputs, outputs)
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
 
-    def call(self, inputs):
-        return self.conv(inputs)
+tflite_model = converter.convert()
+open("test_model_tf2.0_by_from_keras_model.tflite", "wb+").write(tflite_model)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+import tqdm
 
-def GetInput():
-    # Return a random tensor input matching the expected input shape (batch=1, 256x256 RGB image)
-    # Using float32 dtype as shown in the inference code on Raspberry Pi
-    return tf.random.uniform((1, 256, 256, 3), dtype=tf.float32)
+def tensorflow_lite():
+    from tflite_runtime.interpreter import Interpreter
+    from tflite_runtime.interpreter import load_delegate
 
+    import numpy as np
+
+    interpreter = Interpreter(
+            'test_model_tf2.0_by_from_keras_model.tflite',
+            experimental_delegates=[load_delegate('libedgetpu.so.1.0')], #with or without it
+        )
+    interpreter.allocate_tensors()
+   
+    input_details = interpreter.get_input_details()
+    output_details = interpreter.get_output_details()
+
+    _, height, width, _ = interpreter.get_input_details()[0]['shape']
+
+    for _ in tqdm.tqdm(range(100000)):
+        image = np.zeros((1, 256, 256, 3,), dtype=np.float32)
+        set_input_tensor(interpreter, image)
+        interpreter.invoke()
+        output = np.squeeze(interpreter.get_tensor(output_details[0]['index']))
+
+def main():
+    tensorflow_lite()
+if __name__ == '__main__':
+    main()

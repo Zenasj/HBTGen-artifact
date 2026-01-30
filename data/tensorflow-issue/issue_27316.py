@@ -1,28 +1,15 @@
-# tf.random.uniform((B, 3), dtype=tf.float32) ← The input shape is (batch_size, 3)
-
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Build a simple feed-forward network as described, with layers:
-        # Dense(5, activation='relu') -> Dense(5, activation='relu') -> Dense(1, activation='tanh')
-        # Note: Original code uses Z.relu and Z.tanh (likely a typo or shorthand for tf.keras.activations)
-        self.dense1 = tf.keras.layers.Dense(5, activation='relu', name='dense1')
-        self.dense2 = tf.keras.layers.Dense(5, activation='relu', name='dense2')
-        self.dense3 = tf.keras.layers.Dense(1, activation='tanh', name='dense3')
+import tf.keras.layers as L
+def feed_forward_nn():
+    with tf.variable_scope("keras_"):
+        _input_ = L.Input(shape=(3,))
+        layer_1 = L.Dense(5, Z.relu)(_input_)
+        layer_2 = L.Dense(5, Z.relu)(layer_1)
+        output = L.Dense(1, Z.tanh)(layer_2)
+    return Model(inputs=_input_, outputs=output)
 
-    def call(self, inputs):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        return self.dense3(x)
-
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input matching expected shape (batch size 1 for example)
-    # Using uniform distribution [0,1)
-    return tf.random.uniform((1, 3), dtype=tf.float32)
-
+model = feed_forward_nn()
+sess.run(tf.global_variables_initializer())

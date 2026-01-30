@@ -1,54 +1,37 @@
-# torch.rand(B, 32, H, W, dtype=torch.float32)
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(32, 32, 3, 1)
-        self.conv2 = nn.Conv2d(32, 32, 3, 1)
-        self.conv3 = nn.Conv2d(32, 32, 3, 1)
+def pack_hook(x):
+    return quantize(x)
 
-    @staticmethod
-    def quantize(x):
-        # Placeholder quantization (e.g., 8-bit compression)
-        # Actual implementation would involve scaling and rounding
-        return x  # Identity for demonstration
+# You can actually return whatever you want from the pack_hook and it will
+# be passed to this function.
+def unpack_hook(quant_x):
+    return dequantize(quant_x)
 
-    @staticmethod
-    def dequantize(x):
-        # Placeholder dequantization
-        return x  # Identity for demonstration
+with torch.autograd.graph.saved_tensors_hooks(pack, unpack):
+    # Every SavedVariable in this context will use the above hooks
+    your_model(some_input)
 
-    @staticmethod
-    def pack_hook(x):
-        if isinstance(x, torch.nn.Parameter):
-            return (x, "not_packed")
-        else:
-            return (MyModel.quantize(x), "packed")
+# 1. out-of-place, saving input
+x = 2 * torch.ones(1, requires_grad=True)
+with torch.autograd.graph.saved_tensors_hooks(pack, unpack):
+    y = x.pow(2)
+# the input of pack is tensor([2])
 
-    @staticmethod
-    def unpack_hook(packed):
-        x, status = packed
-        if status == "not_packed":
-            return x
-        else:
-            return MyModel.dequantize(x)
+# 2. inplace, saving input
+x = 2 * torch.ones(1, requires_grad=True)
+with torch.autograd.graph.saved_tensors_hooks(pack, unpack):
+    x.pow_(2)
+# the input of pack is tensor([2])
 
-    def forward(self, x):
-        with torch.autograd.graph.saved_tensors_hooks(
-            MyModel.pack_hook, MyModel.unpack_hook
-        ):
-            x = self.conv1(x)
-            x = self.conv2(x)
-            x = self.conv3(x)
-        return x
+# 3. out-of-place, saving output
+x = 2 * torch.ones(1, requires_grad=True)
+with torch.autograd.graph.saved_tensors_hooks(pack, unpack):
+    y = x.exp()
+# the input of pack is tensor([7.3891])
 
-def my_model_function():
-    # Returns MyModel instance with quantization hooks
-    return MyModel()
-
-def GetInput():
-    # Returns random input tensor matching (B, 32, H, W) shape
-    return torch.rand(2, 32, 32, 32, dtype=torch.float32)
-
+# 4. inplace, saving output
+x = 2 * torch.ones(1, requires_grad=True)
+with torch.autograd.graph.saved_tensors_hooks(pack, unpack):
+    x.exp_()
+# the input of pack is tensor([7.3891])

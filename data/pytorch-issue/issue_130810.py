@@ -1,25 +1,11 @@
-# torch.rand(B, 10, dtype=torch.float16)  # Inferred input shape: batch of 10D vectors with mixed precision
-import torch
-import torch.nn as nn
+from itertools import zip_longest
+for i, (exp_avg, grad, exp_avg_sq) in enumerate(zip_longest(device_exp_avgs, device_grads, device_exp_avg_sqs)):
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Core model components causing the issue (scalar parameter)
-        self.linear = nn.Linear(10, 5)
-        self.bias = nn.Parameter(torch.randn(()))  # 0D scalar parameter triggering shape mismatch
-        
-    def forward(self, x):
-        # Forward pass involving the scalar parameter
-        return self.linear(x) + self.bias  # Ensure scalar is part of gradient computation
+    if exp_avg is not None and exp_avg.dim() == 0:
+        device_exp_avgs[i] = exp_avg.unsqueeze(0)
 
-def my_model_function():
-    # Returns model instance with correct initialization
-    model = MyModel()
-    model = model.half()  # Matches 16-mixed precision setting from the issue
-    return model
+    if grad is not None and grad.dim() == 0:
+        device_grads[i] = grad.unsqueeze(0)
 
-def GetInput():
-    # Generates input matching the model's expected dimensions
-    return torch.rand(32, 10, dtype=torch.float16)  # Batch size 32, 10 input features
-
+    if exp_avg_sq is not None and exp_avg_sq.dim() == 0:
+        device_exp_avg_sqs[i] = exp_avg_sq.unsqueeze(0)

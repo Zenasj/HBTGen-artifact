@@ -1,27 +1,37 @@
-# tf.random.uniform((B, 1), dtype=tf.float32)
+from tensorflow import keras
+from tensorflow.keras import layers
+
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # The original model is a single Multiply layer taking input * input
-        self.multiply = tf.keras.layers.Multiply()
 
-    def call(self, inputs):
-        # inputs shape: (B, 1)
-        # multiply input by itself element-wise, output same shape
-        return self.multiply([inputs, inputs])
+input = tf.keras.Input(shape=(1))
+output = tf.keras.layers.Multiply()([input, input])
+model = tf.keras.Model(inputs=input, outputs=output)
 
-def my_model_function():
-    # Return an instance of the model with single multiply layer
-    return MyModel()
 
-def GetInput():
-    # Based on the issue, the input shape is (B, 1)
-    # Provide a representative input in the problematic range [1.3, 1.4]
-    # Using batch size 2 with two inputs to represent the representative dataset calls
-    import numpy as np
-    # Create a batch of shape (2,1), corresponding to samples 1.3 and 1.4
-    example_inputs = tf.constant([[1.3], [1.4]], dtype=tf.float32)
-    return example_inputs
+def representative_data_gen():
+    yield [np.array([[1.3]], dtype=np.float32)]
+    yield [np.array([[1.4]], dtype=np.float32)]
+    # It works with this line if _experimental_new_quantizer=True
+    # yield [np.array([[0.0]], dtype=np.float32)]
 
+
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+converter.representative_dataset = representative_data_gen
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
+converter._experimental_new_quantizer = True
+
+tflite_model = converter.convert()
+
+interpreter = tf.lite.Interpreter(model_content=tflite_model)
+interpreter.allocate_tensors()
+
+input = np.array([[1.4]], dtype=np.float32)
+interpreter.set_tensor(interpreter.get_input_details()[0]["index"], input)
+interpreter.invoke()
+output = interpreter.get_tensor(interpreter.get_output_details()[0]["index"])
+
+print("input ", input)
+print("output ", output)

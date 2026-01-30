@@ -1,15 +1,22 @@
-# torch.rand(3, 2, dtype=torch.float32)
+import torch.nn as nn
+
 import torch
-from torch import nn
+import onnxruntime
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        aa = torch.tensor([[0], [1], [2]])
-        return aa.expand_as(x)
+class Model(torch.nn.Module):
+  def forward(self, x):
+    aa = torch.tensor([[0],[1],[2]])
+    return aa.expand_as(x)
 
-def my_model_function():
-    return MyModel()
+x = torch.ones(3,2)
+model = Model()
+print(model(x))
+model_path='./model.onnx.pb'
+torch.onnx.export(model,(x,),model_path, input_names=["x"],dynamic_axes={"x": [0, 1]})
 
-def GetInput():
-    return torch.rand(3, 2, dtype=torch.float32)
 
+ort_session = onnxruntime.InferenceSession(model_path, providers=['CPUExecutionProvider'])
+
+ort_inputs = { 'x': x.numpy() }
+output_columns = []
+ort_outs = ort_session.run(output_columns, ort_inputs)

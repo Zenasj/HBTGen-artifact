@@ -1,28 +1,37 @@
-# tf.random.uniform((32, 1, 100), dtype=tf.float32) ← This matches batch_size=32, sequence_len=1, embedding_size=100
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # LSTM with 200 units, not returning sequences, input shape fixed by batch_size and time steps
-        self.lstm_layer = tf.keras.layers.LSTM(200, return_sequences=False)
-        # Dense layer to project LSTM output back to embedding size (100)
-        self.dense_layer = tf.keras.layers.Dense(100)
+batch_size = 32
+sequence_len = 1
+embedding_size = 100
 
-    def call(self, inputs, training=False):
-        x = self.lstm_layer(inputs, training=training)
-        return self.dense_layer(x)
+x_train = np.random.randn(batch_size, sequence_len, embedding_size)
+y_train = np.random.randn(batch_size, embedding_size)
+sample_weight = np.random.randn(batch_size)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+train_input = tf.keras.Input(shape=(sequence_len, embedding_size),
+                             batch_size=batch_size)
 
-def GetInput():
-    # Returns random input tensor matching input shape: batch_size=32, sequence_len=1, embedding_size=100
-    # Use float32 dtype to be compatible by default
-    batch_size = 32
-    sequence_len = 1
-    embedding_size = 100
-    return tf.random.uniform((batch_size, sequence_len, embedding_size), dtype=tf.float32)
+lstm_layer = tf.keras.layers.LSTM(200,
+                                  return_sequences=False,
+                                  )(train_input)
 
+dense_layer = tf.keras.layers.Dense(embedding_size,
+                                    )(lstm_layer)
+
+model = tf.keras.models.Model(inputs=train_input, outputs=dense_layer)
+
+model.summary()
+
+model.compile(optimizer=tf.keras.optimizers.RMSprop(lr=0.001),
+              loss=tf.losses.mean_squared_error)
+
+loss = model.train_on_batch(x_train,
+                            y=y_train,
+                            sample_weight=sample_weight)

@@ -1,17 +1,15 @@
-# torch.rand(1, dtype=torch.float32, device='cuda')
+from diffusers import StableDiffusionPipeline, EulerDiscreteScheduler
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Simulate the problematic randn call from the error logs
-        noise = torch.randn(1, 4, 96, 96, dtype=torch.float16, device='cuda')
-        return x  # Input x is unused but required to avoid zero-argument forward()
+model_id = "stabilityai/stable-diffusion-2"
 
-def my_model_function():
-    return MyModel()
+# Use the Euler scheduler here instead
+scheduler = EulerDiscreteScheduler.from_pretrained(model_id, subfolder="scheduler")
+pipe = StableDiffusionPipeline.from_pretrained(model_id, scheduler=scheduler, torch_dtype=torch.float16)
+pipe = pipe.to("cuda")
+pipe = torch.compile(pipe)
 
-def GetInput():
-    # Return a minimal valid input (unused by the model but required for forward compatibility)
-    return torch.rand(1, dtype=torch.float32, device='cuda')
-
+prompt = "a photo of an astronaut riding a horse on mars"
+image = pipe(prompt).images[0]
+    
+image.save("astronaut_rides_horse.png")

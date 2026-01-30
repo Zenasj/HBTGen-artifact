@@ -1,6 +1,15 @@
-# torch.rand(B, 1, 28, 28, dtype=torch.float32)
+import torch.nn as nn
+import torchvision
+
+import os
 import torch
 from torch import nn
+import torch.nn.functional as F
+from torchvision import transforms
+from torchvision.datasets import MNIST
+from torch.utils.data import DataLoader, random_split
+import pytorch_lightning as pl
+
 
 class Encoder(nn.Module):
     def __init__(self):
@@ -10,6 +19,7 @@ class Encoder(nn.Module):
     def forward(self, x):
         return self.l1(x)
 
+
 class Decoder(nn.Module):
     def __init__(self):
         super().__init__()
@@ -18,22 +28,33 @@ class Decoder(nn.Module):
     def forward(self, x):
         return self.l1(x)
 
-class MyModel(nn.Module):
-    def __init__(self):
+class LitAutoEncoder(pl.LightningModule):
+    def __init__(self, encoder, decoder):
         super().__init__()
-        self.encoder = Encoder()
-        self.decoder = Decoder()
+        self.encoder = encoder
+        self.decoder = decoder
 
-    def forward(self, x):
-        x_flat = x.view(x.size(0), -1)  # Flatten input tensor
-        z = self.encoder(x_flat)
+    def training_step(self, batch, batch_idx):
+        # training_step defines the train loop.
+        x, y = batch
+        x = x.view(x.size(0), -1)
+        z = self.encoder(x)
         x_hat = self.decoder(z)
-        return x_hat
+        loss = F.mse_loss(x_hat, x)
+        return loss
 
-def my_model_function():
-    return MyModel()
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
+        return optimizer
 
-def GetInput():
-    batch_size = 4  # Arbitrary batch size, can be adjusted
-    return torch.rand(batch_size, 1, 28, 28, dtype=torch.float32)
 
+
+dataset = MNIST(os.getcwd(), download=True, transform=transforms.ToTensor())
+train_loader = DataLoader(dataset)
+
+# model
+autoencoder = LitAutoEncoder(Encoder(), Decoder())
+
+# train model
+trainer = pl.Trainer(gpus=1, strategy='ddp')
+trainer.fit(model=autoencoder, train_dataloaders=train_loader)

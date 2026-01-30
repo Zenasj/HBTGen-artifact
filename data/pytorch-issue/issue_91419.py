@@ -1,23 +1,22 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Assumed input shape (e.g., B=1, C=3, H=224, W=224)
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Placeholder model structure due to lack of explicit model details in the issue
-        self.conv = nn.Conv2d(3, 64, kernel_size=3, padding=1)
-        self.relu = nn.ReLU()
-    
-    def forward(self, x):
-        return self.relu(self.conv(x))
+conf_1 = torch.ao.quantization.backend_config.backend_config.DTypeConfig()
+print(conf_1)
 
-def my_model_function():
-    # Returns a simple model instance with random weights
-    model = MyModel()
-    return model
+conf_2 = torch.ao.quantization.backend_config.backend_config.BackendConfig()
+print(conf_2)
 
-def GetInput():
-    # Generates a random input tensor matching the assumed shape
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
+conf_3 = torch.ao.quantization.backend_config.backend_config.BackendPatternConfig()
+print(conf_3)
 
+conf_4 = torch.ao.quantization.fx.custom_config.PrepareCustomConfig()\
+    .set_input_quantized_indexes([0])
+print(conf_4)
+
+conf_5 = torch.ao.quantization.fx.custom_config.ConvertCustomConfig()\
+    .set_preserved_attributes(['foo'])
+print(conf_5)
+
+conf_6 = torch.ao.quantization.fx.custom_config.FuseCustomConfig()\
+    .set_preserved_attributes(['foo'])
+print(conf_6)

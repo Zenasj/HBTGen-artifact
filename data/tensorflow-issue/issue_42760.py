@@ -1,31 +1,32 @@
-# tf.random.uniform((B, 32, 32, 3), dtype=tf.float32) ← inferred input shape from CIFAR-10 dataset
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
-import tensorflow as tf
+batch_size = 23
+epochs = 55
+num_classes = 10
+import os
+save_dir = 'model'
+model_name = 'test98_trained_model.h5'
+import tensorflow.keras as keras
+(x_train, y_train), (x_test, y_test) = keras.datasets.cifar10.load_data()
+print('x_train shape:', x_train.shape)
+print(x_train.shape[0], 'train samples')
+print(x_test.shape[0], 'test samples')
+img_rows, img_cols = x_train.shape[1], x_train.shape[2]
+y_train = keras.utils.to_categorical(y_train, num_classes)
+y_test = keras.utils.to_categorical(y_test, num_classes)
+model = keras.models.Sequential()
+model.add(keras.layers.PReLU(alpha_initializer='Identity'))
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # PReLU layer with a proper initializer instead of 'Identity' because Identity is only for 2D matrices.
-        # Here we use 'zeros' initializer as a safe default for alpha (learnable slope).
-        self.prelu = tf.keras.layers.PReLU(alpha_initializer='zeros')
-
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense = tf.keras.layers.Dense(10)  # CIFAR-10 has 10 classes
-
-    def call(self, inputs):
-        x = self.prelu(inputs)
-        x = self.flatten(x)
-        x = self.dense(x)
-        return x
-
-def my_model_function():
-    # Instantiate and return MyModel
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor with shape matching CIFAR-10 images (batch size 1, 32x32 RGB images)
-    # Values between 0 and 1 as data is normalized in original example.
-    # Batch size is set to 1 to allow flexibility.
-    input_shape = (1, 32, 32, 3)
-    return tf.random.uniform(input_shape, minval=0, maxval=1, dtype=tf.float32)
-
+model.add(keras.layers.Flatten())
+model.add(keras.layers.Dense(num_classes))
+x_train = x_train.astype('float32')
+x_test = x_test.astype('float32')
+x_train /= 255
+x_test /= 255
+model.compile(loss=keras.losses.categorical_crossentropy,optimizer=keras.optimizers.Adadelta(), metrics=['accuracy'])
+model.fit(x_train, y_train, batch_size=batch_size, epochs=epochs, verbose=1, validation_data=(x_test, y_test))
+print('Test accuracy:', score[1])
+model_path = os.path.join(save_dir, model_name)
+model.save(model_path)

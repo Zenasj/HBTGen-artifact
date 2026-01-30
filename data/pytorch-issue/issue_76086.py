@@ -1,31 +1,35 @@
-import torch
-from torch import nn
+import torch.nn as nn
 
-class Base(nn.Module):
+import torch
+
+class Base(torch.nn.Module):
     __constants__ = ["x"]
     x: float
 
     def __init__(self):
-        super().__init__()
-        self.x = 5.0
+        super(Base, self).__init__()
+        self.x = 5.
 
-class MyModel(nn.Module):
+class Inside(torch.nn.Module):
     def __init__(self):
-        super().__init__()
-        self.bn = nn.BatchNorm2d(64)
-        self.base = Base()
+        super(Inside, self).__init__()
 
     def forward(self, x):
-        # Problem 1: Attempt to modify constant 'momentum' of BatchNorm
-        self.bn.momentum = 1.0
-        # Problem 2: Attempt to modify constant 'x' of Base
-        self.base.x = 6.0
-        bn_out = self.bn(x)
-        return bn_out + self.base.x
+        return x + self.x
 
-def my_model_function():
-    return MyModel()
+# if you replace Inside with Base, it works.
+class Outside(torch.nn.Module):
+    def __init__(self, mod: Inside):
+        super(Outside, self).__init__()
+        self.mod = mod
 
-def GetInput():
-    return torch.rand(1, 64, 32, 32, dtype=torch.float32)
+    def forward(self, x):
+        return self.mod.x + x
 
+# If you replace Inside with Base, it works.
+m = Outside(Inside())
+
+x = torch.rand((2, 2))
+
+m_s = torch.jit.script(m)
+print(m_s(x) - x)

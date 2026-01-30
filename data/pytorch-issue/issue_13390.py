@@ -1,15 +1,14 @@
-# torch.rand(4,4), torch.rand(4,4)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        x, y = inputs
+def main():
+    def fun(x, y):
         return torch.cat([x, y], dim=0)
 
-def my_model_function():
-    return MyModel()
+    fun = torch.jit.trace(fun, (torch.ones([4, 4], requires_grad=True),
+                                torch.zeros([4, 4], requires_grad=True)))
+    out = torch._C._jit_differentiate(fun.graph)
+    return out
 
-def GetInput():
-    return (torch.rand(4, 4, requires_grad=True), torch.rand(4, 4, requires_grad=True))
 
+if __name__ == '__main__':
+    main()

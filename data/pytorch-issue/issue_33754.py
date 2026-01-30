@@ -1,49 +1,90 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Assuming a typical input shape of (batch_size, channels, height, width)
+# train.py
+import time
+import torch.multiprocessing as mp
+from torch.utils.data import DataLoader
+from image_dataset import ImageDataset
 
-import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Define a simple model for demonstration
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1)
-        self.relu = nn.ReLU()
-        self.fc = nn.Linear(64 * 32 * 32, 10)  # Assuming input size of 32x32
+class CustomProcess(object):
+  def __init__(self, dataset, model):
+    self.dataset = dataset
+    self.model = model
 
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.relu(x)
-        x = x.view(x.size(0), -1)  # Flatten the tensor
-        x = self.fc(x)
-        return x
+  def run(self):
+    mp.spawn(self.train, nprocs=4)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+  def train(self, id):
+    pytorch_loader = DataLoader(dataset=self.dataset,
+                                batch_size=64,
+                                shuffle=False,
+                                sampler=None,
+                                batch_sampler=None,
+                                num_workers=4,
+                                collate_fn=None,
+                                pin_memory=True,
+                                drop_last=False,
+                                timeout=0,
+                                worker_init_fn=None,
+                                multiprocessing_context=None)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # Assuming a batch size of 64, 3 channels, and image size of 32x32
-    B, C, H, W = 64, 3, 32, 32
-    return torch.rand(B, C, H, W, dtype=torch.float32)
+    train_time = 0
+    stime = time.time()
+    # model.share_memory()
+    for data in pytorch_loader:
+      # train
+      output = model(data)
+      train_time = train_time + 1
+      if train_time % 100 == 0:
+        etime = time.time()
+        print("train time: {}, cost time: {}".format(train_time, etime - stime))
+        stime = etime
 
-# Example usage:
-# model = my_model_function()
-# input_data = GetInput()
-# output = model(input_data)
 
-# The issue and comments provided do not contain a complete PyTorch model or the necessary details to construct one. However, I can infer a basic structure for `MyModel` and provide the required functions based on the context. The main focus here is to ensure that the DataLoader is correctly configured with `pin_memory=True` and to demonstrate how to use it.
-# Here's the generated code:
-# ### Explanation:
-# 1. **MyModel Class**:
-#    - A simple convolutional neural network (CNN) is defined with a single convolutional layer, ReLU activation, and a fully connected layer.
-#    - The input shape is assumed to be (batch_size, 3, 32, 32).
-# 2. **my_model_function**:
-#    - This function returns an instance of `MyModel`.
-# 3. **GetInput Function**:
-#    - This function generates a random tensor with the shape (64, 3, 32, 32) to match the expected input of `MyModel`.
-# ### Notes:
-# - The input shape and model architecture are inferred based on common practices and the context provided.
-# - The DataLoader configuration with `pin_memory=True` should be handled in the script where the DataLoader is created, as shown in the comments.
-# - The model and input generation are kept simple for demonstration purposes. You can expand the model and adjust the input shape as needed.
+if __name__ == "__main__":
+  process = CustomProcess(ImageDataset("./coco/train"))
+  process.run()
+
+import time
+from torch.multiprocessing import Process
+
+from image_dataset import ImageDataset
+from torch.utils.data import DataLoader
+
+
+def image_reader():
+  pytorch_loader = DataLoader(dataset=ImageDataset("./coco/train"),
+                              batch_size=64,
+                              shuffle=False,
+                              sampler=None,
+                              batch_sampler=None,
+                              num_workers=4,
+                              collate_fn=None,
+                              pin_memory=True,
+                              drop_last=False,
+                              timeout=0,
+                              worker_init_fn=None,
+                              multiprocessing_context=None)
+
+  read_time = 0
+  stime = time.time()
+  for _ in pytorch_loader:
+    read_time = read_time + 1
+    if read_time % 100 == 0:
+      etime = time.time()
+      print("read time: {}, cost time: {}".format(read_time, etime - stime))
+      stime = etime
+
+
+def run():
+  plist = []
+  for j in range(5):
+    p = Process(target=image_reader)
+    p.start()
+    plist.append(p)
+
+  for p in plist:
+    p.join()
+
+
+if __name__ == "__main__":
+  run()

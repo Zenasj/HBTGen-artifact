@@ -1,13 +1,17 @@
+import random
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-def weights_init(m):
-    if isinstance(m, (nn.Conv2d, nn.Linear)):
-        nn.init.xavier_normal_(m.weight)
-        nn.init.constant_(m.bias, 0.0)
-
+from torch import optim, autograd
+import time
+from math import pi
+import numpy as np
+import sobol_seq as sobol
+ 
 class Block(nn.Module):
+ 
+
     def __init__(self, in_N, width, out_N):
         super(Block, self).__init__()
         self.L1 = nn.Linear(in_N, width)
@@ -17,138 +21,170 @@ class Block(nn.Module):
     def forward(self, x):
         return self.phi(self.L2(self.phi(self.L1(x)))) + x
 
-class MyModel(nn.Module):
+
+class drrnn(nn.Module):
+ 
     def __init__(self, in_N, m, out_N, depth=4):
-        super(MyModel, self).__init__()
+        super(drrnn, self).__init__()
         self.in_N = in_N
         self.m = m
         self.out_N = out_N
         self.depth = depth
-        self.phi = nn.Tanh()
-        self.stack = nn.ModuleList()
-        self.stack.append(nn.Linear(in_N, m))
-        for _ in range(depth):
-            self.stack.append(Block(m, m, m))
-        self.stack.append(nn.Linear(m, out_N))
+        self.phi = torch.nn.Tanh()
+        self.stack = torch.nn.ModuleList()
+        self.stack.append(torch.nn.Linear(in_N,m))
+
+        for i in range(depth):
+            self.stack.append(Block(m,m, m))
+        # last layer
+        self.stack.append(torch.nn.Linear(m, out_N))
 
     def forward(self, x):
-        for layer in self.stack:
-            x = layer(x)
+        # first layer
+        for i in range(len(self.stack)):
+            x = self.stack[i](x)
         return x
 
-def my_model_function():
-    model = MyModel(2, 40, 1)
-    model.apply(weights_init)
-    return model
 
-def GetInput():
-    # Assuming batch size 1 for simplicity, but could be variable
-    B = 1  # Or a placeholder? But the user might expect a general B
-    # However, the function should return a tensor, so maybe with a fixed B, but the comment says to use B, C, H, W
-    # Since the input is 2D, the shape is (B, 2)
-    return torch.rand(B, 2, dtype=torch.float)
+def get_interior_points(N=128):
+ 
+    x1 = sobol.i4_sobol_generate(2, N)  
+    return torch.from_numpy(x1).float() 
 
-# Okay, let's tackle this problem step by step. The user wants a complete Python code file extracted from the given GitHub issue, following specific constraints. 
-# First, I need to parse the provided issue content. The main part here is the user's code for the PyTorch model and the error they encountered. The error is about the derivative for `aten::linear_backward` not being implemented on MPS when using `create_graph=True`. However, the task isn't to fix the error but to generate the code as per the structure provided.
-# Looking at the code snippets in the issue:
-# - The user's code includes two classes: `Block` and `drrnn` (which I'll rename to `MyModel` as per requirement).
-# - The `Block` class is part of the `drrnn` model, so I need to adjust the class names. Since the requirement says the model must be `MyModel`, I'll rename `drrnn` to `MyModel`.
-# - The `Block` class remains as is, but inside `MyModel`.
-# - The `runmodel` function and `main` are part of the training loop, but the task specifies not to include test code or `__main__` blocks. So those parts need to be omitted except for the model definition and the `GetInput` function.
-# Next, the structure required:
-# - The top comment must specify the input shape. The original code uses `in_N = 2` for the input dimensions (since `drrnn` is initialized with in_N=2), so the input shape is (B, 2), but since PyTorch expects (B, C, H, W), maybe it's a 2D input. Wait, actually, looking at the `exact_sol` function and the data generation functions like `get_interior_points` which generate 2D points (since they use sobol with 2 dimensions), the input is 2 features. So the input shape is (batch_size, 2). Hence, the comment should be `torch.rand(B, 2, dtype=torch.float)`.
-# - The `my_model_function` should return an instance of `MyModel`. The original code initializes `drrnn` with in_N=2, m=40, out_N=1. So the function should create `MyModel(2, 40, 1)`.
-# - The `GetInput` function needs to generate a random tensor matching the input. Since the input is 2-dimensional, it should return `torch.rand(B, 2, dtype=torch.float)` on the device (though the device might be mps, but the function just needs to return a tensor, so maybe not specifying device here, but the code can handle it when used with `MyModel`).
-# Now, checking for any other parts:
-# - The issue mentions that the problem occurs when using `create_graph=True`. The code uses `autograd.grad` with `create_graph=True`, so that's part of the gradients function. But since the user's code is being converted into the required structure, the model itself doesn't need to handle that; the structure just requires the model and input function.
-# - The user's code has `drrnn` which uses a ModuleList with Linear and Block layers. The `forward` loops through the stack. So the renamed `MyModel` should keep that structure.
-# Potential missing parts: The original code uses Sobol sequences for generating points, but `GetInput` needs to generate a random tensor. Since the original input is 2D, using `torch.rand` is okay. The exact data generation functions (like `get_interior_points`) are part of the training loop and can be omitted here.
-# Also, the `weights_init` function is used in the original code, but since the model initialization in `my_model_function` must return an instance, perhaps the weights are initialized via the `apply` method. However, the user's code applies `weights_init` after creating the model. To include that, maybe in `my_model_function`, after creating the model, call `model.apply(weights_init)`. But the task says to include any required initialization. Alternatively, maybe the weights are initialized within the model's `__init__`. Looking at the original code, the `weights_init` is a separate function that uses Xavier initialization. To include that properly, perhaps the model's layers should initialize their weights in their own `__init__`, or the `my_model_function` should apply the initialization.
-# Wait, the original code does:
-# soln_nn = drrnn(...).to(device)
-# soln_nn.apply(weights_init)
-# So the `apply` is applied after creation. Therefore, to ensure the model is initialized correctly, the `my_model_function` should return a model that has the weights initialized. So in the function:
-# def my_model_function():
-#     model = MyModel(2, 40, 1)
-#     model.apply(weights_init)
-#     return model
-# But the `weights_init` function is part of the user's code. However, since the task requires a complete code, I need to include that function as well. Wait, the user's code includes:
-# def weights_init(m):
-#     if isinstance(m, (nn.Conv2d, nn.Linear)):
-#         nn.init.xavier_normal_(m.weight)
-#         nn.init.constant_(m.bias, 0.0)
-# So I need to include that in the code. Since the structure requires only the model class and the three functions, but the weights_init is needed for initialization, I'll include it in the code.
-# So putting it all together:
-# The code structure will have:
-# - The MyModel class (renamed from drrnn), with the Block class inside or as a submodule. Wait, the Block is a separate class, so it should stay as a separate class, but inside the same file.
-# Wait, the original code has:
-# class Block(nn.Module):
-#     ...
-# class drrnn(nn.Module):
-#     ...
-# So in the generated code, we need to have both classes. The Block is part of MyModel's structure.
-# Now, the code outline would be:
-# Wait, but the user's original code uses `drrnn` with in_N=2, m=40, out_N=1. So the `my_model_function` initializes with those parameters. The `depth` is default 4, which is correct.
-# Now, checking the `forward` function of MyModel: the original code loops over all layers in the stack. The original code's `forward` in drrnn was:
-# def forward(self, x):
-#     for i in range(len(self.stack)):
-#         x = self.stack[i](x)
-#     return x
-# Which is equivalent to looping through all layers in the stack. The code above does the same with `for layer in self.stack`.
-# Also, the `Block` class's forward adds the input to the output (residual connection). That's preserved.
-# The `weights_init` is correctly applied in `my_model_function`.
-# The `GetInput` function returns a tensor of shape (B, 2), which matches the input expected by MyModel, since the first layer is Linear(in_N=2, m). The dtype is float, as per the original code (since the data is loaded as float).
-# Now, checking for the other constraints:
-# - The class name is MyModel, which is correct.
-# - The issue didn't mention multiple models to compare, so no need to fuse any. So the first requirement is satisfied.
-# - The input function must return a tensor that works with MyModel. The generated code does that.
-# - Missing code? The user provided all necessary parts except maybe the sobol functions, but those are not needed here as GetInput uses torch.rand.
-# - No test code or main blocks, which is good.
-# - The code is in a single Python code block as required.
-# - The model can be used with torch.compile, which requires the model to be a standard nn.Module, which it is.
-# I think this meets all the requirements. The only thing left is to ensure that the input shape is correctly noted in the comment. The first line should be:
-# # torch.rand(B, 2, dtype=torch.float)
-# Because the input is 2-dimensional (as per the problem's data). The user's code uses 2 features, so that's correct.
-# </think>
-# ```python
-# # torch.rand(B, 2, dtype=torch.float)
-# import torch
-# import torch.nn as nn
-# import torch.nn.functional as F
-# def weights_init(m):
-#     if isinstance(m, (nn.Conv2d, nn.Linear)):
-#         nn.init.xavier_normal_(m.weight)
-#         nn.init.constant_(m.bias, 0.0)
-# class Block(nn.Module):
-#     def __init__(self, in_N, width, out_N):
-#         super(Block, self).__init__()
-#         self.L1 = nn.Linear(in_N, width)
-#         self.L2 = nn.Linear(width, out_N)
-#         self.phi = nn.Tanh()
-#     def forward(self, x):
-#         return self.phi(self.L2(self.phi(self.L1(x)))) + x
-# class MyModel(nn.Module):
-#     def __init__(self, in_N, m, out_N, depth=4):
-#         super(MyModel, self).__init__()
-#         self.in_N = in_N
-#         self.m = m
-#         self.out_N = out_N
-#         self.depth = depth
-#         self.phi = nn.Tanh()
-#         self.stack = nn.ModuleList()
-#         self.stack.append(nn.Linear(in_N, m))
-#         for _ in range(depth):
-#             self.stack.append(Block(m, m, m))
-#         self.stack.append(nn.Linear(m, out_N))
-#     def forward(self, x):
-#         for layer in self.stack:
-#             x = layer(x)
-#         return x
-# def my_model_function():
-#     model = MyModel(in_N=2, m=40, out_N=1)
-#     model.apply(weights_init)
-#     return model
-# def GetInput():
-#     B = 1  # Batch size placeholder (can be adjusted)
-#     return torch.rand(B, 2, dtype=torch.float)
-# ```
+
+def get_boundary_points(N=33):
+    index = sobol.i4_sobol_generate(1, N)
+    xb1 = np.concatenate((index, np.zeros_like(index)), 1)
+    xb2 = np.concatenate((index, np.ones_like(index)), 1)
+    xb4 = np.concatenate((np.zeros_like(index), index), 1)
+    xb6 = np.concatenate((np.ones_like(index), index), 1)
+    xb = torch.from_numpy(np.concatenate((xb1, xb2, xb4, xb6), 0)).float()
+
+    return xb
+
+
+def weights_init(m):
+    if isinstance(m, (nn.Conv2d, nn.Linear)):
+        nn.init.xavier_normal_(m.weight)
+        nn.init.constant_(m.bias, 0.0)
+
+
+def exact_sol(x):
+    value = torch.where(x[:, 0: 1] > 0.5, (1 - x[:, 0: 1]) ** 2, x[:, 0: 1] ** 2)  
+    return value
+
+
+def function_l_exact(x):
+    return x[:, 0: 1] * x[:, 1: 2] * (1 - x[:, 0: 1]) * (1 - x[:, 1: 2])
+
+
+def function_f():
+    return -2
+
+
+def gradients(input, output):
+    return autograd.grad(outputs=output, inputs=input,
+                                grad_outputs=torch.ones_like(output),
+                                create_graph=True, retain_graph=True, only_inputs=True)[0]
+
+def error_l2(x, y):
+ 
+    return torch.norm(x - y) / torch.norm(y)
+
+
+def runmodel(epochs: int,
+             lr1, lr2,
+             gamma1, gamma2,
+             step_size1, step_size2, N_interior, N_boundary):
+
+    seed = 123
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
+
+    in_N = 2
+    m = 40
+    out_N = 1
+
+    device = torch.device("mps")
+    soln_nn = drrnn(in_N, m, out_N).to(device) # solution
+    soln_nn.apply(weights_init)
+    test_function_nn = drrnn(in_N, m, out_N).to(device) # the test function
+    test_function_nn.apply(weights_init)
+    optimizer_solution = optim.Adam(soln_nn.parameters(), lr=lr1)
+    optimizer_test_function = optim.Adam(test_function_nn.parameters(), lr=lr2)
+
+
+    StepLR1 = torch.optim.lr_scheduler.StepLR(optimizer_solution, step_size=step_size1, gamma=gamma1)
+    StepLR2 = torch.optim.lr_scheduler.StepLR(optimizer_test_function, step_size=step_size2, gamma=gamma2)
+    tt = time.time()
+    f_value = function_f()
+    xr = get_interior_points(N_interior)
+    xb = get_boundary_points(N_boundary)
+    xr = xr.to(device)
+    xb = xb.to(device)
+    for epoch in range(epochs+1):
+
+        xr.requires_grad_()
+        output_r = soln_nn(xr)
+        output_b = soln_nn(xb)
+        output_phi_r = test_function_nn(xr) * function_l_exact(xr)
+        exact_b = exact_sol(xb)
+        grads_u = gradients(xr, output_r)
+        grads_phi = gradients(xr, output_phi_r)
+
+        loss_r = torch.square(torch.mean(torch.sum(grads_u * grads_phi, dim=1) - f_value * output_phi_r)) / torch.mean(torch.square(output_phi_r))
+        loss_b = 10 * torch.mean(torch.abs(output_b - exact_b))
+        
+        loss1 = loss_r + loss_b
+        loss2 = - loss_r + torch.square(torch.mean(torch.square(output_phi_r)) - 1)
+
+        if epoch % 3 == 2:
+            optimizer_test_function.zero_grad()
+            loss2.backward()
+            optimizer_test_function.step()
+            StepLR2.step()
+        else:
+            optimizer_solution.zero_grad()
+            loss1.backward()
+            optimizer_solution.step()
+            StepLR1.step()
+
+        if epoch % 100 == 0:
+            err = error_l2(soln_nn(xr), exact_sol(xr))
+            print('epoch:', epoch, 'loss1:', loss1.item(), 'loss2:', loss2.item(), 'error', err.item())
+            tt = time.time()
+
+    with torch.no_grad():
+        N0 = 1000
+        x1 = np.linspace(0, 1, N0 + 1)
+
+        xs1, ys1 = np.meshgrid(x1, x1)
+        Z1 = torch.from_numpy(np.concatenate((xs1.flatten()[:, None], ys1.flatten()[:, None]), 1)).float()
+        pred = torch.reshape(soln_nn(Z1), [N0 + 1, N0 + 1]).cpu().numpy()
+        exact = torch.reshape(exact_sol(Z1), [N0 + 1, N0 + 1]).cpu().numpy()
+
+    err = np.sqrt(np.sum(np.square(exact - pred)) / np.sum(np.square(exact)))
+    print("Error:", err)
+
+def main():
+    epochs = 2000
+
+    N_interior = 1000
+    N_boundary = 200
+
+
+    lr1 = 1e-2
+    lr2 = 1e-2
+    gamma1= 0.5
+    gamma2 =0.5
+    step_size1 = 1000
+    step_size2 = 1000
+    runmodel(epochs, lr1, lr2, gamma1, gamma2, step_size1, step_size2, N_interior, N_boundary)
+
+
+if __name__ == '__main__':
+    main()

@@ -1,21 +1,29 @@
-# torch.rand(1, 4, 100, 100, dtype=torch.float32)
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Reproduces the Conv2d configuration from the original issue
-        self.conv = nn.Conv2d(4, 50, kernel_size=10, stride=5)
-        
-    def forward(self, x):
-        return self.conv(x)
+import random
 
-def my_model_function():
-    # Returns the model instance with default initialization
-    return MyModel()
+import torch
 
-def GetInput():
-    # Generates a random input matching the expected shape (B=1, C=4, H=100, W=100)
-    return torch.rand(1, 4, 100, 100, dtype=torch.float32)
+import psutil
 
+
+def conv2d_forever():
+    tot_batch = 0
+
+    while True:
+        with torch.no_grad():
+            # torch.nn.functional.conv2d(torch.ones(1, 3, random.randint(8, 64), random.randint(8, 256)), torch.randn(3, 1, 3, 3), groups=3)
+            torch.nn.functional.conv2d(torch.ones(1, 3, random.randint(8, 64), random.randint(8, 256)), torch.randn(3, 3, 3, 3))
+
+        # sample = blur(sample)
+
+        mem = psutil.virtual_memory()
+        if tot_batch % 1000  == 0:
+            print(
+                f'{tot_batch:8} - {mem.free / 1024 ** 3:10.2f} - {mem.available / 1024 ** 3:10.2f} - {mem.used / 1024 ** 3:10.4f}')
+
+        tot_batch += 1
+
+
+if __name__ == '__main__':
+    conv2d_forever()

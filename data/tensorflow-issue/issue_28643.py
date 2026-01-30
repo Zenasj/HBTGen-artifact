@@ -1,47 +1,68 @@
-# tf.random.uniform((B, 10), dtype=tf.float32) ← input is a batch of feature vectors with shape (batch_size, 10)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
+import numpy as np
 import tensorflow as tf
 
 
-class MyModel(tf.keras.Model):
+def input_fn():
+    x = np.random.random((1024, 10))
+    y = np.random.randint(2, size=(1024, 1))
+    x = tf.cast(x, tf.float32)
+    
+    dataset = tf.data.Dataset.from_tensor_slices((x, y))
+    dataset = dataset.shuffle(100)
+    dataset = dataset.batch(32)
+    dataset = dataset.repeat(10)
+    
+    def _extract_features(_x, _y):
+        features = {
+            'x': _x,
+            'z': tf.zeros_like(_x)
+        }
+        
+        return features, _y
+
+    dataset = dataset.map(_extract_features)
+
+    return dataset
+
+
+class MyModel0(tf.keras.Model):
     def __init__(self):
         super(MyModel, self).__init__()
-        # Using DenseFeatures layer with numeric_column keyed to 'x'
+        
         self.features = tf.keras.layers.DenseFeatures([
             tf.feature_column.numeric_column('x', shape=(10,))
         ])
         self.dense1 = tf.keras.layers.Dense(16, activation='relu')
         self.dense2 = tf.keras.layers.Dense(1, activation='sigmoid')
-
+        
     def call(self, inputs, training=None, mask=None):
-        # inputs is expected to be a dict with key 'x' among potentially others (e.g., 'z')
-        x = self.features(inputs)
-        x = self.dense1(x)
-        x = self.dense2(x)
-        return x
+        outputs = self.features(inputs)
+        outputs = self.dense1(outputs)
+        outputs = self.dense2(outputs)
+
+        return outputs
 
 
-def my_model_function():
-    # Instantiate and compile the model consistent with the original example
-    model = MyModel()
-    model.compile(
-        loss='binary_crossentropy',
-        optimizer=tf.keras.optimizers.Adam(learning_rate=0.05)
-    )
-    return model
+model = MyModel()
+model.compile(loss='binary_crossentropy', optimizer=tf.keras.optimizers.Adam(lr=0.05))
 
+# Works
+model.run_eagerly = True
+model.fit(input_fn())
 
-def GetInput():
-    # Generate a batch of inputs compatible with the model.
-    # The model expects inputs as a dict with key 'x' containing float32 tensors of shape (B, 10).
-    # The 'z' key is unused in the model but commonly included in the original input_fn,
-    # so include it here to match expected input dict structure.
-    batch_size = 32  # typical batch size used in example
+# Works
+model.run_eagerly = False
+model.fit(input_fn())
 
-    # Generate random feature data for 'x'
-    x = tf.random.uniform((batch_size, 10), dtype=tf.float32)
-    # Create a zero tensor matching x for key 'z' (not used in model but part of input dict)
-    z = tf.zeros_like(x)
+# Works
+model.run_eagerly = True
+model.fit_generator(input_fn())
 
-    return {'x': x, 'z': z}
-
+# Fails
+model.run_eagerly = False
+model.fit_generator(input_fn())

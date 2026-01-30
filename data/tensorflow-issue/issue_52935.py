@@ -1,129 +1,72 @@
-# tf.random.uniform((1, 128, 128, 3), dtype=tf.float32)
 import tensorflow as tf
 from tensorflow import keras
-from tensorflow.keras import layers
+from tensorflow.keras import models
 
-class MyModel(tf.keras.Model):
-    def __init__(self, max_output_size=5, score_threshold=0.75, iou_threshold=0.5):
-        super(MyModel, self).__init__()
-        # Load the BlazeFace model as a keras.Model
-        # For this example, we simulate it by a placeholder model. 
-        # In real use, replace with: tf.keras.models.load_model(path_to_blazeface)
-        # Here we will build a dummy convolution model to simulate output shape:
-        self.max_output_size = max_output_size
-        self.score_threshold = score_threshold
-        self.iou_threshold = iou_threshold
-        
-        # The actual BlazeFace model should return a 3D tensor with shape (batch_size, N, C)
-        # where N is number of predicted boxes, C the features per box.
-        # Here, for demonstration, we create a dummy layer to simulate:
-        # Normally you do: self.classifier = tf.keras.models.load_model(blazeface_path)
-        self.classifier = keras.Sequential([
-            layers.Conv2D(16, kernel_size=3, padding="same", activation="relu"),
-            layers.Conv2D(17, kernel_size=1, padding="same")  # Output 17 channels per spatial location
-        ])
-    
+blazeface_tf_model = tf.keras.models.load_model(r"/content/blazeface_tf.h5")
+class FaceDetetor(layers.Layer):
+    def __init__(self):
+        super(FaceDetetor, self).__init__()
+        self.classifier = blazeface_tf_model
+
+
     def call(self, inputs):
-        # Normalize inputs from [0,255] uint8/floats to (-1,1) float32
-        input_tensor = tf.cast(inputs, tf.float32)
-        input_tensor = (input_tensor / 127.5) - 1.0
+        input_tensor = (inputs / 127.5) - 1
+        temp_tensor = self.classifier(input_tensor)
         
-        # Run the base detector to get raw predictions of shape (B, H, W, C)
-        temp_tensor = self.classifier(input_tensor)  # shape: (1, H, W, 17) for example
+        reshape_tensor = tf.reshape(temp_tensor, [-1, temp_tensor.shape[2]])
+        final_boxes = tf.slice(reshape_tensor, [0, 0], [-1, 4])
         
-        # Reshape to (num_boxes, features)
-        # Here, infer the number of boxes and features:
-        shape = tf.shape(temp_tensor)
-        batch_size = shape[0]
-        H = shape[1]
-        W = shape[2]
-        C = shape[3]  # should be 17
+        temp_boxex_1 = tf.slice(final_boxes, [0, 0], [-1, 2])  # 中心 y_x
+        temp_boxex_2 = tf.slice(final_boxes, [0, 2], [-1, 2])  # w_h
+        temp_boxex_2_1 = temp_boxex_2 / 2
         
-        # Flatten spatial dims to get all boxes
-        flatten = tf.reshape(temp_tensor, (batch_size, -1, C))  # (B, N, 17)
+        ts_sub1 = tf.subtract(temp_boxex_1, temp_boxex_2_1, name=None)
+        temp_clip = tf.clip_by_value(ts_sub1, 0, 100000000)
         
-        # The last dimension feature map is 17, interpreted as:
-        # final_boxes coordinates: 4 (center_yx and wh)
-        # rest maybe landmarks, score, etc.
+        ts_add1 = tf.add(temp_boxex_1, temp_boxex_2_1, name=None)
         
-        # For this example, assume:
-        # Box: first 4 features => center_yx (2), wh (2)
-        # Scores: last feature (index 16)
-        
-        # Processing on batch dimension 1 for simplicity (batch=1)
-        # We will write code assuming batch size = 1 for clarity
-        
-        temp = flatten[0]  # (N, 17)
-        
-        # Extract box params
-        final_boxes = temp[:, 0:4]  # center_yx + wh
-        
-        # Split center and wh
-        center_yx = final_boxes[:, 0:2]
-        wh = final_boxes[:, 2:4]
-        half_wh = wh / 2
-        
-        # Convert center_yx + wh to top-left bottom-right format (tlbr)
-        tl = center_yx - half_wh
-        tl = tf.clip_by_value(tl, 0.0, 1e8)  # large clamp as original code
-        
-        br = center_yx + half_wh
-        
-        # Switch from (y,x) to (x,y) as expected by tf.image.non_max_suppression
-        # tf.image.non_max_suppression expects boxes in form [y1, x1, y2, x2], but here box_tlbr is constructed:
-        # Here user swaps y,x for coordinates, so we replicate that logic
-        
-        # Stack for box tlbr = [x1,y1,x2,y2]
-        xy1 = tf.stack([tl[:, 1], tl[:, 0]], axis=-1)
-        xy2 = tf.stack([br[:, 1], br[:, 0]], axis=-1)
-        box_tlbr = tf.concat([xy1, xy2], axis=1)  # shape (N,4)
-        
-        # Scores are last channel (index 16), reshape to vector
-        raw_scores = temp[:, -1]
+        yx1_columns = tf.unstack(temp_clip, axis=-1)
+        xy1_columns = tf.stack([yx1_columns[1], yx1_columns[0]], axis=-1)
+        yx2_columns = tf.unstack(ts_add1, axis=-1)
+        xy2_columns = tf.stack([yx2_columns[1], yx2_columns[0]], axis=-1)
+        box_tlbr = tf.concat([xy1_columns, xy2_columns], 1)
+        #### xywh_to_tlbr ####
+        raw_scores = tf.slice(reshape_tensor, [0, temp_tensor.shape[2] - 1], [-1, 1])
         scores = tf.reshape(raw_scores, [-1])
-        
-        # Perform non-max suppression
-        selected_indices = tf.image.non_max_suppression(
-            boxes=box_tlbr,
-            scores=scores,
-            max_output_size=self.max_output_size,
-            iou_threshold=self.iou_threshold,
-            score_threshold=self.score_threshold
-        )
-        
-        # Gather selected boxes and scores
-        selected_rows = tf.gather(temp, selected_indices, axis=0)  # shape (M,17)
-        
-        # Extract box details without last score channel
-        boxes = selected_rows[:, :-1]
-        
-        # If single box, keep dims consistent
-        if len(boxes.shape) == 1:
-            boxes = tf.expand_dims(boxes, axis=0)
-        
-        # Scale boxes by image size 128 (from the original code)
-        orig_points = boxes * 128.0
-        
-        # Gather corresponding scores
-        selected_scores = tf.gather(raw_scores, selected_indices, axis=0)
-        selected_scores = tf.expand_dims(selected_scores, axis=1)
-        
-        # Concatenate boxes and scores to form final output (M, 16 + 1)
-        final_result = tf.concat([orig_points, selected_scores], axis=1)
-        
-        # Add batch dimension for output consistency: (1, M, 17)
-        final_result = tf.expand_dims(final_result, axis=0)
-        
+        out_boxes = tf.image.non_max_suppression(box_tlbr, scores, max_output_size=5,
+                                                 score_threshold=0.5, iou_threshold=0.3)
+       
+        rows = tf.gather(reshape_tensor, out_boxes, axis=0)
+        final_boxes = tf.slice(rows, [0, 0], [-1, temp_tensor.shape[2] - 1])
+        if len(final_boxes.shape) == 1:
+            final_boxes = tf.expand_dims(final_boxes, axis=0)
+        orig_points = final_boxes * 128
+        final_scores = tf.gather(raw_scores, out_boxes, axis=0)
+        final_result = tf.concat([orig_points, final_scores], 1)
         return final_result
+max_output_size = 5
+score_threshold = 0.75
+iou_threshold = 0.5
+inputs_0 = keras.Input(batch_shape=((1, 128, 128, 3)), dtype=tf.float32, name="input_images")
+# inputs_1 = keras.Input(shape=(1), dtype=tf.int32, name="max_output_size")
+# inputs_2 = keras.Input(shape=(1), dtype=tf.float32, name="score_threshold")
+# inputs_3 = keras.Input(shape=(1), dtype=tf.float32, name="iou_threshold")
+outputs = FaceDetetor()(inputs_0)
 
+model_folder_path = r"/content/face_detector_inputs3"
+model = keras.Model(inputs_0, outputs=outputs)
+model.save(model_folder_path, save_format='tf')
+print("saved model!")
 
-def my_model_function():
-    # Returns an instance of MyModel initialized with default parameters matching the original example.
-    return MyModel()
-
-
-def GetInput():
-    # Returns a random input tensor with shape (1,128,128,3) dtype float32 to feed MyModel.
-    # The original model expects 128x128 RGB image batch of 1.
-    return tf.random.uniform(shape=(1, 128, 128, 3), minval=0, maxval=255, dtype=tf.float32)
-
+converter = tf.lite.TFLiteConverter.from_saved_model(model_folder_path)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.experimental_new_converter = True
+converter.target_spec.supported_types = [tf.float16]
+converter.target_spec.supported_ops = [
+    tf.lite.OpsSet.TFLITE_BUILTINS,
+    tf.lite.OpsSet.SELECT_TF_OPS
+    ]
+tflite_model = converter.convert()
+output_tflite_path_float = r'/content/face_detector_float16.tflite'
+with open(output_tflite_path_float, 'wb') as f:
+    f.write(tflite_model)

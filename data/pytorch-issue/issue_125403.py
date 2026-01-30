@@ -1,29 +1,23 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Inferred input shape: (10, 1, 1, 1)
+import torch.nn as nn
 
 import torch
-from torch import nn
+from torch.utils.cpp_extension import load_inline
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Initialize the model with a simple operation for demonstration
-        self.conv = nn.Conv2d(1, 1, kernel_size=1, stride=1, padding=0)
+# torch extensions cache should be cleared before the test
+if not torch.cuda.is_available() or torch.cuda.device_count() < 2:
+    raise RuntimeError("Wrong env for the reproducer.")
 
+class TestModel(torch.nn.Module):
     def forward(self, x):
-        # Apply a simple convolution operation
-        return self.conv(x)
+        code = "int f() {return 2;}"
+        module = load_inline(
+                name='jit_extension',
+                cpp_sources=code,
+                functions='f',
+                verbose=True)
+        return x * module.f()
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand((10, 1, 1, 1), dtype=torch.float32, device="cuda")
-
-# The provided code is a simplified version of the original issue.
-# The original issue involves a custom C++ extension and DataParallel,
-# which are not directly reproducible in this simplified form.
-# The provided MyModel and GetInput functions are placeholders to demonstrate
-# the structure and usage of the model.
-
+model = torch.nn.DataParallel(TestModel().cuda())
+output = model(torch.ones([10, 1, 1, 1], device="cuda"))
+assert torch.all(output == 2.)

@@ -1,21 +1,19 @@
-# torch.rand(100, dtype=torch.float32)  # Inferred input shape from the issue's repro code
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+import torch
+import torch._inductor.config as iconfig
+iconfig.trace.enabled = True
+iconfig.trace.graph_diagram = True
+
+class ToyModel(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.l = nn.Linear(100, 100)  # Matches the Linear layer in the original model
-        self.relu = nn.ReLU()  # Added based on forward() reference in logs
-
+        self.l = torch.nn.Linear(100, 100)
+    
     def forward(self, x):
-        return self.relu(self.l(x))  # Matches the forward logic from the issue's code
+        return self.l(x)
 
-def my_model_function():
-    # Returns initialized model on CUDA (as in the original issue)
-    return MyModel().to("cuda:0")
-
-def GetInput():
-    # Returns input tensor matching (100,) shape from logs, on CUDA device
-    return torch.randn(100, dtype=torch.float32, device="cuda:0")
-
+m = ToyModel().to(device="cuda:0")
+m = torch.compile(m)
+input_tensor = torch.randn(100).to(device="cuda:0")
+out = m(input_tensor)

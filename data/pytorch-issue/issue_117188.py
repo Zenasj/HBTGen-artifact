@@ -1,19 +1,25 @@
-# torch.rand(64, 64, dtype=torch.float32)
+import torch.nn as nn
+
 import torch
-from torch import nn
+import torch.export
+import torch.sparse
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        return x.sum()
 
-def my_model_function():
-    return MyModel()
+class BikNet(torch.nn.Module):
 
-def GetInput():
-    # Returns a sparse CSR tensor to match the issue's scenario
-    dense = torch.rand(64, 64, dtype=torch.float32)
-    return dense.to_sparse_csr()
+  def __init__(self):
+    super(BikNet, self).__init__()
+    return
 
+  def forward(self, x):
+    return x.sum()
+
+
+biknet = BikNet()
+biknet.eval()
+
+dense_input = torch.ones(64, 64)
+sparse_input = dense_input.to_sparse_csr()
+
+prog1 = torch.export.export(biknet, args=(dense_input,))
+prog2 = torch.export.export(biknet, args=(sparse_input,))   # fails

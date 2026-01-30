@@ -1,32 +1,39 @@
-# torch.randint(2, 6, (2, 6), dtype=torch.int64)  # Inferred input shape: batch=2, sequence length=6 (from error's FakeTensor size (2,6))
+import torch.nn as nn
+
 import torch
-from torch import nn
+import sys
+import random
+import numpy as np
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Stub embedding layer to mimic Llama's embedding (vocab size=10000, embedding_dim=4096 for Llama-30B)
-        self.embedding = nn.Embedding(10000, 4096)  
-        # Simple linear layer to mimic model output (actual Llama has transformer layers but omitted for brevity)
-        self.linear = nn.Linear(4096, 10)  # Arbitrary output dim for minimal repro
+# from stop_word import StoppingCriteriaSub, StoppingCriteriaList
+from transformers import LlamaTokenizer, LlamaForCausalLM, BitsAndBytesConfig
 
-    def forward(self, input_ids):
-        # Mimics embedding lookup which caused the error in original issue
-        x = self.embedding(input_ids)
-        return self.linear(x)  # Return dummy logits
+bnb_config = BitsAndBytesConfig(
+    load_in_4bit=True,
+    bnb_4bit_use_double_quant=True,
+    bnb_4bit_quant_type="nf4",
+    # bnb_4bit_quant_type="fp4",
+    bnb_4bit_compute_dtype=torch.bfloat16
+)
+random.seed(0)
+np.random.seed(0)
+torch.manual_seed(0)
+torch.cuda.manual_seed(0)
+torch.backends.cudnn.deterministic = True
 
-def my_model_function():
-    # Initialize model with quantization config (placeholder, as actual BnB quantization is complex)
-    model = MyModel()
-    # Set required attributes to match original model's config
-    model.config = type("Config", (), {
-        "pad_token_id": 0,
-        "bos_token_id": 1,
-        "eos_token_id": 2
-    })
-    return model
-
-def GetInput():
-    # Generate random token IDs with shape (batch=2, seq_len=6) matching the error's FakeTensor dimensions
-    return torch.randint(0, 10000, (2, 6), dtype=torch.int64, device="cuda")
-
+device = "cuda:0"
+tokenizer = LlamaTokenizer.from_pretrained("huggyllama/llama-30b",legacy=False)
+model = LlamaForCausalLM.from_pretrained(
+        "huggyllama/llama-30b",
+        quantization_config=bnb_config,
+        # torch_dtype=torch.float16,
+        device_map="auto",
+    )
+model.config.pad_token_id = tokenizer.pad_token_id = 0  # unk
+model.config.bos_token_id = 1
+model.config.eos_token_id = 2
+if torch.__version__ >= "2" and sys.platform != "win32":
+    model = torch.compile(model) ### seems here is the bug
+tokens = tokenizer(["prompt is prompt is prompt","her eyes are so beautiful"], return_tensors='pt', padding=True).to(device)
+with torch.no_grad():
+    logits = model(**tokens, return_dict=True).logits

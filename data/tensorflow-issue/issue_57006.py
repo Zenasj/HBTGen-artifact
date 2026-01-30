@@ -1,108 +1,78 @@
-# tf.random.uniform((1, 320, 1024, 3), dtype=tf.float32) ← inferred input shape from original images resized to (320,1024) with 3 channels RGB
+from tensorflow.keras import models
 
+# -*- coding: utf-8 -*-
 import tensorflow as tf
+from tensorflow.keras.models import load_model
+from tensorflow.keras.utils import Sequence
+import os
+import random
+from glob import glob
+from PIL import Image
+import numpy as np
+import pathlib
+import cv2
+import onnx
+from onnx_tf.backend import prepare
+base_dir = "/media/sf_C_DRIVE/Users/ML/Desktop/blindbot_main"
+modelpath = "/media/sf_C_DRIVE/Users/ML/Desktop/combined_model.onnx"
+modelpath_keras = "/media/sf_C_DRIVE/Users/ML/Desktop/combined_model.hdf5"
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Based on the issue context, the model is a ResNet18 encoder + U-Net style decoder
-        # We do not have the exact ResNet18 weights or decoder implementation here,
-        # so we reconstruct a plausible simple ResNet18 encoder backbone + decoder structure in Keras.
+class Data_Generator(Sequence):
 
-        # For demonstration:
-        #  - Use tf.keras.applications.ResNet50 (closest std available) as encoder substitute
-        #  - Implement a simplified decoder with Conv2DTranspose and skip connections
-        #  - Since the original model is from PyTorch, and input shape is (1, 3 channels last),
-        #    we assume input shape (320, 1024, 3), channels-last.
+    def __init__(self, image_filenames, batch_size):
+        self.image_filenames = image_filenames
+        self.batch_size = batch_size
 
-        # Encoder from tf.keras.applications
-        base_model = tf.keras.applications.ResNet50(
-            include_top=False, weights=None, input_shape=(320, 1024, 3)
-        )
-        # Extract layers for skip connections by layer name
-        # In ResNet50:
-        # conv1_relu: initial conv block output (after activation)
-        # conv2_block3_out, conv3_block4_out, conv4_block6_out, conv5_block3_out: feature maps at different depths
-        self.encoder = tf.keras.Model(
-            inputs=base_model.input,
-            outputs=[
-                base_model.get_layer("conv1_relu").output,
-                base_model.get_layer("conv2_block3_out").output,
-                base_model.get_layer("conv3_block4_out").output,
-                base_model.get_layer("conv4_block6_out").output,
-                base_model.get_layer("conv5_block3_out").output,
-            ],
-        )
+    def __len__(self):
+        return int(np.ceil(len(self.image_filenames) / float(self.batch_size)))
 
-        # Decoder blocks reversely upsample + concatenate skip features
-        self.up4 = tf.keras.layers.Conv2DTranspose(512, 3, strides=2, padding="same", activation="relu")
-        self.skip_conv4 = tf.keras.layers.Conv2D(512, 1, padding="same", activation="relu")
+    def __getitem__(self, idx):
+      batch_x = self.image_filenames[idx * self.batch_size:(idx + 1) * self.batch_size]
+      image = (np.array([ np.array(Image.open(file_name).resize(size=(320, 1024)), np.float32) for file_name in batch_x])/255)
+      image = np.transpose(image, (0, 3, 2, 1))
+      return image
 
-        self.up3 = tf.keras.layers.Conv2DTranspose(256, 3, strides=2, padding="same", activation="relu")
-        self.skip_conv3 = tf.keras.layers.Conv2D(256, 1, padding="same", activation="relu")
-
-        self.up2 = tf.keras.layers.Conv2DTranspose(128, 3, strides=2, padding="same", activation="relu")
-        self.skip_conv2 = tf.keras.layers.Conv2D(128, 1, padding="same", activation="relu")
-
-        self.up1 = tf.keras.layers.Conv2DTranspose(64, 3, strides=2, padding="same", activation="relu")
-        self.skip_conv1 = tf.keras.layers.Conv2D(64, 1, padding="same", activation="relu")
-
-        # Final conv to output same channels as input (3), for image-to-image network
-        self.final_conv = tf.keras.layers.Conv2D(3, 1, padding="same", activation="sigmoid")
-
-    def call(self, inputs, training=False):
-        # inputs: expected shape (batch, 320, 1024, 3)
-
-        # Encoder forward pass with skip connections outputs
-        f1, f2, f3, f4, f5 = self.encoder(inputs, training=training)
-        # f5: deepest features
-
-        # Decoder path (upsample + concat skip)
-
-        # Decode stage 4
-        x = self.up4(f5)  # Upsample f5
-        s4 = self.skip_conv4(f4)
-        x = tf.concat([x, s4], axis=-1)
-        x = tf.keras.layers.Conv2D(512, 3, padding="same", activation="relu")(x)
-
-        # Decode stage 3
-        x = self.up3(x)
-        s3 = self.skip_conv3(f3)
-        x = tf.concat([x, s3], axis=-1)
-        x = tf.keras.layers.Conv2D(256, 3, padding="same", activation="relu")(x)
-
-        # Decode stage 2
-        x = self.up2(x)
-        s2 = self.skip_conv2(f2)
-        x = tf.concat([x, s2], axis=-1)
-        x = tf.keras.layers.Conv2D(128, 3, padding="same", activation="relu")(x)
-
-        # Decode stage 1
-        x = self.up1(x)
-        s1 = self.skip_conv1(f1)
-        x = tf.concat([x, s1], axis=-1)
-        x = tf.keras.layers.Conv2D(64, 3, padding="same", activation="relu")(x)
-
-        # Final output conv layer
-        output = self.final_conv(x)  # output shape (batch, 320, 1024, 3), normalized to [0,1]
-
-        return output
+validation_filenames = glob(base_dir + "/**/*.jpg",recursive=True)
+random.shuffle(validation_filenames)
+val_generator = Data_Generator(image_filenames=validation_filenames, batch_size=1)
 
 
-def my_model_function():
-    # Simply return an instance of the reconstructed MyModel.
-    # Note: weights uninitialized (None), this matches the fact the original weights are not provided.
-    return MyModel()
 
+def representative_data_gen():
+  for i in range(1000):
+    imgs = val_generator.__getitem__(i)
+    yield [imgs[0:1]]
 
-def GetInput():
-    # In the original issue, input images are loaded and resized to (320, 1024) with 3 channels, then normalized.
-    # The data generator transposes input from (batch, height, width, channels) to (batch, channels, width, height),
-    # but typical TF models expect channels-last (batch, height, width, channels).
-    #
-    # Here we provide a random input tensor matching (1, 320, 1024, 3), float32, scaled [0,1].
+converter = tf.lite.TFLiteConverter.from_saved_model("/media/sf_C_DRIVE/Users/ML/Desktop/blindbot_main/tfmodel.pb")
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.target_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
+converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
+converter.inference_input_type = tf.int8       # try to implement the model in tensorflow / try with int8 / try release candidate version for tensorflow / try model without concatenation layers / open issue on github of tensorflow / try monodepth tensorflow version
+converter.inference_output_type = tf.int8
+converter.representative_dataset = representative_data_gen
+converter.inference_type = tf.int8
 
-    input_shape = (1, 320, 1024, 3)
-    input_tensor = tf.random.uniform(input_shape, minval=0, maxval=1, dtype=tf.float32)
-    return input_tensor
+tflite_models_dir = pathlib.Path("/media/sf_ML/Models/tflite_quantisized_models/")
+tflite_models_dir.mkdir(exist_ok=True, parents=True)
 
+tflite_model_quant = converter.convert()
+tflite_model_quant_file = tflite_models_dir/"model_quant.tflite"
+tflite_model_quant_file.write_bytes(tflite_model_quant)
+print("done!")
+
+def representative_data_gen():
+   for i in range(1000):
+       imgs = val_generator.getitem(i)
+       yield [imgs[0:1].astype(np.int8)] # will yielding a single image will be possible here?
+
+converter = tf.lite.TFLiteConverter.from_saved_model("/media/sf_C_DRIVE/Users/ML/Desktop/blindbot_main/tfmodel.pb")
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+#converter.target_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
+converter.target_spec.supported_ops = [
+tf.lite.OpsSet.TFLITE_BUILTINS_INT8, tf.lite.OpsSet.SELECT_TF_OPS   #  tf.lite.OpsSet.TFLITE_BUILTINS_INT8 does not work ,switch to only built ins
+]
+converter.inference_input_type = np.int8 # try release candidate 
+converter.inference_output_type = np.int8
+converter.representative_dataset = representative_data_gen
+
+converter._experimental_lower_tensor_list_ops = False

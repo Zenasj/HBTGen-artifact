@@ -1,16 +1,10 @@
-# torch.rand(10, dtype=torch.float32, device='cuda')  # Inferred input shape and dtype
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, y):
-        x = torch.empty_like(y, pin_memory=True, device='cpu')
-        x.copy_(y, non_blocking=True)
-        return x
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.randn(10, device='cuda')
-
+x = torch.empty(10, pinned_memory=True)
+y = torch.randn(10, device='cuda')
+torch.cuda._sleep(...)
+event = torch.cuda.Event().record()
+x.copy_(y, non_blocking=True)
+# check that event hasn't occurred (i.e that the copy is really non-blocking)
+# synchronize
+# check that x and y are equal

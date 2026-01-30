@@ -1,80 +1,65 @@
-# tf.random.uniform((B, 180, 180, 3), dtype=tf.float32) ← input shape inferred from the example image size and batch example
-
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+import os
 
-class MyModel(tf.keras.Model):
-    """
-    A model that emulates the data augmentation pipeline described in the issue.
+num_skipped = 0
+dir_path = "/Users/MyMac/PetImages"
+for folder_name in ("Cat","Dog"):
+    folder_path = os.path.join(dir_path,folder_name)
+    for fname in os.listdir(folder_path):
+        fpath = os.path.join(folder_path, fname)
+        try:
+            fobj = open(fpath, "rb")
+            is_jfif = tf.compat.as_bytes("JFIF") in fobj.peek(10)
+        finally:
+            fobj.close()
 
-    The main point is to include RandomFlip, RandomRotation, and RandomZoom layers in a Sequential,
-    matching typical data augmentation from Keras tutorials.
+        if not is_jfif:
+            num_skipped += 1
+            # Delete corrupted image
+            os.remove(fpath)
 
-    Known issue from the original discussion:
-    - RandomRotation and RandomZoom may throw errors on Apple M1 GPU due to missing kernel support.
-      The problem arises from stateful random ops for GPU devices on M1.
-    - To avoid the runtime error, these layers might be disabled or run only on CPU.
+print("Deleted %d images" % num_skipped)
 
-    This model encapsulates the augmentation layers in a tf.keras.Sequential and applies them.
-    """
+image_size = (180, 180)
+batch_size = 32
 
-    def __init__(self):
-        super().__init__()
-        # Input shape is (180, 180, 3) based on user's image_size from the example.
+train_ds = tf.keras.preprocessing.image_dataset_from_directory(
+    dir_path,
+    validation_split=0.2,
+    subset="training",
+    seed=1337,
+    image_size=image_size,
+    batch_size=batch_size,
+)
+val_ds = tf.keras.preprocessing.image_dataset_from_directory(
+    dir_path,
+    validation_split=0.2,
+    subset="validation",
+    seed=1337,
+    image_size=image_size,
+    batch_size=batch_size,
+)
 
-        # Data augmentation pipeline:
-        # We keep RandomFlip (horizontal) always.
-        # The RandomRotation and RandomZoom layers are included logically here,
-        # but in practice may cause runtime error on M1 GPU with TF 2.5 due to unsupported op kernel.
-        #
-        # The forward method will attempt to run all, but users may want to override to exclude
-        # or fallback if running on M1 GPU.
+data_augmentation = keras.Sequential(
+    [
+        layers.experimental.preprocessing.RandomFlip("horizontal"),
+        layers.experimental.preprocessing.RandomRotation(0.1),
+    ]
+)
 
-        self.data_augmentation = tf.keras.Sequential([
-            tf.keras.layers.experimental.preprocessing.RandomFlip("horizontal"),
-            tf.keras.layers.experimental.preprocessing.RandomRotation(0.1),
-            tf.keras.layers.experimental.preprocessing.RandomZoom(0.1),
-        ])
+plt.figure(figsize=(10, 10))
+for images, _ in train_ds.take(1):
+    for i in range(9):
+        augmented_images = data_augmentation(images)
+        ax = plt.subplot(3, 3, i + 1)
+        plt.imshow(augmented_images[0].numpy().astype("uint8"))
+        plt.axis("off")
 
-    def call(self, inputs, training=False):
-        """
-        Apply data augmentation only in training mode.
-
-        Warning:
-        On Apple M1 GPU with TF 2.5, RandomRotation and RandomZoom may trigger a NotFoundError
-        for 'RngReadAndSkip' op kernel missing on GPU devices.
-
-        As a workaround, users can run with training=False or remove these layers from the pipeline.
-        """
-        return self.data_augmentation(inputs, training=training)
-
-
-def my_model_function():
-    """
-    Returns an instance of MyModel.
-    """
-    return MyModel()
-
-
-def GetInput():
-    """
-    Generate a random tensor input matching the input expected by MyModel.
-
-    From the issue:
-    - Input images are 180 x 180 with 3 channels (RGB).
-    - Batch size used in example is 32.
-    """
-    batch_size = 32
-    height = 180
-    width = 180
-    channels = 3
-
-    # Generate random float32 tensor in [0, 255] range to simulate image pixels,
-    # since augmentation layers expect pixel values and apply transformations accordingly.
-    # dtype matches typical image datatype before preprocessing.
-    return tf.random.uniform(
-        shape=(batch_size, height, width, channels),
-        minval=0,
-        maxval=255,
-        dtype=tf.float32
-    )
-
+data_augmentation = keras.Sequential(
+    [
+        layers.experimental.preprocessing.RandomFlip("horizontal"),
+        # layers.experimental.preprocessing.RandomRotation(0.1),
+    ]
+)

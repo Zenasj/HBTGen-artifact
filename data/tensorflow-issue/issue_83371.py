@@ -1,38 +1,44 @@
-# tf.random.uniform((B=32, H=24, W=9), dtype=tf.float32) ← inferred typical batch size for training example input shape (24, 9)
+import random
+
+import tensorflow as tf
+from tensorflow.keras import layers, models
+
+# Define a simple model
+model = models.Sequential([
+    layers.Dense(64, activation='relu', input_shape=(100,)),
+    layers.Dense(10, activation='softmax')
+])
+
+# Compile the model
+model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+
+# Generate some random input data
+import numpy as np
+x_train = np.random.random((1000, 100))
+y_train = np.random.randint(10, size=(1000,))
+
+# Train the model
+model.fit(x_train, y_train, epochs=5)
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # The original example uses a simple Sequential model with:
-        # Flatten -> Dense(64 relu) -> Dense(9 linear)
-        # We replicate the same layers here.
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(64, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(9, activation='linear')
+# Set TensorFlow to use only the CPU
+tf.config.set_visible_devices([], 'GPU')
 
-    def call(self, inputs, training=False):
-        x = self.flatten(inputs)
-        x = self.dense1(x)
-        output = self.dense2(x)
-        return output
+from tensorflow.keras import backend as K
 
-def my_model_function():
-    # Return an instance of MyModel
-    model = MyModel()
-    # Since no pretrained weights or additional initialization were mentioned, we simply return the model
-    # The model can be compiled and trained externally as needed.
-    return model
+# Clear the Keras session to reset the model's state
+K.clear_session()
 
-def GetInput():
-    # Based on the issue's provided training data:
-    # Inputs are of shape (batch_size, 24, 9)
-    # Use batch size 32 as example (common batch size in example)
-    # Data type is float32
-    batch_size = 32
-    height = 24
-    width = 9
-    input_tensor = tf.random.uniform(shape=(batch_size, height, width), dtype=tf.float32)
-    return input_tensor
+import tensorflow as tf
 
+# List available GPUs
+physical_devices = tf.config.list_physical_devices('GPU')
+
+# Set memory growth on GPU to avoid TensorFlow allocating all GPU memory upfront
+for device in physical_devices:
+    tf.config.experimental.set_memory_growth(device, True)
+
+# Check that memory growth is enabled
+for device in physical_devices:
+    print(f"Memory growth enabled for {device}")

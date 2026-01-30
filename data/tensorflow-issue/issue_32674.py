@@ -1,48 +1,46 @@
-# tf.random.uniform((B, 784), dtype=tf.float32) ← Input shape is (batch_size, 784) representing flattened MNIST images
+from tensorflow import keras
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
 from tensorflow.keras import layers
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # First dense layer with relu activation
-        self.first_dense = layers.Dense(64, activation='relu', name='dense_1')
-        # Output dense layer with softmax activation for 10 classes
-        self.out = layers.Dense(10, activation='softmax', name='predictions')
 
-    def call(self, inp):
-        # Forward pass: dense_1 -> predictions
-        f_dense = self.first_dense(inp)
-        s_dense = self.out(f_dense)
-        return s_dense
+class MnistModel(tf.keras.Model):
+  def __init__(self):
+    super().__init__()
+    self.first_dense = layers.Dense(64, input_shape=(784,), activation='relu', name='dense_1')
+    self.out = layers.Dense(10, activation='softmax', name='predictions')
 
-    def input_receiver(self, inp):
-        # Identity function, but placeholder for potential input processing
-        return inp
+  def call(self, inp):
+    f_dense = self.first_dense(inp)
+    s_dense = self.out(f_dense)
+    return s_dense
 
-    def response_receiver(self, output):
-        # Identity function, placeholder for output processing
-        return output
+  def input_receiver(self, inp):
+    return inp
 
-    @tf.function(input_signature=[tf.TensorSpec(shape=[None, 784], dtype=tf.float32, name="serving")])
-    def serve(self, request):
-        # This function wraps the inference pipeline to provide a serving signature
-        features = tf.identity(self.input_receiver(request), name='request')
-        output = self.call(features)
-        response = tf.identity(self.response_receiver(output), name='response')
-        return response
+  def response_receiver(self, output):
+    return output
 
+  @tf.function(input_signature=[tf.TensorSpec(shape=[None, None], name="serving")])
+  def serve(self, request):
+    features = tf.identity(self.input_receiver(request), name='request')
+    output = self.call(features)
+    response = tf.identity(self.response_receiver(output), name='response')
+    return response
 
-def my_model_function():
-    # Return a fresh instance of MyModel
-    return MyModel()
+model = MnistModel()
 
+(x_train, y_train), (x_test, y_test) = keras.datasets.mnist.load_data()
+x_train = x_train.reshape(60000, 784).astype('float32') / 255
+x_test = x_test.reshape(10000, 784).astype('float32') / 255
 
-def GetInput():
-    # Create a random input tensor matching the expected input shape: (batch_size, 784) and dtype float32
-    # We pick batch_size=1 as a minimal example
-    batch_size = 1
-    # Using uniform random values scaled to typical MNIST input range [0,1]
-    return tf.random.uniform((batch_size, 784), dtype=tf.float32)
+model.compile(loss='sparse_categorical_crossentropy',
+              optimizer=keras.optimizers.RMSprop())
+history = model.fit(x_train, y_train,
+                    batch_size=64,
+                    epochs=1)
 
+keras.experimental.export_saved_model(model, 'local_path', serving_only=True)
+
+tf.saved_model.save(model, 'local_path', signatures={"serve": model.serve})

@@ -1,24 +1,22 @@
 import torch
-import torch.nn as nn
 
-# torch.rand(3, dtype=torch.float32)  # Inferred input shape from test case
-class MyModel(nn.Module):
-    def forward(self, x):
-        def outer(a):
-            return a + 1
+def test_inline_closure_not_loaded_by_parent(self):
+    def outer(a):
+        return a + 1
 
-        def direct(x):
-            def deep2(c):
-                return outer(c)
-            def deep(c):
-                return deep2(c)
-            return deep(x)
-        
+    def indirect(x):
         return direct(x)
 
-def my_model_function():
-    return MyModel()
+    def direct(x):
+        def deep2(c):
+            return outer(c)
 
-def GetInput():
-    return torch.randn(3)
+        def deep(c):
+            return deep2(c)
 
+        return deep(x)
+
+    x = torch.randn(3)
+    eager = indirect(x)
+    counter = CompileCounter()
+    compiled = torch._dynamo.optimize(counter)(indirect)(x)

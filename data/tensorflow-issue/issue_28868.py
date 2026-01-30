@@ -1,41 +1,52 @@
-# tf.random.uniform((2, 200, 200, 3), dtype=tf.float32)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv_1 = tf.keras.layers.Conv2D(3, kernel_size=3, padding="same", name="conv_1")
-        # For demonstration, no extra members needed here.
+inp_arr_without_ds = np.random.rand(2, 200, 200, 3)
+
+inp_arr_4_ds = np.random.rand(2, 2, 200, 200, 3)
+tf_ds = tf.data.Dataset.from_tensor_slices((inp_arr_4_ds, inp_arr_4_ds))
+tf_ds = tf_ds.map(lambda x, y: (x, y)).repeat(10).shuffle(10)
+
+class random_model(tf.keras.Model):
+    
+    def __init__(self, name):
+        super(random_model, self).__init__(name=name)
+        self.conv_1 = tf.keras.layers.Conv2D(3, [3, 3], padding="same")
+        self.tf_board_writer = tf.summary.create_file_writer("test")
+        self.img_callback = [tf.keras.callbacks.LambdaCallback(on_epoch_end=self.save_img)]
         
-    def call(self, inputs, training=None):
-        # On-call, produce conv output tensor
-        return self.conv_1(inputs)
+    def call(self, inputs):
+        self.initialized_layer = self.conv_1(inputs)
+        return self.initialized_layer
+    
+    def save_img(self, epochs, logs):
+        with self.tf_board_writer.as_default():
+            # Does not work: type: class 'tensorflow.python.framework.ops.Tensor' 
+            tf.summary.image("image", self.initialized_layer, step=epochs)
+            
+            # Does work type: class 'tensorflow.python.framework.ops.EagerTensor'
+            #tf.summary.image("image", tf.random.uniform([2, 200, 200, 3]), step=epochs) 
+            
+    def compile_model(self):
+        self.compile(tf.optimizers.Adam(0.001), tf.losses.mean_absolute_error)
+    
+    def fit_model_with_ds(self, ds):
+        self.fit(ds, callbacks=self.img_callback)
+        
+    def fit_model_with_array(self, x, y):
+        self.fit(x, y, callbacks=self.img_callback)
 
-def my_model_function():
-    # Create and compile model with run_eagerly=True to ensure eager execution,
-    # so that tf.summary.image can consume eager tensors without error.
-    model = MyModel()
-    model.compile(
-        optimizer=tf.optimizers.Adam(0.001), 
-        loss=tf.losses.MeanAbsoluteError(),
-        run_eagerly=True   # Important to produce EagerTensor output from call()
-    )
-    return model
+print(tf.__version__)        
 
-def GetInput():
-    # According to the example, typical input shape is (2, 200, 200, 3)
-    # with float32 dtype, matching what conv2d expects.
-    return tf.random.uniform((2, 200, 200, 3), dtype=tf.float32)
-
-# ---
-# ### Explanation and assumptions:
-# - The original issue centers on `tf.summary.image` erroring when passed a symbolic Tensor (non-eager), as happens when using `tf.keras.Model.fit()` in graph mode. To fix this, the recommended approach is compiling the model with `run_eagerly=True`. This ensures that the output of `call()` is an eager tensor suitable for `tf.summary.image`.
-# - The original code example showed a conv2d layer producing an output tensor of shape `[2, 200, 200, 3]` and issues logging its image summary.
-# - We reproduce the core minimal model as `MyModel(tf.keras.Model)` with one Conv2D layer named `"conv_1"` configured with 3 output channels and kernel size 3, padding same, matching the original.
-# - The `my_model_function()` returns the compiled model with `run_eagerly=True` explicitly to enable eager execution during training, matching the workaround suggested in the issue discussion.
-# - The `GetInput()` helper returns a random float tensor with the required input shape `(2, 200, 200, 3)` resembling what was passed in the issue.
-# - No callback is included here, as the main issue was about symbolic vs eager tensors in the context of `tf.summary.image`.
-# - This model should also be fully compatible with TF 2.20.0 XLA compilation, as it uses only standard layers and `run_eagerly=True` (note that `run_eagerly=True` disables graph tracing so you might want to disable it for final serving).
-# - This model structure and behavior capture the central problem and recommended solution described in the issue.
-# If you want, I can also demonstrate a minimal example for how to properly log images from the model output using the `tf.summary.image` API with a custom training loop to avoid eager vs symbolic conflicts. Let me know!
+# Both do not work
+non_ds_model = random_model("non_ds") 
+non_ds_model.compile_model()
+non_ds_model.fit_model_with_array(inp_arr_without_ds, inp_arr_without_ds)
+            
+tf_ds_model = random_model("tf_ds")
+tf_ds_model.compile_model()
+tf_ds_model.fit_model_with_ds(tf_ds)

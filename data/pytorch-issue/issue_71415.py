@@ -1,37 +1,67 @@
-# Input shape: a tuple of (input (N, C, D, H, W), grid (N, D_out, H_out, W_out, 3)), dtype=torch.double
+import torch.nn as nn
+
+import timeit
 
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        input, grid = x
-        return F.grid_sample(
-            input,
-            grid,
-            mode="bilinear",
-            padding_mode="border",
-            align_corners=True,
-        )
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    N = 1  # Simplified batch size for minimal example (original test uses N=100)
-    C = 2
-    D_in, H_in, W_in = 2, 30, 40  # Input spatial dimensions from first test case
-    D_out, H_out, W_out = 4, 13, 13  # Grid output dimensions from test code
-    input = torch.rand(
-        N, C, D_in, H_in, W_in,
-        dtype=torch.double,
-        requires_grad=False  # Matches original test input requirements
+def grid_sample_test(input, grid, backward):
+    if backward and grid.grad is not None:
+        grid.grad.zero_()
+    samples = torch.nn.functional.grid_sample(
+        input,
+        grid,
+        mode="bilinear",
+        padding_mode="border",
+        align_corners=True,
     )
-    grid = 2.0 * torch.rand(
-        N, D_out, H_out, W_out, 3,
-        dtype=torch.double
-    ) - 1.0
-    grid.requires_grad_(True)  # Matches grid's gradient requirements in test
-    return (input, grid)
+    m = samples.mean()
+    if backward:
+        m.backward()
 
+    return samples
+
+
+_input = None
+_grid = None
+_backward = None
+
+if __name__ == "__main__":
+    torch.manual_seed(15)
+    torch.set_num_threads(1)
+
+    N = 100
+    C = 2
+    repeats = 100
+    D_out = 4
+    H_out = 13
+    W_out = 13
+    dtype = torch.double
+    devices = ["cpu"]
+    backwards = [False, True]
+
+    input_sizes = [(2, 30, 40), (2, 300, 40), (2, 3000, 40)]
+
+    grid_cpu = 2.0 * torch.rand((N, D_out, H_out, W_out, 3), dtype=dtype) - 1.0
+
+    for input_size in input_sizes:
+        D_in, H_in, W_in = input_size
+        input_cpu = torch.rand(
+            (1, C, D_in, H_in, W_in),
+            requires_grad=False,
+            dtype=dtype,
+        ).expand((N, -1, -1, -1, -1))
+
+        for _backward in backwards:
+            for device in devices:
+                _grid = grid_cpu.clone().detach().to(device).requires_grad_(True)
+                _input = input_cpu.to(device)
+
+                t = timeit.timeit(
+                    "grid_sample_test(_input, _grid, _backward)",
+                    globals=globals(),
+                    number=repeats,
+                )
+                print(
+                    f"device={device:>4} backward={str(_backward):>5} input size={D_in:>4}x{H_in:>4}x{W_in:<4}: {t:5.2f}"
+                )

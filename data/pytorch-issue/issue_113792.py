@@ -1,16 +1,10 @@
-# torch.rand(1, 3, dtype=torch.float32)
 import torch
 import warnings
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        warnings.warn("moo")
-        return x + x
+def f(x):
+    warnings.warn("moo")
+    return x + x
 
-def my_model_function():
-    return MyModel()
+ep = torch.export.export(f, (torch.ones(1, 3),))
 
-def GetInput():
-    return torch.rand(1, 3)
-
+prints_warning_as_no_op=False

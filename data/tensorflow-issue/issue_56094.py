@@ -1,44 +1,64 @@
-# tf.random.uniform((32, 28, 28, 1), dtype=tf.float32) ← input shape as batch=32, height=28, width=28, channel=1 for MNIST data
-
-import tensorflow as tf
+from tensorflow import keras
 from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Corresponds to the original Sequential model architecture:
-        # Conv2D(32, (3,3), activation='relu', kernel_initializer='he_uniform', input_shape=(28,28,1), batch_size=32)
-        self.conv2d = layers.Conv2D(
-            32, (3, 3), activation='relu', kernel_initializer='he_uniform', padding='valid', input_shape=(28, 28, 1)
-        )
-        self.maxpool2d = layers.MaxPooling2D((2, 2))
-        self.flatten = layers.Flatten()
-        self.dense1 = layers.Dense(20, activation='relu')
-        self.dense2 = layers.Dense(10, activation='sigmoid')
-        
-        # Note: The original code used sigmoid final activation instead of softmax.
+# baseline cnn model for mnist
+from numpy import mean
+from numpy import std
+from matplotlib import pyplot as plt
+from tensorflow.keras.datasets import mnist
+from tensorflow.keras.utils import to_categorical
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Conv2D
+from tensorflow.keras.layers import MaxPooling2D
+from tensorflow.keras.layers import Dense
+from tensorflow.keras.layers import Flatten
+from tensorflow.keras.optimizers import SGD
+import tensorflow as tf
+# load train and test dataset
 
-    def call(self, inputs, training=False):
-        """
-        Forward pass replicating the described model.
-        - The model expects inputs of shape (batch_size, 28, 28, 1).
-        - Output shape will be (batch_size, 10).
-        """
-        x = self.conv2d(inputs)
-        x = self.maxpool2d(x)
-        x = self.flatten(x)
-        x = self.dense1(x)
-        x = self.dense2(x)
-        return x
+# load dataset
+(trainX, trainY), (testX, testY) = mnist.load_data()
+# reshape dataset to have a single channel
+trainX = trainX.reshape((trainX.shape[0], 28, 28, 1))
+testX = testX.reshape((testX.shape[0], 28, 28, 1))
+# one hot encode target values
+trainY = to_categorical(trainY)
+testY = to_categorical(testY)
 
-def my_model_function():
-    # Return a fresh instance of MyModel,
-    # no pretrained weights included due to lack of saved weights context.
-    return MyModel()
 
-def GetInput():
-    # Generate a valid input tensor matching the expected input shape:
-    # Batch size = 32, Height=28, Width=28, Channels=1.
-    # Input dtype float32 scaled to [0,1], similar to normalized MNIST images.
-    return tf.random.uniform(shape=(32, 28, 28, 1), minval=0, maxval=1, dtype=tf.float32)
 
+# convert from integers to floats
+train_norm = trainX.astype('float32')
+test_norm = testX.astype('float32')
+# normalize to range 0-1
+train_norm = train_norm / 255.0
+test_norm = test_norm / 255.0
+
+model = Sequential()
+model.add(Conv2D(32, (3, 3), activation='relu', kernel_initializer='he_uniform', input_shape=(28, 28, 1),batch_size=32))
+model.add(MaxPooling2D((2, 2)))
+model.add(Flatten())
+model.add(Dense(20, activation='relu'))
+model.add(Dense(10,activation='sigmoid'))
+        # compile model
+opt = SGD(learning_rate=0.01, momentum=0.9)
+model.compile(optimizer=opt, loss='categorical_crossentropy', metrics=['accuracy'])
+model.fit(trainX, trainY, epochs=10, batch_size=32, verbose=0)
+
+import tensorflow_model_optimization as tfmot
+
+quantize_model = tfmot.quantization.keras.quantize_model
+
+# q_aware stands for for quantization aware.
+q_aware_model = quantize_model(model)
+
+# `quantize_model` requires a recompile.
+q_aware_model.compile(optimizer='adam',
+              loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+              metrics=['accuracy'])
+
+q_aware_model.summary()
+
+q_aware_model.save("/home/aruna/quant/quant_model")

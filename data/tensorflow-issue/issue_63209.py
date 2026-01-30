@@ -1,33 +1,64 @@
-# tf.random.uniform((400,)) ← Input shape inferred from model Input layer
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Replicating the reported Sequential model layers here as Dense layers with relu and sigmoid activations.
-        self.dense1 = tf.keras.layers.Dense(400, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(400, activation='relu')
-        self.dense3 = tf.keras.layers.Dense(400, activation='relu')
-        self.dense4 = tf.keras.layers.Dense(400, activation='relu')
-        self.dense5 = tf.keras.layers.Dense(1, activation='sigmoid')
-    
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        x = self.dense3(x)
-        x = self.dense4(x)
-        x = self.dense5(x)
-        return x
+physical_devices = tf.config.experimental.list_physical_devices('GPU')
+if len(physical_devices) > 0:
+    tf.config.experimental.set_memory_growth(physical_devices[0], True)
 
-def my_model_function():
-    # Return an instance of MyModel
-    model = MyModel()
-    # Weights are not preloaded; random initialization consistent with the example
-    return model
+with tf.device("CPU"):
+    train_dataset = tf.data.Dataset.from_tensor_slices((tf.random.uniform((1000_000,400)), tf.random.uniform((1000_000,1)))).batch(4000)
 
-def GetInput():
-    # Return a random tensor matching the input shape expected by MyModel.
-    # Batch size is arbitrary; 32 chosen here as a reasonable default for a small batch.
-    return tf.random.uniform((32, 400), dtype=tf.float32)
+model = tf.keras.Sequential(
+    [
+        tf.keras.Input(shape=(400,)),
+        tf.keras.layers.Dense(400, activation='relu'),
+        tf.keras.layers.Dense(400, activation='relu'),
+        tf.keras.layers.Dense(400, activation='relu'),
+        tf.keras.layers.Dense(400, activation='relu'),
+        tf.keras.layers.Dense(1, activation='sigmoid'),
+    ]
+)
+model.compile(
+    optimizer=tf.keras.optimizers.Adam(), 
+    loss=tf.keras.losses.BinaryCrossentropy(from_logits=False), 
+    jit_compile=True,
+)
 
+model.fit(train_dataset, 
+            epochs=50, 
+            verbose=True,
+)
+
+import tensorflow as tf
+
+physical_devices = tf.config.experimental.list_physical_devices('GPU')
+if len(physical_devices) > 0:
+    tf.config.experimental.set_memory_growth(physical_devices[0], True)
+
+with tf.device("CPU"):
+    train_dataset = tf.data.Dataset.from_tensor_slices((tf.random.uniform((1000_000,400)), tf.random.uniform((1000_000,1)))).batch(4000)
+
+model = tf.keras.Sequential(
+    [
+        tf.keras.Input(shape=(400,)),
+        tf.keras.layers.Dense(400, activation='relu'),
+        tf.keras.layers.Dense(400, activation='relu'),
+        tf.keras.layers.Dense(400, activation='relu'),
+        tf.keras.layers.Dense(400, activation='relu'),
+        tf.keras.layers.Dense(1, activation='sigmoid'),
+    ]
+)
+model.compile(
+    optimizer=tf.keras.optimizers.Adam(), 
+    loss=tf.keras.losses.BinaryCrossentropy(from_logits=False), 
+    jit_compile=True,
+)
+
+model.fit(train_dataset, 
+            epochs=50, 
+            verbose=True,
+)

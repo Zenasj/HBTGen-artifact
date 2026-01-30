@@ -1,9 +1,14 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # B: batch size, C: channels, H: height, W: width
-
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+import os
+import time
+import torch
+import torch.distributed as dist
+import torch.multiprocessing as mp
+from torchvision import datasets, transforms
+from torch import nn
+
+class Model(nn.Module):
     def __init__(self, num_classes=10):
         super().__init__()
         self.conv1 = nn.Sequential(
@@ -25,19 +30,74 @@ class MyModel(nn.Module):
         x = self.conv2(x)
         x = x.reshape(x.size(0), -1)
         x = self.fc(x)
+
         return x
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+def main(rank, world_size):
+    # Initialisation
+    dist.init_process_group(
+        backend="nccl",
+        init_method="env://",
+        world_size=world_size,
+        rank=rank
+    )
+    # Fix random seed
+    torch.manual_seed(0)
+    # Initialize network
+    net = Model()
+    net.cuda(rank)
+    # Initialize loss function
+    criterion = torch.nn.CrossEntropyLoss().to(rank)
+    optimizer = torch.optim.SGD(net.parameters(), 1e-4)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # Assuming the input shape is (B, 1, 28, 28) for MNIST dataset
-    B = 100  # Batch size
-    C = 1  # Channels
-    H = 28  # Height
-    W = 28  # Width
-    input_tensor = torch.rand(B, C, H, W, dtype=torch.float32)
-    return input_tensor
+    net = torch.nn.parallel.DistributedDataParallel(net, device_ids=[rank])
+    # Prepare dataset
+    trainset = datasets.MNIST('./data', train=True, download=True,
+        transform=transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize((0.1307,), (0.3081,))
+        ])
+    )
+    # Prepare sampler
+    train_sampler = torch.utils.data.distributed.DistributedSampler(
+        trainset, num_replicas=world_size, rank=rank
+    )
+    train_sampler = None
+    # Prepare dataloader
+    train_loader = torch.utils.data.DataLoader(
+        trainset, batch_size=100, shuffle=False,
+        num_workers=0, pin_memory=True, sampler=train_sampler)
 
+    epoch = 0
+    iteration = 0
+
+    for _ in range(5):
+        epoch += 1
+       # train_loader.sampler.set_epoch(epoch)
+
+        timestamp = time.time()
+        print("Rank: {}. Before dataloader".format(rank))
+        for batch in train_loader:
+            print("Rank: {}. Batch loaded".format(rank))
+            inputs = batch[0]
+            targets = batch[1]
+
+            iteration += 1
+            inputs = inputs.cuda(rank)
+            targets = targets.cuda(rank)
+
+            output = net(inputs)
+            loss = criterion(output, targets)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            torch.cuda.synchronize(device=rank)
+
+if __name__ == '__main__':
+
+    # Number of GPUs to run the experiment with
+    WORLD_SIZE = 2
+
+    os.environ["MASTER_ADDR"] = "localhost"
+    os.environ["MASTER_PORT"] = "8888"
+    mp.spawn(main, nprocs=WORLD_SIZE, args=(WORLD_SIZE,))

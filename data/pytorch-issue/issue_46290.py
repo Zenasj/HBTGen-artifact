@@ -1,30 +1,16 @@
-# torch.rand(2, 16, 32, 32, dtype=torch.float32)
-import torch
-import torch.nn as nn
-
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Parameters sampled from issue's test configuration:
-        # in_channels=16, out_channels=16 (groups=in_channels), kernel_size=(3,3), stride=(2,2)
-        self.conv_transpose = nn.ConvTranspose2d(
-            in_channels=16,
-            out_channels=16,  # Matches in_channels for grouped convolution
-            kernel_size=(3, 3),
-            stride=(2, 2),
-            padding=0,
-            output_padding=(1, 1),
-            dilation=1,
-            groups=16  # groups=in_channels (16)
-        )
-    
-    def forward(self, x):
-        return self.conv_transpose(x)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Matches input shape (B, C, H, W) from the issue's test parameters
-    return torch.rand(2, 16, 32, 32, dtype=torch.float32)
-
+jsonc
+{
+    "batch_size": {"low": 1, "high": 8},
+    "in_channels": {"low": 16, "high": 128},
+    "out_channels": {"low": 16, "high": 128},
+    "height": {"low": 16, "high": 224},
+    "stride": {"set": [[1, 1], [2, 2]]},
+    "padding": {"set": [[0, 0]]},
+    "output_padding": {"set": [[0, 0], [1, 1], [0, 1], [1, 0]]},
+    "kernel_size": {"set": [[3, 3], [1, 1], [1, 3], [3, 1], [2, 2]]},
+    "dilation": {"set": [[1, 1]]},
+    "deterministic": {"set": [true, false]},
+    "benchmark": {"set": [true, false]},
+    "allow_tf32": {"set": [true, false]},
+    "groups": {"set": [1, IN_CHANNELS]}
+}

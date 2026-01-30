@@ -1,20 +1,9 @@
-# torch.rand(4, dtype=torch.float32)
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self, shift):
-        super().__init__()
-        self.shift = shift  # Shift value as a parameter (float allowed)
+In [13]: a=torch.randn(4)
 
-    def forward(self, x):
-        return x / (2 ** self.shift)  # Implements PyTorch's non-bitwise shift behavior
+In [14]: a.bitwise_right_shift(2) #there's nothing bitwise about this shift
+Out[14]: tensor([-0.0470, -0.0847,  0.0964,  0.0141])
 
-def my_model_function():
-    # Initialize with shift=2 as shown in the issue example
-    return MyModel(shift=2.0)
-
-def GetInput():
-    # Returns a 1D tensor matching the example's input shape
-    return torch.rand(4, dtype=torch.float32)
-
+In [15]: a.bitwise_right_shift(1.5) #what does this even mean?
+Out[15]: tensor([-0.0664, -0.1198,  0.1363,  0.0200])

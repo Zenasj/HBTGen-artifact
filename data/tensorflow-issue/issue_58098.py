@@ -1,33 +1,39 @@
-# tf.random.uniform((BATCH_SIZE, 784), dtype=tf.float32) ← Input shape inferred from keras.Input(shape=(784,))
+from tensorflow.keras import optimizers
 
-import tensorflow as tf
+import sys
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Replicating the model architecture from the issue:
-        # 3 dense layers with 4*4096 units each, relu activations, then output dense layer 10 units softmax
-        units = 4 * 4096
-        self.dense_1 = tf.keras.layers.Dense(units, activation='relu', name='dense_1')
-        self.dense_2 = tf.keras.layers.Dense(units, activation='relu', name='dense_2')
-        self.dense_3 = tf.keras.layers.Dense(units, activation='relu', name='dense_3')
-        self.predictions = tf.keras.layers.Dense(10, activation='softmax', name='predictions')
+from tensorflow import keras
+from tensorflow.keras import layers
 
-    def call(self, inputs, training=False):
-        x = self.dense_1(inputs)
-        x = self.dense_2(x)
-        x = self.dense_3(x)
-        return self.predictions(x)
+EPOCHS = 3
+STEPS_PER_EPOCH = 10
+BATCH_SIZE = 64
+SAMPLES = BATCH_SIZE * STEPS_PER_EPOCH
 
-def my_model_function():
-    # Instantiate and return the model
-    return MyModel()
 
-def GetInput():
-    # As per original model input shape (None, 784) with float32 normalized pixel values.
-    # We generate a random tensor simulating a batch of BATCH_SIZE=64 examples.
-    BATCH_SIZE = 64
-    input_shape = (BATCH_SIZE, 784)
-    # Use uniform distribution 0-1 to simulate normalized pixel intensities
-    return tf.random.uniform(input_shape, minval=0, maxval=1, dtype=tf.float32)
+inputs = keras.Input(shape=(784,), name='digits')
+x = layers.Dense(4*4096, activation='relu', name='dense_1')(inputs)
+x = layers.Dense(4*4096, activation='relu', name='dense_2')(x)
+x = layers.Dense(4*4096, activation='relu', name='dense_3')(x)
+outputs = layers.Dense(10, activation='softmax', name='predictions')(x)
 
+model = keras.Model(inputs=inputs, outputs=outputs)
+(x_train, y_train), _ = keras.datasets.mnist.load_data()
+x_train = x_train[:SAMPLES].reshape(SAMPLES, 784).astype('float32') / 255
+y_train = y_train[:SAMPLES].astype('float32')
+
+class PrintStatsCallback(keras.callbacks.Callback):
+    def on_batch_end(self, batch, logs=None):
+        print('\nON_BATCH_END: loss: {loss:.4f} acc: {accuracy:.4f}'.format_map(logs), file=sys.stderr)
+    def on_epoch_end(self, epoch, logs=None):
+        print('\nON_EPOCH_END: loss: {loss:.4f} acc: {accuracy:.4f}'.format_map(logs), file=sys.stderr)
+
+# Specify the training configuration (optimizer, loss, metrics)
+model.compile(optimizer=keras.optimizers.SGD(lr=0.1),
+              loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+
+model.fit(x_train, y_train,
+          epochs=EPOCHS,
+          steps_per_epoch=STEPS_PER_EPOCH,
+          batch_size=BATCH_SIZE,
+          callbacks=[PrintStatsCallback()])

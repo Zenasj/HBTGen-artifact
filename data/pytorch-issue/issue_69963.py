@@ -1,13 +1,15 @@
-# torch.rand(1, 1024*1024, 3, dtype=torch.float32)
+import time
 import torch
 import torch.nn as nn
+from torch.profiler import tensorboard_trace_handler
 
-class MyModel(nn.Module):
+
+class TestNet(nn.Module):
     def __init__(self):
         super().__init__()
         self.fc_in = nn.Linear(3, 128)
         self.layers = nn.ModuleList()
-        for _ in range(10):
+        for i in range(0, 10):
             self.layers.append(nn.Linear(128, 128))
             self.layers.append(nn.LayerNorm(128))
         self.fc_out = nn.Linear(128, 3)
@@ -19,9 +21,25 @@ class MyModel(nn.Module):
         x = self.fc_out(x)
         return x
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    return torch.rand(1, 1024 * 1024, 3, dtype=torch.float32)
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+net = TestNet().to(device).train()
+in_data = torch.zeros([1, 1024 * 1024, 3]).to(device)
+criterion = nn.MSELoss().to(device)
+optimizer = torch.optim.SGD(net.parameters(), 0.01)
 
+with torch.profiler.profile(
+        schedule=torch.profiler.schedule(wait=2, warmup=2, active=6, repeat=1, skip_first=2),
+        on_trace_ready=tensorboard_trace_handler("tmp/profile"),
+        with_stack=True, with_flops=True, with_modules=True) as profiler:
+    t0 = time.time()
+    for i in range(0, 20):
+        print(f"step: {i:,d} {time.time() - t0:.3f}")
+        out_data = net(in_data)
+        loss = criterion(out_data, in_data)
+
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        profiler.step()
+print("Done! ")

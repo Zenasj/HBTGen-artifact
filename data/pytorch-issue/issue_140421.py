@@ -1,14 +1,15 @@
-# torch.rand(64, 10, dtype=torch.float32)
+import torch.nn as nn
+
+(python)
 import torch
-from torch import nn
+class M(torch.nn.Module):
+  def forward(self, x):
+    return torch.nonzero(x)
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return torch.nonzero(x)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.randn(64, 10)
-
+m = M()
+exported_program = torch.export.export(m, (torch.randn(64, 10),))
+exported_m = exported_program.module()
+print(exported_m)
+exported_m.compile()
+print(exported_m)
+exported_m(torch.randn(64, 10))

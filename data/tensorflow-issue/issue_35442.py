@@ -1,37 +1,46 @@
-# tf.random.uniform((64*2, 28, 28, 1), dtype=tf.float32) ← inferred input shape: batch size=GLOBAL_BATCH_SIZE=64*2, 28x28 grayscale images
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
+from __future__ import absolute_import, division, print_function, unicode_literals
+import tensorflow_datasets as tfds
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # CNN model as per build_and_compile_cnn_model from the issue
-        # Using Sequential layers inside functional style here for clarity and flexibility
-        self.conv2d = tf.keras.layers.Conv2D(32, 3, activation='relu', input_shape=(28,28,1))
-        self.maxpool = tf.keras.layers.MaxPooling2D()
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(64, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(10, activation='softmax')
-    
-    def call(self, inputs, training=None):
-        x = self.conv2d(inputs)
-        x = self.maxpool(x)
-        x = self.flatten(x)
-        x = self.dense1(x)
-        return self.dense2(x)
+tf.compat.v1.disable_eager_execution()
+strategy = tf.distribute.experimental.ParameterServerStrategy()
 
-def my_model_function():
-    # Build and compile the CNN model, matching loss, optimizer and metrics from the issue
-    model = MyModel()
-    model.compile(
-        loss=tf.keras.losses.SparseCategoricalCrossentropy(),
-        optimizer=tf.keras.optimizers.SGD(learning_rate=0.001),
-        metrics=['accuracy'])
-    return model
+BUFFER_SIZE = 10000
+BATCH_SIZE = 64
+NUM_WORKERS = 2
 
-def GetInput():
-    # Return a random tensor input matching the expected input shape for MyModel
-    # The input shape is batch size (GLOBAL_BATCH_SIZE=64*2), 28x28 images with 1 channel (grayscale)
-    batch_size = 64 * 2  # inferred from NUM_WORKERS=2 and BATCH_SIZE=64
-    return tf.random.uniform((batch_size, 28, 28, 1), dtype=tf.float32)
+GLOBAL_BATCH_SIZE = BATCH_SIZE * NUM_WORKERS
 
+def scale(image, label):
+  image = tf.cast(image, tf.float32)
+  image /= 255
+  return image, label
+
+datasets, info = tfds.load(name='mnist',
+                           with_info=True,
+                           as_supervised=True)
+
+train_datasets_unbatched = datasets['train'].map(scale).cache().shuffle(BUFFER_SIZE)
+train_datasets = train_datasets_unbatched.batch(GLOBAL_BATCH_SIZE).repeat()
+
+def build_and_compile_cnn_model():
+  model = tf.keras.Sequential([
+      tf.keras.layers.Conv2D(32, 3, activation='relu', input_shape=(28, 28, 1)),
+      tf.keras.layers.MaxPooling2D(),
+      tf.keras.layers.Flatten(),
+      tf.keras.layers.Dense(64, activation='relu'),
+      tf.keras.layers.Dense(10, activation='softmax')
+  ])
+  model.compile(
+      loss=tf.keras.losses.sparse_categorical_crossentropy,
+      optimizer=tf.keras.optimizers.SGD(learning_rate=0.001),
+      metrics=['accuracy'])
+  return model
+
+with strategy.scope():
+  multi_worker_model = build_and_compile_cnn_model()
+multi_worker_model.fit(x=train_datasets, epochs=3, steps_per_epoch=938)

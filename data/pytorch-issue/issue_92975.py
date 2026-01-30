@@ -1,22 +1,14 @@
-# torch.rand(B, dtype=torch.float, device='cuda')
 import torch
-import torch.nn.functional as F
-from torch import nn
+import torch.func
+import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.y = nn.Parameter(torch.randn(1, 3, device='cuda'))  # Matches y's shape from the example
-        
-    def forward(self, x):
-        # Apply dropout to the fixed y parameter and compute mean
-        dropped = F.dropout(self.y, p=0.3, training=self.training)
-        meaned = dropped.mean(1)
-        return x + meaned
+x = torch.randn(3, device='cuda')
+y = torch.randn(1, 3, device='cuda')
 
-def my_model_function():
-    return MyModel()
+def fn(x, y):
+    # previously output of dropout used to be incorrect [B, 3] (B=1) and thus `mean(1)` used to fail
+    # post the fix output of dropout is [B, 1, 3] and `mean(1)` works.
+    return x + nn.functional.dropout(y, 0.3).mean(1)
 
-def GetInput():
-    return torch.randn(3, device='cuda')  # Matches x's shape (3,) from the example
 
+o = torch.func.vmap(fn, in_dims=(0, None), randomness='different')(x, y)

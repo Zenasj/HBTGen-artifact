@@ -1,61 +1,210 @@
-# torch.rand(B, 1, 28, 28, dtype=torch.float32)
-import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
+from __future__ import division, print_function
+
+import argparse
+
+import torch
+import torch.nn.functional as F
+from torch import distributed, nn
+from torch.utils import data
+from torchvision import datasets, transforms
+
+
+def distributed_is_initialized():
+    if distributed.is_available():
+        if distributed.is_initialized():
+            return True
+    return False
+
+
+class Average(object):
+
     def __init__(self):
-        super(MyModel, self).__init__()
+        self.sum = 0
+        self.count = 0
+
+    def __str__(self):
+        return '{:.6f}'.format(self.average)
+
+    @property
+    def average(self):
+        return self.sum / self.count
+
+    def update(self, value, number):
+        self.sum += value * number
+        self.count += number
+
+
+class Accuracy(object):
+
+    def __init__(self):
+        self.correct = 0
+        self.count = 0
+
+    def __str__(self):
+        return '{:.2f}%'.format(self.accuracy * 100)
+
+    @property
+    def accuracy(self):
+        return self.correct / self.count
+
+    def update(self, output, target):
+        with torch.no_grad():
+            pred = output.argmax(dim=1)
+            correct = pred.eq(target).sum().item()
+
+        self.correct += correct
+        self.count += output.size(0)
+
+
+class Trainer(object):
+
+    def __init__(self, model, optimizer, train_loader, test_loader, device):
+        self.model = model
+        self.optimizer = optimizer
+        self.train_loader = train_loader
+        self.test_loader = test_loader
+        self.device = device
+
+    def fit(self, epochs):
+        for epoch in range(1, epochs + 1):
+            train_loss, train_acc = self.train()
+            test_loss, test_acc = self.evaluate()
+
+            print(
+                'Epoch: {}/{},'.format(epoch, epochs),
+                'train loss: {}, train acc: {},'.format(train_loss, train_acc),
+                'test loss: {}, test acc: {}.'.format(test_loss, test_acc),
+            )
+
+    def train(self):
+        self.model.train()
+
+        train_loss = Average()
+        train_acc = Accuracy()
+
+        for data, target in self.train_loader:
+            data = data.to(self.device)
+            target = target.to(self.device)
+
+            output = self.model(data)
+            loss = F.cross_entropy(output, target)
+
+            self.optimizer.zero_grad()
+            loss.backward()
+            self.optimizer.step()
+
+            train_loss.update(loss.item(), data.size(0))
+            train_acc.update(output, target)
+
+        return train_loss, train_acc
+
+    def evaluate(self):
+        self.model.eval()
+
+        test_loss = Average()
+        test_acc = Accuracy()
+
+        with torch.no_grad():
+            for data, target in self.test_loader:
+                data = data.to(self.device)
+                target = target.to(self.device)
+
+                output = self.model(data)
+                loss = F.cross_entropy(output, target)
+
+                test_loss.update(loss.item(), data.size(0))
+                test_acc.update(output, target)
+
+        return test_loss, test_acc
+
+
+class Net(nn.Module):
+
+    def __init__(self):
+        super(Net, self).__init__()
         self.fc = nn.Linear(784, 10)
 
     def forward(self, x):
         return self.fc(x.view(x.size(0), -1))
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    B = 1  # Or any batch size, but the comment uses B
-    return torch.rand(B, 1, 28, 28, dtype=torch.float32)
+class MNISTDataLoader(data.DataLoader):
 
-# Okay, let's tackle this problem step by step. The user wants me to extract a complete Python code from the GitHub issue they provided, which is about a PyTorch training script that's deadlocking when using the NCCL backend with multiple nodes. The goal is to generate a single Python code file that meets specific structural requirements.
-# First, I need to understand the code provided in the issue. The main script is a training loop for a simple neural network (Net class with a single linear layer) using DistributedDataParallel for multi-GPU training across nodes. The problem occurs with the NCCL backend, and the user mentions that using Gloo works but NCCL still has issues even with newer versions.
-# The task requires me to structure the output as a Python code block with specific functions and classes. The main components needed are:
-# 1. **MyModel class**: This should be the model. The original code defines a Net class with a single linear layer (784 inputs to 10 outputs). So I'll rename that to MyModel.
-# 2. **my_model_function**: Returns an instance of MyModel. Since the original uses Net(), this should just return MyModel().
-# 3. **GetInput function**: Returns a random tensor matching the input shape. The model expects MNIST images, which are 28x28 grayscale, so the input shape is (batch_size, 1, 28, 28). Since PyTorch's MNIST loader gives (1,28,28), the input should be Bx1x28x28. The dtype should be float32 as per the transforms.
-# Now, checking the constraints:
-# - The model must be named MyModel. The original Net class is straightforward, so renaming is easy.
-# - The GetInput function must return a tensor compatible with MyModel. The input is images, so using torch.rand with the correct shape and dtype (float32).
-# - The code shouldn't include test code or main blocks. The original has a main function and training loop, but I need to exclude those. Only the model definition and the three required functions.
-# Potential issues:
-# - The original code uses DistributedDataParallel and other distributed setup, but the task doesn't require that. The user wants a model and input generation, so those parts can be omitted except for the model structure.
-# - The original Net's forward method flattens the input (x.view(x.size(0), -1)), so the input must be a 4D tensor (B, C, H, W). Since MNIST images are 1 channel, 28x28, the input shape is correct.
-# - The dtype for the input: The transforms in MNISTDataLoader use ToTensor(), which converts to float32. So the random tensor should be float32.
-# Putting it all together:
-# - Define MyModel as the Net class, renamed.
-# - my_model_function returns MyModel().
-# - GetInput returns a random tensor of shape (e.g., 128,1,28,28) with float32.
-# Wait, the batch size in the original is 128, but the function should work with any batch size? The problem says to return a valid input, so maybe use a placeholder batch size like 1, but the comment says to include the inferred input shape. The first line's comment should specify the shape, like torch.rand(B, 1, 28, 28, dtype=torch.float32).
-# So the code would look like:
-# Wait, but the original code uses the MNISTDataLoader which applies transforms including Normalize. However, the GetInput function just needs to return a tensor of the correct shape and dtype. The normalization is part of the data loading, but since we're generating a random input, it's okay to omit that as long as the dtype is correct.
-# Check the original Net's forward: the input is passed through view to 784 (28*28*1), so the linear layer expects 784 inputs, which matches.
-# The code seems okay. The user might have mentioned other models, but the issue only has one model. So no need to fuse anything. The problem mentions comparing models, but in this case, the issue's code only has one model. So the code should be straightforward.
-# Another thing: the original code uses DistributedDataParallel, but since the task is to make a model that can be used with torch.compile, the model itself is okay as is. The training setup is not needed here.
-# Yes, this should meet all the requirements.
-# </think>
-# ```python
-# # torch.rand(B, 1, 28, 28, dtype=torch.float32)
-# import torch
-# from torch import nn
-# class MyModel(nn.Module):
-#     def __init__(self):
-#         super(MyModel, self).__init__()
-#         self.fc = nn.Linear(784, 10)
-#     def forward(self, x):
-#         return self.fc(x.view(x.size(0), -1))
-# def my_model_function():
-#     return MyModel()
-# def GetInput():
-#     B = 1  # Batch size placeholder (actual value can vary)
-#     return torch.rand(B, 1, 28, 28, dtype=torch.float32)
-# ```
+    def __init__(self, root, batch_size, train=True):
+        transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.1307,), (0.3081,)),
+        ])
+
+        dataset = datasets.MNIST(root, train=train, transform=transform, download=True)
+        sampler = None
+        if train and distributed_is_initialized():
+            sampler = data.DistributedSampler(dataset)
+
+        super(MNISTDataLoader, self).__init__(
+            dataset,
+            batch_size=batch_size,
+            shuffle=(sampler is None),
+            sampler=sampler,
+        )
+
+
+def run(args):
+    device = torch.device('cuda' if torch.cuda.is_available() and not args.no_cuda else 'cpu')
+
+    model = Net()
+    if distributed_is_initialized():
+        model.to(device)
+        model = nn.parallel.DistributedDataParallel(model)
+        print("distributed_is_initialized")
+    else:
+        model = nn.DataParallel(model)
+        model.to(device)
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
+
+    train_loader = MNISTDataLoader(args.root, args.batch_size, train=True)
+    test_loader = MNISTDataLoader(args.root, args.batch_size, train=False)
+
+    trainer = Trainer(model, optimizer, train_loader, test_loader, device)
+    trainer.fit(args.epochs)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--backend', type=str, default='gloo', help='Name of the backend to use.')
+    parser.add_argument(
+        '-i',
+        '--init-method',
+        type=str,
+        default='tcp://127.0.0.1:23456',
+        help='URL specifying how to initialize the package.')
+    parser.add_argument('-s', '--world-size', type=int, default=1, help='Number of processes participating in the job.')
+    parser.add_argument('-r', '--rank', type=int, default=0, help='Rank of the current process.')
+    parser.add_argument('--epochs', type=int, default=20)
+    parser.add_argument('--no-cuda', action='store_true')
+    parser.add_argument('-lr', '--learning-rate', type=float, default=1e-3)
+    parser.add_argument('--root', type=str, default='data')
+    parser.add_argument('--batch-size', type=int, default=128)
+    args = parser.parse_args()
+    print(args)
+
+    if args.world_size > 1:
+        distributed.init_process_group(
+            backend=args.backend,
+            init_method=args.init_method,
+            world_size=args.world_size,
+            rank=args.rank,
+        )
+
+    import time
+    start = time.time()
+    run(args)
+    end = time.time()
+    print("it takes {} s".format(end - start))
+
+
+if __name__ == '__main__':
+    main()

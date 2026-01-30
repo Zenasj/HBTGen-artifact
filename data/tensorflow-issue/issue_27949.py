@@ -1,92 +1,195 @@
-# tf.random.uniform((1000, 1), dtype=tf.float32) ← Inferred input shape from initial example (m=1000, n=1)
+import math
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
+In [176]: sys.version
+Out[176]: '3.7.3 (default, Mar 27 2019, 16:54:48) \n[Clang 4.0.1 (tags/RELEASE_401/final)]'
+
+In [177]: tf.__version__
+Out[177]: '2.0.0-alpha0'
+
+python
 import tensorflow as tf
-from tensorflow.keras import layers, Model, backend as K
+import tensorflow.keras as keras
+import tensorflow.keras.backend as K
+import numpy as np
 
-# The issue centers around gradients not flowing when using tf.math.square (also tf.math.pow) 
-# directly in a functional model or inside a @tf.function-decorated training step.
-# One minimal problematic example was a Conv1D that outputs q, then the model returns -tf.math.square(q).
-# The fix or best practice is to wrap such ops in custom layers or Lambda layers to keep gradients intact.
-#
-# Another larger example has a standard Conv2D-based subclassed model and training loop
-# with tf.function and distributed strategy, where saving inside strategy.scope() can raise errors.
-#
-# To demonstrate a single fused MyModel reflecting these issues,
-# we implement the minimal problematic Conv1D + square op model as a submodel,
-# plus a Conv2D subclassed model as another submodel.
-#
-# Then MyModel compares the outputs or returns a tuple of outputs.
-# This demonstrates how one might encapsulate these models and their computation with gradient flow intact.
-#
-# Since the original problem was "No gradients provided for any variable" related to tf.math.square and tf.function,
-# here we make sure gradients flow by using layers.Lambda wrapping square operation.
-#
-# We assume input shape (1000, 1) for conv1d model part.
-# For demonstration, conv2d model expects input shape like MNIST (28,28,1).
-# We'll just create MyModel assuming a single input tensor matching conv1d input (m=1000, n=1).
-#
-# If multiple inputs were needed, we could extend GetInput to produce a tuple.
-# Here we keep it minimal and coherent.
+m = 1000
+n = 1
+X = np.random.randn(m, n).astype(np.float32)
+y = (3 + 0 * np.random.randn(m)).astype(np.float32)
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Submodel 1: minimal Conv1D + negative square, as from initial example.
-        self.conv1d = layers.Conv1D(1, 1)
-        # Use Lambda layer to wrap square to preserve gradient flow inside model graph.
-        self.neg_square = layers.Lambda(lambda x: -tf.math.square(x))
-        
-        # Submodel 2: a simple Conv2D-based subclassed model for classification
-        # adapted from MNIST example but with minimal layers due to input shape constraints.
-        self.conv2d = layers.Conv2D(32, 3, activation='relu', padding='same')
-        self.flatten = layers.Flatten()
-        self.dense1 = layers.Dense(128, activation='relu')
-        self.dense2 = layers.Dense(10, activation='softmax')
+def create_model():
+    a_input = keras.layers.Input(shape=(n,), dtype=np.float32)
+    a = K.expand_dims(a_input, axis=2)
+    q = keras.layers.Conv1D(1, 1)(a)
+    q = - tf.math.square(q) # this breaks things, but only when using tf.function
+    model = keras.models.Model(inputs=a_input, outputs=q)
+    return model
+
+model = create_model()
+model.predict(X)
+
+class Trainer():
+    def __init__(self, epochs=10):
+        self.epochs = epochs
+        self.model = create_model()
+        self.optimizer = tf.optimizers.Adam()
+        self.step = 0
+    def train(self, X, y, epochs=10):
+        X = tf.convert_to_tensor(X, dtype=tf.float32)
+        y = tf.convert_to_tensor(y, dtype=tf.float32)
+        for epoch in range(epochs):
+            l = self._train_one_step(X, y)
+        return l
+    @tf.function
+    def _train_one_step(self, X, y):
+        with tf.GradientTape() as tape:
+            yp = self.model(X)
+            loss = tf.reduce_mean(tf.math.square(y - yp))
+        gradients = tape.gradient(loss, self.model.trainable_variables)
+        l = self.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
+        d = dict(loss=loss)
+        tf.print(yp[0], loss)
+        self.step += 1
+
+trainer = Trainer()
+l = trainer.train(X, y, epochs=100)
+
+class Train(object):
+  def __init__(self,epochs, enable_function, batch_size, per_replica_batch_size):
+    self.epochs = epochs
+    self.enable_function = enable_function
+    self.batch_size = batch_size
+    self.per_replica_batch_size = per_replica_batch_size
+    self.learning_rate =  CustomSchedule(10)
+    self.model = MyModel()
+    self.loss_object = tf.keras.losses.SparseCategoricalCrossentropy(
+     reduction=tf.keras.losses.Reduction.SUM)
+    self.optimizer = tf.keras.optimizers.Adam()
+    self.train_loss = tf.keras.metrics.Mean(name='train_loss')
+    self.train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='train_accuracy')
+
+    self.test_loss = tf.keras.metrics.Mean(name='test_loss')
+    self.test_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(name='test_accuracy')
     
-    def call(self, x):
-        # x assumed shape (B, 1000, 1)
-        # Run conv1d submodel
-        x1 = self.conv1d(x)              # (B, 1000, 1)
-        x1 = self.neg_square(x1)         # (B, 1000, 1)
-        
-        # For conv2d path, we need to reshape input to 2D images with channel dimension
-        # We will mimic an MNIST-like shape by reshaping (B, 28, 28, 1)
-        # Here, just to demonstrate, we take first 784 (=28*28) steps from input and reshape;
-        # for batches smaller than 784, just tile or truncate.
-        # This is an assumption to fuse both models in one.
-        
-        # Extract or pad input to length 784 for 2D conv:
-        B = tf.shape(x)[0]
-        seq_len = tf.shape(x)[1]
-        # If seq_len < 784, pad zeros at end; if >784, truncate
-        def pad_or_trunc():
-            padded = tf.pad(x, [[0,0],[0,784 - seq_len],[0,0]])
-            return padded[:, :784, :]
-        def trunc():
-            return x[:, :784, :]
-        x_for_conv2d = tf.cond(seq_len < 784, pad_or_trunc, trunc)
-        # Reshape to (B,28,28,1)
-        x_for_conv2d = tf.reshape(x_for_conv2d, (B, 28, 28, 1))
-        
-        x2 = self.conv2d(x_for_conv2d)   # (B, 28, 28, 32)
-        x2 = self.flatten(x2)            # (B, 28*28*32)
-        x2 = self.dense1(x2)             # (B, 128)
-        x2 = self.dense2(x2)             # (B, 10)
-        
-        # Returning both outputs to reflect fusion of multiple models.
-        return x1, x2
+  
+  def loss_function(self, real, pred):
+      mask = tf.math.logical_not(tf.math.equal(real, 0))
+      loss_ = self.loss_object(real, pred)
+      mask = tf.cast(mask, dtype=loss_.dtype)
+      loss_ *= mask
+      return tf.reduce_sum(loss_) * 1./self.batch_size
 
-def my_model_function():
-    # Create and return an instance of MyModel.
-    return MyModel()
+  def train_step(self, inputs):
+    images, labels = inputs
+    with tf.GradientTape() as tape:
+      predictions = self.model(images)
+      loss = self.loss_function(labels, predictions)
+    gradients = tape.gradient(loss, self.model.trainable_variables)
+    self.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
 
-def GetInput():
-    # Return a random input tensor shape (batch=1000, length=1) same as original example
-    B = 1000    # batch size from original example
-    H = 1       # sequence length is n=1 originally
-    # But Conv1D expects 3D shape, (B, length, channels)
-    # Original X was shape (m=1000, n=1) - we interpret batch dimension as 1000 samples each with length 1 and one channel
-    # So input shape (B=1000, length=1, channels=1)
-    input_tensor = tf.random.uniform((B, 1, 1), dtype=tf.float32)
-    return input_tensor
+    self.train_loss(loss)
+    self.train_accuracy(labels, predictions)
+    
+  def test_step(self, inputs):
+    images, labels = inputs
+    predictions = self.model(images)
+    t_loss = self.loss_function(labels, predictions)
 
+    self.test_loss(t_loss)
+    self.test_accuracy(labels, predictions)
+    
+  def training_loop(self, train_dataset, test_dataset):
+    if self.enable_function:
+      self.train_step=tf.function(self.train_step)
+      self.test_step=tf.function(self.test_step)
+    for epoch in range(self.epochs):
+      self.train_loss.reset_states()
+      self.test_loss.reset_states()
+      self.train_accuracy.reset_states()
+      self.test_accuracy.reset_states()
+
+      for images, labels in train_dataset:
+        self.train_step((images, labels))
+      for test_images,test_labels in test_dataset:
+        self.test_step((test_images, test_labels))
+
+      template = 'Epoch {}, Loss: {}, Accuracy: {}, Test Loss: {}, Test Accuracy: {}'
+      print (template.format(epoch+1,
+                             self.train_loss.result(),
+                             self.train_accuracy.result()*100,
+                             self.test_loss.result(),
+                             self.test_accuracy.result()*100))
+      
+      
+      
+ 
+epochs=5
+enable_function=True
+batch_size=128
+per_replica_batch_size=128
+train_obj=Train(epochs, enable_function, batch_size, per_replica_batch_size)
+train_obj.training_loop(train_ds, test_ds)
+tf.saved_model.save(train_obj.model,'model')
+
+class DistributedTrain(Train):
+  def __init__(self,epochs, enable_function, batch_size, per_replica_batch_size):
+    Train.__init__(self,epochs, enable_function, batch_size, per_replica_batch_size)
+      
+  def training_loop(self, train_iterator, test_iterator, 
+                   num_train_steps_per_epoch, num_test_steps_per_epoch,
+                   strategy):
+    def distributed_train():
+      return strategy.experimental_run(self.train_step, train_iterator)
+
+    def distributed_test():
+      return strategy.experimental_run(self.test_step, test_iterator)
+
+    if self.enable_function:
+      distributed_train = tf.function(distributed_train)
+      distributed_test = tf.function(distributed_test)
+
+    template = 'Epoch: {}, Train Loss: {}, Test Loss: {}'
+    for epoch in range(self.epochs):
+      self.train_loss.reset_states()
+      self.test_loss.reset_states()
+      self.train_accuracy.reset_states()
+      self.test_accuracy.reset_states()
+
+      train_iterator.initialize()
+      for _ in range(num_train_steps_per_epoch):
+        distributed_train()
+
+      test_iterator.initialize()
+      for _ in range(num_test_steps_per_epoch):
+        distributed_test()
+
+      template = 'Epoch {}, Loss: {}, Accuracy: {}, Test Loss: {}, Test Accuracy: {}'
+      print (template.format(epoch+1,
+                               self.train_loss.result(),
+                               self.train_accuracy.result()*100,
+                               self.test_loss.result(),
+                               self.test_accuracy.result()*100))
+
+
+strategy = tf.distribute.MirroredStrategy()
+num_replicas = strategy.num_replicas_in_sync
+
+with strategy.scope():
+  num_train_steps_per_epoch = tf.data.experimental.cardinality(train_ds)
+  num_test_steps_per_epoch = tf.data.experimental.cardinality(test_ds)
+
+  train_iterator = strategy.make_dataset_iterator(train_ds)
+  test_iterator = strategy.make_dataset_iterator(test_ds)
+  
+  train_obj= DistributedTrain(epochs, enable_function, batch_size, per_replica_batch_size)
+  train_obj.training_loop(train_iterator,
+                          test_iterator,
+                                   num_train_steps_per_epoch,
+                                   num_test_steps_per_epoch,
+                                   strategy)
+  tf.saved_model.save(train_obj.model,'dist-model')

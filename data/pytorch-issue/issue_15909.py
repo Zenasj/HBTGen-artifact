@@ -1,21 +1,23 @@
-# torch.rand(B, C, H, W, dtype=...)  # The input shape is (2, 3) as inferred from the provided code
+import torch.nn as nn
 
 import torch
 from torch import nn
+import os
 
-class MyModel(nn.Module):
+torch.manual_seed(12345)
+
+
+class Foo(nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
-        self.linear = nn.Linear(3, 4)
+        super(Foo, self).__init__()
+        self.bar = nn.Linear(3, 4)
 
     def forward(self, x):
-        return self.linear(x)
+        return self.bar(x)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(2, 3)
+if 'XXXX' in os.environ:
+    foo = Foo()
 
+x = torch.randn(2, 3)
+print(x)

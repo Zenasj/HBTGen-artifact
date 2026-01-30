@@ -1,19 +1,12 @@
-# torch.rand(1, 3, 224, 224, dtype=torch.float32)  # Inferred input shape from common image processing tasks
-import torch
-import torch.nn as nn
+import numpy as np
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv = nn.Conv2d(3, 16, kernel_size=3, padding=1)
-        self.relu = nn.ReLU()
-    
-    def forward(self, x):
-        return self.relu(self.conv(x))
-
-def my_model_function():
-    return MyModel()  # Basic model initialization
-
-def GetInput():
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)  # Matches expected input shape/dtype
-
+# Prepare backend
+print('Preparing backend...')
+prep_t0 = time.time()
+prepared_backend = caffe2.python.onnx.backend.prepare(model, device='CUDA:0')
+print('Backend prepared in {} seconds'.format(time.time() - prep_t0))
+# Run the ONNX model with Caffe2
+print('Running inference..')
+fwd_t0 = time.time()
+outputs = prepared_backend.run(img_arr.astype(np.float32))[0]
+print('Foward pass time: {} seconds'.format(time.time() - fwd_t0))

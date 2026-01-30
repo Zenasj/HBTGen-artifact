@@ -1,18 +1,23 @@
-# torch.rand(51, 51, 51, dtype=torch.float32)
-import torch
-from torch import nn
-
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Permute input to (Z, Y, X) for tmp0 and (Y, Z, X) for tmp1 as per kernel logic
-        tmp0 = x.permute(2, 1, 0)  # Z,Y,X
-        tmp1 = x.permute(1, 2, 0)  # Y,Z,X
-        output = 3 * tmp0 + tmp1  # 3*tmp0 + tmp1 from kernel's computation
-        return output
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(51, 51, 51, dtype=torch.float32)
-
+@triton.jit
+def triton_poi_fused_add_0(in_ptr0, out_ptr0, znumel, ynumel, xnumel, ZBLOCK : tl.constexpr, YBLOCK : tl.constexpr, XBLOCK : tl.constexpr):
+    znumel = 51
+    ynumel = 51
+    xnumel = 51
+    zoffset = tl.program_id(2) * ZBLOCK
+    zindex = zoffset + tl.arange(0, ZBLOCK)[None, None, :]
+    zmask = zindex < znumel
+    yoffset = tl.program_id(1) * YBLOCK
+    yindex = yoffset + tl.arange(0, YBLOCK)[None, :, None]
+    ymask = yindex < ynumel
+    xoffset = tl.program_id(0) * XBLOCK
+    xindex = xoffset + tl.arange(0, XBLOCK)[:, None, None]
+    xmask = xindex < xnumel
+    x2 = xindex
+    y1 = yindex
+    z0 = zindex
+    tmp0 = tl.load(tl.make_block_ptr(in_ptr0, shape=[51, 51, 51], strides=[1, 51, 2601], block_shape=[XBLOCK, YBLOCK, ZBLOCK], order=[2, 1, 0], offsets=[xoffset, yoffset, zoffset]), boundary_check=[0, 1, 2])
+    tmp1 = tl.load(tl.make_block_ptr(in_ptr0, shape=[51, 51, 51], strides=[51, 1, 2601], block_shape=[XBLOCK, YBLOCK, ZBLOCK], order=[2, 1, 0], offsets=[xoffset, yoffset, zoffset]), boundary_check=[0, 1, 2])
+    tmp2 = tmp0 + tmp1
+    tmp3 = tmp0 + tmp0
+    tmp4 = tmp2 + tmp3
+    tl.store(tl.make_block_ptr(out_ptr0, shape=[51, 51, 51], strides=[1, 51, 2601], block_shape=[XBLOCK, YBLOCK, ZBLOCK], order=[2, 1, 0], offsets=[xoffset, yoffset, zoffset]), tl.broadcast_to(tmp4, [XBLOCK, YBLOCK, ZBLOCK]).to(tl.float32), boundary_check=[0, 1, 2])

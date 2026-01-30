@@ -1,31 +1,64 @@
-# torch.rand(CHANNELS, 16, 24, 12, dtype=torch.float32) ← Add a comment line at the top with the inferred input shape
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.W = nn.Parameter(torch.ones(18, requires_grad=True))
-        self.b = nn.Parameter(torch.zeros(18, requires_grad=True))
 
-    def forward(self, x):
-        CHANNELS, _, _, _ = x.size()
-        numel = x.size(1) * x.size(2) * x.size(3)
-        x_s = x.sum(dim=(1, 2, 3))
-        x_mean = x_s / numel
-        x = (x - x_mean.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1))
-        output = x * self.W.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1) + self.b.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
-        return output
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
+def testCase3a():
     CHANNELS = 18
-    input = torch.rand(CHANNELS, 16, 24, 12, dtype=torch.float32)
+    EPS = 1e-5
+
+    input = torch.rand(CHANNELS, 16 * 24 * 12)
     input[:8] -= 0.5
     input[8:] += 0.5
-    return input
 
+    x = input
+    assert x.size() == (CHANNELS, 16 * 24 * 12)
+    numel = x.size(1)
+    assert numel == 16 * 24 * 12
+
+    x_s = x.sum(dim=1)
+    x_mean = x_s / numel
+    x = (input - x_mean.unsqueeze(-1))
+
+    W = torch.ones(CHANNELS, requires_grad=True)
+    b = torch.zeros(CHANNELS, requires_grad=True)
+
+    output = x * W.unsqueeze(-1) + b.unsqueeze(-1)
+    loss = output.sum()
+    loss.backward()
+    my_grad = x.sum(-1)
+
+    assert torch.allclose(W.grad, my_grad)
+
+
+def testCase3b():
+    CHANNELS = 18
+    EPS = 1e-5
+
+    input = torch.rand(CHANNELS, 16, 24, 12)
+    input[:8] -= 0.5
+    input[8:] += 0.5
+
+    x = input
+    assert x.size() == (CHANNELS, 16, 24, 12)
+    x = x.reshape(CHANNELS, -1)
+    assert x.size() == (CHANNELS, 16 * 24 * 12)
+    numel = x.size(1)
+    assert numel == 16 * 24 * 12
+
+    x_s = x.sum(dim=1)
+    x_mean = x_s / numel
+    x = (input - x_mean.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1))
+
+    W = torch.ones(CHANNELS, requires_grad=True)
+    b = torch.zeros(CHANNELS, requires_grad=True)
+
+    output = x * W.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1) + b.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
+    loss = output.sum()
+    loss.backward()
+    my_grad = x.sum(-1).sum(-1).sum(-1)
+
+    assert torch.allclose(W.grad, my_grad)
+
+
+if __name__ == '__main__':
+    testCase3a()
+    testCase3b()

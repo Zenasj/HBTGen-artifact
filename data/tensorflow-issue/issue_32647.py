@@ -1,51 +1,48 @@
-# tf.random.uniform((10, 128, 128, 9), dtype=tf.float32)
+import math
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Weight initializer similar to original example
-        self.weights_initializer = tf.compat.v1.initializers.truncated_normal(
-            mean=0.0,
-            stddev=tf.math.sqrt(2.0 / ((3 ** 2) * 32))
-        )
-        self.activation_fn = tf.keras.layers.LeakyReLU()
-        # First conv2d: input channels=9, output channels=32
-        self.conv1 = tf.keras.layers.Conv2D(
-            filters=32,
-            kernel_size=(3, 3),
-            strides=1,
-            padding='same',
-            kernel_initializer=self.weights_initializer,
+H, W, C = 128, 128, 9
+imgs = tf.zeros([10, H, W, C])
+ds = tf.data.Dataset.from_tensor_slices(imgs).batch(2)
+print(ds)
+
+
+def construstor(inputs):
+    shortcuts = []
+    weights_initializer = tf.compat.v1.initializers.truncated_normal(
+        mean=0.0,
+        stddev=tf.math.sqrt(
+            2.0 / ((3 ** 2) * 32))
+    )
+    activation_fn = tf.keras.layers.LeakyReLU()
+
+    def _operation_convolutional(_filters):
+        return tf.keras.layers.Conv2D(
+            filters=_filters,
+            strides=[1, 1],
+            activation=activation_fn,
+            kernel_initializer=weights_initializer,
+            kernel_size=[3, 3],
+            padding='SAME',
             kernel_regularizer=tf.keras.regularizers.l2(1.0),
-            bias_regularizer=tf.keras.regularizers.l2(1.0),
-            activation=self.activation_fn
-        )
-        # Second conv2d: input channels=32, output channels=3
-        self.conv2 = tf.keras.layers.Conv2D(
-            filters=3,
-            kernel_size=(3, 3),
-            strides=1,
-            padding='same',
-            kernel_initializer=self.weights_initializer,
-            kernel_regularizer=tf.keras.regularizers.l2(1.0),
-            bias_regularizer=tf.keras.regularizers.l2(1.0),
-            activation=self.activation_fn
-        )
+            bias_regularizer=tf.keras.regularizers.l2(1.0))
 
-    def call(self, inputs, training=False):
-        # Forward pass through conv layers
-        x = self.conv1(inputs)
-        x = self.conv2(x)
-        return x
+    outputs = _operation_convolutional(32)(inputs)
+    return _operation_convolutional(3)(outputs)
 
-def my_model_function():
-    # Instantiate and return MyModel
-    return MyModel()
+input_tensor = tf.keras.Input(shape=[None, None, 3])
+model = tf.keras.Model(inputs=input_tensor,
+                       outputs=construstor(input_tensor))
+def run(img):
+    tf.summary.image('img', img)
 
-def GetInput():
-    # Return random input tensor matching expected input shape of MyModel
-    # Shape: batch=10, height=128, width=128, channels=9 (as in the issue example)
-    return tf.random.uniform((10, 128, 128, 9), dtype=tf.float32)
-
+writer = tf.summary.create_file_writer(r"D:\tmp")
+with writer.as_default():
+    for i, img in enumerate(ds):
+        tf.summary.experimental.set_step(i)
+        print('iteration')
+        outputs = model(img)
+        run(outputs)

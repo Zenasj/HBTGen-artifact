@@ -1,39 +1,42 @@
-# tf.random.uniform((B, 10), dtype=tf.float32)  ← Input shape is (batch_size, 10)
+import random
+from tensorflow.keras import models
 
 import tensorflow as tf
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Simple model similar to example:
-        # Input (10) -> Dense(10, kernel_initializer='ones') -> Dense(1)
-        self.dense1 = tf.keras.layers.Dense(10, kernel_initializer='ones')
-        self.dense2 = tf.keras.layers.Dense(1)
+from tensorflow.keras.models import model_from_json
+from tensorflow.keras import Input, Model, regularizers, layers
 
-    def call(self, inputs, training=None):
-        x = self.dense1(inputs)
-        outputs = self.dense2(x)
-        # Add losses similarly to original example:
-        # 1) mean of outputs as a loss
-        output_loss = tf.reduce_mean(outputs)
-        self.add_loss(output_loss)
+tf.compat.v1.disable_eager_execution()
 
-        # 2) sum of the sizes of trainable weights as a scalar loss
-        reg_losses = [tf.cast(tf.size(w), tf.float32) for w in self.trainable_weights]
-        reg_loss = tf.add_n(reg_losses)
-        self.add_loss(reg_loss)
 
-        return outputs
+inputs = Input(shape=(10,))
+d = layers.Dense(10, kernel_initializer='ones')
+x = d(inputs)
+outputs = layers.Dense(1)(x)
+model = Model(inputs, outputs)
+  
+model.add_loss(tf.reduce_mean(outputs))
 
-def my_model_function():
-    # Return an instance of MyModel
-    model = MyModel()
-    # Compile with loss=None since losses are added manually
-    model.compile(optimizer="adam", loss=[None] * 1)
-    return model
+reg_losses = [
+    tf.cast(tf.size(input=w), tf.float32) for w in model.trainable_weights
+    ]
+model.add_loss(tf.add_n(reg_losses))
 
-def GetInput():
-    # Return a random input tensor matching the model's expected input shape
-    # Here batch size B = 2 (based on example), input shape = (10,)
-    return tf.random.uniform((2, 10), dtype=tf.float32)
+model.summary()
 
+model.compile(optimizer="adam", loss=[None] * len(model.outputs))
+model.fit(np.random.random((2, 10)))
+
+model_json = model.to_json()
+json_filename = "model.json"
+with open(json_filename, "w") as json_file:
+    json_file.write(model_json)
+model.save_weights("model.h5")
+
+json_file = open(json_filename, 'r')
+loaded_model_json = json_file.read()
+json_file.close()
+
+loaded_model = model_from_json(loaded_model_json)  # UnboundLocalError: local variable 'kwargs' referenced before assignment
+print("model_from_json ok")

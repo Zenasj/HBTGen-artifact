@@ -1,21 +1,33 @@
-# torch.rand(10000, 40000, dtype=torch.float32)  # Input shape (B, C)
-import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
+import gc
+import torch
+
+class MyModel(torch.nn.Module):
     def __init__(self):
-        super().__init__()
-        self.fc1 = nn.Linear(40000, 10000)
-    
+        super(MyModel, self).__init__()
+        self.fc1 = torch.nn.Linear(40000, 10000)
+
     def forward(self, out):
         out = self.fc1(out)
         return out
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel().cuda()
+def run(compile):
+    mod = MyModel().cuda()
+    if compile:
+        mod = torch.compile(mod, backend="eager")
+    inp = torch.rand(10000, 40000).cuda()
+    mod(inp)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(10000, 40000, dtype=torch.float32).cuda()
+def clean_and_report_memory():
+    gc.collect()
+    print(f"max memory: {torch.cuda.max_memory_allocated()}, curr memory: {torch.cuda.memory_allocated()}")
 
+run(False)
+clean_and_report_memory()
+
+run(True)
+clean_and_report_memory()
+
+torch._dynamo.reset()
+clean_and_report_memory()

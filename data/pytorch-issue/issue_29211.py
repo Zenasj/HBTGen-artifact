@@ -1,20 +1,22 @@
-# torch.rand(20, dtype=torch.half).cuda()
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        # Convert to FP32 to avoid "multinomial_kernel_cuda" error for Half dtype
-        x_float = x.float()
-        return torch.distributions.Categorical(logits=x_float).sample()
 
-def my_model_function():
-    return MyModel()
+def test_fp16_categorical():
+    logits_fp16 = torch.randn(20).cuda().half()
 
-def GetInput():
-    # Generates a random FP16 tensor matching the input expected by MyModel
-    return torch.randn(20, dtype=torch.half).cuda()
+    # These are fine
+    torch.argmax(logits_fp16)
+    torch.max(logits_fp16)
 
+    # This is also fine
+    logits_fp32 = logits_fp16.float()
+    sample = torch.distributions.Categorical(logits=logits_fp32).sample()
+    print(sample)
+
+    # This fails
+    sample = torch.distributions.Categorical(logits=logits_fp16).sample()
+    print(sample)
+
+
+if __name__ == "__main__":
+    test_fp16_categorical()

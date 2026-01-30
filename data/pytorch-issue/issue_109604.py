@@ -1,18 +1,13 @@
-# torch.rand(8, dtype=torch.float32)
 import torch
-import torch.nn as nn
+import numpy as np
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-    
-    def forward(self, x):
-        x = x ** 2
-        return 2 * x
 
-def my_model_function():
-    return MyModel()
+@torch.compile(backend="eager")
+def fn(x):
+    x = x ** 2
+    #torch._dynamo.comptime.graph_break()
+    print("HI")
+    return 2 * x
 
-def GetInput():
-    return torch.rand(8, dtype=torch.float32)
 
+fn(np.arange(8))

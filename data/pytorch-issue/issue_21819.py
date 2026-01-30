@@ -1,12 +1,13 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-# torch.rand(B, 9, 1024, dtype=torch.float32)
-class MyModel(nn.Module):
+import os
+class InstanceSeg(nn.Module):
     def __init__(self, num_points=1024):
-        super(MyModel, self).__init__()
+        super(InstanceSeg, self).__init__()
+
         self.num_points = num_points
+
         self.conv1 = nn.Conv1d(9, 64, 1)
         self.conv2 = nn.Conv1d(64, 64, 1)
         self.conv3 = nn.Conv1d(64, 64, 1)
@@ -20,32 +21,43 @@ class MyModel(nn.Module):
         self.max_pool = nn.MaxPool1d(num_points)
 
     def forward(self, x):
-        batch_size = x.size()[0]
-        out = F.relu(self.conv1(x))
-        out = F.relu(self.conv2(out))
+        batch_size = x.size()[0] # (x has shape (batch_size, 9, num_points))
+
+        out = F.relu(self.conv1(x)) # (shape: (batch_size, 64, num_points))
+        out = F.relu(self.conv2(out)) # (shape: (batch_size, 64, num_points))
         point_features = out
-        out = F.relu(self.conv3(out))
-        out = F.relu(self.conv4(out))
-        out = F.relu(self.conv5(out))
-        global_feature = self.max_pool(out)
-        global_feature_repeated = global_feature.repeat(1, 1, self.num_points)
-        out = torch.cat([global_feature_repeated, point_features], 1)
-        out = F.relu(self.conv6(out))
-        out = F.relu(self.conv7(out))
-        out = F.relu(self.conv8(out))
-        out = F.relu(self.conv9(out))
-        out = self.conv10(out)
-        out = out.transpose(2, 1).contiguous()
-        out = F.log_softmax(out.view(-1, 2), dim=1)
-        out = out.view(batch_size, self.num_points, 2)
+
+        out = F.relu(self.conv3(out)) # (shape: (batch_size, 64, num_points))
+        out = F.relu(self.conv4(out)) # (shape: (batch_size, 128, num_points))
+        out = F.relu(self.conv5(out)) # (shape: (batch_size, 1024, num_points))
+        global_feature = self.max_pool(out) # (shape: (batch_size, 1024, 1))
+
+        global_feature_repeated = global_feature.repeat(1, 1, self.num_points) # (shape: (batch_size, 1024, num_points))
+        out = torch.cat([global_feature_repeated, point_features], 1) # (shape: (batch_size, 1024+64=1088, num_points))
+
+        out = F.relu(self.conv6(out)) # (shape: (batch_size, 512, num_points))
+        out = F.relu(self.conv7(out)) # (shape: (batch_size, 256, num_points))
+        out = F.relu(self.conv8(out)) # (shape: (batch_size, 128, num_points))
+        out = F.relu(self.conv9(out)) # (shape: (batch_size, 128, num_points))
+
+        out = self.conv10(out) # (shape: (batch_size, 2, num_points))
+
+        out = out.transpose(2,1).contiguous() # (shape: (batch_size, num_points, 2))
+        out = F.log_softmax(out.view(-1, 2), dim=1) # (shape: (batch_size*num_points, 2))
+        out = out.view(batch_size, self.num_points, 2) # (shape: (batch_size, num_points, 2))
+
         return out
 
-def my_model_function():
-    # Return model instance initialized on CUDA
-    return MyModel().cuda()
+Num = 0
+network = InstanceSeg()
+network.cuda()
+while(1):
 
-def GetInput():
-    # Generate random input matching (batch_size, channels=9, num_points=1024)
-    B = 32  # Batch size from original issue's code
-    return torch.randn(B, 9, 1024, dtype=torch.float32).cuda()
+    input0 = torch.randn(32, 3, 1024).cuda()
+    input1 = torch.randn(32, 3, 1024).cuda()
+    input2 = torch.randn(32, 3, 1024).cuda()
+    input = torch.cat((input0, input1, input2), 1)
 
+    out = network(input)
+    Num = Num+1
+    print(Num)

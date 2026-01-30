@@ -1,22 +1,20 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Example: (1, 2, 1, 1)
 import torch
-from torch import nn
+torch.zeros(2).cuda(0)
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Linear layer to process input flattened from (C,H,W)
-        self.fc = nn.Linear(2, 1)  # Input size=2 (from 2x1x1), output size=1
-        
-    def forward(self, x):
-        # Flatten input tensor for linear layer
-        return self.fc(x.view(x.size(0), -1))
+import torch
+print(torch.__version__)
+torch.zeros(2).cuda(0)
 
-def my_model_function():
-    # Returns a simple model that processes 2-element inputs
-    return MyModel()
+import torch
 
-def GetInput():
-    # Returns a random input tensor matching the model's expected shape (B=1, C=2, H=1, W=1)
-    return torch.rand(1, 2, 1, 1, dtype=torch.float32)
+print(f"Pytorch version: {torch.__version__}")
+print(f"Is CUDA available?: {torch.cuda.is_available()}")
+print(f"Number of CUDA devices: {torch.cuda.device_count()}")
+device = torch.device('cuda')
+print(f"A torch tensor: {torch.rand(5).to(device)}")
 
+import torch
+torch.cuda.set_device(0)
+torch.cuda.set_device(1)
+x = torch.zeros(10000, 100000).cuda(1)
+x = torch.zeros(10000, 100000).cuda(0)

@@ -1,31 +1,44 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)
+import torchvision
+import random
+
 import torch
-from torchvision.models import MobileNetV2
+import numpy as np
+from torch.cuda.amp.autocast_mode import autocast
+from torchvision.models.mobilenetv2 import MobileNetV2, mobilenet_v2
 
-class MyModel(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.model_fp32 = MobileNetV2()  # FP32 model
-        self.model_fp16 = MobileNetV2().half()  # FP16 model
+GPU_ID = 0
 
-    def forward(self, x):
-        # FP32 path: run features[:7] in FP32
-        features_fp32 = self.model_fp32.features[:7](x.float())
-        # FP16 path: convert input to FP16 and run features[:7]
-        features_fp16 = self.model_fp16.features[:7](x.half())
-        
-        # Check for NaN in FP16 features and absence in FP32
-        has_nan_fp32 = torch.isnan(features_fp32).any().item()
-        has_nan_fp16 = torch.isnan(features_fp16).any().item()
-        
-        # Return True (1) if FP16 has NaN but FP32 does not
-        condition = (not has_nan_fp32) and has_nan_fp16
-        return torch.tensor([condition], dtype=torch.bool)
+model = MobileNetV2().cuda(GPU_ID)
+# model = mobilenet_v2(pretrained=True).cuda(GPU_ID)
 
-def my_model_function():
-    return MyModel()
+## Does not matter is model pretrained or not. Half precision returns nan.
 
-def GetInput():
-    # Return a random input tensor matching MobileNetV2's expected input shape
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
 
+img = np.random.rand(1, 3, 224, 224)
+
+### Full FP32 precision
+img32 = torch.from_numpy(img).float().cuda(GPU_ID)
+test32 = model(img32)
+featured_test32 = model.features[:7](img32)
+print(
+    f"FP32 full model: {torch.sum(test32).item()} \t model features: {torch.sum(featured_test32).item()}"
+)
+
+
+### Auto Mixed precision
+with autocast():
+    testmp = model(img32)
+    featured_testmp = model.features[:7](img32)
+    print(
+        f"AMP full model: {torch.sum(testmp).item()} \t model features: {torch.sum(featured_testmp).item()}"
+    )
+
+
+### Half FP16 precision
+img16 = torch.from_numpy(img).half().cuda(GPU_ID)
+model.half()
+test16 = model(img16)
+featured_test16 = model.features[:7](img16)
+print(
+    f"FP16 full model: {torch.sum(test16).item()} \t model features: {torch.sum(featured_test16).item()}"
+)

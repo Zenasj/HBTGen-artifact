@@ -1,8 +1,11 @@
-# torch.rand(B, 10, dtype=torch.bfloat16)
+py
 import torch
 import torch.nn as nn
 
+torch.manual_seed(420)
+
 class MyModel(nn.Module):
+
     def __init__(self):
         super(MyModel, self).__init__()
         self.fc = nn.Linear(10, 1, dtype=torch.bfloat16)
@@ -10,10 +13,15 @@ class MyModel(nn.Module):
     def forward(self, x):
         x = self.fc(x)
         return x
+input_tensor = torch.randn(1, 10).to(torch.bfloat16)
 
-def my_model_function():
-    return MyModel()
+func = MyModel().to('cpu')
 
-def GetInput():
-    return torch.randn(1, 10, dtype=torch.bfloat16)
+print(func(input_tensor))
+# tensor([[-0.6367]], dtype=torch.bfloat16, grad_fn=<AddmmBackward0>)
 
+with torch.no_grad():
+    func.train(False)
+    jit_func = torch.compile(func)
+    print(jit_func(input_tensor))
+# RuntimeError: mkldnn_reorder_linear_weight: bf16 path needs the cpu support avx512bw, avx512vl and avx512d

@@ -1,40 +1,57 @@
-# tf.random.uniform((B=10, H=224, W=224, C=3), dtype=tf.float32) ← Input shape from the original example: (10, 224, 224, 3)
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
-import tensorflow as tf
+import os
+from tensorflow.keras.layers import Dense, Input, TimeDistributed
+from tensorflow.keras.activations import sigmoid
+from tensorflow.keras.metrics import BinaryAccuracy
+from tensorflow.keras.models import Model
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.applications import MobileNetV2
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Base MobileNetV2 model with ImageNet weights, without top layer
-        # Note: alpha=1.4 as per original code, pooling='avg'
-        self.base_model = tf.keras.applications.MobileNetV2(
-            weights='imagenet',
-            include_top=False,
-            alpha=1.4,
-            input_shape=(224, 224, 3),
-            pooling='avg',
-        )
-        # Wrap base_model in TimeDistributed layer to process sequences of length 10
-        self.time_distributed = tf.keras.layers.TimeDistributed(self.base_model)
+def get_model(working_dir, finetune):
 
-        # Final dense layer with sigmoid activation to produce output per time step
-        self.prediction_layer = tf.keras.layers.Dense(1, activation='sigmoid')
+    base_model = MobileNetV2(weights='imagenet',
+                             include_top=False,
+                             alpha=1.4,
+                             input_shape=(224, 224, 3),
+                             pooling='avg')
 
-    def call(self, inputs, training=False):
-        # inputs shape: (batch_size, 10, 224, 224, 3)
-        x = self.time_distributed(inputs)
-        # x shape: (batch_size, 10, base_model_output_features)
-        out = self.prediction_layer(x)
-        # Output shape: (batch_size, 10, 1)
-        return out
+    inp = Input((10, 224, 224, 3))
+    x = TimeDistributed(base_model)(inp)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+    # Comment out the previous two lines
+    # and uncomment these next two lines to see the expected behavior
 
-def GetInput():
-    # Generate a random input tensor matching the model input shape
-    # Batch size arbitrary, here 1 for simplicity
-    # Shape: (batch_size=1, 10 frames, 224, 224, 3 channels)
-    return tf.random.uniform(shape=(1, 10, 224, 224, 3), dtype=tf.float32)
+    # inp = base_model.input
+    # x = base_model.output
 
+    predictions = Dense(1, activation=sigmoid)(x)
+
+    model = Model(inputs=inp, outputs=predictions)
+
+    if not finetune:
+        for layer in base_model.layers:
+            layer.trainable = False
+        learning_rate = 0.001
+    else:
+        saved_model_path = os.path.join(working_dir, "saved_model.h5")
+        model.load_weights(saved_model_path)
+        learning_rate = 0.00001
+
+    binacc = BinaryAccuracy(name="binary_accuracy")
+    adam = Adam(lr=learning_rate, epsilon=1e-09, clipnorm=0.001)
+
+    model.compile(optimizer=adam,
+                    loss='binary_crossentropy',
+                    metrics=[binacc])
+    model.summary()
+
+    return model
+
+working = "/content/test"
+
+model = get_model(working, False)
+model.save(os.path.join(working, "saved_model.h5"))
+model = get_model(working, True)

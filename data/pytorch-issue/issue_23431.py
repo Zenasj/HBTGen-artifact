@@ -1,38 +1,21 @@
-# torch.rand(B, C, H, W, dtype=...)  # Add a comment line at the top with the inferred input shape
-
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Define a simple model for demonstration purposes
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1)
-        self.relu = nn.ReLU()
-        self.fc = nn.Linear(64 * 96 * 96, 10)  # Assuming the input size is (B, 3, 96, 96)
+dummy_input = torch.randn(config.BATCH_SIZE, 3, 96, 96).to(cuda_device)
+torch.onnx.export(model, dummy_input, path + "lol.onnx", verbose=False)
 
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.relu(x)
-        x = x.view(x.size(0), -1)  # Flatten the tensor
-        x = self.fc(x)
-        return x
+if isinstance(model, torch.nn.DataParallel):
+        model = model.module
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+torch.nn.DataParallel
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    batch_size = 1  # Example batch size
-    channels = 3
-    height = 96
-    width = 96
-    return torch.randn(batch_size, channels, height, width, dtype=torch.float32)
+model.module
 
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
-# torch.onnx.export(model, input_tensor, "model.onnx")
+if isinstance(model, torch.nn.DataParallel):
+        raise ValueError('torch.nn.DataParallel is not supported by ONNX '
+                         'exporter, please use \'attribute\' module to '
+                         'unwrap model from torch.nn.DataParallel. Try '
+                         'torch.onnx.export(model.module, ...)')
 
+model = torch.nn.DataParallel(model)
+onnx_model = torch.onnx.export(model.module, ...)

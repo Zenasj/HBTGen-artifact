@@ -1,19 +1,13 @@
-# torch.rand(2, dtype=torch.float32) ← Add a comment line at the top with the inferred input shape
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        return torch.unique_consecutive(dim=0, input=x)
+def forward(x):
+  return torch.unique_consecutive(dim=0,input=x)        
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+x = torch.rand([2],dtype=torch.float32)# generate arg
+forward(x)# on eagermode
+print("build succeeded")
+torch.compile(forward, fullgraph=True)(x)# on torch.compile mode(with fullgrah=True)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(2, dtype=torch.float32)
-
+import torch
+import torch.onnx
+torch.onnx.dynamo_export(lambda x: torch.unique(x), torch.arange(10))

@@ -1,24 +1,19 @@
-# torch.rand(B, 128, 768, dtype=torch.float32)  # B: batch, 128: sequence length, 768: hidden size
-
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.pooler = nn.Linear(768, 768)
-        self.classifier = nn.Linear(768, 2)  # 2 classes for MRPC task
+if rank == 0:
+    model = ...
+    param_init_fn = None
+else:
+    with torch.device("meta"):
+        model = ...
+    param_init_fn = lambda x: x.to_empty(device=torch.cuda.current_device(), recurse=False)
 
-    def forward(self, x):
-        # Global average pooling over sequence length
-        pooled = x.mean(dim=1)
-        pooled = self.pooler(pooled).tanh()  # Matches BertPooler's activation
-        return self.classifier(pooled)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    B = 2  # Matches num_processes=2 in config.yaml
-    return torch.rand(B, 128, 768, dtype=torch.float32)  # Random input tensor matching BERT's hidden size
-
+model = FSDP(model,
+        sharding_strategy=ShardingStrategy.FULL_SHARD,
+        sync_module_states=True,
+        mixed_precision=mixed_precision,
+        auto_wrap_policy=functools.partial(transformer_auto_wrap_policy, transformer_layer_cls={LlamaDecoderLayer}),
+        limit_all_gathers=True,
+        device_id=dev,
+        param_init_fn=param_init_fn
+    )

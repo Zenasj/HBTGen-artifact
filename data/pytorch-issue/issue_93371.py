@@ -1,20 +1,19 @@
-# torch.rand(4, 6, 4, 1, dtype=torch.float32)
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        
-    def forward(self, input):
-        v1 = F.softmax(input, 1)
-        v2 = v1.transpose(0, 3)
-        return v2.div_(2.0)
+import torch
 
-def my_model_function():
-    return MyModel()
+def fn(input):
+    v1 = torch.nn.functional.softmax(input, 1) # works fine w/o this line
+    v2 = v1.transpose(0, 3) # works fine w/o this line
+    return v2.div_(2.0) # works fine with non-inplace operator "div"
 
-def GetInput():
-    return torch.rand([4, 6, 4, 1])
+x = torch.rand([4, 6, 4, 1])
 
+ret_eager = fn(x)
+print('==== Eager mode OK! ====')
+
+compiled = torch.compile(fn)
+print('==== torchcomp compilation OK! ====')
+
+ret_compiled = compiled(x)
+print('==== torchcomp mode OK! ====')

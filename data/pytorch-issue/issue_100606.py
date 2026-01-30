@@ -1,19 +1,14 @@
-# torch.rand(B, dtype=torch.float32)
 import torch
-from torch import nn
+import torch._inductor
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, input):
-        n = input.size(-1)
-        output = input + int(n * 0.2) + 1
-        return output, input + 1
+torch._inductor.config.disable_cpp_codegen = True
 
-def my_model_function():
-    return MyModel()
+@torch.compile(backend="inductor", dynamic=True)
+def func(input: torch.Tensor) -> torch.Tensor:
+    n = input.size(-1)
+    output = input + int(n * 0.2) + 1
+    return output, input + 1
 
-def GetInput():
-    return torch.rand(5)  # Matches the input shape used in the original repro example
 
+print(func(torch.rand(5, device="cpu")))
+print(func(torch.rand(10, device="cpu")))

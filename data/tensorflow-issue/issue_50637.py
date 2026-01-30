@@ -1,120 +1,132 @@
-# tf.random.uniform((5, 5, 6), dtype=tf.float32) ← Based on batch_size=5 and input feature size 5 (excluding label)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
 import numpy as np
+import pandas as pd
 import glob
 import os
 from pathlib import Path
-
 used_compression_type = 'GZIP'
-batch_size = 5
-tf_archive = "/tfrecords"
-os.makedirs(tf_archive, exist_ok=True)
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Simple linear layer model as per original gist
-        # Input shape expected to be (batch_size, 5) - from dataset generator insights
-        self.dense = tf.keras.layers.Dense(1, activation='linear')
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Activation, Dense
+from tensorflow.keras.optimizers import SGD
 
-    def call(self, inputs):
-        # inputs shape: (batch_size, 5)
-        return self.dense(inputs)
-
-# Helper class to convert features to TFRecord format
+#Wrapper
 class TFRecordConverter(object):
+    def __init__(self):
+        pass
     def int64_feature(self, value):
         return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
 
     def float_feature(self, value):
-        # Float list must be 1D, so flatten input before passing
         return tf.train.Feature(float_list=tf.train.FloatList(value=value))
 
     def bytes_feature(self, value):
         return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
 
+#Write Sample tfrecords
+
+batch_size = 5
+tf_archive = "/tfrecords"
+os.makedirs(tf_archive, exist_ok=True)
+print(f"TF Records at : {tf_archive}")
+
 def create_test_tfrecords():
-    existing_tfrecords = glob.glob(os.path.join(tf_archive, "*"))
+    existing_tfrecords = glob.glob(os.path.join(tf_archive,"*"))
     if len(existing_tfrecords) < 1:
-        for i in range(5):
-            # Each tfrecord file contains batch_size*5=25 samples, each sample of 6 floats (1 label + 5 features)
-            x_data = np.random.uniform(low=-1.0, high=5, size=(batch_size * 5, 6)).astype(np.float32)
-            write_to_TFRecords(os.path.join(tf_archive, f"tffile-{i}.tfr"), x_data)
+        for i in range(0,5):
+            x_data = np.random.uniform(low=-1.0, high=5, size= (batch_size*5, 6))
+            write_to_TFRecords(os.path.join(tf_archive,f"tffile-{i}.tfr"),x_data)
 
 def create_TFRecordsFile(file):
-    Path(os.path.dirname(file)).mkdir(parents=True, exist_ok=True)
-    compression = tf.io.TFRecordOptions(compression_type=used_compression_type)
-    writer = tf.io.TFRecordWriter(file, options=compression)
+    Path(os.path.dirname(file)).mkdir(parents=True, exist_ok=True)    
+    compression = tf.io.TFRecordOptions(compression_type = used_compression_type)
+    writer =  tf.io.TFRecordWriter(file, options=compression)
     return writer
 
 def write_to_TFRecords(file, values):
     bucket_writer = create_TFRecordsFile(file)
     shape = np.array(values.shape, np.int32)
-    # Flatten the array to 1D for TFRecord feature
     example = tf.train.Example(
-        features=tf.train.Features(
-            feature={
-                'data': TFRecordConverter().float_feature(values.ravel()),
-                'shape': TFRecordConverter().bytes_feature(shape.tobytes())
-            }
-        )
-    )
+            features = tf.train.Features(
+               feature = {
+                    'data':TFRecordConverter().float_feature(values.ravel()), #Float list can only be 1D
+                    'shape':TFRecordConverter().bytes_feature(shape.tobytes())
+                    }
+               ))
+    
+    print(f"Writing to {file} with size: {shape}")
     bucket_writer.write(example.SerializeToString())
-    bucket_writer.close()
+    
 
-def parse_function(serialized_example):
+def parse_function(serialized_example):       
+        
     features = {
-        # data is a float32 1-D sequence (flattened 2D array)
-        'data': tf.io.FixedLenSequenceFeature([], tf.float32, allow_missing=True),
-        'shape': tf.io.FixedLenFeature([], tf.string)
-    }
-    features = tf.io.parse_single_example(serialized_example, features=features)
-    shape = tf.io.decode_raw(features['shape'], tf.int32)
+        'data': tf.io.FixedLenSequenceFeature([], tf.float32,allow_missing=True),
+        'shape':tf.io.FixedLenFeature([], tf.string)
+        }
+
+    features = tf.io.parse_single_example(serialized=serialized_example, features=features)
+    shape = tf.io.decode_raw(features['shape'], tf.int32 )
     dataset = features['data']
     dataset = tf.reshape(dataset, shape)
+
+
     return dataset
+
+#Simple dataset generator
+def data_gen(batch_size):
+    tfrecords = glob.glob(os.path.join(tf_archive,"*"))
+    print(f"Loading tfrtecords: {tfrecords}")
+    dataset = tf.data.Dataset.from_tensor_slices(tfrecords) 
+    dataset = dataset.interleave(lambda x: tf.data.Dataset.from_generator(gen_step, 
+                                output_types=( tf.float32, tf.float32), args=(x,)))
+        
+    dataset = dataset.repeat().batch(batch_size)
+    while True:
+        for x, Y in dataset:
+            yield x, Y
 
 def gen_step(tf_file):
-    # Load TFRecordDataset with gzip compression
     trRecordDataset = tf.data.TFRecordDataset(tf_file, compression_type=used_compression_type)
-    # Map with custom parsing function
     trRecordDataset = trRecordDataset.map(parse_function)
-    # For each dataset entry (which is a 2D tensor), yield individual (x, y) samples
-    for dataset in trRecordDataset:
-        # dataset shape: (N_samples, 6)
-        Y = dataset[:, 0]       # label is first column
-        x = dataset[:, 1:]      # features are columns 1:6
+    print(f"Waiting for dataset in step - {tf_file}")
+    for dataset in trRecordDataset: 
+        Y = dataset[:,0]
+        x = dataset[:,1:]
         count = 0
         while count < dataset.shape[0]:
-            yield x[count], Y[count]
+            yield x[count],Y[count]
             count += 1
+    print(f"Finsihed dataset in - {tf_file}")
 
-def data_gen(batch_size):
-    tfrecords = glob.glob(os.path.join(tf_archive, "*"))
-    # Create dataset from list of TFRecord file paths
-    dataset = tf.data.Dataset.from_tensor_slices(tfrecords)
-    # Interleave datasets generated by reading each TFRecord file with gen_step generator
-    dataset = dataset.interleave(lambda x: tf.data.Dataset.from_generator(
-        gen_step,
-        output_signature=(
-            tf.TensorSpec(shape=(5,), dtype=tf.float32),
-            tf.TensorSpec(shape=(), dtype=tf.float32)),
-        args=(x,)
-    ))
-    # Repeat indefinitely, batch the samples
-    # Using drop_remainder=True to avoid deadlock issues as per comments
-    dataset = dataset.batch(batch_size, drop_remainder=True).repeat()
-    return dataset
+if __name__ == '__main__':
+  create_test_tfrecords()
+  #trivial model - hangs in 
+  model = Sequential()
+  model.add(tf.keras.Input(shape=(batch_size,)))
+  model.add(Dense(1, activation='linear'))        
+  model.compile(loss='categorical_crossentropy', optimizer=SGD(), metrics = ['accuracy'])
+  
+  #model.fit will hang just as it starts to read the second set of tfrecords.
+  model.fit(x = data_gen(batch_size=batch_size),
+          steps_per_epoch=5,
+          epochs=10)
+  print(f"Training Finished.")
 
-def my_model_function():
-    return MyModel()
+#working now 
+model = Sequential()
+model.add(tf.keras.Input(shape=(batch_size,)))
+model.add(Dense(1, activation='linear'))        
+model.compile(loss='categorical_crossentropy', optimizer=SGD(), metrics = ['accuracy'])
 
-def GetInput():
-    # Generate a batch of random inputs matching model input shape: (batch_size, 5)
-    # Inputs represent the features (excluding label) from dataset
-    return tf.random.uniform((batch_size, 5), dtype=tf.float32)
-
-# Create test TFRecord files proactively for code completeness
-create_test_tfrecords()
-
+ 
+model.fit(x = data_gen(batch_size=batch_size),
+        steps_per_epoch=5,
+        epochs=10)
+print(f"Training Finished.")

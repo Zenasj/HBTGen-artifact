@@ -1,25 +1,37 @@
-# tf.random.uniform((batch_size, 1), dtype=tf.float32) ← input shape inferred from generator yielding arrays of shape (1,)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
+import numpy as np
+import time
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Using a simple Dense layer with 3 output units as in the issue example
-        self.dense = tf.keras.layers.Dense(3)
+def random_gen():
+    while True:
+        time.sleep(0.01)
+        yield (np.random.rand(1,), np.random.rand(1,))
 
-    def call(self, inputs, training=False):
-        # Forward pass through Dense layer
-        return self.dense(inputs)
+dataset = tf.data.Dataset.from_generator(
+        random_gen,
+        (tf.float32, tf.float32),
+        (tf.TensorShape((None,)), tf.TensorShape((None,))),
+    )
 
-def my_model_function():
-    # Returns an instance of MyModel with default initialization
-    return MyModel()
+train_set =   (dataset
+               .shuffle(2000, reshuffle_each_iteration=False)
+               .batch(32))
+val_set =    (dataset
+               .shuffle(2000, reshuffle_each_iteration=False) # Problem is here
+               .batch(32))
 
-def GetInput():
-    # Returns a random input matching the generator output shape from the issue
-    # The generator yields arrays of shape (1,), batched with batch size 32 in example
-    # Since batching is 32, shape would be (32, 1)
-    batch_size = 32
-    return tf.random.uniform((batch_size, 1), dtype=tf.float32)
+model = tf.keras.models.Sequential()
+model.add(tf.keras.layers.Dense(3))
+model.compile(loss='mse', optimizer='adam')
 
+model.fit(x=train_set,
+          epochs= 5,
+          steps_per_epoch= 10,
+          validation_data= val_set,
+          validation_steps= 5,
+)

@@ -1,40 +1,33 @@
-# tf.random.uniform((B,)) ← inferred input shape is a vector, size unspecified (binary classification input assumed)
-
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
 
-class MyModel(tf.keras.Model):
-    def __init__(self, input_shape):
-        super().__init__()
-        # Basic feedforward binary classifier similar to issue example
-        self.dense1 = tf.keras.layers.Dense(128)
-        self.act = tf.keras.layers.Activation('relu')
-        self.out_layer = tf.keras.layers.Dense(1, activation='sigmoid')
-        # For demonstration, store input shape for building
-        self._input_shape = input_shape
+# nothing special
+# please, the code bellow is not important...
 
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.act(x)
-        return self.out_layer(x)
+inputs = tf.keras.layers.Input(shape = intput_shape)
+x = tf.keras.layers.Dense(128)(inputs)
+outputs = tf.keras.layers.Dense(1, activation='sigmoid')(x)
 
-def my_model_function():
-    # Assume input shape is a 1D tensor (feature vector) with size 20 as reasonable guess
-    input_shape = (20,)
-    model = MyModel(input_shape)
-    # Build model by calling once (optional but useful for clarity)
-    model.build(input_shape=(None,) + input_shape)
-    # Compile model with the same parameters from the issue
-    model.compile(
-        loss=tf.keras.losses.BinaryCrossentropy(),
-        optimizer='adam',
-        metrics=['accuracy']
-    )
-    return model
+model = tf.keras.Model(inputs=inputs,outputs=outputs)
+model.compile(loss=tf.keras.losses.BinaryCrossEntropy(), optimizer='adam',metrics='acc')
+tb_callbacks = tf.keras.callbacks.TensorBoard('./logs/')
+model.fit(train_data,validation_set=val_data,epochs=100)
+# fitting...
+# here, after 30 epochs, val_accuracy is around 95%, I interrupt a training process with stop button in the jupyter notebook
+# run again fitting
+model.fit(train_data,validation_set=val_data,epochs=100)
+# 100% val_accuracy after first epoch
 
-def GetInput():
-    # Generate a batch of random inputs matching the model's expected input shape (batch size 32)
-    input_shape = (20,)
-    batch_size = 32
-    # Random uniform floats in [0,1)
-    return tf.random.uniform((batch_size,) + input_shape, dtype=tf.float32)
+inputs = tf.keras.layers.Input(shape = intput_shape)
+x = tf.keras.layers.Dense(128)(inputs)
+outputs = tf.keras.layers.Dense(1, activation='sigmoid')(x)
 
+model = tf.keras.Model(inputs=inputs,outputs=outputs)
+model.compile(loss=tf.keras.losses.BinaryCrossEntropy(), optimizer='adam',metrics='acc')
+tb_callbacks = tf.keras.callbacks.TensorBoard('./logs/')
+model.fit(train_data,validation_set=val_data,epochs=100)
+# fitting...
+# here, after 30 epochs, val_accuracy is around 95%, I interrupt a training process with stop button in the jupyter notebook
+# run again fitting
+model.fit(train_data,validation_set=val_data, initial_epoch=31,epochs=100)

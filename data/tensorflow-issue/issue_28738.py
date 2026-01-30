@@ -1,25 +1,19 @@
-# tf.random.uniform((5, 1), dtype=tf.float32) ← inferred input shape based on fit_generator with input_shape=(1,)
-
+import numpy as np
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Simple dense model matching the example: input_shape=(1,), output one unit
-        self.dense = tf.keras.layers.Dense(1)
+model = tf.keras.models.Sequential([
+    tf.keras.layers.Dense(1, input_shape=(1,))
+])
+model.compile(loss="mae", optimizer="adam")
 
-    def call(self, inputs, training=False):
-        # Straightforward forward pass
-        return self.dense(inputs)
+def generator():
+    i=0
+    while 1:
+        yield (np.array([i]),[i])
+        i+=1
+valData = (np.arange(10), np.arange(10))
 
-def my_model_function():
-    # Return an instance of MyModel, compiled as in the example
-    model = MyModel()
-    model.compile(loss="mae", optimizer="adam")
-    return model
-
-def GetInput():
-    # Return a batch of 5 samples with shape (5,1), matching the example's steps_per_epoch=5
-    # Use float32 uniform random values
-    return tf.random.uniform((5,1), dtype=tf.float32)
-
+history = model.fit_generator(generator(), steps_per_epoch=5, verbose=0, validation_data=valData)

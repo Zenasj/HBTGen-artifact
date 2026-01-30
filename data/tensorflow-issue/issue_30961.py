@@ -1,37 +1,38 @@
-# tf.random.uniform((100, 28, 28), dtype=tf.float32) ← batch size 100, 28x28 grayscale images
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
+import contextlib
+import sys
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Model architecture matching the reported example:
-        # Flatten input [28,28], Dense 300 relu, Dense 100 relu, Dense 10 softmax
-        self.flatten = tf.keras.layers.Flatten(input_shape=(28, 28))
-        self.dense1 = tf.keras.layers.Dense(300, activation="relu")
-        self.dense2 = tf.keras.layers.Dense(100, activation="relu")
-        self.output_layer = tf.keras.layers.Dense(10, activation="softmax")
+distributed=False
+if len(sys.argv) > 1 and sys.argv[1] == "distributed":
+    distributed=True
+    print("asdf enabled distributed trainer")
 
-    def call(self, inputs, training=False):
-        # Forward pass
-        x = self.flatten(inputs)
-        x = self.dense1(x)
-        x = self.dense2(x)
-        return self.output_layer(x)
+class NoOpScope:
+    def scope(self):
+        return contextlib.suppress()
 
-def my_model_function():
-    # Return a fresh MyModel instance compiled with standard sparse categorical crossentropy and Adam optimizer,
-    # matching the training setup described in the issue.
-    model = MyModel()
-    model.compile(
-        loss=tf.keras.losses.SparseCategoricalCrossentropy(),
-        optimizer=tf.keras.optimizers.Adam(),
-        metrics=['accuracy']
-    )
-    return model
+distribution_strategy = tf.distribute.MirroredStrategy() if distributed else NoOpScope()
 
-def GetInput():
-    # Return a random batch of grayscale images simulating Fashion MNIST input.
-    # Use float32 type and scale to [0,1] to follow recommendation from the issue discussion.
-    return tf.random.uniform((100, 28, 28), minval=0, maxval=1, dtype=tf.float32)
+with distribution_strategy.scope():
+    model = tf.keras.models.Sequential()
+    model.add(tf.keras.layers.Flatten(input_shape=[28, 28]))
+    model.add(tf.keras.layers.Dense(300, activation="relu"))
+    model.add(tf.keras.layers.Dense(100, activation="relu"))
+    model.add(tf.keras.layers.Dense(10, activation="softmax"))
+    model.compile(loss=tf.keras.losses.SparseCategoricalCrossentropy(), optimizer=tf.keras.optimizers.Adam(), metrics=['accuracy'])
 
+(x_train_full, y_train_full), (x_test, y_test) = tf.keras.datasets.fashion_mnist.load_data()
+x_dev, x_train = x_train_full[:5000], x_train_full[5000:]
+y_dev, y_train = y_train_full[:5000], y_train_full[5000:]
+train_data = tf.data.Dataset.from_tensor_slices((x_train, y_train)).shuffle(55000).repeat().batch(100)
+dev_data = tf.data.Dataset.from_tensor_slices((x_dev, y_dev)).batch(100)
+
+model.fit(train_data, 
+          epochs=5,
+          steps_per_epoch=55000/100,
+          validation_data=dev_data)

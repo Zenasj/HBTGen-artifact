@@ -1,31 +1,31 @@
-# tf.random.uniform((10, 1), dtype=tf.float32) ← inferred input shape from original example
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
+import os
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Reconstruct the original Sequential model described:
-        # Two Dense layers, first with input shape matching (1,)
-        self.dense1 = tf.keras.layers.Dense(1)
-        self.dense2 = tf.keras.layers.Dense(1)
+n=10
+x = np.random.random((n,1))
+y = np.random.random((n,1))
 
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        return x
+# set `new_cwdir` to a really long path for the two commented out lines below.
+# os.mkdir(new_cwdir)
+# os.chdir(new_cwdir)
 
-def my_model_function():
-    # Return an instance of MyModel
-    model = MyModel()
-    # Since the original example compiles with Adam and MAE loss,
-    # we replicate compilation just for completeness.
-    model.compile(optimizer=tf.keras.optimizers.Adam(),
-                  loss=tf.keras.losses.MeanAbsoluteError())
-    return model
+all_callbacks=[]
+checkpoint_filepath = "issues_with_mixed_slashes\\too_damn_buggy\\checkpoint_{epoch}"
+all_callbacks.append(
+    tf.keras.callbacks.ModelCheckpoint(
+        filepath=checkpoint_filepath, monitor='loss', verbose=1))
 
-def GetInput():
-    # Return a random tensor input shaped (10,1) as in the original example
-    # Use tf.float32 type (standard for TF models)
-    return tf.random.uniform((10, 1), dtype=tf.float32)
+model = tf.keras.models.Sequential()
+model.add(tf.keras.layers.Dense(1, input_shape=x.shape[-1:]))
+model.add(tf.keras.layers.Dense(1))
 
+epochs = 2
+model.compile(optimizer=tf.keras.optimizers.Adam(), loss=tf.keras.losses.MeanAbsoluteError())
+history = model.fit(x=x, y=y, epochs=epochs, callbacks=all_callbacks)

@@ -1,52 +1,43 @@
-# torch.rand(B, C, H, W, dtype=...)  # Add a comment line at the top with the inferred input shape
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1)
-        self.relu = nn.ReLU()
-        self.fc = nn.Linear(64 * 32 * 32, 10)
+_DTYPE_PRECISIONS = {
+    torch.float16: (1e-3, 1e-3),
+    torch.float32: (1e-4, 1e-5),
+    torch.float64: (1e-5, 1e-8),
+}
 
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.relu(x)
-        x = x.view(x.size(0), -1)
-        x = self.fc(x)
-        return x
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+def _get_default_rtol_and_atol(actual: torch.Tensor, expected: torch.Tensor) -> Tuple[float, float]:
+    actual_rtol, actual_atol = _DTYPE_PRECISIONS.get(actual.dtype, (0.0, 0.0))
+    expected_rtol, expected_atol = _DTYPE_PRECISIONS.get(expected.dtype, (0.0, 0.0))
+    return max(actual_rtol, expected_rtol), max(actual_atol, expected_atol)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    B, C, H, W = 1, 3, 32, 32
-    return torch.rand(B, C, H, W, dtype=torch.float32)
 
-def compare_models(model1, model2, input_tensor):
-    # Compare the outputs of two models using torch.testing.assert_close
-    output1 = model1(input_tensor)
-    output2 = model2(input_tensor)
-    try:
-        torch.testing.assert_close(output1, output2, rtol=1e-4, atol=1e-5)
-        print("Models are close.")
-    except AssertionError as e:
-        print(f"Models are not close: {e}")
+def assert_allclose(
+    actual: Any,
+    expected: Any,
+    rtol: Optional[float] = None,
+    atol: Optional[float] = None,
+    equal_nan: bool = True,
+    msg: str = "",
+) -> None:
+    if not isinstance(actual, torch.Tensor):
+        actual = torch.tensor(actual)
+    if not isinstance(expected, torch.Tensor):
+        expected = torch.tensor(expected, dtype=actual.dtype)
 
-# Example usage
-if __name__ == "__main__":
-    model1 = my_model_function()
-    model2 = my_model_function()
-    input_tensor = GetInput()
-    compare_models(model1, model2, input_tensor)
+    if rtol is None and atol is None:
+        rtol, atol = _get_default_rtol_and_atol(actual, expected)
 
-# The provided issue is about deprecating `torch.testing.assert_allclose` in favor of `torch.testing.assert_close`. It does not contain a PyTorch model or any code that needs to be extracted and converted into a single Python file. However, I can provide a simple example that demonstrates the use of `torch.testing.assert_close` and how it can be used to compare the outputs of two models.
-# Here's a complete Python code file that includes a simple model, a function to create an instance of the model, and a function to generate a random input tensor. The code also includes a comparison function using `torch.testing.assert_close`.
-# ### Explanation:
-# 1. **MyModel**: A simple convolutional neural network with one convolutional layer, a ReLU activation, and a fully connected layer.
-# 2. **my_model_function**: Returns an instance of `MyModel`.
-# 3. **GetInput**: Generates a random tensor with shape `(1, 3, 32, 32)` and dtype `torch.float32`, which is a common input shape for image classification tasks.
-# 4. **compare_models**: Compares the outputs of two models using `torch.testing.assert_close` and prints whether the models are close or not.
-# This code can be used as a starting point to understand how to use `torch.testing.assert_close` for comparing the outputs of two models.
+    torch.testing.assert_close(
+        actual,
+        expected,
+        rtol=rtol,
+        atol=atol,
+        equal_nan=equal_nan,
+        check_device=True,
+        check_dtype=False,
+        check_stride=False,
+        check_is_coalesced=False,
+        msg=msg or None,
+    )

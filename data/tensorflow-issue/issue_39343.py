@@ -1,13 +1,12 @@
-# tf.random.uniform((BATCH_SIZE, 784), dtype=tf.float32) ← BATCH_SIZE inferred from num_replicas * per-replica batch size
-
+import numpy as np
+import random
 import tensorflow as tf
 from tensorflow import keras
-from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
-
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
+class ThreeLayerMLP(keras.Model):
+    def __init__(self, name=None):
+        super().__init__(name=name)
         self.dense_1 = layers.Dense(64, activation='relu', name='dense_1')
         self.dense_2 = layers.Dense(64, activation='relu', name='dense_2')
         self.pred_layer = layers.Dense(10, name='predictions')
@@ -18,23 +17,45 @@ class MyModel(tf.keras.Model):
         return self.pred_layer(x)
 
 
-def my_model_function():
-    """
-    Return an instance of MyModel with no pretrained weights.
-    """
-    return MyModel()
+def main(argv):
+    del argv  # Unused args
+    strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
+    BATCH_SIZE_PER_REPLICA = 64
+    BATCH_SIZE = BATCH_SIZE_PER_REPLICA * strategy.num_replicas_in_sync
+    print('Number of devices: %d' % strategy.num_replicas_in_sync)
+
+    with strategy.scope():
+        model = model = ThreeLayerMLP(name='3_layer_mlp')
+        model.compile(
+            loss=keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+            optimizer=keras.optimizers.RMSprop())
+
+    log_dir = FLAGS.logs
+    tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir,
+                                                          histogram_freq=1,
+                                                          update_freq='batch')
+
+    np.random.seed(0)
+    x_train, y_train = (np.random.random(
+        (60000, 784)), np.random.randint(10, size=(60000, 1)))
+    x_test, y_test = (np.random.random(
+        (10000, 784)), np.random.randint(10, size=(10000, 1)))
+
+    # options = tf.data.Options()
+    # options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
+    train_dataset = tf.data.Dataset.from_tensor_slices((x_train, y_train))
+    train_dataset = train_dataset.shuffle(1024).batch(BATCH_SIZE)
 
 
-def GetInput():
-    """
-    Return a random input tensor matching the expected input shape for MyModel.
-    The original example uses 784-dimensional input vectors (flattened 28x28),
-    batched over BATCH_SIZE examples.
-    We assume a batch size of 64 as a reasonable default for a single worker.
-    """
-    BATCH_SIZE = 64  # Assumed typical batch size per worker
-    input_shape = (BATCH_SIZE, 784)  # From the original problem input dimension
+    model.fit(
+        train_dataset,
+        epochs=5,
+        steps_per_epoch=10,
+        callbacks=tensorboard_callback)
 
-    # Random uniform float tensor with dtype float32, typical for model input
-    return tf.random.uniform(input_shape, dtype=tf.float32)
+    model_dir = FLAGS.logs + '/models/' + str(task_index)
+    model.save(model_dir)
 
+
+if __name__ == '__main__':
+    app.run(main)

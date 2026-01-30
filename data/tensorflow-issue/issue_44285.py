@@ -1,42 +1,42 @@
-# tf.random.uniform((B, None, 5), dtype=tf.float32) ← The input has variable time steps (B=batch, None=timesteps, 5 features: year, month, day, hour, label)
+from tensorflow.keras import layers
 
 import tensorflow as tf
+from tensorflow import keras
+import pandas as pd
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # LSTM layer with 200 units, accepting variable time steps and 5 features
-        self.lstm = tf.keras.layers.LSTM(200, input_shape=(None, 5))
-        self.dropout = tf.keras.layers.Dropout(0.3)
-        self.dense1 = tf.keras.layers.Dense(100)
-        self.dense2 = tf.keras.layers.Dense(1)
-        
-    def call(self, inputs, training=False):
-        x = self.lstm(inputs)
-        x = self.dropout(x, training=training)
-        x = self.dense1(x)
-        x = self.dense2(x)
-        return x
+train = pd.read_csv("./train_v1.csv")
+x_train = train[["year", 'month', 'day', 'hour', 'label']]
+y_train = train['label']
+test = pd.read_csv("./test_v1.csv")
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+def train_dataset(x):
+    for i in range(0, len(x)):
+        if i < 23:
+            feature = x[["year", 'month', 'day', 'hour', 'label']][0:i + 1]
+        else:
+            feature = x[["year", 'month', 'day', 'hour', 'label']][i - 23:i + 1]
+        feature = np.asarray(feature)
+        feature[i, -1] = 0
+        yield tf.expand_dims(feature, 0), x["label"][i]
 
-def GetInput():
-    import numpy as np
-    # Generate a batch of inputs with shape (batch_size, timesteps, features)
-    # Let's assume batch_size = 4, timesteps = 24 (like the window in the original dataset), features=5
-    batch_size = 4
-    timesteps = 24
-    # Features: year, month, day, hour, label - we generate dummy plausible data with float dtype
-    # year: 2012 to 2014 range, month: 1-12, day: 1-31, hour: 0-23, label: arbitrary float
-    year = np.random.randint(2012, 2015, size=(batch_size, timesteps, 1)).astype(np.float32)
-    month = np.random.randint(1, 13, size=(batch_size, timesteps, 1)).astype(np.float32)
-    day = np.random.randint(1, 29, size=(batch_size, timesteps, 1)).astype(np.float32)  # simplified 28 days for safety
-    hour = np.random.randint(0, 24, size=(batch_size, timesteps, 1)).astype(np.float32)
-    label = np.zeros((batch_size, timesteps, 1), dtype=np.float32)  # mimic the feature column 'label' zeroed out as in the original code
-    
-    input_data = np.concatenate([year, month, day, hour, label], axis=-1)
-    # Convert to tf.Tensor of float32 (matching model expectations)
-    return tf.convert_to_tensor(input_data, dtype=tf.float32)
+def test_dataset(x):
+    for i in range(0, len(x)):
+        if i < 23:
+            yield tf.expand_dims(x[["year", 'month', 'day', 'hour', 'label']][0:i], 0), 0
+        else:
+            yield tf.expand_dims(x[["year", 'month', 'day', 'hour', 'label']][1 - 24:i], 0), 0
 
+model = keras.Sequential()
+model.add(keras.layers.LSTM(200, input_shape=[None, 5]))
+model.add(keras.layers.Dropout(0.3))
+model.add(keras.layers.Dense(100))
+model.add(keras.layers.Dense(1))
+
+train_generator = train_dataset(train)
+test_generator = test_dataset(test)
+model.compile(loss=keras.losses.mean_absolute_error, metrics=keras.metrics.mean_absolute_error)
+
+model.fit(train_generator, epochs=100)
+
+pre = model.predict(test_generator)

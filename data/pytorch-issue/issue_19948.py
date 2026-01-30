@@ -1,22 +1,17 @@
-# torch.rand(2, 1, dtype=torch.long)  # Inferred input shape from the provided code
-
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+import torch
+
+class TestModule(torch.nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
+        super(TestModule, self).__init__()
 
     def forward(self, x):
-        a = x.repeat([3, 2])
-        a[:2] = x * 2
+        a = x.repeat([3,2])
+        a[:2] = x*2
         return a
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randint(0, 10, (2, 1), dtype=torch.long)
-
+onnx_path = "slice_assign.onnx"
+model = TestModule()
+torch_in = (torch.randint(0, 10, (2, 1)), )
+torch.onnx.export(model, torch_in, onnx_path, verbose=True)

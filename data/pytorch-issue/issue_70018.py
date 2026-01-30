@@ -1,20 +1,14 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.log_softmax = nn.LogSoftmax(dim=1)  # Apply along channel dimension
-    
-    def forward(self, x):
-        return self.log_softmax(x)
+import torch
+import lazy_tensor_core
+import lazy_tensor_core.debug.metrics
 
-def my_model_function():
-    return MyModel()
+lazy_tensor_core._LAZYC._ltc_init_ts_backend()
+device = 'lazy'
 
-def GetInput():
-    # Generate input matching (B, C, H, W) from test case (3,3,100,100)
-    B, C, H, W = 3, 3, 100, 100
-    return torch.rand(B, C, H, W, dtype=torch.float32)
+inp = torch.rand((3, 3, 100, 100), device=device)
+target = torch.zeros((3, 100, 100), dtype=torch.long, device=device)
 
+print(torch.nn.functional.nll_loss(inp, target))
+print(lazy_tensor_core.debug.metrics.metrics_report())

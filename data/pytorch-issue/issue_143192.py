@@ -1,28 +1,44 @@
-# torch.rand(B, C, H, W, dtype=...)  # Add a comment line at the top with the inferred input shape
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+class TwoLayerNetDynamic(nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
-        super(MyModel, self).__init__()
+        super(TwoLayerNetDynamic, self).__init__()
+        self.model_name = 'TwoLayerNetDynamic'
+
         self.fully_connected_1 = nn.Linear(input_size, hidden_size)
         self.early_exit_head_1 = nn.Linear(hidden_size, output_size)
+
+        self.threshold = torch.tensor([0.0], dtype=torch.float32).to(DEVICE)
         self.last_exit = nn.Linear(hidden_size, output_size)
-        self.threshold = torch.tensor([0.0], dtype=torch.float32)
+
+        self.training_exits = False
+
+        print("TwoLayerNetDynamic initialized")
 
     def forward(self, x: torch.Tensor):
         mean = x.mean()
+        
+        # version 1 
+        # if torch.gt(mean, self.threshold):
+        #     x = self.early_exit_head_1(x)
+        # else:
+        #     x = self.last_exit(x)
+        # x = torch.cat([x, mean.reshape_as(x)], dim=1)
+
+        # version 2
         x = self.fully_connected_1(x)
-        x = torch.cond(mean > 0.0, lambda: self.early_exit_head_1(x), lambda: self.last_exit(x))
-        x = torch.cat([x, mean.reshape_as(x)], dim=1)
+        x = fc.cond(mean>0.0,self.early_exit_head_1,self.last_exit,(x,))
+        x = torch.cat([x, mean.reshape_as(x)], dim=1)       
         return x
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel(input_size=1, hidden_size=3, output_size=1)
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # Assuming B (batch size) = 1, C (channels) = 1, H (height) = 1, W (width) = 1
-    return torch.rand(1, 1, 1, 1, dtype=torch.float32)
-
+### Using TorchDynamo ###
+filename = f""
+onnx_filepath = f"./models/onnx/{model.model_name}_dynamo.onnx"
+onnx_program:ONNXProgram = torch.onnx.export(
+  model=model,
+  args=(_x,),
+  dynamo=True,
+  report=True
+)
+onnx_program.save(onnx_filepath)

@@ -1,28 +1,34 @@
-# torch.rand(1, 1, 5, 5, dtype=torch.float)  # Input shape: (B, C, H, W)
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Initialize the grid as a parameter with identity affine transformation
-        theta = torch.tensor([[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]])  # Identity matrix
-        grid_size = (1, 1, 5, 5)  # Matches input dimensions from example
-        self.grid = nn.Parameter(F.affine_grid(theta, grid_size, align_corners=True))
-    
-    def forward(self, image):
-        return F.grid_sample(
-            image,
-            self.grid,
-            mode="bilinear",
-            padding_mode="border",
-            align_corners=True,
-        )
+# example code to reproduce the bug:
+image = torch.arange(0, 5, dtype=torch.float).expand((1,1,5,5)).requires_grad_()
+id_grid = torch.nn.functional.affine_grid(
+    torch.tensor([[[1,0,0],[0,1,0.]]]), (1,1,5,5), align_corners=True).requires_grad_()
+torch.nn.functional.grid_sample(image, id_grid, padding_mode='border',
+                                align_corners=True).sum().backward()
+print(id_grid.grad.permute(0,3,1,2))
 
-def my_model_function():
-    return MyModel()
+tensor([[[[ 2.,  2.,  2.,  2., -8.],
+          [ 2.,  2.,  2.,  2., -8.],
+          [ 2.,  2.,  2.,  2., -8.],
+          [ 2.,  2.,  2.,  2., -8.],
+          [ 2.,  2.,  2.,  2., -8.]],
 
-def GetInput():
-    return torch.rand(1, 1, 5, 5, dtype=torch.float)
+         [[ 0.,  0.,  0.,  0.,  0.],
+          [ 0.,  0.,  0.,  0.,  0.],
+          [ 0.,  0.,  0.,  0.,  0.],
+          [ 0.,  0.,  0.,  0.,  0.],
+          [ 0., -2., -4., -6., -8.]]]])
 
+tensor([[[[0., 2., 2., 2., -0.],
+          [0., 2., 2., 2., -0.],
+          [0., 2., 2., 2., -0.],
+          [0., 2., 2., 2., -0.],
+          [0., 2., 2., 2., -0.]],
+
+         [[0., 0., 0., 0., 0.],
+          [0., 0., 0., 0., 0.],
+          [0., 0., 0., 0., 0.],
+          [0., 0., 0., 0., 0.],
+          [0., -0., -0., -0., -0.]]]])

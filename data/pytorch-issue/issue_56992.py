@@ -1,40 +1,39 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Assumed input shape: batch=1, channels=3, 224x224 image
-import torch
-import torch.nn as nn
-
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Construct a model using operations impacted by AVX512 optimizations
-        self.conv = nn.Conv2d(3, 64, kernel_size=3, padding=1)
-        self.bn = nn.BatchNorm2d(64)
-        self.relu = nn.ReLU()
-        self.fc = nn.Linear(64*224*224, 10)  # Simplified for example purposes
-        
-        # Stub for AVX512 comparison logic (as per test failures mentioned)
-        self.use_avx512 = getattr(torch.cuda, 'has_tensor_cores', False)  # Placeholder flag
-        
-    def forward(self, x):
-        x = self.conv(x)
-        x = self.bn(x)
-        x = self.relu(x)
-        x = x.view(x.size(0), -1)
-        x = self.fc(x)
-        return x
-
-def my_model_function():
-    # Returns an instance with default initialization
-    model = MyModel()
-    # Initialize weights as per common practice (simplified)
-    for m in model.modules():
-        if isinstance(m, nn.Conv2d):
-            nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-        elif isinstance(m, nn.BatchNorm2d):
-            nn.init.constant_(m.weight, 1)
-            nn.init.constant_(m.bias, 0)
-    return model
-
-def GetInput():
-    # Generates input matching the model's expected dimensions
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
-
+aten/src/ATen/native/quantized/cpu/kernels/QuantizedOpKernels.cpp.AVX512.cpp.o
+aten/src/ATen/native/cpu/layer_norm_kernel.cpp.AVX512.cpp.o
+aten/src/ATen/native/cpu/group_norm_kernel.cpp.AVX512.cpp.o
+aten/src/ATen/native/cpu/batch_norm_kernel.cpp.AVX512.cpp.o
+aten/src/ATen/native/cpu/UpSampleMoreKernel.cpp.AVX512.cpp.o
+aten/src/ATen/native/cpu/UpSampleKernel.cpp.AVX512.cpp.o
+aten/src/ATen/native/cpu/UnfoldBackwardKernel.cpp.AVX512.cpp.o
+aten/src/ATen/native/cpu/Unfold2d.cpp.AVX512.cpp.o
+aten/src/ATen/native/cpu/UnaryOpsKernel.cpp.AVX512.cpp.o
+aten/src/ATen/native/cpu/TensorCompareKernel.cpp.AVX512.cpp.o
+aten/src/ATen/native/cpu/SumKernel.cpp.AVX512.cpp.o
+aten/src/ATen/native/cpu/StackKernel.cpp.AVX512.cpp.o
+aten/src/ATen/native/cpu/SortingKernel.cpp.AVX512.cpp.o
+aten/src/ATen/native/cpu/SoftMaxKernel.cpp.AVX512.cpp.o
+aten/src/ATen/native/cpu/ScatterGatherKernel.cpp.AVX512.cpp.o
+aten/src/ATen/native/cpu/ReduceOpsKernel.cpp.AVX512.cpp.o
+aten/src/ATen/native/cpu/ReduceAllOpsKernel.cpp.AVX512.cpp.o
+aten/src/ATen/native/cpu/RangeFactoriesKernel.cpp.AVX512.cpp.o
+aten/src/ATen/native/cpu/PowKernel.cpp.AVX512.cpp.o
+aten/src/ATen/native/cpu/PointwiseOpsKernel.cpp.AVX512.cpp.o
+aten/src/ATen/native/cpu/MultinomialKernel.cpp.AVX512.cpp.o
+aten/src/ATen/native/cpu/MaxPooling.cpp.AVX512.cpp.o
+aten/src/ATen/native/cpu/MaxPoolKernel.cpp.AVX512.cpp.o
+aten/src/ATen/native/cpu/LinearAlgebraKernel.cpp.AVX512.cpp.o
+aten/src/ATen/native/cpu/LerpKernel.cpp.AVX512.cpp.o
+aten/src/ATen/native/cpu/IndexKernel.cpp.AVX512.cpp.o
+aten/src/ATen/native/cpu/GridSamplerKernel.cpp.AVX512.cpp.o
+aten/src/ATen/native/cpu/FunctionOfAMatrixUtilsKernel.cpp.AVX512.cpp.o
+aten/src/ATen/native/cpu/FillKernel.cpp.AVX512.cpp.o
+aten/src/ATen/native/cpu/DistanceOpsKernel.cpp.AVX512.cpp.o
+aten/src/ATen/native/cpu/DepthwiseConvKernel.cpp.AVX512.cpp.o
+aten/src/ATen/native/cpu/CrossKernel.cpp.AVX512.cpp.o
+aten/src/ATen/native/cpu/CopyKernel.cpp.AVX512.cpp.o
+aten/src/ATen/native/cpu/ComplexKernel.cpp.AVX512.cpp.o
+aten/src/ATen/native/cpu/CatKernel.cpp.AVX512.cpp.o
+aten/src/ATen/native/cpu/BlasKernel.cpp.AVX512.cpp.o
+aten/src/ATen/native/cpu/BinaryOpsKernel.cpp.AVX512.cpp.o
+aten/src/ATen/native/cpu/AdaptiveAvgPoolKernel.cpp.AVX512.cpp.o
+aten/src/ATen/native/cpu/Activation.cpp.AVX512.cpp.o

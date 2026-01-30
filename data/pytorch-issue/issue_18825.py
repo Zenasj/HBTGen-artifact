@@ -1,37 +1,46 @@
-# torch.rand(4, 4, dtype=torch.float64) ← Add a comment line at the top with the inferred input shape
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, mat):
-        # Compute the inverse directly
-        inv_mat1 = mat.inverse()
-        
-        # Compute the inverse using Cholesky factorization
-        chol_mat = mat.cholesky()
-        chol_inv_mat = chol_mat.inverse().transpose(-2, -1)
-        inv_mat2 = chol_inv_mat @ chol_inv_mat.transpose(-2, -1)
-        
-        # Check if both methods produce the same result
-        is_same = torch.norm(inv_mat1 - inv_mat2) < 1e-8
-        
-        # Compute the trace and its gradient
-        trace1 = inv_mat1.trace()
-        trace2 = inv_mat2.trace()
-        
-        return is_same, trace1, trace2
+mat = torch.randn(4, 4, dtype=torch.float64)
+mat = (mat @ mat.transpose(-1, -2)).div_(5).add_(torch.eye(4, dtype=torch.float64))
+mat = mat.detach().clone().requires_grad_(True)
+mat_clone = mat.detach().clone().requires_grad_(True)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+# Way 1
+inv_mat1 = mat_clone.inverse()  # A^{-1} = A^{-1}
 
-def GetInput():
-    # Generate a random positive definite matrix
-    mat = torch.randn(4, 4, dtype=torch.float64)
-    mat = (mat @ mat.transpose(-1, -2)).div_(5).add_(torch.eye(4, dtype=torch.float64))
-    mat.requires_grad_(True)
-    return mat
+# Way 2
+chol_mat = mat.cholesky()
+chol_inv_mat = chol_mat.inverse().transpose(-2, -1)
+inv_mat2 = chol_inv_mat @ chol_inv_mat.transpose(-2, -1)  # A^{-1} = L^{-T}L^{-1}
 
+# True
+print('Are these both A^{-1}?', bool(torch.norm(inv_mat1 - inv_mat2) < 1e-8))
+
+inv_mat1.trace().backward()
+inv_mat2.trace().backward()
+
+print('Way 1\n', mat_clone.grad)
+print('Way 2\n', mat.grad)  # :-(
+
+corrected_deriv = mat.grad.clone() / 2
+corrected_deriv = corrected_deriv.tril() + corrected_deriv.tril().t()
+print('Corrected derivative\n', corrected_deriv)  # Simple correction to derivative works.
+
+# True
+print('Is the corrected derivative correct?', bool(torch.norm(corrected_deriv - mat_clone.grad) < 1e-8))
+
+mat = torch.tensor([
+    [3, 1, 0.5, 0],
+    [1, 3, -1,  1],
+    [0.5, -1, 4, 2],
+    [0, 1, 2, 4]
+])
+
+off_diag = torch.tensor([
+    [0.0000,  0.0000,  0.0000,  0.0000],
+    [ 1.0000,  0.0000,  0.0000,  0.0000],
+    [ 0.5000, -1.0000,  0.0000,  0.0000],
+    [ 0.0000,  1.0000,  2.0000,  0.0000]
+], requires_grad=True)
+diag = torch.tensor([3, 3, 4, 4], requires_grad=True)
+mat = off_diag + off_diag.t() + diag.diag()

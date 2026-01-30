@@ -1,19 +1,3 @@
-# torch.rand(2, 3, dtype=torch.float32)
-import torch
-import torch.nn as nn
-
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.softmax = nn.Softmax(dim=-1)  # Matches the Softmax usage in original issue
-    
-    def forward(self, x):
-        return self.softmax(x)
-
-def my_model_function():
-    return MyModel()  # Directly returns the model instance
-
-def GetInput():
-    # Generate 2D tensor matching expected input for Softmax
-    return torch.rand(2, 3, dtype=torch.float32)
-
+if isinstance(py_ast.body[0], ast.ClassDef):
+    module_name = source[source.index('class') + 6 : source.index('(')]
+    raise RuntimeError("cannot create a module (%s) inside jit.script" % module_name)

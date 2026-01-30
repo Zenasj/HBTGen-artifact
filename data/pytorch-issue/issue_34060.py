@@ -1,26 +1,32 @@
-# torch.rand(3, 2, 128, dtype=torch.float32)
+import torch.nn as nn
+import torch.nn.functional as F
+
 import math
+
 import torch
-from torch import nn
 from torch.nn.modules.activation import MultiheadAttention
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.att = MultiheadAttention(embed_dim=128, num_heads=8, dropout=0.)
+torch.manual_seed(42)
+data = torch.randn(3, 2, 128) * math.sqrt(128)
+data_0 = data[:, 0].unsqueeze(1)
+att = MultiheadAttention(128, 8, 0.)
+assert torch.allclose(att.forward(data, data, data)[0][:, 0], 
+                      att.forward(data_0, data_0, data_0)[0][:, 0])
 
-    def forward(self, x):
-        # Compute attention for full batch and first element subset
-        output_full, _ = self.att(x, x, x)
-        data_0 = x[:, 0:1]  # Extract first batch element as new batch of size 1
-        output_single, _ = self.att(data_0, data_0, data_0)
-        # Return difference between corresponding outputs
-        return output_full[:, 0] - output_single[:, 0]
+torch.allclose(att.forward(data, data, data)[0][:, 0], att.forward(data_0, data_0, data_0)[0][:, 0]) == True
 
-def my_model_function():
-    return MyModel()
+import math
 
-def GetInput():
-    torch.manual_seed(42)
-    return torch.randn(3, 2, 128) * math.sqrt(128)
+import torch
+from torch.nn import functional as F
+from torch.nn.modules.activation import MultiheadAttention
 
+torch.manual_seed(42)
+data = torch.randn(3, 2, 128) * math.sqrt(128)
+data_0 = data[:, 0].unsqueeze(1)
+att = MultiheadAttention(128, 8, 0.)
+att.eval()
+
+batched = F.linear(data, att.in_proj_weight, att.in_proj_bias)
+single = F.linear(data_0, att.in_proj_weight, att.in_proj_bias)
+assert torch.allclose(batched[:, 0], single[:, 0])

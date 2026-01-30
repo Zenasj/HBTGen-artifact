@@ -1,23 +1,26 @@
-# torch.rand(1, dtype=torch.float32)
 import torch
 import torch.nn as nn
-
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Attempt to trigger CUDA allocator behavior with an extremely large allocation
-        # This mimics the test case from the issue's C++ extension
-        try:
-            _ = torch.empty(1 << 60, device='cuda')  # 1 EB allocation (exceeds typical GPU capacity)
-        except RuntimeError as e:
-            # The PR changes the error message here (from internal assert to OOM)
-            pass
-        return x + 1  # Dummy computation to ensure the module is valid
-
-def my_model_function():
-    # Returns the model instance
-    return MyModel()
-
-def GetInput():
-    # Returns a minimal valid input tensor (unused in problematic allocation logic)
-    return torch.rand(1, dtype=torch.float32)
-
+from torch.utils import cpp_extension
+cuda_source = """
+#include <c10/cuda/CUDACachingAllocator.h>
+void my_fun(void)
+{
+    size_t temp_storage_bytes = 18446744073708433663UL;
+    auto& caching_allocator = *::c10::cuda::CUDACachingAllocator::get();
+    auto temp_storage = caching_allocator.allocate(temp_storage_bytes);
+    return;
+}
+"""
+cpp_source = """
+    void my_fun(void);
+"""
+module = torch.utils.cpp_extension.load_inline(
+    name="cuda_test_extension",
+    cpp_sources=cpp_source,
+    cuda_sources=cuda_source,
+    functions="my_fun",
+    extra_cuda_cflags=["--extended-lambda"],
+    verbose=True,
+)
+module.my_fun()
+print('done')

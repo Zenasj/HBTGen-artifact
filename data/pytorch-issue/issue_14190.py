@@ -1,18 +1,7 @@
-# torch.rand(2, dtype=torch.float32)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Compare Float tensor with Long scalar (now works)
-        other = torch.tensor(0, dtype=torch.long)
-        comp_result = x > other  # Returns torch.bool tensor
-        return comp_result
+torch.FloatTensor([0.0, 1.0]) > 0  # works
+# tensor([0, 1], dtype=torch.uint8)
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Returns a Float tensor matching the example's input shape
-    return torch.rand(2, dtype=torch.float32)
-
+torch.FloatTensor([0.0, 1.0]) > torch.tensor(0) # fails
+# RuntimeError: Expected object of scalar type Float but got scalar type Long for argument #2 'other'

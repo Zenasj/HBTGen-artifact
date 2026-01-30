@@ -1,19 +1,16 @@
-# torch.rand(4, dtype=torch.uint16)
+import torch.nn as nn
+
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
+class TensorConstant(torch.nn.Module):
 
-    def forward(self, a):
-        # Division by torch.tensor(3) triggers dtype handling in export
-        return a / torch.tensor(3)
+  def __init__(self):
+    super().__init__()
 
-def my_model_function():
-    return MyModel()
+  def forward(self, a):
+    return a / torch.tensor(3)
 
-def GetInput():
-    # Generate random uint16 tensor matching the input shape (4 elements)
-    return torch.randint(0, 256, (4,), dtype=torch.uint16)
 
+arg = torch.arange(4).to(torch.uint16)
+
+print(torch.export.export(TensorConstant(), (arg,)))

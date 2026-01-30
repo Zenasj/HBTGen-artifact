@@ -1,43 +1,38 @@
-# tf.random.uniform((B, 5), dtype=tf.float32) ← Input shape inferred from keras.Input((5)) in example
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
-import tensorflow as tf
+from tensorflow import keras
+import h5py
+from tensorflow.python.keras.saving import hdf5_format
 
-class CustomLayer(tf.keras.layers.Layer):
-    """Combine multiple activations weighted by learnable variables (as per original example)."""
+
+class CustomLayer(keras.layers.Layer):
+    """combine multiple activations weighted by learnable variables"""
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
     def get_config(self):
-        # Returning empty dict as original example has no config parameters
         return {}
 
     def build(self, input_shape):
-        # No weights or parameters, so nothing to build here
-        super().build(input_shape)
+        return
 
     def call(self, inputs):
-        # Identity mapping as per original example
         return inputs
+    
+path = 'test.h5'
+    
+x = keras.Input((5))
+y = CustomLayer()(x)
+model = keras.Model(x, y)
+model.build(x)
+model.save(path)
 
-class MyModel(tf.keras.Model):
-    """
-    Model equivalent to the example:
-    Input shape: (None, 5)
-    Consists of a single CustomLayer identity layer.
-    """
-    def __init__(self):
-        super().__init__()
-        self.custom_layer = CustomLayer()
+# this works ok
+custom_objects = {'CustomLayer': CustomLayer}
+model = keras.models.load_model(path, custom_objects=custom_objects)
 
-    def call(self, inputs):
-        return self.custom_layer(inputs)
-
-def my_model_function():
-    # Returns an instance of MyModel as required
-    return MyModel()
-
-def GetInput():
-    # Return a random input matching expected input shape (batch size 1, 5 features)
-    # Using float32 dtype as is standard for TF models
-    return tf.random.uniform((1, 5), dtype=tf.float32)
-
+# this fails
+with h5py.File('test.h5', mode='r') as f:
+    saved_model = hdf5_format.load_model_from_hdf5(
+        f, custom_objects=custom_objects)

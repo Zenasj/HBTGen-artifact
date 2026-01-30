@@ -1,37 +1,66 @@
-# tf.random.uniform((BATCH, 784), dtype=tf.float32) ← From example input shape for the MNIST model
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
+from tensorflow.keras.mixed_precision import experimental as mixed_precision
 
-# This model is a reproduction of the key relevant example from the GitHub issue:
-# a simple MLP with two Dense layers: 4096 units with relu + 1 output unit with relu
-# Input: flattened MNIST images with shape (batch_size, 784)
-# This model was used to demonstrate loss overflow in mixed precision training and
-# the need to allow dynamic loss scale smaller than one.
+policy = mixed_precision.Policy('mixed_float16')
+mixed_precision.set_policy(policy)
+print('Compute dtype: %s' % policy.compute_dtype)
+print('Variable dtype: %s' % policy.variable_dtype)
+inputs = keras.Input(shape=(784,), name='digits')
+num_units = 4096
+dense1 = layers.Dense(num_units, activation='relu', name='dense_1')
+x = dense1(inputs)
+dense2 = layers.Dense(1, activation='relu', name='dense_2')
+outputs = dense2(x)
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        self.dense1 = layers.Dense(4096, activation='relu', name='dense_1')
-        self.dense2 = layers.Dense(1, activation='relu', name='dense_2')
+model = keras.Model(inputs=inputs, outputs=outputs)
 
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        return x
+(x_train, y_train), (x_test, y_test) = keras.datasets.mnist.load_data()
+x_train = x_train.reshape(60000, 784).astype('float32') / 255
 
-def my_model_function():
-    # Returns an instance of MyModel.
-    # Note: The original issue used mixed precision with loss scaling to handle float16 training.
-    # The model can be used with or without mixed precision, but here's the standard model.
-    return MyModel()
+optimizer = keras.optimizers.RMSprop()
+optimizer = mixed_precision.LossScaleOptimizer(optimizer, loss_scale='dynamic')
+loss_object = tf.keras.losses.MeanSquaredError()
+train_dataset = (tf.data.Dataset.from_tensor_slices((x_train, y_train))
+                 .shuffle(10000).batch(1024))
 
-def GetInput():
-    # Generates a random input tensor matching the expected shape: (batch_size, 784)
-    # Using a batch size of 32 for general use.
-    batch_size = 32
-    # Inputs in example are float32 normalized flattened MNIST images.
-    # Typical range is [0, 1], so uniform over that range.
-    return tf.random.uniform((batch_size, 784), minval=0., maxval=1., dtype=tf.float32)
+@tf.function
+def train_step(x, y):
+    with tf.GradientTape() as tape:
+        predictions = model(x)
+        loss = loss_object(y, predictions) * 10000.
+        scaled_loss = optimizer.get_scaled_loss(loss)
+    scaled_gradients = tape.gradient(scaled_loss, model.trainable_variables)
+    gradients = optimizer.get_unscaled_gradients(scaled_gradients)
+    optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+    return loss
 
+for epoch in range(2):
+    for i, (x, y) in enumerate(train_dataset):
+        mp_loss_scale = optimizer.loss_scale().numpy()
+        loss = train_step(x, y)
+        print('epoch {}: step {}: loss={}, loss_scale={}'.format(epoch, i, loss, mp_loss_scale))
+
+class LossScaleBelowOneOptimizer(tf.keras.mixed_precision.LossScaleOptimizer):
+
+  MULTIPLIER = 2 ** 10
+
+  @property
+  def actual_loss_scale(self):
+    return self.loss_scale / self.MULTIPLIER
+
+  def get_scaled_loss(self, loss):
+    if callable(loss):
+      def new_loss():
+        loss_val = loss()
+        return loss_val * tf.cast(self.actual_loss_scale, loss_val.dtype)
+      return new_loss
+    else:
+      return loss * tf.cast(self.actual_loss_scale, loss.dtype)
+
+  def get_unscaled_gradients(self, grads):
+    reciprocal = 1. / self.actual_loss_scale
+    return [g * reciprocal if g is not None else None for g in grads]

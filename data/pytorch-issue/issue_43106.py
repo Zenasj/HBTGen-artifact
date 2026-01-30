@@ -1,19 +1,8 @@
-# torch.rand(B, 3, 224, 224, dtype=torch.float32)
 import torch
-import torch.nn as nn
-import torchvision.models as models
+import torchvision
+import os
+torch.save(torchvision.models.resnet50(pretrained=True).state_dict(), 'resnet50.pt')
+state_dict = torch.hub.load_state_dict_from_url(f'file://{os.getcwd()}/resnet50.pt')
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.model = models.resnet50()  # Use ResNet50 as in the issue's example
-
-    def forward(self, x):
-        return self.model(x)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
-
+torch.save(torchvision.models.resnet50(pretrained=True).state_dict(), 'resnet50.pt', _use_new_zipfile_serialization=False)
+state_dict = torch.hub.load_state_dict_from_url(f'file://{os.getcwd()}/resnet50.pt')

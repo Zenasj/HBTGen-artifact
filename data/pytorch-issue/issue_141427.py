@@ -1,22 +1,55 @@
-# torch.rand(5, 3, 6, dtype=torch.complex128)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        # Apply FFT along dimension 1 (matches issue's example parameters)
-        fft_result = torch.fft.fft(x, dim=1, norm='forward')
-        # Apply conjugate_physical (matches stride-preserved operation)
-        conj_result = torch.conj_physical(fft_result)
-        return conj_result
+t = torch.zeros((5, 3, 6), dtype=torch.complex128, device="meta")
 
-def my_model_function():
-    return MyModel()
+def func(a):
+    print("a:")
+    print("size:", a.shape)
+    print("stride:", a.stride())
+    b = torch._fft_c2c(a, [1], 1, True)
+    print("b:")
+    print("size:", b.shape)
+    print("stride:", b.stride())
+    c = torch._conj_physical(b)
+    print("c:")
+    print("size:", c.shape)
+    print("stride:", c.stride())
+    return c
 
-def GetInput():
-    # Matches input shape and dtype from issue's test examples
-    return torch.rand(5, 3, 6, dtype=torch.complex128)
+func(t)
 
+import torch
+
+t = torch.zeros((5, 3, 6), dtype=torch.complex128, device='cuda')
+
+def func(a):
+    print("a:")
+    print("size:", a.shape)
+    print("stride:", a.stride())
+    b = torch.ops.aten._fft_c2c.default(a, [1], 1, True)
+    print("b:")
+    print("size:", b.shape)
+    print("stride:", b.stride())
+    c = torch.ops.aten._conj_physical.default(b)
+    print("c:")
+    print("size:", c.shape)
+    print("stride:", c.stride())
+    return c
+
+func(t)
+
+c = torch.ops.aten._conj_physical(b, out=torch.empty_like(b))
+
+import torch
+
+t = torch.zeros((5, 3, 6), dtype=torch.complex128, device="meta")
+
+def func(a):
+    b = torch._fft_c2c(a, [1], 1, True)
+    print(torch.ops.aten._conj_physical(b, out=torch.empty_strided((5, 3, 6), (1, 5, 15), dtype=torch.complex128, device='meta')).stride())
+    print(torch.conj_physical(b, out=torch.empty_strided((5, 3, 6), (1, 5, 15), dtype=torch.complex128, device='meta')).stride())
+
+func(t)
+
+(1, 5, 15)
+(18, 1, 3)

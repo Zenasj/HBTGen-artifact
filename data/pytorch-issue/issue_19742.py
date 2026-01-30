@@ -1,18 +1,16 @@
-# torch.rand(1, dtype=torch.float32)  # Inferred input shape (scalar tensor)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Creates new tensors each call leading to non-deterministic pickling
-        a = torch.tensor([1.0], dtype=torch.float32)
-        b = torch.tensor([1.0], dtype=torch.float32)
-        return a + b
+add11 = lambda: torch.Tensor([1]) + torch.Tensor([1])
+add11() == add11()  # return tensor([True])
+hash(add11()) == hash(add11())  # returns True
+pickle.dumps(add11()) == pickle.dumps(add11())  # returns False
+pickle.dumps(add11().data) == pickle.dumps(add11().data)  # returns False
+pickle.dumps(torch.Tensor([1])) == pickle.dumps(torch.Tensor([1]))  # returns False
 
-def my_model_function():
-    return MyModel()
+@functools.lru_cache(None)
+def add(x, y):
+ return x + y
 
-def GetInput():
-    # Returns a scalar tensor to trigger the non-deterministic pickle issue
-    return torch.rand(1, dtype=torch.float32)
-
+for _ in range(10):
+ tmp = add(torch.Tensor([1]), torch.Tensor([1]))
+add.cache_info().hits  # returns 0

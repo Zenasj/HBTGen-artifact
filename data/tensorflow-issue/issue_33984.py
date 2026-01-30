@@ -1,119 +1,120 @@
-# tf.random.uniform((B, input_dim), dtype=tf.float32) ← assuming input shape (batch_size, input_dim)
-
-import tensorflow as tf
-from tensorflow.keras import activations
-from tensorflow.keras.layers import Layer
-import tensorflow_probability as tfp
 import numpy as np
+import math
+import random
+from tensorflow.keras import layers
 
-# This global prior params must be set once for all layer instances
-def mixture_prior_params(sigma_1, sigma_2, pi):
-    # Create a tf.Variable for prior params to be trainable or trackable
-    # Use float32 dtype consistent with TF2 default
-    params = tf.Variable([sigma_1, sigma_2, pi], dtype=tf.float32, trainable=False, name='mixture_prior_params')
+from keras import backend as K
+from keras import activations, initializers
+from keras.layers import Layer
+import tensorflow as tf
+
+def mixture_prior_params(sigma_1, sigma_2, pi, return_sigma=False):
+    params = K.variable([sigma_1, sigma_2, pi], name='mixture_prior_params')
     sigma = np.sqrt(pi * sigma_1 ** 2 + (1 - pi) * sigma_2 ** 2)
     return params, sigma
 
-# Initialize global prior parameters (shared across layers)
+def log_mixture_prior_prob(w):
+    comp_1_dist = tf.distributions.Normal(0.0, prior_params[0])
+    comp_2_dist = tf.distributions.Normal(0.0, prior_params[1])
+    comp_1_weight = prior_params[2]    
+    return K.log(comp_1_weight * comp_1_dist.prob(w) + (1 - comp_1_weight) * comp_2_dist.prob(w))    
+
+# Mixture prior parameters shared across DenseVariational layer instances
 prior_params, prior_sigma = mixture_prior_params(sigma_1=1.0, sigma_2=0.1, pi=0.2)
 
-def log_mixture_prior_prob(w):
-    # Mixture of two zero-mean Normals with stddev from prior_params
-    comp_1_dist = tfp.distributions.Normal(loc=0.0, scale=prior_params[0])
-    comp_2_dist = tfp.distributions.Normal(loc=0.0, scale=prior_params[1])
-    comp_1_weight = prior_params[2]
-    prob = comp_1_weight * comp_1_dist.prob(w) + (1.0 - comp_1_weight) * comp_2_dist.prob(w)
-    # Add small epsilon to avoid log(0)
-    return tf.math.log(prob + 1e-8)
-
-class MyModel(tf.keras.Model):
-    def __init__(self, output_dim=128, kl_loss_weight=1e-6, activation='relu'):
-        super().__init__()
+class DenseVariational(Layer):
+    def __init__(self, output_dim, kl_loss_weight, activation=None, **kwargs):
         self.output_dim = output_dim
         self.kl_loss_weight = kl_loss_weight
-        self.activation_fn = activations.get(activation)
-        self.prior_params = prior_params  # reference to global prior
+        self.activation = activations.get(activation)
+        super().__init__(**kwargs)
 
-        # These weights will be created later in build(), but define placeholders here
-        self.kernel_mu = None
-        self.kernel_rho = None
-        self.bias_mu = None
-        self.bias_rho = None
+    def build(self, input_shape):  
+        self._trainable_weights.append(prior_params) 
 
-    def build(self, input_shape):
-        # input_shape: (batch_size, input_dim)
-        input_dim = input_shape[-1]
-
-        # We do NOT append prior_params as trainable weights here, prior_params is fixed variable
-
-        # kernel_mu: mean of weight posterior distribution
-        self.kernel_mu = self.add_weight(
-            name='kernel_mu',
-            shape=(input_dim, self.output_dim),
-            initializer=tf.random_normal_initializer(stddev=prior_sigma),
-            trainable=True
-        )
-        # bias_mu: mean of bias posterior
-        self.bias_mu = self.add_weight(
-            name='bias_mu',
-            shape=(self.output_dim,),
-            initializer=tf.random_normal_initializer(stddev=prior_sigma),
-            trainable=True
-        )
-        # kernel_rho: parameter to compute stddev for kernel posterior via softplus
-        self.kernel_rho = self.add_weight(
-            name='kernel_rho',
-            shape=(input_dim, self.output_dim),
-            initializer=tf.constant_initializer(-5.0),  # Initialized negative to have small initial stddev
-            trainable=True
-        )
-        # bias_rho: parameter for bias stddev
-        self.bias_rho = self.add_weight(
-            name='bias_rho',
-            shape=(self.output_dim,),
-            initializer=tf.constant_initializer(-5.0),
-            trainable=True
-        )
+        self.kernel_mu = self.add_weight(name='kernel_mu', 
+                                         shape=(input_shape[1], self.output_dim),
+                                         initializer=initializers.normal(stddev=prior_sigma),
+                                         trainable=True)
+        self.bias_mu = self.add_weight(name='bias_mu', 
+                                       shape=(self.output_dim,),
+                                       initializer=initializers.normal(stddev=prior_sigma),
+                                       trainable=True)
+        self.kernel_rho = self.add_weight(name='kernel_rho', 
+                                          shape=(input_shape[1], self.output_dim),
+                                          initializer=initializers.constant(0.0),
+                                          trainable=True)
+        self.bias_rho = self.add_weight(name='bias_rho', 
+                                        shape=(self.output_dim,),
+                                        initializer=initializers.constant(0.0),
+                                        trainable=True)
         super().build(input_shape)
 
-    def call(self, inputs, training=None):
-        # Compute posterior stddevs via softplus to ensure positivity
-        kernel_sigma = tf.math.softplus(self.kernel_rho)  # shape (input_dim, output_dim)
-        bias_sigma = tf.math.softplus(self.bias_rho)      # shape (output_dim,)
+    def call(self, x):
+        kernel_sigma = tf.math.softplus(self.kernel_rho)
+        kernel = self.kernel_mu + kernel_sigma * tf.random.normal(self.kernel_mu.shape)
 
-        # Sample weights and biases from posterior Gaussian: reparameterization trick
-        kernel_eps = tf.random.normal(shape=tf.shape(self.kernel_mu), dtype=self.kernel_mu.dtype)
-        bias_eps = tf.random.normal(shape=tf.shape(self.bias_mu), dtype=self.bias_mu.dtype)
-        sampled_kernel = self.kernel_mu + kernel_sigma * kernel_eps
-        sampled_bias = self.bias_mu + bias_sigma * bias_eps
+        bias_sigma = tf.math.softplus(self.bias_rho)
+        bias = self.bias_mu + bias_sigma * tf.random.normal(self.bias_mu.shape)
+                
+        self.add_loss(self.kl_loss(kernel, self.kernel_mu, kernel_sigma) + 
+                      self.kl_loss(bias, self.bias_mu, bias_sigma))
+        
+        return self.activation(K.dot(x, kernel) + bias)
 
-        # Add KL divergence loss weighted by kl_loss_weight to model loss
-        self.add_loss(self.kl_loss(sampled_kernel, self.kernel_mu, kernel_sigma))
-        self.add_loss(self.kl_loss(sampled_bias, self.bias_mu, bias_sigma))
-
-        # Linear transformation with sampled weights and biases
-        output = tf.linalg.matmul(inputs, sampled_kernel) + sampled_bias
-
-        # Apply activation
-        return self.activation_fn(output)
-
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0], self.output_dim)
+    
     def kl_loss(self, w, mu, sigma):
-        # Compute KL divergence between variational posterior Normal(mu, sigma)
-        # and mixture prior. KL = E_q[log q(w) - log p(w)]
-        variational_dist = tfp.distributions.Normal(loc=mu, scale=sigma)
-        log_qw = variational_dist.log_prob(w)
-        log_pw = log_mixture_prior_prob(w)
-        kl = tf.reduce_sum(log_qw - log_pw)
-        return self.kl_loss_weight * kl
+        variational_dist = tf.distributions.Normal(mu, sigma)
+        return self.kl_loss_weight * K.sum(variational_dist.log_prob(w) - log_mixture_prior_prob(w))
 
-def my_model_function():
-    # By default output_dim=128, kl_loss_weight=1e-6, activation='relu'
-    return MyModel(output_dim=128, kl_loss_weight=1e-6, activation='relu')
+import tensorflow as tf
+from tensorflow.keras import backend as K
+from tensorflow.keras import activations, initializers
+from tensorflow.keras.layers import Layer
+import tensorflow_probability as tfp
 
-def GetInput():
-    # Generate a random input tensor of shape (batch_size, input_dim)
-    # Assume input_dim = 64 for demonstration (not specified in issue)
-    batch_size = 32
-    input_dim = 64
-    return tf.random.uniform((batch_size, input_dim), dtype=tf.float32)
+def mixture_prior_params(sigma_1, sigma_2, pi, return_sigma=False):
+    params = K.variable([sigma_1, sigma_2, pi], name='mixture_prior_params')
+    sigma = np.sqrt(pi * sigma_1 ** 2 + (1 - pi) * sigma_2 ** 2)
+    return params, sigma
 
+def log_mixture_prior_prob(w):
+    comp_1_dist = tfp.distributions.Normal(0.0, prior_params[0])
+    comp_2_dist = tfp.distributions.Normal(0.0, prior_params[1])
+    comp_1_weight = prior_params[2]
+    return K.log(comp_1_weight * comp_1_dist.prob(w) + (1 - comp_1_weight) * comp_2_dist.prob(w))
+
+# Mixture prior parameters shared across DenseVariational layer instances
+prior_params, prior_sigma = mixture_prior_params(sigma_1=1.0, sigma_2=0.1, pi=0.2)
+
+class DenseVariational(Layer):
+    def __init__(self, output_dim, kl_loss_weight, activation=None, **kwargs):
+        self.output_dim = output_dim
+        self.kl_loss_weight = kl_loss_weight
+        self.activation = activations.get(activation)
+        super().__init__(**kwargs)
+        
+    def build(self, input_shape):
+        self._trainable_weights.append(prior_params)
+        self.kernel_mu = self.add_weight(name='kernel_mu', shape=(input_shape[1], self.output_dim), initializer=tf.random_normal_initializer(stddev=prior_sigma), trainable=True)
+        self.bias_mu = self.add_weight(name='bias_mu', shape=(self.output_dim,), initializer=tf.random_normal_initializer(stddev=prior_sigma), trainable=True)
+        self.kernel_rho = self.add_weight(name='kernel_rho', shape=(input_shape[1], self.output_dim), initializer=tf.constant_initializer(0.0), trainable=True)
+        self.bias_rho = self.add_weight(name='bias_rho', shape=(self.output_dim,), initializer=tf.constant_initializer(0.0), trainable=True)
+        super().build(input_shape)
+        
+    def call(self, x):
+        kernel_sigma = tf.math.softplus(self.kernel_rho)
+        kernel = self.kernel_mu + kernel_sigma * tf.random_normal_initializer(self.kernel_mu.shape)
+        bias_sigma = tf.math.softplus(self.bias_rho)
+        bias = self.bias_mu + bias_sigma * tf.random_normal_initializer(self.bias_mu.shape)
+        self.add_loss(self.kl_loss(kernel, self.kernel_mu, kernel_sigma) + self.kl_loss(bias, self.bias_mu, bias_sigma))
+        return self.activation(K.dot(x, kernel) + bias)
+        
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0], self.output_dim)
+        
+    def kl_loss(self, w, mu, sigma):
+        variational_dist = tfp.distributions.Normal(mu, sigma)
+        return self.kl_loss_weight * K.sum(variational_dist.log_prob(w) - log_mixture_prior_prob(w))

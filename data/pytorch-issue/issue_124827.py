@@ -1,32 +1,44 @@
-# torch.rand(1, 4, dtype=torch.float32)
+import torch.nn as nn
+
 import torch
-from torch import nn
+from torch._dynamo import compiled_autograd
 
 class CommOpGradientScaling(torch.autograd.Function):
-    _compiled_autograd_should_lift = False  # Fix from issue comments
-    
     @staticmethod
-    def forward(ctx, input_tensor, scale_gradient_factor):
+    def forward(
+        ctx, input_tensor, scale_gradient_factor
+    ) -> torch.Tensor:
         ctx.scale_gradient_factor = scale_gradient_factor
         return input_tensor
 
     @staticmethod
-    def backward(ctx, grad_output):
+    def backward(
+        ctx, grad_output
+    ):
         grad_output.mul_(ctx.scale_gradient_factor)
         return grad_output, None
 
-class MyModel(nn.Module):
-    def __init__(self):
+
+class Net(torch.nn.Module):
+    def __init__(self, checkpoint=False):
         super().__init__()
-        self.fc1 = nn.Linear(4, 4)
-        
+        self.fc1 = torch.nn.Linear(4, 4)
+
     def forward(self, x):
         x = CommOpGradientScaling.apply(x, 0.5)
         return self.fc1(x)
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    return torch.randn(1, 4, requires_grad=True)
+model = Net()
+# model = torch.compile(model)
+input = torch.randn([1, 4], requires_grad=True)
 
+def compiler_fn(gm):
+    return torch.compile(gm, backend="aot_eager", fullgraph=True)
+
+with compiled_autograd.enable(compiler_fn):
+    loss = model(input).sum()
+    loss.backward()
+
+class CommOpGradientScaling(torch.autograd.Function):
+    _compiled_autograd_should_lift = False

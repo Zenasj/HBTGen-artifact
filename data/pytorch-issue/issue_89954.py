@@ -1,36 +1,15 @@
-# torch.rand(B, 1, 2, 384, dtype=torch.float)  # Inferred input shape
+import random
 
-import numpy as np
-import torch
-import torch.nn as nn
+import numpy as np                                                                          
+import torch                                                                                       
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # No specific layers or operations are defined in the issue, so we'll use an identity module
-        self.identity = nn.Identity()
+def sample(inputs: torch.tensor, num_samples: int):                                       
+    samples = np.random.choice(inputs.shape[0], num_samples) 
+    inputs = inputs[samples]                                                              
+    return inputs                                                                                  
+                                   
+# np_inputs is of type np.ndarray with shape (-1, 2, 384)                                                                    
 
-    def forward(self, x):
-        return self.identity(x)
+inputs = torch.tensor(np_inputs, dtype=torch.float, device=torch.device('mps')).view(-1, 1, 2, 384)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def sample(inputs: torch.Tensor, num_samples: int):
-    samples = np.random.choice(inputs.shape[0], num_samples)
-    inputs = inputs[samples]
-    return inputs
-
-def GetInput():
-    # Generate a random tensor with shape (B, 1, 2, 384) on the CPU
-    B = 16  # Example batch size
-    inputs = torch.rand(B, 1, 2, 384, dtype=torch.float)
-    return inputs
-
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# sampled_input = sample(input_tensor, num_samples=8)
-# output = model(sampled_input)
-
+inputs = sample(inputs, num_samples)

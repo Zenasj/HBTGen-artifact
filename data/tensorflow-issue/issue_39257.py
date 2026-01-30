@@ -1,45 +1,58 @@
-# tf.random.uniform((B, 61, 69), dtype=tf.float32) ← input shape inferred from train_tokens_X numpy array shape
-
-import tensorflow as tf
 import math
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
-# The original model in the issue is a sequential model with:
-# - 3 GRU layers (128 units, no bias, first two return sequences)
-# - Flatten
-# - Dense with softmax output (output_size=3943)
-# The input shape is (None, 61, 69) where 61 is sequence length, 69 is feature size
-# Here B=batch size is dynamic.
+import tensorflow as tf 
+import numpy as np 
 
-class MyModel(tf.keras.Model):
-    def __init__(self, output_size=3943, max_id=68):
-        super().__init__()
-        self.gru1 = tf.keras.layers.GRU(128, return_sequences=True, use_bias=False,
-                                        input_shape=(None, max_id + 1))
-        self.gru2 = tf.keras.layers.GRU(128, return_sequences=True, use_bias=False)
-        self.gru3 = tf.keras.layers.GRU(128, use_bias=False)
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense = tf.keras.layers.Dense(output_size, activation="softmax")
+train_tokens_X = np.zeros((1066673, 61, 69), dtype=np.float32)
+train_tokens_X[:] = np.eye(69)[:61,:]
 
-    def call(self, inputs, training=False):
-        x = self.gru1(inputs, training=training)
-        x = self.gru2(x, training=training)
-        x = self.gru3(x, training=training)
-        x = self.flatten(x)
-        output = self.dense(x)
-        return output
+train_target = np.zeros((1066673, 3943), dtype=np.float32)
+train_target[:,2] = 1
+
+valid_tokens_X= np.zeros((133366, 61, 69), dtype=np.float32)
+valid_tokens_X[:] = np.eye(69)[:61,:]
+
+valid_target= np.zeros((133366, 3943), dtype=np.float32)
+valid_target[:,2] = 1
+
+output_size = 3943
+max_id = 68
+batch_size = 256
+
+class Sequencer(tf.keras.utils.Sequence):
+
+    def __init__(self, x_set, y_set, batch_size):
+        self.x, self.y = x_set, y_set
+        self.batch_size = batch_size
+
+    def __len__(self):
+        return math.ceil(len(self.x) / self.batch_size)
+
+    def __getitem__(self, idx):
+        batch_x = self.x[idx * self.batch_size:(idx + 1) *
+        self.batch_size]
+        batch_y = self.y[idx * self.batch_size:(idx + 1) *
+        self.batch_size]
+
+        return np.array(batch_x), np.array(batch_y)
 
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+train_generator = Sequencer(train_tokens_X, train_target, batch_size)
+valid_generator = Sequencer(valid_tokens_X, valid_target, batch_size)
 
+mirrored_strategy = tf.distribute.MirroredStrategy(cross_device_ops=tf.distribute.HierarchicalCopyAllReduce())
 
-def GetInput():
-    # Return a random tensor with shape matching model input: (batch_size, 61, 69)
-    # Use batch size 256 as in original code
-    batch_size = 256
-    seq_length = 61
-    feature_size = 69
-    # Float32 tensor with uniform distribution
-    return tf.random.uniform((batch_size, seq_length, feature_size), dtype=tf.float32)
+with mirrored_strategy.scope():
+    model = keras.models.Sequential([
+        keras.layers.GRU(128, return_sequences=True, input_shape=[ None, max_id+1], use_bias=False),
+        keras.layers.GRU(128, return_sequences=True, use_bias=False),
+        keras.layers.GRU(128, use_bias=False),
+        keras.layers.Flatten(),
+        keras.layers.Dense(output_size, activation="softmax")
+    ])
+    model.compile(loss=[focal_loss_umbertogriffo.categorical_focal_loss(alpha=.25, gamma=2)], optimizer="adam", metrics=['accuracy'])
 
+history = model.fit(train_generator, validation_data=valid_generator, epochs=25, callbacks = callbacks, max_queue_size=10, workers=2, use_multiprocessing=True)

@@ -1,36 +1,24 @@
-# tf.random.uniform((2, 17, 17, 768), dtype=tf.float32) ← inferred input shape from the issue example
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
+import os
+import numpy as np
+try:
+  arg_0_0 = 1e+20
+  arg_0_1 = True
+  arg_0 = [arg_0_0,arg_0_1,]
+  strides_0 = 2
+  strides_1 = 2
+  strides = [strides_0,strides_1,]
+  arg_class = tf.keras.layers.MaxPooling2D(arg_0,strides=strides,)
+  arg_input_0_tensor = tf.random.uniform([2, 17, 17, 768], dtype=tf.float32)
+  arg_input_0 = tf.identity(arg_input_0_tensor)
+  arg_input = [arg_input_0,]
+  out = arg_class(*arg_input)
+except Exception as e:
+  print("Error:"+str(e))
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # According to the issue, MaxPooling2D is constructed with a very large pool_size [1e+20, True]
-        # which is invalid and leads to crashes.
-        # We'll interpret intention as a large pooling window on a 2D input.
-        # True is invalid for pool_size, so we replace with a typical valid large integer pooling size.
-        # We assume pool_size should be an int or tuple of 2 ints.
-        # Use a large but reasonable pool size to replicate intended stress:
-        
-        # Interpreting the problematic input as pool_size=[1e20, True]
-        # We replace with pool_size=(17,17) (full spatial extent), typical for input 17x17.
-        # strides are [2,2] as per the issue.
-        self.pool_size = (17, 17)
-        self.strides = (2, 2)
-        self.max_pool = tf.keras.layers.MaxPooling2D(pool_size=self.pool_size,
-                                                     strides=self.strides)
-        
-    def call(self, inputs):
-        # Single input tensor of shape (2, 17, 17, 768)
-        return self.max_pool(inputs)
-
-def my_model_function():
-    # Return an instance of MyModel.
-    # No special weights to load, so simple initialization.
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input matching expected input shape for MyModel:
-    # batch size=2, height=17, width=17, channels=768, dtype=float32.
-    return tf.random.uniform(shape=(2, 17, 17, 768), dtype=tf.float32)
+### Relevant log output
 

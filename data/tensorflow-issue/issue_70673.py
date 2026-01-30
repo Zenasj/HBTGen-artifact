@@ -1,103 +1,114 @@
-# tf.random.uniform((B, 512, 512, 3), dtype=tf.float32)  # B=batch size
-
-import tensorflow as tf
-from tensorflow.keras import Model, layers
-from tensorflow.keras.applications import VGG16
-from tensorflow.keras.layers import Flatten, Dense, Reshape, Dropout
-from tensorflow.keras.metrics import Metric
 import numpy as np
+import tensorflow as tf
+from tensorflow import keras
 
-# Assumptions and inferred constants based on the issue description:
-# - bbox output shape: (6,4)  -> bbox_dim1=6, bbox_dim2=4
-# - class_label output shape: (6,3) -> label_dim1=6, label_dim2=3
-# - number of classes for IoU metric: 3 (consistent with shape and categories)
-# Note: The bbox regression output uses sigmoid activation consistent with normalized coords.
-# The class_label head uses softmax activation and categorical crossentropy loss.
-# We will encapsulate the original model in MyModel.
-# Also implement a custom IoU metric wrapper that handles one-hot label input and bounding boxes,
-# to illustrate the likely comparison of metrics and the place where ScatterNd error might originate.
+base_model = VGG16(weights='imagenet', include_top=False, input_shape=(512, 512, 3))
 
-bbox_dim1 = 6
-bbox_dim2 = 4
-label_dim1 = 6
-label_dim2 = 3
-num_classes = 3
+# Freeze convolutional layers
+for layer in base_model.layers:
+    layer.trainable = False
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        self.base_model = VGG16(weights='imagenet', include_top=False, input_shape=(512, 512, 3))
-        # Freeze conv layers
-        for layer in self.base_model.layers:
-            layer.trainable = False
-        
-        self.flatten = Flatten()
+flatten = base_model.output
+flatten = Flatten()(flatten)
 
-        # Bounding box head
-        self.bbox_dense1 = Dense(128, activation="relu")
-        self.bbox_dense2 = Dense(64, activation="relu")
-        self.bbox_dense3 = Dense(32, activation="relu")
-        self.bbox_output = Dense(bbox_dim1 * bbox_dim2, activation="sigmoid")
-        self.bbox_reshape = Reshape((bbox_dim1, bbox_dim2))
+# FC layer for bounding box prediction
+bboxHead = Dense(128, activation="relu")(flatten)
+bboxHead = Dense(64, activation="relu")(bboxHead)
+bboxHead = Dense(32, activation="relu")(bboxHead)
+bboxHead = Dense(bbox_dim1*bbox_dim2, activation="sigmoid")(bboxHead)
+bboxHead = Reshape((bbox_dim1, bbox_dim2), name="bounding_box")(bboxHead)
 
-        # Class label head
-        self.class_dense1 = Dense(512, activation="relu")
-        self.class_dropout1 = Dropout(0.5)
-        self.class_dense2 = Dense(512, activation="relu")
-        self.class_dropout2 = Dropout(0.5)
-        self.class_output = Dense(label_dim1 * label_dim2, activation="softmax")
-        self.class_reshape = Reshape((label_dim1, label_dim2))
+# Second fully-connected layer head to predict the class label
+softmaxHead = Dense(512, activation="relu")(flatten)
+softmaxHead = Dropout(0.5)(softmaxHead)
+softmaxHead = Dense(512, activation="relu")(softmaxHead)
+softmaxHead = Dropout(0.5)(softmaxHead)
+softmaxHead = Dense(label_dim1*label_dim2, activation="softmax")(softmaxHead)
+softmaxHead = Reshape((label_dim1, label_dim2), name="class_label")(softmaxHead)
 
-        # We instantiate an IoU metric for demonstration, but as in the original code,
-        # it can expect integer labels, so the mismatch may cause the ScatterNd error.
-        self.iou_metric = tf.keras.metrics.IoU(num_classes=num_classes, target_class_ids=[0,1])
+# Create the model
+model = Model(inputs=base_model.input, outputs=[bboxHead, softmaxHead])
 
-    @tf.function(jit_compile=True)
-    def call(self, inputs, training=False):
-        x = self.base_model(inputs, training=False)
-        x = self.flatten(x)
+losses = {
+    "class_label": "categorical_crossentropy",
+    "bounding_box": "mean_squared_error",
+}
 
-        bbox = self.bbox_dense1(x)
-        bbox = self.bbox_dense2(bbox)
-        bbox = self.bbox_dense3(bbox)
-        bbox = self.bbox_output(bbox)
-        bbox = self.bbox_reshape(bbox)
+metrics = {
+    "class_label": "categorical_accuracy",
+    "bounding_box": tf.keras.metrics.IoU(num_classes, target_class_ids = [0, 1])
+}
 
-        class_label = self.class_dense1(x)
-        if training:
-            class_label = self.class_dropout1(class_label, training=training)
-        class_label = self.class_dense2(class_label)
-        if training:
-            class_label = self.class_dropout2(class_label, training=training)
-        class_label = self.class_output(class_label)
-        class_label = self.class_reshape(class_label)
+model.compile(optimizer= Adam(learning_rate=0.001), loss=losses, metrics=metrics)
 
-        # Return dict of outputs to match original model signature
-        return {"bounding_box": bbox, "class_label": class_label}
+history = model.fit(
+    train_dataset,
+    validation_data=test_dataset,
+    epochs=1,
+    steps_per_epoch=len(train_images) // 10,
+    validation_steps=len(test_images) // 10,
+    verbose=1
+)
 
-    @tf.function(jit_compile=True)
-    def compute_iou_metric(self, y_true, y_pred):
-        # This function emulates where ScatterNd error could appear if y_true or y_pred have incompatible shapes
-        # The original IoU metric expects sparse integer labels (class indices), but we provide one-hot labels,
-        # so this mismatch might cause that scatter error in graph mode.
+class Dataloader():
+    def __init__(self, annotation_path, image_path) -> None:
+        self.annotation_path = annotation_path
+        self.image_path = image_path
 
-        # Convert one-hot y_true to class indices for IoU metric
-        true_class_indices = tf.argmax(y_true, axis=-1)
-        pred_class_indices = tf.argmax(y_pred, axis=-1)
+    def load(self):
+        images = []
+        labels = []
+        bboxes = []
 
-        self.iou_metric.update_state(true_class_indices, pred_class_indices)
-        return self.iou_metric.result()
+        #annotation loader
+        for file in os.listdir(self.annotation_path):
+            annotation = load_annotations(self.annotation_path, file)
+            labels.append(tuple([d['class'] for d in annotation]))
+            bboxes.append(tuple((d['x1'], d['y1'], d['x2'], d['y2']) for d in annotation))
 
-def my_model_function():
-    # Returns a fresh instance of MyModel
-    return MyModel()
+        #image loader
+        for file in os.listdir(self.image_path):
+            if file.endswith('.jpg'):
+                img = cv2.imread(os.path.join(self.image_path, file))
+                img = cv2.resize(img, (512,512))
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                images.append(img)
 
-def GetInput():
-    # Returns a random input tensor compatible with MyModel:
-    # Shape: (batch_size, 512, 512, 3), dtype float32
-    batch_size = 10  # typical batch size used in the issue dataset
+        categories = ['Hotspots', 'Hotstring', 'Bypass Diode active']
+        labels = tf.ragged.constant(labels)
+        layer = StringLookup(vocabulary=categories)
+        indices = layer(labels)
+        enc_layer = CategoryEncoding(num_tokens=3, output_mode="one_hot")
+        indices = enc_layer(indices)
+        labels = indices.to_tensor()
+        bboxes = tf.ragged.constant(bboxes, dtype=tf.float32)
+        bboxes = bboxes.to_tensor()
 
-    # Random float image input 0-1
-    inputs = tf.random.uniform((batch_size, 512, 512, 3), dtype=tf.float32)
-    return inputs
+        return images, labels, bboxes
 
+
+def data_generator(images, targets, batch_size=10):
+    while True:
+        for i in range(0, len(images), batch_size):
+            batch_images = images[i:i+batch_size]
+            batch_labels = targets[1][i:i+batch_size]
+            batch_bboxes = targets[0][i:i+batch_size]
+            yield np.array(batch_images), {"bounding_box": np.array(batch_bboxes), "class_label": np.array(batch_labels)}
+
+def create_dataset(images, targets, batch_size=10):
+    n, m = targets[0][0].shape
+    p, q = targets[1][0].shape
+    dataset = tf.data.Dataset.from_generator(
+        lambda: data_generator(images, targets, batch_size),
+        output_signature=(
+            tf.TensorSpec(shape=(None, 512, 512, 3), dtype=tf.float32), 
+            {
+                "bounding_box": tf.TensorSpec(shape=(batch_size, n, m), dtype=tf.float32),
+                "class_label": tf.TensorSpec(shape=(batch_size, p, q), dtype=tf.float32)
+            }
+        )
+    )
+    return dataset
+
+train_dataset = create_dataset(train_images, train_targets, batch_size=10)
+test_dataset = create_dataset(test_images, test_targets, batch_size=10)

@@ -1,19 +1,13 @@
-import torch
 import torch.nn as nn
+
+import torch
 import torch.nn.functional as F
 
-# Input is a tuple of three tensors each with shape (3, 592, 4, 49, 32), dtype=torch.float32
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        q, k, v = inputs
-        return F.scaled_dot_product_attention(q, k, v)
+device = torch.device('mps')
 
-def my_model_function():
-    return MyModel()
+## To provoke the error, an non-continguous tensor needs to be created
+q = torch.rand(3, 592, 4, 49, 32).to(device)
+k = torch.rand(3, 592, 4, 49, 32).to(device)
+v = torch.rand(3, 592, 4, 49, 32).to(device)
 
-def GetInput():
-    q = torch.rand(3, 592, 4, 49, 32)
-    k = torch.rand(3, 592, 4, 49, 32)
-    v = torch.rand(3, 592, 4, 49, 32)
-    return (q, k, v)
-
+x = F.scaled_dot_product_attention(q, k, v)

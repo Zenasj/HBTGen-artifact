@@ -1,24 +1,16 @@
-# torch.rand(B, 10, dtype=torch.float32)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.g1 = nn.Linear(10, 20)
-        self.g2 = nn.Linear(20, 30)
-        self.g3 = nn.Linear(30, 40)
+def f(x):
+  x = g1(x)
+  x = g2(x)
+  return g3(x)
 
-    def forward(self, x):
-        x = self.g1(x)
-        x = self.g2(x)
-        x = self.g3(x)
-        return x
+def _check_triton_bf16_support(graph: GraphLowering) -> None:
+    def warn_and_skip(device) -> None:
+        from torch._dynamo.exc import SkipFrame
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    B = 1  # Batch size can be adjusted as needed
-    return torch.rand(B, 10, dtype=torch.float32)
-
+        device_props = torch.cuda.get_device_properties(device)
+        warnings.warn(
+            f"{device_props.name} does not support bfloat16 compilation natively, skipping"
+        )
+        raise SkipFrame("BF16 is not supported")

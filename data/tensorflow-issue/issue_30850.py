@@ -1,66 +1,54 @@
-# tf.random.uniform((B, 1), dtype=tf.float32)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
+
+import numpy as np, tensorflow as tf
+
+strategy = tf.distribute.MirroredStrategy()
+path = "/tmp/model.hdf5"
+
+with strategy.scope():
+    # Construct model.
+    model = tf.keras.models.Sequential([tf.keras.layers.Dense(1, input_shape=(1,))])
+    model.compile(optimizer=tf.keras.optimizers.SGD(), loss=tf.keras.metrics.mse)
+    # Do a fit so the optimizer weights are created. Removing this lets the restore succeed.
+    model.fit(np.array([[1]]), np.array([[1]]))
+    # Save and attempt to restore.
+    tf.keras.models.save_model(model, path)
+    tf.keras.models.load_model(path)
+
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Simple sequential-like model with one Dense layer (units=1)
-        # This matches the example from the issue with input_shape=(1,)
-        self.dense = tf.keras.layers.Dense(1)
+strategy = tf.distribute.MirroredStrategy()
 
-    def call(self, inputs, training=False):
-        return self.dense(inputs)
+with strategy.scope():
+    model = tf.keras.models.Sequential([tf.keras.layers.Dense(1, input_shape=(1,))])
+    model.compile(optimizer=tf.keras.optimizers.SGD(), loss=tf.keras.metrics.mse)
+tf.keras.models.save_model(model, "/tmp/model", save_format="tf")
 
-def my_model_function():
-    """
-    Returns an instance of MyModel compiled with SGD optimizer and MSE loss.
-    This reflects the typical model construction in the issue.
-    """
-    model = MyModel()
-    model.compile(
-        optimizer=tf.keras.optimizers.SGD(),
-        loss=tf.keras.losses.MeanSquaredError(),
-    )
-    return model
+import numpy as np, tensorflow as tf
 
+strategy = tf.distribute.MirroredStrategy()
+path = "/tmp/model"
+
+with strategy.scope():
+    model = tf.keras.models.Sequential([tf.keras.layers.Dense(1, input_shape=(1,))])
+    model.compile(optimizer=tf.keras.optimizers.SGD(), loss=tf.keras.metrics.mse)
+    model.fit(np.array([[1]]), np.array([[1]]))
+    tf.contrib.saved_model.save_keras_model(model, path)
+
+    model = tf.contrib.saved_model.load_keras_model(path)
+    model.compile(optimizer=tf.keras.optimizers.SGD(), loss=tf.keras.metrics.mse)
+    model.fit(np.array([[1]]), np.array([[1]]))
 
 class LoadWeightsCallback(tf.keras.callbacks.Callback):
-    """
-    Keras callback to load weights and optimizer weights once training begins.
-
-    This is needed because optimizer weights are not created until the first training step.
-    Copies weights and optimizer weights into the distributed strategy model after they've been loaded.
-
-    Note:
-    - _chief_worker_only = False to run on all replicas, as per issue context.
-    """
     _chief_worker_only = False
 
     def __init__(self, weights, optimizer_weights):
-        super().__init__()
         self.weights = weights
         self.optimizer_weights = optimizer_weights
 
     def on_train_begin(self, logs=None):
-        # Set model weights and optimizer weights once training begins,
-        # ensuring weights structures are properly initialized.
         self.model.set_weights(self.weights)
-        # Safely set optimizer weights if they exist and match expected shapes.
-        if self.optimizer_weights:
-            try:
-                self.model.optimizer.set_weights(self.optimizer_weights)
-            except ValueError:
-                # This can happen if optimizer weights are not yet initialized.
-                # So we skip setting optimizer weights here.
-                pass
-
-
-def GetInput():
-    """
-    Returns a random batch of inputs compatible with MyModel.
-    MyModel expects input shape (batch_size, 1) with float32 dtype,
-    mimicking the input_shape=(1,) from the issue examples.
-    """
-    B = 8  # Batch size chosen arbitrarily
-    return tf.random.uniform((B, 1), dtype=tf.float32)
-
+        self.model.optimizer.set_weights(self.optimizer_weights)

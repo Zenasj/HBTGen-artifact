@@ -1,14 +1,17 @@
-# torch.rand(B, C) ← Add a comment line at the top with the inferred input shape
-
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+py
+import torch
+
+torch.manual_seed(420)
+
+class Model(torch.nn.Module):
+
     def __init__(self):
-        super(MyModel, self).__init__()
-        self.linear1 = nn.Linear(10, 20)
-        self.linear2 = nn.Linear(20, 30)
-        self.relu = nn.ReLU()
+        super(Model, self).__init__()
+        self.linear1 = torch.nn.Linear(10, 20)
+        self.linear2 = torch.nn.Linear(20, 30)
+        self.relu = torch.nn.ReLU()
 
     def forward(self, x):
         x = self.linear1(x)
@@ -19,18 +22,21 @@ class MyModel(nn.Module):
         x = self.relu(x)
         return x
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+device = 'cuda'
+batch_size = 2
+x = torch.randn(batch_size, 10).to(device)
+func = Model().to(device)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    batch_size = 2
-    input_shape = (batch_size, 10)
-    return torch.randn(input_shape)
+with torch.no_grad():
+    func.train(False)
+    jit_func = torch.compile(func)
 
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
+    res1 = func(x) # without jit
+    print(res1)
+    # succeed
 
+    res2 = jit_func(x)
+    # /_inductor/pattern_matcher.py", line 869, in stable_topological_sort
+    # assert not waiting and len(ready) == len(graph.nodes)
+    # torch._dynamo.exc.BackendCompilerFailed: backend='inductor' raised:
+    # AssertionError:

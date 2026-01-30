@@ -1,21 +1,16 @@
-# torch.rand(1, 3, 1, 1, dtype=torch.float32)  # Inferred input shape (batch, channels, height, width)
+from threading import Thread
+
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-    
-    def forward(self, x):
-        # Create a tensor using the default device (critical for demonstrating threading issue)
-        default_tensor = torch.ones_like(x) * 2  # Uses current default device
-        return x + default_tensor
+def task1():
+    torch.set_default_device('cuda')
+    print(torch.tensor([1, 2, 3]).device)
 
-def my_model_function():
-    # Returns an instance of MyModel with no special initialization required
-    return MyModel()
 
-def GetInput():
-    # Returns a random input tensor matching the expected shape
-    return torch.rand(1, 3, 1, 1, dtype=torch.float32)
+if __name__ == '__main__':
+    torch.set_default_device('cpu')
+    print(torch.tensor([1, 2, 3]).device)
 
+    t1 = Thread(target=task1)
+    t1.start()
+    t1.join()

@@ -1,23 +1,19 @@
-# torch.rand(1, 1, 1, dtype=torch.float)
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def __init__(self, kernel_size, stride, padding):
-        super().__init__()
-        self.kernel_size = kernel_size
-        self.stride = stride
-        self.padding = padding
+import torch
 
-    def forward(self, x):
-        return F.avg_pool1d(x, self.kernel_size, self.stride, self.padding)
+@torch.compile
+def avg_pool1d(input, kernel_size, stride=None, padding=0):
+    return torch.nn.functional.avg_pool1d(input, kernel_size, stride, padding)
 
-def my_model_function():
-    # Initialize with parameters from the issue's example
-    return MyModel(kernel_size=4, stride=3, padding=2)
+input = torch.tensor([[1.7641]])
+kernel_size = 4
+stride = 3
+padding = 2
 
-def GetInput():
-    # Input shape (B, C, L) = (1,1,1) as in the issue's example
-    return torch.rand(1, 1, 1)
-
+input = input.cuda()
+print(f"[CUDA] AvgPool1d in compiled mode: {avg_pool1d(input, kernel_size, stride, padding)}")
+print(f"[CUDA] AvgPool1d in eager mode: {torch.nn.functional.avg_pool1d(input, kernel_size, stride, padding)}")
+input = input.cpu()
+print(f"[CPU] AvgPool1d in compiled mode: {avg_pool1d(input, kernel_size, stride, padding)}")
+print(f"[CPU] AvgPool1d in eager mode: {torch.nn.functional.avg_pool1d(input, kernel_size, stride, padding)}")

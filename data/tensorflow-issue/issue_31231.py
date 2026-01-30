@@ -1,28 +1,41 @@
-# tf.random.uniform((B, 10), dtype=tf.float32) for each input with batch size B and feature size 10
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
+import numpy as np
 import tensorflow as tf
+#strategy = tf.distribute.MirroredStrategy()
+strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define two inputs, processed individually then concatenated
-        self.dense_concat = tf.keras.layers.Concatenate()
-        self.dense_output = tf.keras.layers.Dense(1, activation="relu")
 
-    def call(self, inputs, training=False):
-        # inputs is expected to be a tuple of two tensors
-        inputA, inputB = inputs
-        x = self.dense_concat([inputA, inputB])
-        return self.dense_output(x)
+def generator():
+      while True:
+        yield np.ones([10, 10], np.float32), np.ones([10, 1], np.float32)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
 
-def GetInput():
-    # Generate a random batch of data that matches the expected input format:
-    # A tuple with two tensors of shape (batch_size, 10) each, dtype float32.
-    batch_size = 32  # typical batch size for training
-    inputA = tf.random.uniform((batch_size, 10), dtype=tf.float32)
-    inputB = tf.random.uniform((batch_size, 10), dtype=tf.float32)
-    return (inputA, inputB)
+with strategy.scope():
+  model = tf.keras.models.Sequential()
+  model.add(tf.keras.layers.Dense(1, input_shape=(10,), activation="relu"))
+  model.compile('Adam', 'mae')
+  model.fit(generator(), steps_per_epoch=1000, epochs=10)
 
+import numpy as np
+import tensorflow as tf
+#strategy = tf.distribute.MirroredStrategy()
+strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
+
+
+def generator():
+    while True:
+        yield [np.ones([10, 10], np.float32), np.ones([10, 10], np.float32)], np.ones([10, 1], np.float32)
+
+
+with strategy.scope():
+    inputA = tf.keras.layers.Input(shape=(10,))
+    inputB = tf.keras.layers.Input(shape=(10,))
+
+    output = tf.keras.layers.Concatenate()([inputA, inputB])
+    output = tf.keras.layers.Dense(1, input_shape=(10,), activation="relu")(output)
+    model = tf.keras.models.Model(inputs=[inputA, inputB], outputs=output)
+    model.compile('Adam', 'mae')
+    model.fit(generator(), steps_per_epoch=1000, epochs=10)

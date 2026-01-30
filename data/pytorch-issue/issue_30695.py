@@ -1,23 +1,23 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # e.g., (1, 3, 100, 100)
+import torch.nn as nn
 
+from typing import Optional
 import torch
 from torch import nn
-
-class MyModel(nn.Module):
+    
+class Model(nn.Module):
+    
     def __init__(self, op=None):
         super().__init__()
-        self.op = op  # Can be None or a torch.nn.Module instance
+        self.op = op
     
-    def forward(self, x):
+    def forward(self, input):
         if self.op is not None:
-            x = self.op(x)
-        return x
+            input = self.op(input)
+        return input
 
-def my_model_function():
-    # Returns a model instance with op=None (no operation)
-    return MyModel()
+with_op = Model(nn.ReLU())
+with_op_js = torch.jit.script(with_op)
 
-def GetInput():
-    # Returns a random input tensor matching the model's expected shape
-    return torch.rand(1, 3, 100, 100, dtype=torch.float32)
-
+with_none = Model(None)
+with_none_js = torch.jit.script(with_none)
+print(with_none_js.graph)

@@ -1,27 +1,19 @@
-# tf.random.uniform((B, 16), dtype=tf.float32) ← Input shape inferred from example tensor shape (32,16)
+import random
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
-import tensorflow as tf
+from tensorflow.keras.layers import Input, Dense
+from tensorflow.keras.models import Model
+from tensorflow.python.keras import backend as K
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define a simple sequential-like structure matching the example:
-        # Input (16,) -> Dense(16) -> Dense(16)
-        self.dense1 = tf.keras.layers.Dense(16)
-        self.dense2 = tf.keras.layers.Dense(16)
-    
-    def call(self, inputs, training=None):
-        # 'training' argument to support typical Keras learning_phase semantics (though unused here)
-        x = self.dense1(inputs)
-        out = self.dense2(x)
-        return out
+ipt = Input((16,))
+x   = Dense(16)(ipt)
+out = Dense(16)(x)
+model = Model(ipt, out)
+model.compile('sgd', 'mse')
 
-def my_model_function():
-    # Return an instantiated MyModel
-    return MyModel()
-
-def GetInput():
-    # Produce a random input tensor matching (batch_size, 16)
-    # Batch size: 32 as in example
-    return tf.random.uniform((32, 16), dtype=tf.float32)
-
+outs_fn = K.function([model.input, K.symbolic_learning_phase()],
+                     [model.layers[1].output])  # error
+x = np.random.randn(32, 16)
+print(outs_fn([x, True]))

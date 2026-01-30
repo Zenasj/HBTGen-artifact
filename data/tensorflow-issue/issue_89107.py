@@ -1,25 +1,14 @@
-# tf.random.uniform((), dtype=tf.float32) ← Input is a scalar float (0-dimensional tensor)
-
 import tensorflow as tf
+import numpy as np
+import unittest
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # No trainable parameters, simple conversion check model
-    
-    def call(self, inputs):
-        # Simulate the behavior of tf.convert_to_tensor on a scalar float input
-        # Here inputs is expected to be a tf.Tensor with dtype float32,
-        # output is the same tensor to verify conversion and equality behavior.
-        output = tf.convert_to_tensor(inputs)
-        return output
-
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Return a scalar float tensor similar to the float_data = 3.14 example
-    # Use a tf.float32 scalar tensor representing the float value to test convert_to_tensor equivalence.
-    return tf.constant(3.14, dtype=tf.float32)
-
+class TestConvertToTensor(unittest.TestCase):
+    def test_convert_float(self):
+        # Test conversion of a float to a tensor
+        float_data = 3.14
+        tensor = tf.convert_to_tensor(float_data)
+        self.assertTrue(isinstance(tensor, tf.Tensor))
+        self.assertEqual(tensor.dtype, tf.float32)
+        self.assertEqual(tensor.numpy(), float_data)
+if __name__ == '__main__':
+    unittest.main()

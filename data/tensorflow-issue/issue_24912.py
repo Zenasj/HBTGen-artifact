@@ -1,42 +1,60 @@
-# tf.random.uniform((B, 30), dtype=tf.float32)  # Input shape inferred from original code: (batch_size, 30)
+import random
+from tensorflow.keras import layers
 
+import numpy as np
 import tensorflow as tf
+from tensorflow import keras
 
-class MyModel(tf.keras.Model):
-    def __init__(self, num_classes=10):
-        super(MyModel, self).__init__()
-        # A simple dense layer with softmax activation to mimic original functionality
-        self.dense = tf.keras.layers.Dense(units=num_classes, activation='softmax')
+x = np.random.randn(60,30).astype(np.float32)
+y = np.random.randint(low=0, high=10, size = 60).astype(np.int32)
 
+x_tr = x[0:20]
+y_tr = y[0:20]
+x_val = x[20:40]
+y_val = y[20:40]
+x_tst = x[40:60]
+y_tst = y[40:60]
+
+print(x_tr.shape, y_tr.shape)
+print(x_val.shape, y_val.shape)
+print(x_tst.shape, y_tst.shape)
+
+
+tr_dataset = tf.data.Dataset.from_tensor_slices((x_tr,y_tr))
+tr_dataset = tr_dataset.batch(batch_size=4).repeat()
+val_dataset = tf.data.Dataset.from_tensor_slices((x_val,y_val))
+val_dataset = tr_dataset.batch(batch_size=4).repeat()
+tst_dataset = tf.data.Dataset.from_tensor_slices((x_tst,y_tst))
+tst_dataset = tst_dataset.batch(batch_size=4)
+
+print(tr_dataset)
+print(val_dataset)
+print(tst_dataset)
+
+class Model(keras.Model):
+    def __init__(self, num_classes):
+        super(Model, self).__init__()
+        self.dense = keras.layers.Dense(units=10, activation='softmax')
     def call(self, inputs):
-        """
-        Forward pass returning softmax class probabilities.
-        Inputs: tensor of shape (batch, 30)
-        Returns: tensor of shape (batch, num_classes)
-        """
-        return self.dense(inputs)
+        score = self.dense(inputs)
+        return score
+  
+model = Model(10)
+model.compile(optimizer=tf.train.GradientDescentOptimizer(.1),
+              loss=keras.losses.sparse_categorical_crossentropy)
+model.fit(tr_dataset, epochs=5, steps_per_epoch=20//4,
+          validation_data=val_dataset, validation_steps=20//4)
 
+# yhat_from_call_method
+sess = keras.backend.get_session()
+x_tst_tensor = tf.convert_to_tensor(x_tst)
+yhat_from_call_method = sess.run(model(x_tst_tensor))
+yhat_from_call_method = np.argmax(yhat_from_call_method, axis = -1)
+print(yhat_from_call_method)
 
-def my_model_function():
-    # Instantiate the MyModel with default 10 classes
-    model = MyModel(num_classes=10)
+# yhat_from_predict_method 
+yhat_from_predict_method = model.predict(tst_dataset, steps=20//4)
+yhat_from_predict_method = np.argmax(yhat_from_predict_method, axis =-1)
+print(yhat_from_predict_method)
 
-    # Compile the model similarly to original code:
-    # - optimizer: GradientDescentOptimizer with learning rate 0.1
-    # - loss: sparse categorical crossentropy
-    # Note: tf.train.GradientDescentOptimizer is legacy in TF 2.x,
-    # so use tf.keras.optimizers.SGD to be compatible with TF 2.20.0
-    optimizer = tf.keras.optimizers.SGD(learning_rate=0.1)
-    loss = tf.keras.losses.SparseCategoricalCrossentropy()
-    model.compile(optimizer=optimizer, loss=loss)
-
-    return model
-
-
-def GetInput():
-    # Return a batch of input of shape (batch_size, 30)
-    # Use batch size of 4 as in batching in original dataset pipeline
-    batch_size = 4
-    input_tensor = tf.random.uniform(shape=(batch_size, 30), dtype=tf.float32)
-    return input_tensor
-
+print(yhat_from_call_method == yhat_from_predict_method)

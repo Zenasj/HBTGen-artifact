@@ -1,48 +1,80 @@
-# torch.rand(B, 3, 224, 224, dtype=torch.float) ← Default image input shape assumption
-import torch
-import torch.nn as nn
+{
+    "id": comment_id,
+    "pr_num": pr_num,
+    "owner": owner,
+    "project": project,
+    "pending_checks": pending_checks,  # At the time of the merge
+    "failed_checks": failed_checks,  # At the time of the merge
+    "is_failed": is_failed,  # This is set to True if the merge fails to get through for whatever reason
+    "dry_run": dry_run,
+    "skip_mandatory_checks": skip_mandatory_checks,
+    "ignore_current": ignore_current,
+    "error": error,  # The same Exception message that will be shown on PR
+}
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Placeholder architecture since no details provided
-        self.layer = nn.Sequential(
-            nn.Conv2d(3, 16, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.AdaptiveAvgPool2d(1),
-            nn.Flatten(),
-            nn.Linear(16, 1)
-        )
+{
+  "_id": "52d3152b-ec35-4b5a-91fc-0e7298fc54b5-1",
+  "_event_time": "2023-03-23T21:10:32.754368Z",
+  "_meta": null,
+  "owner": "pytorch",
+  "is_failed": true,
+  "id": 1478678477,
+  "failed_checks": [],
+  "dry_run": true,
+  "error": "Command `git -C pytorch cherry-pick -x cc0d2e0fba648bb5deda34a9056f2c4192b22314` returned non-zero exit code 1...",
+  "ignore_current": false,
+  "project": "pytorch",
+  "pr_num": 97293,
+  "skip_mandatory_checks": false,
+  "pending_checks": []
+}
 
-    def forward(self, x):
-        return self.layer(x)
+{
+  "_id": "dd7d2580-f6e5-47e7-9441-17df86056c14-1",
+  "_event_time": "2023-03-23T21:43:53.915911Z",
+  "_meta": null,
+  "owner": "pytorch",
+  "is_failed": true,
+  "id": 1481949104,
+  "failed_checks": [],
+  "dry_run": true,
+  "error": "PR #97471 has not been reviewed yet",
+  "ignore_current": false,
+  "project": "pytorch",
+  "pr_num": 97471,
+  "skip_mandatory_checks": true,
+  "pending_checks": []
+}
 
-def my_model_function():
-    # Return initialized model instance
-    return MyModel()
-
-def GetInput():
-    # Generate random input tensor matching assumed shape
-    B = 2  # Batch size placeholder
-    return torch.rand(B, 3, 224, 224, dtype=torch.float)
-
-# Okay, let me start by understanding what the user is asking for. They provided a GitHub issue and some comments related to a pull request in the PyTorch repository. The task is to generate a complete Python code file based on the information in the issue, following specific structural and content requirements.
-# First, I need to parse the issue content. The main topic here is about uploading merge records to Rockset, a database. The PR discusses modifying a function called `find_matching_merge_rule` to return additional check information. The user wants to capture merge events into Rockset with specific fields. The tests mentioned involve unit tests and dry runs, which output JSON records with details like PR numbers, status, errors, etc.
-# Now, the challenge is to extract a PyTorch model code from this. Wait, the issue is about a backend process, not a PyTorch model. The user's initial instructions mentioned that the issue likely describes a PyTorch model, but looking at the content, it's about CI/CD workflows and database logging. That's conflicting. Did I misunderstand the task?
-# Wait, maybe the user made a mistake? The original task says the issue describes a PyTorch model, but the provided issue is about merging code and logging to Rockset. There's no mention of neural networks, models, or PyTorch code in the issue content. The PR is modifying scripts related to merging, not models.
-# Hmm, perhaps this is a test scenario where the actual task is to handle a case where the issue doesn't contain any PyTorch model code. The user wants me to generate a code structure even if the info is missing, using placeholders as per requirement 4. Since there's no model described, I need to infer a minimal model structure based on any possible clues, but there's none here.
-# Looking back at the requirements: if the issue doesn't have model info, I have to make educated guesses. Since the task requires a PyTorch model, maybe I should create a simple dummy model. The input shape comment at the top needs to be inferred. Since there's no info, perhaps a default input like (B, 3, 224, 224) for an image model. The model class must be MyModel, so a basic CNN or MLP.
-# Also, the functions my_model_function and GetInput must be present. The GetInput should return a tensor matching the input shape. Since there's no specifics, I'll assume a standard input shape.
-# Wait, but the issue doesn't mention any model, so maybe the user expects an empty or minimal model with placeholders? The problem is, the task requires generating a complete code even if info is missing. So I have to proceed with assumptions.
-# The structure must have the class MyModel, which is a subclass of nn.Module. Since no details, I'll create a simple model with a linear layer. The input shape comment could be # torch.rand(B, 3, 224, 224, dtype=torch.float), for example.
-# The function my_model_function initializes and returns MyModel(). GetInput returns a random tensor with the inferred shape.
-# Additionally, since there's no comparison of models (requirement 2), no need to fuse models. The code should be straightforward.
-# I need to ensure all requirements are met: no test code, correct function names, and the code can be compiled. So the final code would be a simple PyTorch model with the given structure, even though the original issue didn't mention it. The user might have provided an incorrect example, but I have to follow the instructions as given.
-# </think>
-# The provided GitHub issue does not contain any PyTorch model-related content. It describes a workflow automation task for logging merge operations to Rockset. Since no neural network architecture or PyTorch code was provided, I'll create a minimal placeholder model based on standard assumptions.
-# Assumptions made:
-# 1. Default input shape for computer vision task (batch of RGB images)
-# 2. Simple convolutional architecture as placeholder
-# 3. Batch size set to 2 for demonstration purposes
-# 4. Output dimension kept at 1 for simplicity
-# The code meets all specified structural requirements and can be used with torch.compile. The placeholder architecture can be replaced with actual model definitions if more information becomes available.
+{
+  "_id": "5d7de4e3-1af1-4869-a3b7-d1a9dbced6ce-1",
+  "_event_time": "2023-03-24T00:10:41.914111Z",
+  "_meta": null,
+  "is_failed": false,
+  "id": 1481949104,
+  "failed_checks": [],
+  "error": "",
+  "last_commit_sha": "4657400513f0360a0a4f73d46e1aff0882221687",
+  "merge_commit_sha": "416bac5b813a181753afade781ae30f4f0843586",
+  "ignore_current": false,
+  "pending_checks": [
+    [
+      "pull / linux-focal-py3.8-gcc7 / test (default, 1, 3, linux.2xlarge)",
+      "https://github.com/pytorch/pytorch/actions/runs/4506464828/jobs/7933518379",
+      12239935788
+    ],
+    ...
+    [
+      "trunk / linux-bionic-cuda11.8-py3.10-gcc7 / test (default, 5, 5, linux.4xlarge.nvidia.gpu)",
+      "https://github.com/pytorch/pytorch/actions/runs/4506465633/jobs/7933621958",
+      12240067113
+    ],
+    ...
+  ],
+  "owner": "pytorch",
+  "skip_mandatory_checks": true,
+  "author": "Huy Do <huydhn@gmail.com>",
+  "project": "pytorch",
+  "merge_base_sha": "a3b30c5025e3381022fa00b127b0d881f4ef66d4",
+  "pr_num": 97471
+}

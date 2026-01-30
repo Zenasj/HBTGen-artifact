@@ -1,21 +1,13 @@
-# torch.rand(B, 10)  # Assuming input is a batch of 1D tensors with 10 features
 import torch
-from torch import nn
+import numpy as np
+import random
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Simple model to process input tensors from the dataset
-        self.fc = nn.Linear(10, 5)  # Example layer with input size 10
-
-    def forward(self, x):
-        return self.fc(x)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Generate a random input tensor matching the model's expected input shape
-    B = 4  # Arbitrary batch size
-    return torch.rand(B, 10)  # Matches the input shape comment above
-
+def get_sampled_loader(cf, test_set):
+        no_of_samples  = len(test_set)
+        sample_idx = np.random.permutation(np.arange(0, no_of_samples))[:cf.no_of_sampled_data]                     
+        if len(sample_idx) ==0:  
+            exit('exiting function get_the_sampler(), sample_idx size is 0')    
+        my_sampler = torch.utils.data.sampler.SubsetRandomSampler(sample_idx)  
+        test_loader = torch.utils.data.DataLoader(test_set, batch_size=cf.batch_size_test,
+                          shuffle= False, num_workers=cf.num_workers, sampler=my_sampler)
+        return test_loader

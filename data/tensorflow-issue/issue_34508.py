@@ -1,26 +1,23 @@
-# tf.random.uniform((32, 16), dtype=tf.float32) ← Inferred input shape based on the issue's example (batch=32, features=16)
+import random
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
-import tensorflow as tf
+import tensorflow.keras.backend as K
+from tensorflow.keras.layers import Input, Dense
+from tensorflow.keras.models import Model
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Mirror a simple Dense layer as in the original example Dense(16)
-        self.dense = tf.keras.layers.Dense(16)
+ipt = Input((16,))
+out = Dense(16)(ipt)
+model = Model(ipt, out)
+model.compile('adam', 'mse')
 
-    def call(self, inputs, training=False):
-        # Use the training argument as a modern equivalent to learning_phase
-        # to demonstrate controlling layer behavior if needed.
-        # Note: 'training' controls BatchNorm, Dropout layers, etc.
-        x = self.dense(inputs, training=training)
-        return x
+x = np.random.randn(32, 16)
+model.train_on_batch(x, x)
 
-def my_model_function():
-    # Return an instance of MyModel with initialized weights
-    return MyModel()
+grads = model.optimizer.get_gradients(model.total_loss, model.layers[-1].output)
+grads_fn = K.function(inputs=[model.inputs[0], model._feed_targets[0], model.sample_weights[0]], 
+                      outputs=grads)
 
-def GetInput():
-    # Generate random input matching model input: shape (32,16), dtype float32
-    # Batch size 32 and 16 features as per the example
-    return tf.random.uniform((32, 16), dtype=tf.float32)
-
+import tensorflow.python.keras.backend as K
+learning_phase = K.symbolic_learning_phase()

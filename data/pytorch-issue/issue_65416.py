@@ -1,36 +1,34 @@
-# torch.rand(1,4,4), torch.rand(1,4,4)  # Two tensors of shape (1,4,4)
+import numpy as np
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.dummy = nn.Parameter(torch.empty(0))  # To track device
-    
-    def forward(self, inputs):
-        A, B = inputs
-        device = self.dummy.device
-        A = A.to(device)
-        B = B.to(device)
-        return torch.bmm(A, B)
+cuda_id = 0
+if cuda_id == -1:
+	device = torch.device("cpu")
+else:
+	device = torch.device("cuda:%d"%cuda_id)
+A = torch.Tensor([[
+	[   0.0000, -143.2371,    0.0000,    0.0000],
+	[-143.2371,    0.0000,    0.0000,    0.0000],
+	[   0.0000,    0.0000,   -1.0000,   86.5423],
+	[   0.0000,    0.0000,    0.0000,    1.0000]]]).to(device)
 
-def my_model_function():
-    return MyModel()
+B = torch.Tensor([[
+	[-0.5000, -0.5000, -0.5000, -0.5000],
+	[-0.5000, -0.5000, -0.5000, -0.5000],
+	[-0.5000, -0.4980, -0.4961, -0.4941],
+	[ 1.0000,  1.0000,  1.0000,  1.0000]]]).to(device)
 
-def GetInput():
-    A = torch.tensor([[
-        [0.0000, -143.2371, 0.0000, 0.0000],
-        [-143.2371, 0.0000, 0.0000, 0.0000],
-        [0.0000, 0.0000, -1.0000, 86.5423],
-        [0.0000, 0.0000, 0.0000, 1.0000]
-    ]], dtype=torch.float32)
-    
-    B = torch.tensor([[
-        [-0.5000, -0.5000, -0.5000, -0.5000],
-        [-0.5000, -0.5000, -0.5000, -0.5000],
-        [-0.5000, -0.4980, -0.4961, -0.4941],
-        [1.0000, 1.0000, 1.0000, 1.0000]
-    ]], dtype=torch.float32)
-    
-    return (A, B)
+C = torch.bmm(A, B)
+print("C = \n", C)
 
+# C = 
+#  tensor([[[71.6186, 71.6186, 71.6186, 71.6186],
+#          [71.6186, 71.6186, 71.6186, 71.6186],
+#          [87.0423, 87.0403, 87.0384, 87.0364],
+#          [ 1.0000,  1.0000,  1.0000,  1.0000]]])`
+
+# C = 
+#  tensor([[[0., 0., 0., 0.],
+#          [0., 0., 0., 0.],
+#          [0., 0., 0., 0.],
+#          [0., 0., 0., 0.]]], device='cuda:0')

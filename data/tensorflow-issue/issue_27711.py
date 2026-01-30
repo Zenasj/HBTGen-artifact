@@ -1,21 +1,17 @@
-# tf.random.uniform((2, 300, 300, 3), dtype=tf.float32) ← inferred input shape and dtype from issue example
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
+root = tf.keras.Sequential([tf.keras.layers.Conv2D(filters=3, kernel_size=2, dilation_rate=2)])
+initial_output = root.predict(tf.ones((1, 5, 5, 1)))
+tf.saved_model.save(root, "/tmp/sm")
+
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Conv2D layer with dilation_rate=2 as highlighted in the issue
-        self.conv = tf.keras.layers.Conv2D(filters=3, kernel_size=3, dilation_rate=2)
 
-    def call(self, inputs):
-        return self.conv(inputs)
+input_data = tf.keras.layers.Input(name='fts_input', shape=(None,None,3), dtype='float32')
+inner = tf.keras.layers.Conv2D(filters=3, kernel_size=3, dilation_rate=2)(input_data)
+model = tf.keras.models.Model(inputs=[input_data], outputs=inner)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by the model
-    # Batch size = 2, height = 300, width = 300, channels = 3 (RGB-like)
-    return tf.random.uniform((2, 300, 300, 3), dtype=tf.float32)
-
+initial_output = model.predict([tf.ones((2, 300, 300, 3))])
+tf.saved_model.save(model, './')

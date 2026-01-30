@@ -1,27 +1,23 @@
-# torch.rand(B, C, H, W, dtype=...)  # Add a comment line at the top with the inferred input shape
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+class CustomModel(nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
-        self.layer1 = nn.RReLU(lower=3.2350976, upper=8.4220314, inplace=False)  # Changed inplace to False to avoid the error
+        super(CustomModel, self).__init__()
+        self.layer1 = nn.RReLU(lower=3.2350976, upper=8.4220314, inplace=True)
 
     def forward(self, inputs):
         return self.layer1(inputs)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+ip_size = [1, 2]
+input_tensor = torch.randn(ip_size)
+cuda_inputs = input_tensor.clone().to('cuda')
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    ip_size = [1, 2]
-    return torch.randn(ip_size, device='cuda' if torch.cuda.is_available() else 'cpu')
+mymodel = CustomModel()
+no_op_info = mymodel(input_tensor)
 
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
-# print(output)
+torch._dynamo.reset()
+mymodel.to('cuda')
+op_info = torch.compile(mymodel.forward, mode='reduce-overhead')(cuda_inputs)
 
+print(op_info)

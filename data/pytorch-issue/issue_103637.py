@@ -1,17 +1,12 @@
-# torch.randint(0, 256, (4,), dtype=torch.uint8)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return (x >> 2).to(torch.long)
+@torch.compile(fullgraph=True, dynamic=True)
+def shift_right(tensor: torch.Tensor) -> torch.Tensor:
+    return (tensor >> 2).to(torch.long)
 
-def my_model_function():
-    return MyModel()
+def main():
+    sample_input = torch.tensor([4, 4, 16, 32], dtype=torch.uint8)
+    print(shift_right(sample_input))
 
-def GetInput():
-    return torch.randint(0, 256, (4,), dtype=torch.uint8)
-
+if __name__ == "__main__":
+    main()

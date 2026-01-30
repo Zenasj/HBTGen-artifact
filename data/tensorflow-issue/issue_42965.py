@@ -1,29 +1,51 @@
-# tf.random.uniform((B, ), dtype=tf.float32) where B=2, matching input1_shape=(2,) and input2_shape=(1,)
+from tensorflow import keras
+from tensorflow.keras import layers
+
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Using Multiply layer as in the described model, supports broadcasting
-        self.multiply = tf.keras.layers.Multiply()
+input1_shape = (2,)
+# Doesn't work (broadcasting)
+input2_shape = (1,)
+# Works (no broadcasting)
+# input2_shape = (2,)
 
-    def call(self, inputs):
-        # inputs is expected to be a list/tuple of two tensors: [input1, input2]
-        input1, input2 = inputs
-        # Perform elementwise multiply with broadcasting support
-        return self.multiply([input1, input2])
+def get_dequantized_value(quantized_val, params):
+    quant_params = params["quantization_parameters"]
+    scale = quant_params["scales"]
+    zero_point = quant_params["zero_points"]
 
-def my_model_function():
-    # Return an instance of MyModel. No special weights initialization is needed.
-    return MyModel()
+    return (quantized_val - zero_point) * scale
 
-def GetInput():
-    # Based on the issue:
-    # input1 shape = (2,)
-    # input2 shape = (1,) for broadcast testing case
-    # Use float32 inputs (as this is a Keras model, not quantized input)
-    # Values randomly chosen in range [0,3] to reflect quantized_input_stats scale in example
-    input1 = tf.random.uniform(shape=(2,), minval=0.0, maxval=3.0, dtype=tf.float32)
-    input2 = tf.random.uniform(shape=(1,), minval=0.0, maxval=3.0, dtype=tf.float32)
-    return [input1, input2]
+# Model
+input1 = tf.keras.Input(shape=input1_shape)
+input2 = tf.keras.Input(shape=input2_shape)
+output = tf.keras.layers.Multiply()([input1, input2])
+model = tf.keras.Model(inputs=[input1, input2], outputs=output)
+model.save("model.h5")
 
+# Convert to TFLite
+converter = tf.compat.v1.lite.TFLiteConverter.from_keras_model_file("model.h5")
+converter.inference_type = tf.compat.v1.lite.constants.QUANTIZED_UINT8
+input_arrays = converter.get_input_arrays()
+converter.quantized_input_stats = {input_arrays[0]: (0.0, 3.0),
+                                   input_arrays[1]: (0.0, 3.0)}
+converter.default_ranges_stats = (0, 9.0)
+tflite_model = converter.convert()
+
+# Test TFLite
+interpreter = tf.lite.Interpreter(model_content=tflite_model)
+interpreter.allocate_tensors()
+
+input1 = np.full(shape=(1, *input1_shape), fill_value=1, dtype=np.uint8)
+interpreter.set_tensor(interpreter.get_input_details()[0]["index"], input1)
+print("input1: ", get_dequantized_value(input1, interpreter.get_input_details()[0]))
+
+input2 = np.full(shape=(1, *input2_shape), fill_value=1, dtype=np.uint8)
+interpreter.set_tensor(interpreter.get_input_details()[1]["index"], input2)
+print("input2: ", get_dequantized_value(input2, interpreter.get_input_details()[1]))
+
+interpreter.invoke()
+
+output = interpreter.get_tensor(interpreter.get_output_details()[0]["index"])
+print("output: ", get_dequantized_value(output, interpreter.get_output_details()[0]))

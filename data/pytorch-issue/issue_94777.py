@@ -1,28 +1,31 @@
-# torch.rand(1, dtype=torch.float32)  # Inferred input shape from the provided example
-
+py
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
+x = torch.tensor(3.)
 
-    def forward(self, x):
-        y = torch.log(x)
-        x.log_()
-        return y
+def func(x):
+    y = torch.log(x)
+    x.log_()
+    return y
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+print(func(x.clone()))
+# tensor(1.0986)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.tensor(3.0)
+print(torch.compile(func)(x.clone()))
+# tensor(0.0940)
 
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
-# print(output)
+py
+import torch
 
+x = torch.tensor(3.)
+
+def func(x):
+    y = torch.log(x)
+    # x.log_()
+    return y
+
+print(func(x.clone()))
+# tensor(1.0986)
+
+print(torch.compile(func)(x.clone()))
+# tensor(1.0986)

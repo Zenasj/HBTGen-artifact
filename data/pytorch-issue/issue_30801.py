@@ -1,24 +1,23 @@
-# torch.rand(5120, 1024, dtype=torch.float16, device=torch.device("cuda")).requires_grad_(True)  # Add a comment line at the top with the inferred input shape
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import argparse
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.relu = nn.ReLU()
-        self.dropout = nn.Dropout(p=0.1, inplace=False)
+parser = argparse.ArgumentParser(description='Relu-Dropout JIT Test')
+parser.add_argument('--bad-jit', action='store_true', help='Use new executor that cause Relu not to fuse with dropout.')
+args = parser.parse_args()
 
-    def forward(self, x):
-        x = self.relu(x)
-        x = self.dropout(x)
-        return x
+assert hasattr(torch._C, '_jit_set_profiling_executor'), "Old JIT behavior doesn't exist!"
+if not args.bad_jit :
+    torch._C._jit_set_profiling_executor(False)
+    torch._C._jit_set_profiling_mode(False)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(5120, 1024, dtype=torch.float16, device=torch.device("cuda")).requires_grad_(True)
-
+@torch.jit.script
+def jit_relu_dropout(x, prob) :
+    # type: (Tensor, float) -> Tensor
+    out = F.threshold(x, 0., 0.)
+    out = F.dropout(out, p=prob, training=True)
+    return out 
+                                                                                    
+inputs = torch.randn(5120, 1024, dtype=torch.float16, device=torch.device("cuda")).requires_grad_(True)
+outputs = jit_relu_dropout(inputs, 0.1)

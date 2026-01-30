@@ -1,10 +1,13 @@
-# torch.rand(2, 3, 4, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+import torch
+
+torch.manual_seed(0)
+
+class Model(torch.nn.Module):
+
     def __init__(self):
-        super(MyModel, self).__init__()
+        super(Model, self).__init__()
 
     def forward(self, x):
         t1 = torch.unbind(x)
@@ -12,17 +15,22 @@ class MyModel(nn.Module):
         t3 = torch.tanh(t2)
         return t3
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+func = Model().to('cpu')
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(2, 3, 4)
+x = torch.randn(2, 3, 4)
 
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
-# print(output.shape)
-
+with torch.no_grad():
+    func1 = torch.compile(func)
+    print(func1(x.clone()).shape)
+    """
+    File "torch/_inductor/fx_passes/split_cat.py", line 1085, in merge_unbind_stack
+    UnbindCatRemover().remove_unbind(match.graph, unbind_node)
+    File "torch/_inductor/fx_passes/split_cat.py", line 890, in remove_unbind
+        super().simplify(graph, unbind_node, split_sections)
+    File "torch/_inductor/fx_passes/split_cat.py", line 500, in simplify
+        transform_params_list = self.get_transform_params(
+    File "torch/_inductor/fx_passes/split_cat.py", line 932, in get_transform_params
+        split_dim = unbind_node.kwargs["dim"]
+    torch._dynamo.exc.BackendCompilerFailed: backend='inductor' raised:
+    KeyError: 'dim'
+    """

@@ -1,27 +1,53 @@
-# tf.random.normal([9, 10, 3], dtype=tf.float32) ← input images shape for saturation adjustment
-import tensorflow as tf
+import math
+import random
 
-class MyModel(tf.keras.Model):
+import tensorflow as tf
+import traceback
+
+def replace_special_values(tensor):
+    # Convert tensor to tf.float32 if it's not a supported dtype
+    supported_dtypes = [tf.float16, tf.float32, tf.float64, tf.bfloat16]
+    if tensor.dtype not in supported_dtypes:
+        original_dtype = tensor.dtype
+        tensor = tf.cast(tensor, tf.float32)
+    else :
+        original_dtype = None
+    
+    # Replace NaNs with zeros
+    tensor = tf.where(tf.math.is_nan(tensor), tf.zeros_like(tensor), tensor)
+    
+    # Replace positive infinities with a large number (e.g., 1e30)
+    tensor = tf.where(tf.math.is_inf(tensor), 100, tensor)
+    
+    # Replace negative infinities with a small number (e.g., -1e30)
+    tensor = tf.where(tf.math.is_inf(tensor) & tf.math.less(tensor, 0), -100, tensor)
+    
+    # Convert tensor back to its original dtype
+    if original_dtype is not None :
+        tensor = tf.cast(tensor, original_dtype)
+    return tensor
+
+class Network(tf.Module):
     def __init__(self):
         super().__init__()
-        # Pre-generate random images once to ensure stable input across calls,
-        # as pointed in the issue comments to avoid randomness inside the call method.
-        self.images = tf.random.normal([9, 10, 3], dtype=tf.float32)
 
     @tf.function(jit_compile=True)
-    def call(self, x):
-        # Apply tf.raw_ops.AdjustSaturation with scale=x and fixed images.
-        # Note: scale=x is a scalar float.
-        out = tf.raw_ops.AdjustSaturation(scale=x, images=self.images)
-        return out
+    def __call__(self, x):
+      
+      x = tf.raw_ops.AdjustSaturation(scale=x, images=tf.random.normal([9, 10, 3], dtype=tf.float32))
+      return x
 
-def my_model_function():
-    # Return an instance of MyModel; no additional initialization needed here.
-    return MyModel()
+m = Network()
+inp = {
+    "x": tf.random.normal([], dtype=tf.float32),
+}
 
-def GetInput():
-    # Return a random scalar float tensor for 'scale' to feed into model.
-    # The scale parameter controls how much to adjust saturation.
-    # Based on example, use scalar float32 shape [].
-    return tf.random.normal([], dtype=tf.float32)
-
+with tf.device('/GPU:0'):
+    tf.config.run_functions_eagerly(True)
+    no_op_res = m(**inp)
+    tf.config.run_functions_eagerly(False)
+    with tf.device('/GPU:0'):
+        op_res = m(**inp)
+    no_op_res = replace_special_values(no_op_res)
+    op_res = replace_special_values(op_res)
+    tf.debugging.assert_near(tf.cast(no_op_res, tf.float64), tf.cast(op_res, tf.float64), atol=0.001, rtol=0.001)

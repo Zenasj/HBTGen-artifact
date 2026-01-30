@@ -1,11 +1,12 @@
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-# torch.rand(B, 1, 28, 28, dtype=torch.float32) ← MNIST input shape
-class MyModel(nn.Module):
+# Based on https://github.com/pytorch/examples/blob/master/mnist/main.py
+class Net(nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
+        logger.info("Create neural network module")
+
+        super(Net, self).__init__()
         self.conv1 = nn.Conv2d(1, 10, kernel_size=5)
         self.conv2 = nn.Conv2d(10, 20, kernel_size=5)
         self.conv2_drop = nn.Dropout2d()
@@ -20,11 +21,3 @@ class MyModel(nn.Module):
         x = F.dropout(x, training=self.training)
         x = self.fc2(x)
         return F.log_softmax(x, dim=1)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    batch_size = 4  # Arbitrary batch size for testing
-    return torch.rand(batch_size, 1, 28, 28, dtype=torch.float32)
-

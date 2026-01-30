@@ -1,47 +1,64 @@
-# tf.random.uniform((32, 28, 28, 1), dtype=tf.float32)
-import tensorflow as tf
+import numpy as np
 from tensorflow.keras import layers
+from tensorflow.keras import models
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Reconstructing the MNIST CNN model described in the example
-        # Input shape: (28, 28, 1)
-        self.conv1 = layers.Conv2D(32, kernel_size=(3,3), activation='relu', input_shape=(28,28,1))
-        self.conv2 = layers.Conv2D(64, kernel_size=(3,3), activation='relu')
-        self.pool = layers.MaxPooling2D(pool_size=(2,2))
-        self.dropout1 = layers.Dropout(0.25)
-        self.flatten = layers.Flatten()
-        self.dense1 = layers.Dense(128, activation='relu', name='features')  # Named 'features' for embeddings
-        self.dropout2 = layers.Dropout(0.5)
-        self.dense2 = layers.Dense(10, activation='softmax')  # 10 classes for MNIST
+import csv
+import os
+from tensorflow import keras
+import tensorflow as tf
+import tensorflow_datasets as tfds
+import time
 
-    def call(self, inputs, training=False):
-        x = self.conv1(inputs)
-        x = self.conv2(x)
-        x = self.pool(x)
-        x = self.dropout1(x, training=training)
-        x = self.flatten(x)
-        x = self.dense1(x)
-        x = self.dropout2(x, training=training)
-        return self.dense2(x)
+datasets, info = tfds.load("imdb_reviews", as_supervised=True, with_info=True)
 
-def my_model_function():
-    # Instantiate the model and compile it with Adadelta optimizer and categorical_crossentropy
-    model = MyModel()
-    model.compile(
-        loss=tf.keras.losses.CategoricalCrossentropy(),
-        optimizer=tf.keras.optimizers.Adadelta(),
-        metrics=['accuracy']
-    )
-    return model
+words = ['zero', 'one', 'two', 'three', 'four']
+word_ids = list(range(5))
+vocab_init = tf.lookup.KeyValueTensorInitializer(words, np.array(word_ids, dtype=np.int64))
+table = tf.lookup.StaticVocabularyTable(vocab_init, 1)
 
-def GetInput():
-    # Return a batch of random float32 tensors shaped like MNIST images
-    # Batch size: 32 (matching typical batch) for concrete input to run in graph/JIT
-    # Shape: (batch_size, height, width, channels)
-    batch_size = 32
-    img_rows, img_cols = 28, 28
-    channels = 1
-    return tf.random.uniform((batch_size, img_rows, img_cols, channels), dtype=tf.float32)
+def preprocess(X_batch, y_batch):
+    X_batch = tf.strings.substr(X_batch, 0, 300)
+    X_batch = tf.strings.regex_replace(X_batch, b"<br\\s*/?>", b" ")
+    X_batch = tf.strings.regex_replace(X_batch, b"[^a-zA-Z']", b" ")
+    X_batch = tf.strings.split(X_batch)
+    return X_batch.to_tensor(default_value=b"<pad>"), y_batch
 
+def encode_words(X_batch, y_batch):
+    return table.lookup(X_batch), y_batch
+
+train_set = datasets['train'].batch(32).map(preprocess)
+train_set = train_set.map(encode_words).prefetch(1)
+
+# save words as metadata to include in tensorboard callback
+with open('metadata.tsv', 'w') as f:
+    writer = csv.writer(f, delimiter='\t')
+    writer.writerows(zip(['id'], ['word']))
+    writer.writerows(zip(word_ids, words))
+    writer.writerows(zip([5], ['oov']))
+
+root_logdir = os.path.join(os.curdir, 'my_logs')
+
+def get_run_logdir():
+    run_id = time.strftime('run_%Y_%m_%d-%H_%M_%S')
+    return os.path.join(root_logdir, run_id)
+
+run_logdir = get_run_logdir()
+
+embed_size = 6
+model = keras.models.Sequential([
+    keras.layers.Embedding(6, embed_size, input_shape=[None], name='embedding'),
+    keras.layers.GRU(6, return_sequences=True),
+    keras.layers.GRU(6),
+    keras.layers.Dense(1, activation='sigmoid')
+])
+model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
+
+# three methods tried:
+# 1. shows word_ids only in tensorboard projector
+#tensorboard_cb = keras.callbacks.TensorBoard(run_logdir, embeddings_freq=1)
+# 2. str obj has not attribute keys
+#tensorboard_cb = keras.callbacks.TensorBoard(run_logdir, embeddings_freq=1, embeddings_metadata='metadata.tsv')
+# 3. unrecognized embedding layer name
+tensorboard_cb = keras.callbacks.TensorBoard(run_logdir, embeddings_freq=1, embeddings_metadata={'embedding': 'metadata.tsv'})
+
+history = model.fit(train_set, epochs=1, callbacks=[tensorboard_cb])

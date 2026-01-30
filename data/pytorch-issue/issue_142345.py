@@ -1,17 +1,23 @@
-# torch.rand(4, dtype=torch.float32)  # Shape must be at least 4 elements to trigger the bug
-import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
+import torch
+
+
+class Model(torch.nn.Module):
+    def __init__(self):
+        super(Model, self).__init__()
+
     def forward(self, y):
         return torch.asinh(y)
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    # Create input with shape >=4 and at least one element with negative value < -10000.0 and non-zero decimal
-    x = torch.randn(4)  # Random values for first 3 elements
-    x[-1] = -10000.1  # Set last element to trigger -inf in CPU Inductor
-    return x
+x = torch.tensor([0, 0, 0, -10000.1])  # triggering condition: `shape >= 4` and `x[3] < -10000.0`
 
+m = Model()
+c_m = torch.compile(m)
+
+output = m(x)
+c_output = c_m(x)
+
+print(output)
+print(c_output)

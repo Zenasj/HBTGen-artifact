@@ -1,7 +1,4 @@
-# torch.rand(1, dtype=torch.float32)  # Inferred input shape from the provided tensor
-
 import torch
-from torch import nn
 
 foo = []
 
@@ -18,18 +15,11 @@ class MulY(torch.autograd.Function):
             return grad_out * 2
         return grad_out * 3
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
+@torch.compile(backend="eager")
+def f(x):
+    return MulY.apply(x)
 
-    def forward(self, x):
-        return MulY.apply(x)
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.tensor(2., requires_grad=True)
-
+x = torch.tensor(2., requires_grad=True)
+expected = MulY.apply(x)
+out = f(x)
+assert torch.allclose(out, expected)

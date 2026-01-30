@@ -1,16 +1,12 @@
-# torch.rand(32, 100, 3, dtype=torch.float32, requires_grad=True)
+py
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        sum_val = torch.sum(x, dim=(), keepdim=False)
-        mean_val = torch.mean(x, dim=(), keepdim=False)
-        return sum_val, mean_val  # Return both for comparison
+if __name__ == '__main__':
+    a = torch.randn(32, 100, 3, requires_grad=True)
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(32, 100, 3, dtype=torch.float32, requires_grad=True)
-
+    b = torch.sum(a, dim=(), keepdim=False)
+    print(b)
+    b.backward()
+    c = torch.mean(a, dim=(), keepdim=False)
+    print(c)
+    c.backward()

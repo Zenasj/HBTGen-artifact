@@ -1,33 +1,48 @@
-# tf.random.uniform((B,), dtype=tf.string) ← The Universal Sentence Encoder and similar models typically expect a batch of strings as input
+from tensorflow import keras
+from tensorflow.keras import layers
 
-import tensorflow as tf
 import tensorflow_hub as hub
+import tensorflow as tf 
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Using TF Hub KerasLayer with Universal Sentence Encoder v4 as an example
-        # Input is a batch of strings
-        # NOTE: The original issue was about TFLite conversion problems with certain TF Hub models.
-        # This model encapsulates the USE as a submodule.
-        self.use_layer = hub.KerasLayer("https://tfhub.dev/google/universal-sentence-encoder/4", trainable=False)
+max_seq_length = 128  # Your choice here.
 
-    def call(self, inputs):
-        # inputs: tf.Tensor of dtype tf.string, shape=(batch_size,)
-        # Return the USE embedding vectors
-        return self.use_layer(inputs)
+input_ids = tf.keras.layers.Input(shape=(max_seq_length,), dtype=tf.int32,
+                                       name="input_ids")
+input_mask = tf.keras.layers.Input(shape=(max_seq_length,), dtype=tf.int32,
+                                   name="input_mask")
+segment_ids = tf.keras.layers.Input(shape=(max_seq_length,), dtype=tf.int32,
+                                    name="segment_ids")
+bert_layer =  hub.KerasLayer("https://tfhub.dev/tensorflow/albert_lite_base/1",
+                            signature="tokens",
+                            output_key="pooled_output")
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+albert_inputs = dict(
+    input_ids=input_ids,
+    input_mask=input_mask,
+    segment_ids=segment_ids)
 
-def GetInput():
-    # Return a batch of example strings as input to MyModel
-    # Here, create a tf.Tensor of shape (batch_size,) of dtype string.
-    batch_size = 2  # example batch size
-    example_sentences = [
-        "The quick brown fox jumps over the lazy dog.",
-        "TensorFlow is an open source machine learning framework."
-    ]
-    return tf.constant(example_sentences, dtype=tf.string)
+pooled_output = bert_layer(albert_inputs)
 
+model = tf.keras.Model(inputs=[input_ids, input_mask, segment_ids], outputs=[pooled_output])
+model.compile()
+
+
+converter = tf.lite.TFLiteConverter.from_keras_model(model)                                
+tflite_model = converter.convert()
+
+albert_module = hub.load("https://tfhub.dev/tensorflow/albert_lite_base/1")
+# also works with https://tfhub.dev/google/albert_base/3 and https://tfhub.dev/google/small_bert/bert_uncased_L-2_H-128_A-2/1
+
+converter = tf.lite.TFLiteConverter.from_concrete_functions([albert_module.signatures["tokens"]])
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+tflite_model = converter.convert()
+with tf.io.gfile.GFile(os.path.join("../", "model.tflite"), 'wb') as f:
+    f.write(tflite_model)
+
+def load_module(module_url, signature='tokens'):
+    """Load a module in tensorflow 2"""
+    module = hub.load(module_url, tags=[])
+    log.info(f"found signatures {module.signatures}")
+    return module.signatures[signature]
+
+embedder = load_module('https://tfhub.dev/google/albert_xlarge/2')

@@ -1,41 +1,4 @@
-# torch.rand(B, C, H, W, dtype=...)  # Add a comment line at the top with the inferred input shape
-
-import torch
-import torch.nn as nn
-
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3, stride=1, padding=1)
-        self.relu = nn.ReLU()
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
-        self.fc = nn.Linear(16 * 16 * 16, 10)  # Assuming input size is 32x32
-
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.relu(x)
-        x = self.pool(x)
-        x = x.view(x.size(0), -1)  # Flatten the tensor
-        x = self.fc(x)
-        return x
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # Assuming batch size B=4, channels C=3, height H=32, width W=32
-    return torch.rand(4, 3, 32, 32, dtype=torch.float32)
-
-# The provided GitHub issue does not contain any information about a PyTorch model, its structure, or any code related to a neural network. The issue is about a build failure in the PyTorch project when using the latest main branch of Thrust, a parallel algorithms library.
-# Since there is no model or relevant code to extract, I will create a simple example of a PyTorch model and an input function that matches the requirements. This will be a basic convolutional neural network (CNN) for demonstration purposes.
-# ### Explanation:
-# 1. **MyModel Class**:
-#    - A simple CNN with one convolutional layer, ReLU activation, max pooling, and a fully connected layer.
-#    - The input is assumed to be 32x32 images with 3 channels (e.g., RGB).
-# 2. **my_model_function**:
-#    - Returns an instance of `MyModel`.
-# 3. **GetInput Function**:
-#    - Generates a random tensor with shape (4, 3, 32, 32) and `dtype=torch.float32` to match the expected input of the model.
-# This code can be used as a starting point for a more complex model if needed. If you have specific requirements or a different model in mind, please provide more details.
+#22 466.9 /usr/local/cuda/bin/nvcc -forward-unknown-to-host-compiler -DAT_PER_OPERATOR_HEADERS -DHAVE_MALLOC_USABLE_SIZE=1 -DHAVE_MMAP=1 -DHAVE_SHM_OPEN=1 -DHAVE_SHM_UNLINK=1 -DIDEEP_USE_MKL -DMAGMA_V2 -DMINIZ_DISABLE_ZIP_READER_CRC32_CHECKS -DONNXIFI_ENABLE_EXT=1 -DONNX_ML=1 -DONNX_NAMESPACE=onnx_torch -DTH_BLAS_MKL -DTORCH_CUDA_BUILD_MAIN_LIB -DUSE_C10D_GLOO -DUSE_C10D_MPI -DUSE_C10D_NCCL -DUSE_CUDA -DUSE_DISTRIBUTED -DUSE_EXTERNAL_MZCRC -DUSE_NCCL -DUSE_RPC -DUSE_TENSORPIPE -D_FILE_OFFSET_BITS=64 -Dtorch_cuda_EXPORTS -Iaten/src -I../aten/src -I. -I../ -I../cmake/../third_party/benchmark/include -I../cmake/../third_party/cudnn_frontend/include -I../third_party/onnx -Ithird_party/onnx -I../third_party/foxi -Ithird_party/foxi -Iinclude -I../torch/csrc/distributed -I../aten/src/TH -I../aten/src/THC -I../aten/src/ATen/cuda -Icaffe2/aten/src -I../aten/../third_party/catch/single_include -I../aten/src/ATen/.. -Icaffe2/aten/src/ATen -Inccl/include -I../c10/cuda/../.. -I../c10/.. -I../third_party/tensorpipe -Ithird_party/tensorpipe -I../third_party/tensorpipe/third_party/libnop/include -I../torch/csrc/api -I../torch/csrc/api/include -isystem=third_party/gloo -isystem=../cmake/../third_party/gloo -isystem=../cmake/../third_party/googletest/googlemock/include -isystem=../cmake/../third_party/googletest/googletest/include -isystem=../third_party/protobuf/src -isystem=/opt/conda/include -isystem=../third_party/gemmlowp -isystem=../third_party/neon2sse -isystem=../third_party/XNNPACK/include -isystem=../third_party -isystem=../cmake/../third_party/eigen -isystem=/opt/conda/include/python3.8 -isystem=/opt/conda/lib/python3.8/site-packages/numpy/core/include -isystem=../cmake/../third_party/pybind11/include -isystem=/opt/hpcx/ompi/include/openmpi -isystem=/opt/hpcx/ompi/include/openmpi/opal/mca/hwloc/hwloc201/hwloc/include -isystem=/opt/hpcx/ompi/include/openmpi/opal/mca/event/libevent2022/libevent -isystem=/opt/hpcx/ompi/include/openmpi/opal/mca/event/libevent2022/libevent/include -isystem=/opt/hpcx/ompi/include -isystem=/usr/local/cuda/include -isystem=../third_party/ideep/mkl-dnn/third_party/oneDNN/include -isystem=../third_party/ideep/include -Xfatbin -compress-all -DONNX_NAMESPACE=onnx_torch -gencode arch=compute_70,code=sm_70 -gencode arch=compute_75,code=sm_75 -gencode arch=compute_80,code=sm_80 -gencode arch=compute_86,code=sm_86 -gencode arch=compute_86,code=compute_86 -Xcudafe --diag_suppress=cc_clobber_ignored,--diag_suppress=integer_sign_change,--diag_suppress=useless_using_declaration,--diag_suppress=set_but_not_used,--diag_suppress=field_without_dll_interface,--diag_suppress=base_class_has_different_dll_interface,--diag_suppress=dll_interface_conflict_none_assumed,--diag_suppress=dll_interface_conflict_dllexport_assumed,--diag_suppress=implicit_return_from_non_void_function,--diag_suppress=unsigned_compare_with_zero,--diag_suppress=declared_but_not_referenced,--diag_suppress=bad_friend_decl --expt-relaxed-constexpr --expt-extended-lambda -Xcudafe --diag_suppress=20236 -Wno-deprecated-gpu-targets --expt-extended-lambda -DCUB_WRAPPED_NAMESPACE=at_cuda_detail -DCUDA_HAS_FP16=1 -D__CUDA_NO_HALF_OPERATORS__ -D__CUDA_NO_HALF_CONVERSIONS__ -D__CUDA_NO_HALF2_OPERATORS__ -D__CUDA_NO_BFLOAT16_CONVERSIONS__ -O3 -DNDEBUG -Xcompiler=-fPIC -DCAFFE2_USE_GLOO -DCUDA_HAS_FP16=1 -DHAVE_GCC_GET_CPUID -DUSE_AVX -DUSE_AVX2 -DTH_HAVE_THREAD -Xcompiler=-Wall,-Wextra,-Wno-unused-parameter,-Wno-unused-variable,-Wno-unused-function,-Wno-unused-result,-Wno-unused-local-typedefs,-Wno-missing-field-initializers,-Wno-write-strings,-Wno-unknown-pragmas,-Wno-type-limits,-Wno-array-bounds,-Wno-unknown-pragmas,-Wno-sign-compare,-Wno-strict-overflow,-Wno-strict-aliasing,-Wno-error=deprecated-declarations,-Wno-missing-braces,-Wno-maybe-uninitialized -DTORCH_CUDA_BUILD_MAIN_LIB -Xcompiler -pthread -std=c++14 -MD -MT caffe2/CMakeFiles/torch_cuda.dir/__/aten/src/ATen/native/cuda/LegacyThrustHelpers.cu.o -MF caffe2/CMakeFiles/torch_cuda.dir/__/aten/src/ATen/native/cuda/LegacyThrustHelpers.cu.o.d -x cu -c ../aten/src/ATen/native/cuda/LegacyThrustHelpers.cu -o caffe2/CMakeFiles/torch_cuda.dir/__/aten/src/ATen/native/cuda/LegacyThrustHelpers.cu.o
+#22 466.9 ../aten/src/ATen/native/cuda/LegacyThrustHelpers.cu(53): error: namespace "thrust" has no member "make_constant_iterator"
+#22 466.9 
+#22 466.9 1 error detected in the compilation of "../aten/src/ATen/native/cuda/LegacyThrustHelpers.cu".

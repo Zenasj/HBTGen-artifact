@@ -1,24 +1,20 @@
-# torch.rand(B, C, H, W, dtype=...)  # The input shape is not explicitly defined in the issue, so we assume a generic tensor input.
 import torch
-from torch import nn
+from torch import _dynamo as dynamo
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.softmax = nn.Softmax(dim=0)
+def f(a):
+    return torch.softmax(a, dim=0)
 
-    def forward(self, x):
-        return self.softmax(x)
+def custom(gm, example_inputs):
+    print("Recompiling")
+    return gm.forward
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+def guard_fail(failure):
+    print("Guard failure", failure)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # Assuming a 1D tensor for the softmax operation
-    return torch.rand(5)  # Example input with 5 elements
+f = dynamo.optimize(custom, dynamic=True, guard_fail_fn=guard_fail)(f)
+f(torch.Tensor(2))
+f(torch.Tensor(3))
 
-# The provided code is a simple softmax function, and the issue is related to dynamic shapes and guard failures.
-# The model and input are designed to be used with the given context.
+valid_shape = a.ndim == 0 or py_all(a.shape[i] for i in dims)
 
+valid_shape = a.ndim == 0 or py_all(a.shape[i] != 0 for i in dims)

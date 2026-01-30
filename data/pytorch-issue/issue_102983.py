@@ -1,20 +1,9 @@
-# torch.rand(1, 5) ← Add a comment line at the top with the inferred input shape
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.linear = torch.nn.utils.parametrizations.weight_norm(nn.Linear(5, 7))
-
-    def forward(self, x):
-        return self.linear(x)
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(1, 5)
-
+def test_weight_norm_pickle(self):
+        m = torch.nn.utils.weight_norm(nn.Linear(5, 7))
+        print(m.weight)
+        m = pickle.loads(pickle.dumps(m))
+        self.assertIsInstance(m, nn.Linear)
+        print(m.weight)

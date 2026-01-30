@@ -1,14 +1,21 @@
-# torch.rand(B, C, H, dtype=torch.float32)
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+
+class Unfold1(nn.Module):
     def forward(self, x):
         return x.unfold(-1, 4, 2)
 
-def my_model_function():
-    return MyModel()
+model = Unfold1()
 
-def GetInput():
-    return torch.rand(1, 3, 24, dtype=torch.float32)
+x = torch.arange(72).reshape(1, 3, 24).float()
+y = model(x)
+print(y.shape)
 
+torch.onnx.export(
+    model, x, 'model.onnx', verbose=False,
+    input_names=['input'], output_names=['output'],
+    dynamic_axes={'input': {0: 'batch', 1: 'time', 2: 'freq'}}, opset_version=11
+)
+
+dynamic_axes={'input': {0: 'batch', 1: 'time'}}

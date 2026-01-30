@@ -1,37 +1,30 @@
-# tf.random.uniform((B, num_features), dtype=tf.float32) ← Input is a 2D tensor with shape (batch_size, num_features)
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
-import tensorflow as tf
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Dropout, Input
+from tensorflow.keras.utils import to_categorical
 
-class MyModel(tf.keras.Model):
-    def __init__(self, num_features: int, num_classes: int):
-        super().__init__()
-        # Build a simple MLP model similar to the example from the issue:
-        # Input layer, Dense 64 ReLU, Dropout 0.2, Dense softmax output
-        self.model = Sequential([
-            Input(shape=(num_features,)),
-            Dense(64, activation='relu'),
-            Dropout(0.2),
-            Dense(num_classes, activation='softmax')
-        ])
+# remove the line below or comment it out to reproduce training bug
+import tensorflow as tf
 
-    def call(self, inputs, training=False):
-        return self.model(inputs, training=training)
+def build_and_train_model(X_train, y_train, X_test, y_test, num_features, num_classes):
+    model = Sequential([
+        Input(shape=(num_features,)),
+        Dense(64, activation='relu'),
+        Dropout(0.2),
+        Dense(num_classes, activation='softmax')
+    ])
+    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+    history = model.fit(
+        X_train, 
+        y_train, 
+        epochs=300, 
+        batch_size=128, 
+        validation_data=(X_test, y_test),
+        verbose=1
+    )
+    return model, history
 
-def my_model_function(num_features=10, num_classes=5):
-    """
-    Instantiate MyModel with default or specified input/output dimensions.
-    Defaults chosen as reasonable guesses (10 features, 5 classes).
-    """
-    return MyModel(num_features=num_features, num_classes=num_classes)
-
-def GetInput(batch_size=32, num_features=10):
-    """
-    Return a random input tensor consistent with the model input shape.
-    - Batch size: variable (default 32)
-    - Feature dimension: num_features (default 10)
-    Data is random uniform float32 tensor.
-    """
-    return tf.random.uniform((batch_size, num_features), dtype=tf.float32)
-
+# Build and train model
+model, history = build_and_train_model(X_train, y_train, X_test, y_test, X_scaled.shape[1], num_classes)

@@ -1,30 +1,71 @@
-# torch.rand(B, 3, 32, 32, dtype=torch.float32)
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(3, 6, 5)
-        self.pool = nn.MaxPool2d(2, 2)
-        self.conv2 = nn.Conv2d(6, 16, 5)
-        self.fc1 = nn.Linear(16 * 5 * 5, 120)
-        self.fc2 = nn.Linear(120, 84)
-        self.fc3 = nn.Linear(84, 10)
+from setuptools import setup
+from torch.utils.cpp_extension import CUDAExtension, BuildExtension
 
-    def forward(self, x):
-        x = self.pool(F.relu(self.conv1(x)))
-        x = self.pool(F.relu(self.conv2(x)))
-        x = x.view(-1, 16 * 5 * 5)
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = self.fc3(x)
-        return x
+setup(
+    name='some_lib',  # used by `pip install`
+    version='0.0.1',
+    description='',
+    cmdclass={
+        'build_ext': BuildExtension
+    },
+    ext_modules=[
+        CUDAExtension(
+            'some_lib',
+            [
+                'src/aaa.cu',
+            ],
+            extra_compile_args={'cxx': ['-g'],
+                                'nvcc': ['-O2', '-allow-unsupported-compiler', '-std=c++20']})
+    ],
+    setup_requires=["pybind11"],
+    install_requires=["pybind11"],
+    python_requires='>=3.8',
+    include_package_data=True,
+    zip_safe=False,
+)
 
-def my_model_function():
-    return MyModel()
+nvcc_std = os.popen("nvcc -h | grep -- '--std'")
+nvcc_std = nvcc_std.read()
 
-def GetInput():
-    return torch.rand(1, 3, 32, 32, dtype=torch.float32)
+nvcc_flags = ['-O2', '-allow-unsupported-compiler']
+if nvcc_std.__contains__('c++20'):
+    nvcc_flags.append('-std=c++20')
 
+import os
+
+from setuptools import setup
+from torch.utils.cpp_extension import CUDAExtension, BuildExtension
+
+# Make sure that the nvcc executable is available in $PATH variables,
+# or find one according to the $CUDA_HOME variable
+nvcc_std = os.popen("nvcc -h | grep -- '--std'")
+nvcc_std = nvcc_std.read()
+
+nvcc_flags = ['-O2', '-allow-unsupported-compiler']
+if nvcc_std.__contains__('c++20'):
+    nvcc_flags.append('-std=c++20')
+
+setup(
+    name='some_lib',  # used by `pip install`
+    version='0.0.1',
+    description='',
+    cmdclass={
+        'build_ext': BuildExtension
+    },
+    ext_modules=[
+        CUDAExtension(
+            'some_lib',
+            [
+                'src/aaa.cu',
+            ],
+            extra_compile_args={'cxx': ['-g'],
+                                'nvcc': nvcc_flags})
+    ],
+    setup_requires=["pybind11"],
+    install_requires=["pybind11"],
+    python_requires='>=3.8',
+    include_package_data=True,
+    zip_safe=False,
+)

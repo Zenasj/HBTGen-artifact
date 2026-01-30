@@ -1,27 +1,38 @@
-# tf.random.uniform((16,), dtype=tf.float32) ← inferred input shape from batch_size=16 scalar input
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
+import numpy as np
+import sys
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Dummy layer to print actual shape during forward pass to illustrate issue
-        self.print_layer = tf.keras.layers.Lambda(
-            lambda x: tf.print("Input shape in call:", tf.shape(x)) or x
-        )
-        self.relu = tf.keras.layers.ReLU()
 
+batch_size = 16
+input_batch = np.ones((batch_size,)).astype(np.float32)
+
+
+class TestSequence(tf.keras.utils.Sequence):
+    def __len__(self):
+        return 1
+
+    def __getitem__(self, idx):
+        return input_batch, input_batch
+
+# Dummy layer to show the tensor shape
+class PrintLayer(tf.keras.layers.Layer):
     def call(self, inputs):
-        x = self.print_layer(inputs)
-        return self.relu(x)
+        tf.print(inputs.shape, output_stream=sys.stderr)
+        return inputs
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
 
-def GetInput():
-    # Return input tensor shape (batch_size,) representing scalar input per batch element
-    batch_size = 16
-    # uniform random to simulate scalar inputs per batch
-    return tf.random.uniform((batch_size,), dtype=tf.float32)
+# The result is the same if shape=() is used to specify scalar input
+input_layer = tf.keras.layers.Input(
+    name='the_input', batch_shape=(batch_size,), dtype='float32')
+x = PrintLayer()(input_layer)
+output_layer = tf.keras.layers.ReLU()(x)
+model = tf.keras.models.Model(inputs=[input_layer], outputs=[output_layer])
 
+# If run_eagerly=False then the shapes are correct
+model.compile(loss='mse', run_eagerly=True)
+
+model.fit(TestSequence(), epochs=3)

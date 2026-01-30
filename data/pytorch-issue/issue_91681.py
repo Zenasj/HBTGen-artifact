@@ -1,19 +1,11 @@
-# torch.rand(1, 3, 224, 224, dtype=torch.float32)
+import torchvision
+
 import torch
-import torchvision.models as models
-from torch import nn
+from torchvision.models import resnet50
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.model = models.resnet50(weights=None)  # weights=None for no pretrained weights
-
-    def forward(self, x):
-        return self.model(x)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
-
+model = resnet50(weights=None)
+compile_model = torch.compile(model)
+print(type(compile_model))
+example_forward_input = torch.rand(1, 3, 224, 224)
+c_model_traced = torch.jit.trace(compile_model, example_forward_input) # or torch.jit.script
+torch.jit.save(c_model_traced, "c_trace_model.pt")

@@ -1,19 +1,9 @@
-# torch.rand(10, dtype=torch.float32)  # Inferred input shape based on error context (scores tensor)
-import torch
-from torch import nn
+import torch  # '1.12.0.dev20220426+cu113' and '1.12.0a0+gitb17b2b1'
+import torchvision  # 0.13.0a0+01b0a00
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Replicates the problematic code path causing the assertion error
-        scores = x  # Simulate scores tensor
-        keep_mask = torch.zeros_like(scores, dtype=torch.bool)  # Error occurs here during scripting
-        # Dummy operation to maintain forward flow (original code uses keep_mask in NMS logic)
-        return keep_mask.sum()
+model = torchvision.models.detection.fasterrcnn_resnet50_fpn(weights=None, weights_backbone=None)
+model.eval()
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Matches the scores tensor shape (1D tensor of float values)
-    return torch.rand(10, dtype=torch.float32)
-
+smodel = torch.jit.script(model)
+smodel.eval()
+smodel([torch.rand(3, 224, 224), ])

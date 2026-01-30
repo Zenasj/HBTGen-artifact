@@ -1,34 +1,50 @@
-# torch.randint(0, 30000, (B, 256), dtype=torch.long)  # Input shape: (batch_size, sequence_length)
 import torch
-import torch.nn as nn
+import transformers
+from datasets import load_dataset
+from transformers import AutoTokenizer, AutoModelForCausalLM, Trainer, TrainingArguments
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Mimicking Mixtral MoE structure with minimal components
-        self.embed_tokens = nn.Embedding(30000, 2560)  # Example vocab size and embedding dim
-        self.transformer_layer = nn.Sequential(
-            nn.Linear(2560, 2560),
-            nn.ReLU(),
-            nn.Linear(2560, 2560)
-        )
-        self.lm_head = nn.Linear(2560, 30000, bias=False)
+MODEL_ID = "mistralai/Mixtral-8x7B-v0.1"
+tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+model = AutoModelForCausalLM.from_pretrained(MODEL_ID, device_map="auto", torch_dtype=torch.float16)
 
-    def forward(self, input_ids):
-        embeddings = self.embed_tokens(input_ids)
-        hidden_states = self.transformer_layer(embeddings)
-        return self.lm_head(hidden_states)
+tokenizer.pad_token = "!" #Not EOS, will explain another time.\
 
-def my_model_function():
-    model = MyModel()
-    # Initialize weights (simplified)
-    for module in model.modules():
-        if isinstance(module, nn.Linear):
-            nn.init.normal_(module.weight, mean=0.0, std=0.02)
-    return model
+CUTOFF_LEN = 256  #Our dataset has shot text
 
-def GetInput():
-    # Generate random input matching the model's expected shape
-    batch_size = 1  # Matches user's per_device_train_batch_size=1
-    return torch.randint(0, 30000, (batch_size, 256), dtype=torch.long)
+dataset = load_dataset("harpreetsahota/modern-to-shakesperean-translation") #Found a good small dataset for a quick test run! Thanks to the uploader!
+train_data = dataset["train"] # Not using evaluation data
 
+def generate_prompt(user_query):
+    sys_msg= "Translate the given text to Shakespearean style."
+    p =  "<s> [INST]" + sys_msg +"\n"+ user_query["modern"] + "[/INST]" +  user_query["shakespearean"] + "</s>"
+    return p 
+
+def tokenize(prompt):
+    return tokenizer(
+        prompt + tokenizer.eos_token,
+        truncation=True,
+        max_length=CUTOFF_LEN ,
+        padding="max_length"
+    )
+
+train_data = train_data.shuffle().map(lambda x: tokenize(generate_prompt(x)), remove_columns=["modern" , "shakespearean"])
+opt_model = torch.compile(model)
+trainer = Trainer(
+    model=opt_model,
+    train_dataset=train_data,
+    args=TrainingArguments(
+        per_device_train_batch_size=1,
+        gradient_accumulation_steps=1,
+        num_train_epochs=100,
+        learning_rate=1e-4,
+        logging_steps=1,
+        optim="adamw_torch",
+        save_strategy="epoch",
+        output_dir="mixtral-moe-lora-instruct-shapeskeare",
+        remove_unused_columns=False
+    ),
+    data_collator=transformers.DataCollatorForLanguageModeling(tokenizer, mlm=False)
+)
+model.config.use_cache = False
+
+trainer.train()

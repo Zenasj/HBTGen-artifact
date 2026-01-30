@@ -1,24 +1,32 @@
-# torch.rand(1, 10, dtype=torch.int64) ← Add a comment line at the top with the inferred input shape
-
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+py
+import torch
+
+torch.manual_seed(420)
+
+x = torch.randint(0, 100, (1, 10))
+
+class Model(torch.nn.Module):
+
     def __init__(self, input_size, num_embeddings):
-        super(MyModel, self).__init__()
-        self.embedding = nn.Embedding(num_embeddings=num_embeddings, embedding_dim=input_size)
+        super(Model, self).__init__()
+        self.embedding = torch.nn.Embedding(num_embeddings=num_embeddings, embedding_dim=input_size)
 
     def forward(self, input_ids):
         embeddings = self.embedding(input_ids)
         return embeddings
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    input_size = 1
-    num_embeddings = 100  # Set to a valid number to avoid IndexError
-    return MyModel(input_size, num_embeddings)
+input_size = 1
+num_embeddings = 1
+func = Model(input_size, num_embeddings).to('cpu')
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randint(0, 100, (1, 10), dtype=torch.int64)
+with torch.no_grad():
+    func.train(False)
 
+    jit_func = torch.compile(func)
+    res2 = jit_func(x)
+    print(res2)
+
+    res1 = func(x) # without jit
+    # IndexError: index out of range in self

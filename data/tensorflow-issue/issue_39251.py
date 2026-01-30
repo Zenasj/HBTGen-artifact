@@ -1,68 +1,85 @@
-# tf.random.uniform((10,), dtype=tf.float32) ← Input shape inferred from example train_dataset shape (10,)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
 
+import os
+
+#os.environ['TF2_BEHAVIOR'] = '1'
 import tensorflow as tf
+tf.compat.v1.enable_eager_execution()
+
+#tf.compat.v1.disable_eager_execution()
+
+tf.config.set_soft_device_placement(False)
+tf.debugging.set_log_device_placement(True)
+import numpy as np
 
 class ProdLayer(tf.keras.layers.Layer):
     def __init__(self, name):
         super(ProdLayer, self).__init__()
-        # Using a trainable variable initialized to 0.01, per original code
-        # Note: Using tf.Variable via tf.keras.backend.variable to be consistent with snippet, but tf.Variable preferred.
-        self.w = tf.Variable(0.01, trainable=True, name='var_' + name, dtype=tf.float32)
+        self.w = tf.keras.backend.variable(0.01, name='var_'+ name)
+
 
     def call(self, x):
-        return x * self.w
+        return x * self.w 
 
 class SumLayer(tf.keras.layers.Layer):
     def __init__(self):
         super(SumLayer, self).__init__()
-
+        
     def call(self, x1, x2):
         return x1 + x2
+    
 
-class MyModel(tf.keras.Model):
+mirrored_strategy = tf.distribute.MirroredStrategy(devices=["/gpu:0", "/gpu:1"])
+
+class EmbeddingModel(tf.keras.Model):
     def __init__(self):
-        super(MyModel, self).__init__()
-
-        # Place w1 on GPU 0
-        with tf.device('/GPU:0'):
+        super(EmbeddingModel, self).__init__()
+        
+        # place w1 on GPU 0 and create the layer
+        with tf.device('/gpu:0'):
             self.L1 = ProdLayer('w1')
-
-        # Place w2 on GPU 1
-        with tf.device('/GPU:1'):
+        
+        # place w2 on GPU 0 and create the layer        
+        with tf.device('/gpu:1'):
             self.L2 = ProdLayer('w2')
-
-        # w3 intended to be mirrored variable on both GPUs
-        # Because true mirroring via MirroredStrategy scope with manual device placement is problematic,
-        # we create w3 as a variable which is not tied to a single device here.
-        # To simulate, place w3 on CPU (or let TF place it)
-        # This follows the suggestion that mixed manual device placement with MirroredStrategy variable creation breaks.
-        self.w3 = tf.Variable(0.01, trainable=True, name='var_w3', dtype=tf.float32)
-
-        # SumLayer placed on GPU 0 (perform sum there)
-        with tf.device('/GPU:0'):
+        
+        # place w3 on both GPU0 and GPU1 using mirrored scope. Can I do this?
+        with mirrored_strategy.scope():
+            self.w3 = tf.keras.backend.variable(0.01, name='var_w3')
+            
+        # may be do this on CPU? But for now let it perform this on GPU0
+        with tf.device('/gpu:0'):
             self.L3 = SumLayer()
-
+        
+    
     def call(self, input_layer):
-        # Compute w1 * x + w3 on GPU 0
-        with tf.device('/GPU:0'):
+        # w1 is on GPU0, w2 is on GPU1 and w3 is placed using mirrored scope on both GPUs
+        # y1 = w1 * x + w3
+        with tf.device('/gpu:0'):
             y1 = self.L1(input_layer) + self.w3
 
-        # Compute w2 * x + w3 on GPU 1
-        with tf.device('/GPU:1'):
+        # y2 = w2 * x + w3
+        with tf.device('/gpu:1'):
             y2 = self.L2(input_layer) + self.w3
 
-        # Sum y1 + y2 on GPU 0
-        with tf.device('/GPU:0'):
+        # y = y1 + y2 (i.e. w1 * x + w2 * x + 2 * w3) 
+        with tf.device('/gpu:0'):
             y_hat = self.L3(y1, y2)
-
+            
         return y_hat
+    
+    
+def myLoss(y, y_hat):
+    return tf.reduce_sum((y_hat-y) * (y_hat-y))
 
-def my_model_function():
-    # Return an instance of MyModel without usage of MirroredStrategy scope
-    return MyModel()
+with mirrored_strategy.scope():
+    model = EmbeddingModel()
+    model.compile(tf.optimizers.Adam(lr=0.0001), 
+                      loss=myLoss)
 
-def GetInput():
-    # From original snippet, input is a vector of floats with shape (10,)
-    # The example train_dataset used np.random.random((10,))
-    return tf.random.uniform((10,), dtype=tf.float32)
-
+train_dataset = np.random.choice(100, size=(1000,))
+model.fit(x=train_dataset.astype(np.float32), y=train_dataset.astype(np.float32), 
+       batch_size=1000, 
+       epochs=10, shuffle=False, verbose=True)

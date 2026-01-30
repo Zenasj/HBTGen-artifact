@@ -1,8 +1,47 @@
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-# torch.rand(10, 12, 100, 100, dtype=torch.float32)
+create_w()
+
+python
+import torch
+from timeit import timeit
+
+
+def timing_test():
+    from torch.nn.functional import conv2d
+
+    test_img = torch.ones(10, 12, 100, 100)
+    w1 = create_w()
+    w2 = (w1 + 1) - 1
+
+    print("Torch equal:", torch.equal(w1, w2))
+
+    n = 100
+    with torch.no_grad():
+        t1 = timeit("conv2d(test_img, w1)", globals=locals(), number=n) / n
+        t2 = timeit("conv2d(test_img, w2)", globals=locals(), number=n) / n
+
+    print("Time w1:", t1)
+    print("Time w2:", t2)
+    print("Factor:", t1 / t2)
+
+    print()
+    print("w1 norm:", w1.norm())
+    print("w2 norm:", w2.norm())
+
+    print()
+    print("w1 dtype:", w1.dtype)
+    print("w2 dtype:", w2.dtype)
+
+    print()
+    print("w1 device:", w1.device)
+    print("w2 device:", w2.device)
+
+    print()
+    print("w1 shape:", w1.shape)
+    print("w2 shape:", w2.shape)
+
+
 def create_w():
     return torch.tensor(
         [
@@ -216,27 +255,8 @@ def create_w():
                 [[-2.1840e-02]],
                 [[6.9138e-02]],
             ],
-        ],
-        dtype=torch.float32
+        ]
     )
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        w1 = create_w()
-        w2 = w1 + 1 - 1  # Replicate original issue's weight modification
-        self.w1 = nn.Parameter(w1)
-        self.w2 = nn.Parameter(w2)
-    
-    def forward(self, x):
-        # Execute both convolutions and return outputs for comparison
-        out1 = F.conv2d(x, self.w1)
-        out2 = F.conv2d(x, self.w2)
-        return (out1, out2)
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(10, 12, 100, 100, dtype=torch.float32)
-
+timing_test()

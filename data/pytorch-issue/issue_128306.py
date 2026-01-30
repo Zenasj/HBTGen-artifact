@@ -1,21 +1,48 @@
-# torch.rand(1, 4, dtype=torch.bfloat16)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self, score_thresh):
-        super().__init__()
-        self.register_buffer('score_thresh', torch.tensor(score_thresh, dtype=torch.bfloat16))
-    
-    def forward(self, x):
-        keep = x > self.score_thresh
-        return torch.nonzero(keep)
+def test(pred_scores, score_thresh):
+    keep_idxs = pred_scores > score_thresh
+    topk_idxs = torch.nonzero(keep_idxs)  # Kx2
+    return topk_idxs
 
-def my_model_function():
-    # Initialize with the threshold from the example (0.2)
-    return MyModel(score_thresh=0.2)
+if __name__ == "__main__":
+    x = torch.tensor(
+        [
+            [0.1, 0.2002, 0.3, 0.4],
+        ]
+    ).to(torch.bfloat16)
 
-def GetInput():
-    # Generate random input matching the example's shape and dtype
-    return torch.rand(1, 4, dtype=torch.bfloat16)
+    # x = torch.tensor(
+    #     [
+    #         [0.1, 0.2002, 0.3, 0.4],
+    #         [0.1, 0.6, 0.7, 0.8],
+    #         [0.9, 1.0, 1.1, 1.2],
+    #     ]
+    # )
 
+    score_thresh = 0.2
+    eager_res = test(x, score_thresh)
+    cnf = torch.compile(test)
+    res = cnf(x, score_thresh)
+    # print(torch.allclose(eager_res, res), flush=True)
+    print("bf16 eager_res is: {}".format(eager_res), flush=True)
+    print("bf16 inductor res is: {}".format(res), flush=True)
+
+cpp_fused_gt_0 = async_compile.cpp_pybinding(['const bfloat16*', 'bool*'], '''
+#include "/tmp/torchinductor_leslie/sk/cskh5dx62fglpphcrl6723dnmowdabouerrzy3dmqcngbxwfa7bv.h"
+extern "C" void kernel(const bfloat16* in_ptr0,
+                       bool* out_ptr0)
+{
+    {
+        #pragma omp simd simdlen(8) 
+        for(long x0=static_cast<long>(0L); x0<static_cast<long>(4L); x0+=static_cast<long>(1L))
+        {
+            auto tmp0 = in_ptr0[static_cast<long>(x0)];
+            auto tmp1 = c10::convert<float>(tmp0);
+            auto tmp2 = static_cast<float>(0.2);
+            auto tmp3 = tmp1 > tmp2;
+            out_ptr0[static_cast<long>(x0)] = tmp3;
+        }
+    }
+}
+''')

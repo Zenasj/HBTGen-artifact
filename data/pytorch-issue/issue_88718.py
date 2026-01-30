@@ -1,20 +1,17 @@
-# torch.rand(1, 56, dtype=torch.float32) ← Add a comment line at the top with the inferred input shape
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.layer = nn.Linear(56, 444)
+import torch
 
-    def forward(self, x):
-        return self.layer(x)
+size_in = 56  # the sizes here matter - these were the lowest ones that triggered the error, but many higher values also work
+size_out = 444
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+layer = torch.nn.Linear(size_in, size_out)
+t = torch.randn(size_in)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(1, 56, dtype=torch.float32)
+torch.set_num_threads(1)
+out1 = layer(t)
 
+torch.set_num_threads(6)
+out2 = layer(t)
+
+(out1 == out2).all(), abs(out1 - out2).max()

@@ -1,45 +1,57 @@
-# tf.random.uniform((B, 20), dtype=tf.float32) ← Input shape inferred from Input(shape=(20,)) in the provided code
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
 import tensorflow as tf
-import numpy as np
+from tensorflow.keras.layers import (Dense, Input, Lambda)
+from tensorflow.keras.models import Model, Sequential
 from scipy import sparse
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define Dense layers matching the original model
-        self.dense1 = tf.keras.layers.Dense(20)
-        self.dense2 = tf.keras.layers.Dense(30)
 
-        # Prepare fixed sparse tensor inside the model initialization to avoid loading delays
-        dense_mat = np.eye(30, 30, dtype=np.float32)
-        sparse_mat = sparse.coo_matrix(dense_mat)
-        sparse_indices = np.mat([sparse_mat.row, sparse_mat.col]).transpose()
-        # Convert to tensor indices as int64 as required by SparseTensor
-        sparse_indices_tf = tf.convert_to_tensor(sparse_indices, dtype=tf.int64)
-        sparse_values_tf = tf.convert_to_tensor(sparse_mat.data, dtype=tf.float32)
-        sparse_shape_tf = tf.convert_to_tensor(sparse_mat.shape, dtype=tf.int64)
-        self.sparse_tensor = tf.SparseTensor(indices=sparse_indices_tf,
-                                             values=sparse_values_tf,
-                                             dense_shape=sparse_shape_tf)
+def layer_lambda(input_x):
+    sparse = input_x[0]
+    dense = input_x[1]
+    dense = tf.transpose(dense)
+    y = tf.sparse.sparse_dense_matmul(sparse, dense)
+    return tf.transpose(y)
 
-    def call(self, inputs):
-        # Forward logic: pass inputs through dense layers
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        # Transpose x for sparse matmul operation as per original lambda logic
-        x_t = tf.transpose(x)
-        # Sparse-dense matmul with fixed sparse tensor
-        y = tf.sparse.sparse_dense_matmul(self.sparse_tensor, x_t)
-        # Transpose back to original orientation
-        y_t = tf.transpose(y)
-        return y_t
 
-def my_model_function():
-    # Returns a fresh instance of MyModel
-    return MyModel()
+dense_mat = np.eye(30, 30, dtype=np.float32)
+sparse_mat = sparse.coo_matrix(dense_mat)
+sparse_indices = np.mat([sparse_mat.row, sparse_mat.col]).transpose()
+sparse_tensor = tf.SparseTensor(sparse_indices, sparse_mat.data, sparse_mat.shape)
 
-def GetInput():
-    # Return a random float32 tensor with shape (batch_size=1, 20)
-    # Matching the Input(shape=(20,)) from original code
-    return tf.random.uniform((1, 20), dtype=tf.float32)
+model = Sequential()
+model_input = Input(shape=(20,))
+x = Dense(20)(model_input)
+x = Dense(30)(x)
+x = Lambda(layer_lambda, output_shape=(None, 30, 30))([sparse_tensor, x])
+model = Model(model_input, x)
 
+model.predict([[np.ones(20)]])
+
+model.save("model.h5")
+
+print("Save successfull")
+print("loading ...")
+model_load = tf.keras.models.load_model("model.h5", custom_objects={'layer_lambda': layer_lambda})
+
+print("Load successfull")
+
+def layer_lambda(input_x):
+  dense_mat = np.eye(30, 30, dtype=np.float32)
+  sparse_mat = sparse.coo_matrix(dense_mat)
+  sparse_indices = np.mat([sparse_mat.row, sparse_mat.col]).transpose()
+  sparse_tensor = tf.SparseTensor(sparse_indices, sparse_mat.data, sparse_mat.shape)
+  dense = input_x
+  dense = tf.transpose(dense)
+  y = tf.sparse.sparse_dense_matmul(sparse_tensor, dense)
+  return tf.transpose(y)
+
+model = Sequential()
+model_input = Input(shape=(20,))
+x = Dense(20)(model_input)
+x = Dense(30)(x)
+x = Lambda(layer_lambda, output_shape=(None, 30, 30))(x)
+model = Model(model_input, x)

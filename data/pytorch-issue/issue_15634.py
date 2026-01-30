@@ -1,18 +1,12 @@
-# torch.randint(-10, 10, (4, 4), dtype=torch.long)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.relu = nn.ReLU()
+x = (torch.tensor([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14])* 10).long()
 
-    def forward(self, x):
-        return self.relu(x)
+print(x)
 
-def my_model_function():
-    return MyModel()
+print(torch.threshold(x, 0, 0))
 
-def GetInput():
-    return (torch.randn(4, 4) * 10).long()
-
+tensor([  0,  10,  20,  30,  40,  50,  60,  70,  80,  90, 100, 110, 120, 130,
+        140])
+tensor([  0,   0,   0,   0,   0,   0,   0,   0,  80,  90, 100, 110, 120, 130,
+        140])

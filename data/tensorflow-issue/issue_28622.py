@@ -1,36 +1,50 @@
-# tf.random.uniform((1, 50, 50, 1), dtype=tf.float32) ← Inferred input shape based on Conv2D input_shape and image processing
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
+import numpy as np
+import pickle
+import cv2
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Dropout, Activation, Flatten, Conv2D, MaxPooling2D
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Layer definitions based on the provided Sequential model
-        self.conv1 = tf.keras.layers.Conv2D(32, (3, 3), activation='relu', input_shape=(50, 50, 1))
-        self.pool1 = tf.keras.layers.MaxPooling2D((2, 2))
-        self.conv2 = tf.keras.layers.Conv2D(64, (3, 3), activation='relu')
-        self.pool2 = tf.keras.layers.MaxPooling2D((2, 2))
-        self.conv3 = tf.keras.layers.Conv2D(64, (3, 3), activation='relu')
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense = tf.keras.layers.Dense(1, activation='softmax')  # As in original code, but note softmax with 1 unit is uncommon
+IMG_SIZE = 50
 
-    def call(self, inputs, training=False):
-        x = self.conv1(inputs)
-        x = self.pool1(x)
-        x = self.conv2(x)
-        x = self.pool2(x)
-        x = self.conv3(x)
-        x = self.flatten(x)
-        x = self.dense(x)
-        return x
+def prepare(file):
+    img_array = cv2.imread(file, cv2.IMREAD_GRAYSCALE)
+    new_array = cv2.resize(img_array, (IMG_SIZE, IMG_SIZE))
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+    predictdata = tf.reshape(new_array, (1, 50, 50))
+    predictdata = np.expand_dims(predictdata, -1)
+    return predictdata
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # Shape: (batch_size=1, height=50, width=50, channels=1)
-    # Use floats and values between 0 and 1 to resemble normalized grayscale image
-    return tf.random.uniform((1, 50, 50, 1), dtype=tf.float32)
 
+pickle_ind = open("x.pickle", "rb")
+x = pickle.load(pickle_ind)
+x = np.array(x, dtype=float)
+x = np.expand_dims(x, -1)
+
+pickle_ind = open("y.pickle", "rb")
+y = pickle.load(pickle_ind)
+
+n_batch = len(x)
+
+model = Sequential()
+model.add(Conv2D(32, (3, 3), activation='relu', input_shape=(50, 50, 1)))
+model.add(MaxPooling2D((2, 2)))
+model.add(Conv2D(64, (3, 3), activation='relu'))
+model.add(MaxPooling2D((2, 2)))
+model.add(Conv2D(64, (3, 3), activation='relu'))
+model.add(Flatten())
+model.add(Dense(1, activation='softmax'))
+
+model.summary()
+
+model.compile(optimizer='adam',
+              loss='binary_crossentropy',
+              metrics=['accuracy'])
+
+model.fit(x, y, epochs=1, batch_size=n_batch)
+prediction = model.predict([prepare('demo1.jpg')], batch_size=n_batch, steps=1, verbose=1)
+
+print(prediction)

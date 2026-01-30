@@ -1,27 +1,35 @@
-# tf.random.uniform((B, 10), dtype=tf.float32) ← Input shape inferred from the original keras model input_shape=(10,)
-
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Reconstruct the original simple keras.Sequential model given in chunk 1:
-        # Single Dense layer with 1 unit, sigmoid activation, input_shape=(10,)
-        self.dense = tf.keras.layers.Dense(units=1, activation='sigmoid')
+import keras
+model = keras.Sequential()
+model.add(keras.layers.Dense(units=1,
+                                activation='sigmoid',
+                                input_shape=(10, )))
+model.compile(loss='binary_crossentropy', optimizer='sgd')
+model.save('./model.h5')
 
-    def call(self, inputs, training=False):
-        x = self.dense(inputs)
-        return x
+# Convert keras model to TF estimator
+tf_files_path = './tf'
+estimator =\
+    tf.keras.estimator.model_to_estimator(keras_model=model,
+                                          model_dir=tf_files_path)
+def serving_input_receiver_fn():
+    return tf.estimator.export.build_raw_serving_input_receiver_fn(
+        {model.input_names[0]: tf.placeholder(tf.float32, shape=[None, 10])})
 
-def my_model_function():
-    # Instantiate and compile the model similarly to the original code snippet
-    model = MyModel()
-    # Compile with same parameters as original snippet: binary_crossentropy loss, sgd optimizer
-    model.compile(loss='binary_crossentropy', optimizer='sgd')
-    return model
+# Export the estimator
+export_path = './export'
+estimator.export_savedmodel(
+    export_path,
+    serving_input_receiver_fn=serving_input_receiver_fn())
 
-def GetInput():
-    # Return a random tensor input matching the expected input for MyModel
-    # Input shape is (batch_size, 10), batch_size is arbitrarily chosen as 8 here
-    return tf.random.uniform((8, 10), dtype=tf.float32)
+model = tf.keras.models.load_model('path_to_model.h5')
 
+# In 1.x
+tf.keras.experimental.export_saved_model(model, 'path/to/saved/model')
+
+# After the RFC is accepted/implemented in 2.x
+model.save('path/to/saved/model')

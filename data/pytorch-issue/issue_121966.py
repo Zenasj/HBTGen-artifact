@@ -1,14 +1,19 @@
-# torch.rand(50001, 3072, dtype=torch.bfloat16, device='cuda')
+import torch.nn as nn
+
+import time
 import torch
-import torch.nn.functional as F
+import torch.utils.checkpoint
 
-class MyModel(torch.nn.Module):
-    def forward(self, x):
-        return F.dropout(x * 5, 0.5, training=True)  # Matches original function's behavior
+def add_and_drop(x):
+    return torch.nn.functional.dropout(x * 5, 0.5)
 
-def my_model_function():
-    return MyModel()
+x = torch.rand((50001, 3072), device='cuda', dtype=torch.bfloat16)
 
-def GetInput():
-    return torch.rand(50001, 3072, dtype=torch.bfloat16, device='cuda')
+x.requires_grad_(True)
+x.retain_grad()
 
+with torch.cuda.amp.autocast(dtype=torch.bfloat16):
+    f = torch.compile(add_and_drop)
+    out = torch.utils.checkpoint.checkpoint(f, x, use_reentrant=False)
+    out.backward(torch.rand_like(out))
+    print(x.grad)

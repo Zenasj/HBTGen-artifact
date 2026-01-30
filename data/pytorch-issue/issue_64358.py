@@ -1,17 +1,8 @@
-# torch.randn(32, 256, 1, 1, dtype=torch.float32)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-    
-    def forward(self, x):
-        return torch.linalg.matrix_power(x, 0)
+a = 32
+b = 256
+A = torch.randn(torch.randn(a, b, 1, 1))
+A_p = torch.linalg.matrix_power(A, 0)
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.randn(32, 256, 1, 1, dtype=torch.float32)
-
+assert torch.all(A_p == torch.ones(a, b, 1, 1))

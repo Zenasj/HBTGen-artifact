@@ -1,47 +1,57 @@
-# tf.random.uniform((1, 1024, 7), dtype=tf.float32)  ← inferred input shape based on model input_shape=(window_size=1024, inputs_n=7)
-
+import numpy as np
 import tensorflow as tf
-from tensorflow.keras import layers
+from tensorflow import keras
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Parameters inferred from issue:
-        self.window_size = 1024
-        self.inputs_n = 7
-        self.neurons = 128
-        self.outputs_n = 4
+model = tf.keras.Sequential()
+model.add(layers.LSTM(neurons, input_shape=(window_size, inputs_n), return_sequences=True)) 
+model.add(layers.LSTM(neurons))
+model.add(layers.Dense(outputs_n, activation='sigmoid'))
 
-        # LSTM layers matching the reported model structure
-        self.lstm1 = layers.LSTM(self.neurons, return_sequences=True, name="lstm")
-        self.lstm2 = layers.LSTM(self.neurons, name="lstm_1")
-        self.dense = layers.Dense(self.outputs_n, activation='sigmoid', name="dense")
+opt = tf.train.AdamOptimizer(0.001)
 
-    def call(self, inputs, training=False):
-        """
-        Forward pass matching original sequential model:
-        Input shape: (batch, 1024, 7)
-        Output shape: (batch, 4), activation sigmoid 
-        """
-        x = self.lstm1(inputs)
-        x = self.lstm2(x)
-        output = self.dense(x)
-        return output
+model.compile(optimizer=opt, loss='categorical_crossentropy', metrics=['categorical_accuracy'])
+ 
+tpu_model = tf.contrib.tpu.keras_to_tpu_model(model, 
+        strategy=tf.contrib.tpu.TPUDistributionStrategy(
+            tf.contrib.cluster_resolver.TPUClusterResolver(tpu = [TPU_ADDRESS1])))
 
+for epoch in epochs:
+    for d in days : 
+        # get arrays for the day
+        features = np.asarray(d[1])[:,2:9].astype(dtype = 'float32')
+        labels = np.asarray(d[1])[:, 9:13].astype(dtype = 'int32')
+        
+        X,y = split_sequence(features, labels_buy, window_size)
 
-def my_model_function():
-    """
-    Returns an instance of MyModel.
-    The model is uncompiled here; compilation should be done externally if needed.
-    """
-    model = MyModel()
-    return model
+        # train 
+        for slide in range(window_size):
+            try:
+                x1, y1 = X[slide], y[slide]
+                x2, y2 = x1.reshape(1,1024,7), y1.reshape(1, 4)
+                H = tpu_model.train_on_batch(x2,y2)
+            except Exception as e:
+                print('** train exception **', e)
+                continue
 
+resolver = tf.distribute.cluster_resolver.TPUClusterResolver([TPU_ADDRESS1])
+tf.tpu.experimental.initialize_tpu_system(resolver)
+tpu_strategy = tf.distribute.experimental.TPUStrategy(resolver)
 
-def GetInput():
-    """
-    Generates a random input tensor matching the model's expected input shape:
-    shape = (1, 1024, 7), dtype float32 (consistent with feature input).
-    """
-    return tf.random.uniform(shape=(1, 1024, 7), dtype=tf.float32)
+# build model
+with tpu_strategy.scope():
+    model = tf.keras.Sequential()
+    model.add(layers.LSTM(neurons, input_shape=(window_size, inputs_n), return_sequences=True)) 
+    model.add(layers.LSTM(neurons))
+    model.add(layers.Dense(neurons, activation='relu'))
+    model.add(layers.Dense(outputs_n, activation=activation))
 
+    opt = tf.train.RMSPropOptimizer(learning_rate)
+
+    model.compile(optimizer=opt, loss='categorical_crossentropy', metrics=['categorical_accuracy'])
+
+    X,y = split_sequence(features, labels, window_size)
+    print('X shape:', X.shape, 'Y shape:', y.shape)
+    for slide in range(window_size):
+        x1, y1 = X[slide], y[slide]
+        x2, y2 = x1.reshape(1,window_size,inputs_n), y1.reshape(1,outputs_n)
+        model.train_on_batch(x2,y2)

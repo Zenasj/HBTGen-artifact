@@ -1,86 +1,92 @@
-# tf.random.uniform((64, 200, 200, 3), dtype=tf.float32) ← inferred input shape and type from batch_size and img_input shape
-
+import random
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Architecture parameters
-        self.image_size = 200
-        self.nClasses = 6
-        self.n = 32 * 5  # =160
-        self.nfmp_block1 = 64
-        self.nfmp_block2 = 128
-        self.IMAGE_ORDERING = "channels_last"
-        
-        # Encoder Block 1
-        self.block1_conv1 = tf.keras.layers.Conv2D(
-            self.nfmp_block1, (3, 3), activation='relu', padding='same', data_format=self.IMAGE_ORDERING, name='block1_conv1')
-        self.block1_conv2 = tf.keras.layers.Conv2D(
-            self.nfmp_block1, (3, 3), activation='relu', padding='same', data_format=self.IMAGE_ORDERING, name='block1_conv2')
-        self.block1_pool = tf.keras.layers.MaxPooling2D(
-            (2, 2), strides=(2, 2), data_format=self.IMAGE_ORDERING, name='block1_pool')
+import os
+os.environ['TF_KERAS'] = '1'
 
-        # Encoder Block 2
-        self.block2_conv1 = tf.keras.layers.Conv2D(
-            self.nfmp_block2, (3, 3), activation='relu', padding='same', data_format=self.IMAGE_ORDERING, name='block2_conv1')
-        self.block2_conv2 = tf.keras.layers.Conv2D(
-            self.nfmp_block2, (3, 3), activation='relu', padding='same', data_format=self.IMAGE_ORDERING, name='block2_conv2')
-        self.block2_pool = tf.keras.layers.MaxPooling2D(
-            (2, 2), strides=(2, 2), data_format=self.IMAGE_ORDERING, name='block2_pool')
+from tensorflow.keras.layers import *
+from tensorflow.keras.callbacks import TensorBoard, ModelCheckpoint
+from heatmaps import *
+import numpy as np
+from keras_radam import RAdam
 
-        # Bottleneck layers
-        # Kernel size is (image_size/4, image_size/4) = (50, 50) due to two 2x2 pools halving dims twice from 200->100->50
-        self.bottleneck_1 = tf.keras.layers.Conv2D(
-            self.n, (self.image_size // 4, self.image_size // 4), activation='relu', padding='same', data_format=self.IMAGE_ORDERING, name='bottleneck_1')
-        self.bottleneck_2 = tf.keras.layers.Conv2D(
-            self.n, (1, 1), activation='relu', padding='same', data_format=self.IMAGE_ORDERING, name='bottleneck_2')
+image_size = 200
+## output shape is the same as input
+n = 32 * 5
+nClasses = 6
+nfmp_block1 = 64
+nfmp_block2 = 128
+batch_size = 64
 
-        # Decoder / Upsampling via Conv2DTranspose
-        # Upsamples by stride 4 to restore original spatial dims 50x50 -> 200x200
-        self.upsample_2 = tf.keras.layers.Conv2DTranspose(
-            self.nClasses, kernel_size=(4, 4), strides=(4, 4), use_bias=False, name='upsample_2', data_format=self.IMAGE_ORDERING)
+IMAGE_ORDERING = "channels_last"
+img_input = tf.keras.Input(shape=(image_size, image_size, 3))
 
-        # Reshape layer to produce shape (image_size * image_size * nClasses, 1) for temporal weighting
-        self.reshape = tf.keras.layers.Reshape((self.image_size * self.image_size * self.nClasses, 1))
+# Encoder Block 1
+x = Conv2D(nfmp_block1, (3, 3), activation='relu', padding='same', name='block1_conv1', data_format=IMAGE_ORDERING)(
+    img_input)
+x = Conv2D(nfmp_block1, (3, 3), activation='relu', padding='same', name='block1_conv2', data_format=IMAGE_ORDERING)(x)
+block1 = MaxPooling2D((2, 2), strides=(2, 2), name='block1_pool', data_format=IMAGE_ORDERING)(x)
 
-    def call(self, inputs, training=None):
-        x = self.block1_conv1(inputs)
-        x = self.block1_conv2(x)
-        block1 = self.block1_pool(x)
-        
-        x = self.block2_conv1(block1)
-        x = self.block2_conv2(x)
-        x = self.block2_pool(x)
-        
-        o = self.bottleneck_1(x)
-        o = self.bottleneck_2(o)
-        
-        output = self.upsample_2(o)
-        output = self.reshape(output)
-        return output
+# Encoder Block 2
+x = Conv2D(nfmp_block2, (3, 3), activation='relu', padding='same', name='block2_conv1', data_format=IMAGE_ORDERING)(
+    block1)
+x = Conv2D(nfmp_block2, (3, 3), activation='relu', padding='same', name='block2_conv2', data_format=IMAGE_ORDERING)(x)
+x = MaxPooling2D((2, 2), strides=(2, 2), name='block2_pool', data_format=IMAGE_ORDERING)(x)
 
-def my_model_function():
-    # Instantiate the model and compile similarly to the original snippet:
-    model = MyModel()
-    
-    # Note: The original code uses an external RAdam optimizer from keras_radam with parameters
-    # Since keras_radam is not standard, use the built-in Adam optimizer as a placeholder.
-    # Users should replace this with their preferred RAdam implementation if needed.
-    optimizer = tf.keras.optimizers.Adam(learning_rate=1e-3)
-    
-    model.compile(
-        optimizer=optimizer, 
-        loss='mse', 
-        # sample_weight_mode='temporal' is deprecated in TF2; assuming no special weight mode
-    )
-    return model
+## bottleneck
+o = (Conv2D(n, (int(image_size / 4), int(image_size / 4)),
+            activation='relu', padding='same', name="bottleneck_1", data_format=IMAGE_ORDERING))(x)
+o = (Conv2D(n, (1, 1), activation='relu', padding='same', name="bottleneck_2", data_format=IMAGE_ORDERING))(o)
 
-def GetInput():
-    # Generate random input tensor with shape (batch_size, 200, 200, 3)
-    # batch_size=64 from original code snippet
-    batch_size = 64
-    image_size = 200
-    # Random uniform floats between 0 and 1
-    return tf.random.uniform((batch_size, image_size, image_size, 3), dtype=tf.float32)
+## Decoder Block
+## upsampling to bring the feature map size to be the same as the input image i.e., heatmap size
+output = Conv2DTranspose(nClasses, kernel_size=(4, 4), strides=(4, 4), use_bias=False, name='upsample_2',
+                         data_format=IMAGE_ORDERING)(o)
 
+## Reshaping is necessary to use sample_weight_mode="temporal" which assumes 3 dimensional output shape
+## See below for the discussion of weights
+output = Reshape((image_size * image_size * nClasses, 1))(output)
+model = tf.keras.Model(img_input, output)
+model.summary()
+
+radam = RAdam(total_steps=10000, warmup_proportion=0.1, min_lr=1e-5)
+model.compile(optimizer=radam, loss='mse', sample_weight_mode="temporal")
+
+data_folder = 'data'
+id2filename, filename2id, annotated_images = dataloader.get_image_annotations(data_folder)
+df = dataloader.get_annotation_dataframe(id2filename, annotated_images)
+msk = np.random.rand(len(df)) < 0.8
+train = df[msk]
+test = df[~msk]
+encoding = MultiPointHeatmapEncoding(image_size, df, batch_size=64)
+
+model_name = 'stacked_hourglass_tf2'
+log_dir = "logs/{}".format(model_name)
+model_filename = "saved-models/{}.h5".format(model_name)
+
+train_gen = encoding.generator(train, batch_size)
+test_gen = encoding.generator(test, batch_size, get_weights=True)
+
+steps_per_epoch = len(train) // batch_size
+validation_steps = len(test) // batch_size
+if validation_steps == 0:
+    validation_steps = 1
+if steps_per_epoch == 0:
+    steps_per_epoch = 1
+
+cb_tensorboard = TensorBoard(log_dir=log_dir)
+callback_save_images = CallbackHeatmapOutput(model, get_generator(test_gen), log_dir, encoding)
+checkpoint = ModelCheckpoint(model_filename, monitor='val_loss', verbose=1, save_best_only=True, mode='min')
+
+history = model.fit_generator(
+            get_generator(train_gen),
+            validation_data=get_generator(test_gen),
+            steps_per_epoch=steps_per_epoch,
+            epochs=5000,
+            validation_steps=validation_steps,
+            verbose=2,
+            use_multiprocessing=True,
+            callbacks=[checkpoint, callback_save_images, cb_tensorboard]
+        )

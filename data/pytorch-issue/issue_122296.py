@@ -1,16 +1,10 @@
-# torch.randint(1, 11, (), dtype=torch.int64)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        a = x.item()
-        torch._constrain_as_size(a, min=1, max=10)
-        return torch.ones(a, a, dtype=x.dtype)
+def foo(x):
+    a = x.item()
+    torch._constrain_as_size(a, min=1, max=10)
+    return torch.ones(a, a)
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.randint(1, 11, (), dtype=torch.int64)
-
+dynamo_config.capture_scalar_outputs = True 
+fn = torch.compile(foo, fullgraph=True, dynamic=True)
+fn(torch.tensor(5))

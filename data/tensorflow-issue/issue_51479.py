@@ -1,28 +1,26 @@
-# tf.random.uniform((1, 1), dtype=tf.float32) ← Inferred from example input shape in the issue reproduction code
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define a simple sequential model resembling the one from the example in the issue:
-        self.dense1 = tf.keras.layers.Dense(units=1, input_shape=(1,))
-        self.dense2 = tf.keras.layers.Dense(units=16, activation='relu')
-        self.dense3 = tf.keras.layers.Dense(units=1)
+print("TF version:", tf.__version__)
 
-    @tf.function(jit_compile=True)
-    def call(self, inputs):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        x = self.dense3(x)
-        return x
+model = tf.keras.models.Sequential([
+    tf.keras.layers.Dense(units=1, input_shape=[1]),
+    tf.keras.layers.Dense(units=16, activation='relu'),
+    tf.keras.layers.Dense(units=1)
+])
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+tflite_model = converter.convert()
 
-def GetInput():
-    # Return a random tensor input that matches the expected input shape (batch_size=1, features=1)
-    # In the issue example, the shape was (1,1)
-    return tf.random.uniform((1, 1), dtype=tf.float32)
+interpreter = tf.lite.Interpreter(model_content=tflite_model)
+interpreter.allocate_tensors()
 
+tensor_details = interpreter.get_tensor_details()
+print("Found", len(tensor_details), "tensors:")
+for tensor in tensor_details:
+    print(f"Tensor {tensor['index']}: {tensor['name']}")
+    numpy_tensor = interpreter.get_tensor(tensor["index"])
+    print("numpy shape:", numpy_tensor.shape)

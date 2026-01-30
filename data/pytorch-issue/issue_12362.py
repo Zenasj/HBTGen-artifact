@@ -1,24 +1,21 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Initialize theta as float32 to avoid integer grid computation issue
-        theta = torch.tensor([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=torch.float32)
-        theta = theta.view(1, 2, 3)
-        self.theta = nn.Parameter(theta, requires_grad=False)  # Fixed identity matrix
+import torch
+import matplotlib.pyplot as plt
 
-    def forward(self, x):
-        grid = F.affine_grid(self.theta, x.size())
-        return F.grid_sample(x, grid)
+img = plt.imread("lena.jpeg")
+img = img[110:120, 110:120]
+img = img.reshape(1,10,10,3)
+img_tensor = torch.from_numpy(img)
+img_tensor = img_tensor.permute(0, 3, 1, 2)
 
-def my_model_function():
-    return MyModel()
+theta = torch.tensor([[1, 0, 0], [0, 1, 0]])
+theta = theta.view(1, 2, 3)
 
-def GetInput():
-    # Returns random tensor matching (B, C, H, W) = (1, 3, 10, 10) with float32 dtype
-    return torch.rand(1, 3, 10, 10, dtype=torch.float32)
+grid = torch.nn.functional.affine_grid(theta, img_tensor.size())
+out = torch.nn.functional.grid_sample(img_tensor.float(), grid.float())
 
+out_img = out.permute(0, 2, 3, 1).data.numpy()
+out_img = out_img.reshape(10, 10, 3)
+plt.imshow(out_img.astype(int))
+plt.show()

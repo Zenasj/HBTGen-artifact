@@ -1,16 +1,14 @@
-# tf.random.uniform((1, 1, 1, 3), dtype=tf.float32)
 import tensorflow as tf
+print(tf.__version__)
+from keras import layers
 
-class MyModel(tf.keras.Model):
+
+class MyModule(tf.Module):
     def __init__(self):
         super().__init__()
 
     @tf.function(jit_compile=True)
-    def call(self, x):
-        # This model applies sqrt followed by Local Response Normalization (LRN).
-        # According to the issue, with XLA (jit_compile=True), LRN returns inconsistent values
-        # when input contains NaNs: some outputs should be NaN but are not.
-        # The model reproduces that behavior by invoking tf.raw_ops.LRN.
+    def __call__(self, x):
         x = tf.sqrt(x)
         x = tf.raw_ops.LRN(
             input=x,
@@ -18,19 +16,20 @@ class MyModel(tf.keras.Model):
             bias=1,
             alpha=1,
             beta=1,
-        )
+        ) # input / (bias + alpha * sqr_sum) ** beta
         return x
 
-def my_model_function():
-    # Returns an instance of MyModel, no weights to initialize.
-    return MyModel()
 
-def GetInput():
-    # Generate the input tensor used in the issue, shape (1,1,1,3)
-    # The input contains negative and positive values to produce NaNs after sqrt.
-    # Specifically, sqrt(-0.5) should produce nan, sqrt(0.5) valid.
-    return tf.constant(
-        [[[[-0.5, 0.5, 0.5]]]],
-        dtype=tf.float32,
-    )
+m = MyModule()
+x = tf.constant(
+    [[[[-0.5,  0.5,  0.5]]]], dtype=tf.float32,
+)
+with tf.device('/CPU:0'):
+    tf.config.run_functions_eagerly(True)
+    out = m(x)
+    print(out) # tf.Tensor([[[[nan nan nan]]]], shape=(1, 1, 1, 3), dtype=float32)
+    tf.config.run_functions_eagerly(False)
 
+with tf.device('/CPU:0'):
+    out = m(x)
+    print(out) # NOTE: WRONG! tf.Tensor([[[[       nan        nan 0.35355338]]]], shape=(1, 1, 1, 3), dtype=float32)

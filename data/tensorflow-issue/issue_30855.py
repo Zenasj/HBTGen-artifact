@@ -1,78 +1,53 @@
-# tf.random.uniform((B, SEQ_LEN, FEATURES), dtype=tf.float32) ← assuming input shape typical for sequence models (e.g. LSTM) from the discussion about Bidirectional LSTM and padded batching
-
-import tensorflow as tf
 import numpy as np
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import optimizers
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # This fused model encapsulates two versions of a model:
-        # 1) A subclassed Keras model with some custom layers (e.g. dynamic custom pooling layer)
-        # 2) A Functional API model (replicated here for comparison)
-        #
-        # Given multiple comments on differences in execution mode and parallelism,
-        # this fused model returns comparison info between the two.
+with self.writer.as_default():
+         tf.summary.trace_on(graph=False, profiler=True)
 
-        # For simplification and to infer the models:
-        # Subclassed model (mimicking Bidirectional LSTM + custom pooling layer)
-        self.sub_lstm = tf.keras.layers.Bidirectional(
-            tf.keras.layers.LSTM(64, return_sequences=True, name='sub_lstm_inner'),
-            name='sub_bi_lstm')
-        # Mimic custom pooling with a dynamic approach (here just GlobalAveragePooling1D for placeholder)
-        self.sub_pool = tf.keras.layers.GlobalAveragePooling1D(name='sub_pool')
+with self.writer.as_default():
+         tf.summary.trace_export(step=step, name="model_profile", profiler_outdir="./test_profile")
 
-        # Functional-like model: same layers, using ReLU activations to slightly differentiate
-        self.func_lstm = tf.keras.layers.Bidirectional(
-            tf.keras.layers.LSTM(64, return_sequences=True, name='func_lstm_inner'),
-            name='func_bi_lstm')
-        self.func_pool = tf.keras.layers.GlobalMaxPooling1D(name='func_pool')
+from tensorflow.python.eager import context
 
-        # Output layers for both branches
-        self.sub_dense = tf.keras.layers.Dense(64, activation='relu', name='sub_dense')
-        self.func_dense = tf.keras.layers.Dense(64, activation='relu', name='func_dense')
+context.context().mirroring_policy = context.MIRRORING_ALL
 
-        # Final output layer shared (could be for classification/regression)
-        self.out = tf.keras.layers.Dense(10, activation='softmax', name='output')
+@tf.function
+def train_with_strategy(strategy, model, optimizer, dataset):
+  def train_step(x, y):
+    return _train_step(model, optimizer, x, y)
 
-    def call(self, inputs, training=False):
-        # Forward through subclassed model branch
-        x_sub = self.sub_lstm(inputs)
-        # Assume dynamic operations fixed by using tf.shape in a real custom layer replaced here with GAP1D
-        x_sub = self.sub_pool(x_sub)
-        x_sub = self.sub_dense(x_sub)
+  def update_state(state, x_and_y):
+    per_replica_loss = strategy.experimental_run_v2(train_step, x_and_y)
+    state['loss'] = strategy.reduce(
+        tf.distribute.ReduceOp.SUM, per_replica_loss, axis=None)       
+    state['step'] += 1
+    return state
 
-        # Forward through functional model branch
-        x_func = self.func_lstm(inputs)
-        x_func = self.func_pool(x_func)
-        x_func = self.func_dense(x_func)
+  initial_state = {'loss': np.nan, 'step': 0}
+  return dataset.reduce(initial_state, update_state)
 
-        # Compare outputs numerically (e.g., L2 norm of difference)
-        diff = tf.norm(x_sub - x_func, ord='euclidean', axis=-1)  # shape (batch,)
-        # Boolean tensor where they are close (within tolerance)
-        close = tf.less(diff, 1e-3)
+def create_distributed_optimizer(optimizer, name=None, device_dense='', device_sparse='',
+                         compression=hvd.Compression.none, sparse_as_dense=False):
+    class _DistributedOptimizer(tf.keras.optimizers.Optimizer):
+        def __init__(self, name, device_dense, device_sparse, compression, sparse_as_dense, config):
+            if name is None:
+                name = "Distributed%s" % self.__class__.__base__.__name__
+            self._allreduce_grads = hvd._make_allreduce_grads_fn(
+                name, device_dense, device_sparse, compression, sparse_as_dense)
+            super(self.__class__, self).__init__(**config)
 
-        # Combine final outputs (pass through shared output layer)
-        out_sub = self.out(x_sub)
-        out_func = self.out(x_func)
+        def apply_gradients(self, grads_and_vars, *args, **kwargs):
+            if hvd.size() > 1:
+                grads, vars = zip(*grads_and_vars)
+                avg_grads = self._allreduce_grads(grads)
+                grads_and_vars = list(zip(avg_grads, vars))
+            return super(self.__class__, self).apply_gradients(grads_and_vars, *args, **kwargs)
 
-        # Return a dict with all relevant info for inspection
-        return {
-            'out_sub': out_sub,
-            'out_func': out_func,
-            'diff_norm': diff,
-            'close': close
-        }
+        @classmethod
+        def from_config(cls, cfg):
+            return cls(name, device_dense, device_sparse, compression, sparse_as_dense, cfg)
 
-def my_model_function():
-    # Return instance of fused MyModel
-    return MyModel()
-
-def GetInput():
-    # Based on typical input for Bidirectional LSTM with padded batching
-    # Batch size: 8
-    # Sequence length: 100 (variable-length sequence padded to fixed length)
-    # Features: 32 (e.g., embedding dimension)
-    B, SEQ_LEN, FEATURES = 8, 100, 32
-    x = tf.random.uniform((B, SEQ_LEN, FEATURES), dtype=tf.float32)
-    return x
-
+    cls = type(optimizer.__class__.__name__, (optimizer.__class__,), dict(_DistributedOptimizer.__dict__))
+    return cls(name, device_dense, device_sparse, compression, sparse_as_dense, optimizer.get_config())

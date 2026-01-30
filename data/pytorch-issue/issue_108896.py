@@ -1,17 +1,22 @@
-# torch.rand(4, dtype=torch.float32, device='cuda')  # Inferred input shape from the issue's examples
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        return x + 1  # Matches the operation inside the CUDA graph in the issue's examples
+x = torch.zeros(4, device="cuda")
+g = torch.cuda.CUDAGraph()
+with torch.cuda.graph(g):
+    x = x + 1
 
-def my_model_function():
-    return MyModel()
+g.reset()
+del g
 
-def GetInput():
-    return torch.rand(4, dtype=torch.float32, device='cuda')
+import torch
 
+x = torch.zeros(4, device="cuda")
+g = torch.cuda.CUDAGraph()
+with torch.cuda.graph(g):
+    x = x + 1
+
+g.reset()
+
+with torch.cuda.graph(g):
+    x = x + 1
+g.replay()

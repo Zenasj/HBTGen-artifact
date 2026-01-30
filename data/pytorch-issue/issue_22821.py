@@ -1,52 +1,14 @@
-# torch.rand(2, 3, dtype=torch.float32)
 import torch
-from torch import nn
+import torch.nn as nn
 
-class OldPath(nn.Module):
-    def forward(self, t):
-        return torch.autograd.Variable(t.clone().detach(), requires_grad=True)
+t = torch.ones(2, 3)
+v = torch.autograd.Variable(t).requires_grad_()
+y = v * v
+t.add_(1)  # This bumps version counter of `t`
+y.sum().backward()  # This computes `v`'s gradient incorrectly before this patch, and throws error after this patch
 
-class NewPath(nn.Module):
-    def forward(self, t):
-        return torch.autograd.Variable(t, requires_grad=True)
-
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.old = OldPath()
-        self.new = NewPath()
-    
-    def forward(self, input_tensor):
-        t = input_tensor.clone()  # Original tensor
-        old_v = self.old(t)
-        new_v = self.new(t)
-        
-        # Perform in-place modification on the original tensor
-        t.add_(1)  # Triggers version counter difference
-        
-        # Compute outputs
-        y_old = old_v * old_v
-        y_new = new_v * new_v
-        
-        # Check gradients and error handling
-        old_ok = True
-        new_ok = True
-        try:
-            y_old.sum().backward()
-        except:
-            old_ok = False
-        
-        try:
-            y_new.sum().backward()
-        except RuntimeError:
-            new_ok = False
-        
-        # Return True if outcomes differ (new throws error, old doesn't)
-        return torch.tensor(old_ok != new_ok, dtype=torch.bool)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(2, 3, dtype=torch.float32)
-
+t = torch.ones(2, 3)
+v = torch.nn.Parameter(t)
+y = v * v
+t.add_(1)  # This bumps version counter of `t`
+y.sum().backward()  # This computes `v`'s gradient incorrectly before this patch, and throws error after this patch

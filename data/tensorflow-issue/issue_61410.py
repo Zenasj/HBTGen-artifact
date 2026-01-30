@@ -1,60 +1,55 @@
-# tf.random.uniform((B=1, H=8, W=8, C=1), dtype=tf.float32)
+from tensorflow import keras
+from tensorflow.keras import layers
+
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Initialize layers for the upsampling branch
-        self.conv1_up = tf.keras.layers.Conv2D(
-            filters=1, kernel_size=3,
-            kernel_initializer=tf.keras.initializers.Constant(1),
-            name="conv_1_up"
-        )
-        self.conv2_up = tf.keras.layers.Conv2D(
-            filters=1, kernel_size=5,
-            kernel_initializer=tf.keras.initializers.Constant(1),
-            name="conv_2_up"
-        )
-        self.upsample = tf.keras.layers.UpSampling2D(size=(2, 2), name="upsample")
+ly = tf.keras.layers
+input8 = tf.keras.Input(shape=(8, 8, 1))
 
-        # Initialize layers for the transposed convolution branch
-        self.conv1_tr = tf.keras.layers.Conv2D(
-            filters=1, kernel_size=3,
-            kernel_initializer=tf.keras.initializers.Constant(1),
-            name="conv_1_tr"
-        )
-        self.conv2_tr = tf.keras.layers.Conv2D(
-            filters=1, kernel_size=5,
-            kernel_initializer=tf.keras.initializers.Constant(1),
-            name="conv_2_tr"
-        )
-        self.conv_transpose = tf.keras.layers.Conv2DTranspose(
-            filters=1, kernel_size=2,
-            kernel_initializer=tf.keras.initializers.Constant(1),
-            strides=2,
-            name="conv_transpose"
-        )
+y = ly.Conv2D(filters=1, kernel_size=[3, 3], kernel_initializer=tf.keras.initializers.Constant(1), name="conv_1")(input8)
+y = ly.Conv2D(filters=1, kernel_size=[5, 5], kernel_initializer=tf.keras.initializers.Constant(1), name="conv_2")(y)
+upsample_output = ly.UpSampling2D(size=(2,2))(y)
+upsample_model = tf.keras.Model(inputs=input8, outputs=upsample_output)
 
-    def call(self, inputs, training=False):
-        # Upsample branch forward pass
-        x_up = self.conv1_up(inputs)
-        x_up = self.conv2_up(x_up)
-        x_up = self.upsample(x_up)
-        
-        # Transposed convolution branch forward pass
-        x_tr = self.conv1_tr(inputs)
-        x_tr = self.conv2_tr(x_tr)
-        x_tr = self.conv_transpose(x_tr)
-        
-        # Return both outputs for comparison or use externally
-        return x_up, x_tr
+x = ly.Conv2D(filters=1, kernel_size=[3, 3], kernel_initializer=tf.keras.initializers.Constant(1), name="conv_1")(input8)
+x = ly.Conv2D(filters=1, kernel_size=[5, 5], kernel_initializer=tf.keras.initializers.Constant(1), name="conv_2")(x)
+transpose_output = ly.Conv2DTranspose(filters=1, kernel_size=[2, 2], kernel_initializer=tf.keras.initializers.Constant(1), strides=[2,2], name="conv_transpose_1")(x)
+transpose_model = tf.keras.Model(inputs=input8, outputs=transpose_output)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+converter = tf.lite.TFLiteConverter.from_keras_model(upsample_model)
+upsample_tflite_model = converter.convert()
+with open('upsample_model.tflite', 'wb') as handle:
+    handle.write(upsample_tflite_model)
 
-def GetInput():
-    # From the issue and code, input shape is expected (1, 8, 8, 1) or resizable up to (1,16,16,1).
-    # Provide shape (1, 8, 8, 1) as default input matching original setup.
-    return tf.random.uniform(shape=(1, 8, 8, 1), dtype=tf.float32)
+converter = tf.lite.TFLiteConverter.from_keras_model(transpose_model)
+transpose_tflite_model = converter.convert()
+with open('transpose_model.tflite', 'wb') as handle:
+    handle.write(transpose_tflite_model)
 
+upsample_interpreter = tf.lite.Interpreter(model_path='models/upsample_model.tflite')
+transpose_interpreter = tf.lite.Interpreter(model_path='models/transpose_model.tflite')
+
+print("BEFORE INPUT RESIZING (expect input shape (1, 8, 8, 1) and output shape (1, 4, 4, 1)")
+print()
+print(upsample_interpreter.get_input_details())
+print(upsample_interpreter.get_output_details())
+print()
+print()
+print(transpose_interpreter.get_input_details())
+print(transpose_interpreter.get_output_details())
+print()
+print()
+
+upsample_interpreter.resize_tensor_input(0, (1, 16, 16, 1))
+transpose_interpreter.resize_tensor_input(0, (1, 16, 16, 1))
+upsample_interpreter.allocate_tensors()
+transpose_interpreter.allocate_tensors()
+
+print("AFTER INPUT RESIZING (expect input shape (1, 16, 16, 1) and output shape (1, 8, 8, 1)")
+print()
+print(upsample_interpreter.get_input_details())
+print(upsample_interpreter.get_output_details())
+print()
+print()
+print(transpose_interpreter.get_input_details())
+print(transpose_interpreter.get_output_details())

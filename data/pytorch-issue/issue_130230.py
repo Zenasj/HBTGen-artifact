@@ -1,14 +1,24 @@
-# torch.rand(18, 7, dtype=torch.float32)
+import numpy as np
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return torch.cdist(x, x)
+t = torch.randn(18, 7)
+dist_matrix = torch.cdist(t, t) # <-- Segmentation fault here
 
-def my_model_function():
-    return MyModel()
+import numpy as np
+import torch
 
-def GetInput():
-    return torch.randn(18, 7)
+t = torch.randn(30, 7)
+dist_matrix = torch.cdist(t, t) # <-- No segmentation fault
 
+import torch
+import numpy as np
+
+t = torch.randn(18, 7)
+dist_matrix = torch.cdist(t, t) # <-- No segmentation fault
+
+import numpy as np
+import torch
+
+torch.set_num_threads(1)
+t = torch.randn(18, 7)
+dist_matrix = torch.cdist(t, t) # <-- No segmentation fault, usually

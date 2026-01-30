@@ -1,31 +1,43 @@
-# torch.rand(B, C, H, W, D, dtype=torch.float32)  # Input shape: (batch_size, channels, height, width, depth)
-
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.bn = nn.BatchNorm3d(3, eps=0.001, momentum=0.7, affine=False)
-    
-    def forward(self, x):
-        return self.bn(x)
+# reproducer
+import torch
+import copy
+import torch.utils._pytree as pytree
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+x = torch.randn(2, 3, 4, 4, 4).cuda().requires_grad_()
+x2 = x.contiguous(memory_format=torch.channels_last_3d).cuda().detach().requires_grad_()
+model = torch.nn.BatchNorm3d(3, 0.001, 0.7, False).cuda()
+model2 = copy.deepcopy(model).to(memory_format=torch.preserve_format).cuda()
+output = model(x)
+grad_out = torch.randn(output.shape).cuda()
+grad_out2 = grad_out.clone().contiguous(memory_format=torch.channels_last_3d).cuda()
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # Shape: (batch_size, channels, height, width, depth)
-    return torch.randn(2, 3, 4, 4, 4, device='cuda', requires_grad=True).contiguous(memory_format=torch.channels_last_3d)
+output2 = model2(x2)
 
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
-# grad_out = torch.randn(output.shape, device='cuda').contiguous(memory_format=torch.channels_last_3d)
-# output.backward(grad_out)
-# for gi in input_tensor.grad:
-#     print("gi.shape: ", gi.shape, " gi.stride: ", gi.stride())
+if isinstance(output2, torch.Tensor):
+    outputs2 = (output2,)
 
+
+# === Do backward pass. ===
+diff_outputs = tuple(t for t in outputs2)
+params = tuple(p for p in model2.parameters())
+inputs=(x2,)
+diff_inputs = tuple(
+    t
+    for t in pytree.tree_flatten((inputs, params))[0]
+)
+grad_outputs = tuple(
+    torch.rand_like(t)
+    for t in diff_outputs
+)
+
+grad_inputs = torch.autograd.grad(
+    diff_outputs,
+    diff_inputs,
+    grad_outputs=grad_outputs,
+    allow_unused=True,
+)
+
+for gi in grad_inputs:
+    print("gi.shape: ", gi.shape, " gi.stride: ", gi.stride())

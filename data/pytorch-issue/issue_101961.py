@@ -1,20 +1,19 @@
-# torch.rand(1, 3, 1, 1, dtype=torch.float32)
+import torch.nn as nn
+
 import torch
 from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Create a parameter using torch.Tensor._make_subclass as per the example
-        data = torch.randn(1, 3, 1, 1, dtype=torch.float32)
-        self.param = torch.Tensor._make_subclass(nn.Parameter, data)  # Using two arguments as shown in the PR example
-        
-    def forward(self, x):
-        return x + self.param  # Simple operation using the parameter
 
-def my_model_function():
-    return MyModel()
+t = torch.tensor([1, 2, 3], dtype=torch.float32)
 
-def GetInput():
-    return torch.rand(1, 3, 1, 1, dtype=torch.float32)
+t2 = torch.Tensor._make_subclass(  # OK
+    nn.Parameter,
+    t.data,
+)
+reveal_type(t2)  # Type of "t2" is "Parameter"
 
+t3 = t._make_subclass(  # OK
+    nn.Parameter,
+    t.data,
+)
+reveal_type(t3)  # Type of "t3" is "Parameter"

@@ -1,15 +1,6 @@
-# torch.rand(B, M, M, dtype=torch.float32)
+py
 import torch
-from torch import nn
-
-class MyModel(nn.Module):
-    def forward(self, x):
-        return torch.linalg.lu_factor(x)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Batch dimension B=2, matrix size M=3 (square matrix requirement)
-    return torch.rand(2, 3, 3, dtype=torch.float32)
-
+from functorch import vmap
+x = torch.randn(4, 3, 2)
+z = vmap(torch.linalg.lu_factor)(x)
+#  UserWarning: There is a performance drop because we have not yet implemented the batching rule

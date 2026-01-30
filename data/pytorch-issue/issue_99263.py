@@ -1,24 +1,10 @@
-# torch.rand(4, 3, 224, 224, dtype=torch.float32)
 import torch
-import torchvision.models as models
-from torch import nn
+from torchvision import models
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.resnet = models.resnet152(pretrained=True)
-        # Freeze parameters as per original code
-        for param in self.resnet.parameters():
-            param.requires_grad = False
-    
-    def forward(self, x):
-        return self.resnet(x)
+model = models.resnet152(pretrained=True)
+for param in model.parameters():
+	param.requires_grad = False
 
-def my_model_function():
-    model = MyModel()
-    model.eval()  # Ensure model is in inference mode
-    return model
-
-def GetInput():
-    return torch.rand(4, 3, 224, 224, dtype=torch.float32)
-
+example_input = torch.rand(4, 3, 224, 224)
+script_module = torch.jit.trace(model, example_input)
+script_module.save('resnet152.pt')

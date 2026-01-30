@@ -1,24 +1,18 @@
-# torch.rand(1, dtype=torch.float32), torch.rand(1, dtype=torch.float32)
 import torch
-from torch import nn
+import numpy as np
+torch.manual_seed(5)
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.p = -41  # As specified in the original issue's test code
-        self.compiled_dist = torch.compile(torch.dist)  # Pre-compiled version
-
-    def forward(self, inputs):
-        a, b = inputs
-        non_compiled = torch.dist(a, b, self.p)  # Non-compiled version
-        compiled = self.compiled_dist(a, b, self.p)  # Pre-compiled version
-        return torch.abs(non_compiled - compiled)  # Return absolute difference
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    a = torch.rand(1, dtype=torch.float32)  # Scalar tensor (shape [1])
-    b = torch.rand(1, dtype=torch.float32)
-    return (a, b)  # Return tuple of two scalar tensors as model input
-
+dist = torch.dist
+compiled_dist = torch.compile(torch.dist)
+incon1 = []
+incon2 = []
+for i in range(100):
+    a = torch.rand(1).float()
+    b = torch.rand(1).float()
+    high_a = a.double()
+    high_b = b.double()
+    ref = compiled_dist(high_a, high_b, -41)
+    incon1.append(torch.abs(dist(a, b, -41) - ref))
+    incon2.append(torch.abs(compiled_dist(a, b, -41) - ref))
+print("Average error before compile: ", np.average(incon1))
+print("Average error after compile: ", np.average(incon2))

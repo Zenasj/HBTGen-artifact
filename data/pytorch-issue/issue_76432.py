@@ -1,28 +1,34 @@
-# torch.rand(1, 3, 5, 5, dtype=torch.float64)
+import torch.nn as nn
+import random
+
 import numpy as np
 import torch
-import torch.nn as nn
+np.random.seed(10)
+# shape = (1, 5, 5, 3)
+# arr = np.random.randn(*shape).transpose(0, 3, 1, 2) * 10                #（1）
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.pool = nn.MaxPool2d(
-            kernel_size=3,
-            stride=1,
-            padding=0,
-            dilation=(2, 2),
-            ceil_mode=False
-        )
-    
-    def forward(self, x):
-        return self.pool(x)
+shape = (1, 3, 5, 5)
+arr = np.random.randn(*shape) * 10                                          #（2）
 
-def my_model_function():
-    return MyModel()
+kernel_size = 3
+padding = 0
+dilation = (2, 2)
+stride = 1
+ceil_mode = False
+cpu_x = torch.tensor(arr, dtype=torch.float64, device="cpu")
+cuda_x = torch.tensor(arr, dtype=torch.float64, device="cuda")
+assert np.allclose(cpu_x.detach().cpu().numpy(), cuda_x.detach().cpu().numpy(), 1e-4, 1e-4)
+m = torch.nn.MaxPool2d(
+    kernel_size=kernel_size,
+    stride=stride,
+    padding=padding,
+    dilation=dilation,
+    ceil_mode=ceil_mode,
+)
+cpu_y = m(cpu_x)
+cuda_y = m(cuda_x)
+print("cpu y = \n", cpu_y)
+print("cuda y = \n", cuda_y)
+assert np.allclose(cpu_y.detach().cpu().numpy(), cuda_y.detach().cpu().numpy(), 1e-4, 1e-4)
 
-def GetInput():
-    # Create a transposed numpy array to produce non-contiguous input tensor
-    shape = (1, 5, 5, 3)
-    arr = np.random.randn(*shape).transpose(0, 3, 1, 2) * 10
-    return torch.from_numpy(arr).to(dtype=torch.float64)
-
+cuda_x = torch.tensor(arr.copy(), dtype=torch.float64, device="cuda")

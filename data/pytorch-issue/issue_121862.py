@@ -1,19 +1,39 @@
-# torch.rand(1000, 3000, dtype=torch.float32)
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.w = nn.Parameter(torch.randn(1000, 3000))  # Matches original weight initialization
+# t.py
+import torch
 
-    def forward(self, x):
-        return F.linear(x, self.w)
 
-def my_model_function():
-    return MyModel()
+TRIGGER_SEGFAULT = True
 
-def GetInput():
-    return torch.randn(1000, 3000)  # Matches input shape from original code
+def no_op(*args, **kwargs):
+    return []
 
+def compiler_fn(gm):
+    if TRIGGER_SEGFAULT:
+        return torch.compile(gm, backend="eager")
+    else:
+        return no_op
+
+def main():
+    def inner():
+        x = torch.randn(1000, 3000)#, device="cuda")
+        w = torch.randn(1000, 3000, requires_grad=True)#, device="cuda")
+
+        def model(i):
+            return torch.nn.functional.linear(i, w)
+
+        out = model(x)
+        loss = out.sum()
+        with torch._dynamo.compiled_autograd.enable(compiler_fn):
+            loss.backward()
+        print(w.grad)
+
+    inner()
+    print("resetting dynamo")
+    torch._dynamo.reset()
+    inner()
+
+
+if __name__ == "__main__":
+    main()

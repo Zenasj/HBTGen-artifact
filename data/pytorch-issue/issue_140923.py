@@ -1,28 +1,11 @@
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 
-# torch.rand(5,7,9,9, dtype=torch.float) ← Input shape inferred from the issue's 'self' tensor
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        # Reproduce the forward path leading to max_pool2d_backward with problematic parameters
-        output, indices = F.max_pool2d(
-            x,
-            kernel_size=(3, 3),
-            stride=(1, 1),
-            padding=(1, 1),
-            return_indices=True
-        )
-        return output, indices  # Return both output and indices for backward usage
-
-def my_model_function():
-    # Returns the model instance with default parameters
-    return MyModel()
-
-def GetInput():
-    # Generate input matching the shape of 'self' in the issue (5,7,9,9)
-    return torch.rand(5, 7, 9, 9, dtype=torch.float)
-
+grad_output = torch.full((9,7,9,9,), 4.91269, dtype=torch.float)
+self = torch.full((5,7,9,9,), 9.71351, dtype=torch.float)
+kernel_size = [3,3]
+stride = [1,1]
+padding = [1,1]
+dilation = [1,1]
+ceil_mode = False
+indices = torch.full((5,7,9,9,), 5, dtype=torch.long)
+torch.ops.aten.max_pool2d_with_indices_backward(grad_output, self, kernel_size, stride, padding, dilation, ceil_mode, indices)

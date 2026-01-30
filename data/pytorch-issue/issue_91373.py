@@ -1,24 +1,47 @@
-# torch.rand(B, 3, dtype=torch.double)
+import random
+
+import numpy as np
 import torch
-from torch import nn
+from torch.utils.benchmark import Timer, Compare
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # No parameters, just computes different norm implementations
-        # Submodules not needed here as these are simple function calls
 
-    def forward(self, x):
-        # Compute all compared norm methods
-        linalg_norm = torch.linalg.norm(x, dim=1)
-        vector_norm = torch.linalg.vector_norm(x, dim=1)
-        custom_norm = torch.sqrt((x * x).sum(dim=1))
-        return linalg_norm, vector_norm, custom_norm
+def custom(x, dim):
+    return (x*x).sum(dim=1).sqrt()
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    # Matches input shape and dtype from benchmark (double precision issue)
-    return torch.rand(200000, 3, dtype=torch.double)
+def custom_np(x, axis):
+    return np.sqrt((x*x).sum(axis=1))
 
+
+fns = (torch.linalg.norm,
+       torch.linalg.vector_norm,
+       custom)
+np_fns = (np.linalg.norm, custom_np)
+
+
+def gen_inputs():
+    shape = (200000, 3)
+    for fn in fns:
+        t = torch.randn(shape, device="cpu")
+        yield (str(tuple(shape)), "torch", fn, t), dict(dim=1)
+    for fn in np_fns:
+        t = np.random.randn(200000, 3)
+        yield (str(tuple(shape)), "numpy", fn, t), dict(axis=1)
+
+
+def benchmark(description, lib, f, *args, **kwargs):
+    return Timer("f(*args, **kwargs)",
+                 globals=locals(),
+                 label="Norm",
+                 sub_label=f"{lib} {f.__name__}",
+                 description=description,
+                 num_threads=torch.get_num_threads()).blocked_autorange()
+
+
+results = []
+for args, kwargs in gen_inputs():
+    results.append(benchmark(*args, **kwargs))
+
+compare = Compare(results)
+compare.trim_significant_figures()
+compare.print()

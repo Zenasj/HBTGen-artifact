@@ -1,27 +1,74 @@
-# torch.rand(B, 3, 224, 224, dtype=torch.float32)
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Example architecture using common PyTorch modules with type hints
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1)
-        self.relu = nn.ReLU()
-        self.fc = nn.Linear(64 * 224 * 224, 10)  # Simplified for example
+# Bring datatype enums to the main namespace
+class DataType:
+    pass
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.conv1(x)
-        x = self.relu(x)
-        x = x.view(x.size(0), -1)
-        x = self.fc(x)
-        return x
+def _InitDataType():
+    for name, value in caffe2_pb2.TensorProto.DataType.items():
+        setattr(DataType, name, value)
 
-def my_model_function() -> nn.Module:
-    # Returns an instance of the model with basic initialization
-    return MyModel()
+_InitDataType()
 
-def GetInput() -> torch.Tensor:
-    # Generates a random input tensor matching the expected shape
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
+from functools import wraps
+from typing import Any, Callable
 
+import torch
+from torch import Tensor, nn
+from torch.utils.data import DataLoader, TensorDataset
+
+
+PREDICT_BATCH_SIZE = 1024
+
+
+def uniform_weight_initializer(module: nn.Module, lower: float, upper: float) -> None:
+    """
+    Initialize weights from Unif(lower, upper). Initialize biases as zero.
+    Initialization is performed in-place.
+    """
+    if isinstance(module, nn.Linear):
+        nn.init.uniform_(module.weight, lower, upper)
+        if module.bias is not None:
+            nn.init.zeros_(module.bias) # ERROR HERE
+
+if isinstance(module, nn.Linear):
+        nn.init.uniform_(module.weight, lower, upper)
+        if module.bias is not None:
+            nn.init.zeros_(module.bias) # ERROR HERE
+
+import torch
+from torch import Tensor, nn
+
+
+def func(module: nn.Module) -> Tensor:
+    res = torch.tensor([])
+    #if isinstance(module, nn.Linear):
+    nn.init.uniform_(module.weight, 0, 1)
+    #if module.bias is not None:
+    res = nn.init.zeros_(module.bias)
+
+    return res
+
+
+module = nn.Linear(10, 30, bias=False)
+t1 = torch.randn(256, 10)
+t2 = module(t1)
+res = func(module)
+
+if isinstance(module, nn.Linear):
+        nn.init.uniform_(module.weight, 0, 1)
+        #if module.bias is not None:
+        res = nn.init.zeros_(module.bias)
+
+if isinstance(module, nn.Linear):
+        nn.init.uniform_(module.weight, 0, 1)
+        reveal_type(module)
+        reveal_type(module.bias)
+        if module.bias is not None:
+            res = nn.init.zeros_(module.bias)
+
+nn.init.zeros_(module.bias)  # pyre-ignore[6]
+
+if module.bias is not None:
+            bias = module.bias
+            res = nn.init.zeros_(bias)

@@ -1,27 +1,18 @@
-# torch.rand(B, C, H, W, dtype=...)  # Input shape: (1, 1, 2, 2)
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.max_pool = nn.MaxPool2d(kernel_size=2, stride=2, return_indices=True)
-        self.max_unpool = nn.MaxUnpool2d(kernel_size=2, stride=2)
+import torch
+input = torch.rand([1, 1, 2, 2], dtype=torch.float32)
+indices = torch.randint(-16,1024,[1, 1, 2, 2], dtype=torch.int64)
+kernel_size = [16, -1024]
+stride = [-16, 1]
+print(torch.nn.functional.max_unpool2d(input, indices, kernel_size, stride))
+# tensor([], size=(1, 1, 0, -1023))
 
-    def forward(self, x):
-        # Perform max pooling
-        pooled, indices = self.max_pool(x)
-        
-        # Perform max unpooling
-        unpooled = self.max_unpool(pooled, indices)
-        
-        return unpooled
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand([1, 1, 2, 2], dtype=torch.float32)
-
+import torch
+input = torch.rand([1, 1, 2, 2], dtype=torch.float32)
+indices = torch.randint(-16,1024,[1, 1, 2, 2], dtype=torch.int64)
+kernel_size = [16, -1024]
+# stride = [-16, 1]
+stride = None
+print(torch.nn.functional.max_unpool2d(input, indices, kernel_size, stride))
+# RuntimeError: [enforce fail at CPUAllocator.cpp:50] ((ptrdiff_t)nbytes) >= 0. alloc_cpu() seems to have been called with negative number: 18446744073709289472

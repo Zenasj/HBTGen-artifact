@@ -1,42 +1,35 @@
-# torch.rand(1, 3, 224, 224, dtype=torch.float32) ← Add a comment line at the top with the inferred input shape
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.linear1 = nn.Linear(3 * 224 * 224, 1024)
-        self.linear2 = nn.Linear(1024, 10)
-
-    def forward(self, x):
-        x = x.view(x.size(0), -1)
-        x = torch.relu(self.linear1(x))
-        x = self.linear2(x)
-        return x
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
-
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
-
-# The provided GitHub issue is about a change in the PyTorch codebase related to the `accumulate_grad_` operation. It does not contain a complete PyTorch model or any specific model structure. However, I can infer a simple model and create a Python script that includes the `accumulate_grad_` operation as described in the issue.
-# Since the issue does not provide a specific input shape, I will assume a common input shape for a simple neural network, such as `(B, C, H, W) = (1, 3, 224, 224)`.
-# Here is the generated Python code:
-# ### Explanation:
-# 1. **MyModel Class**:
-#    - A simple feedforward neural network with two linear layers.
-#    - The input is flattened and passed through the first linear layer, followed by a ReLU activation.
-#    - The output of the first layer is then passed through the second linear layer.
-# 2. **my_model_function**:
-#    - Returns an instance of `MyModel`.
-# 3. **GetInput Function**:
-#    - Generates a random tensor of shape `(1, 3, 224, 224)` with `dtype=torch.float32`.
-# This code is ready to be used with `torch.compile(MyModel())(GetInput())`. The `accumulate_grad_` operation is not directly included in this model, as it is a lower-level operation typically handled by the PyTorch autograd system. If you need to include a custom `accumulate_grad_` operation, please provide more details or a specific use case.
+def forward(self, inputs, sizes, hooks):
+    getitem = inputs[0]
+    getitem_1 = inputs[1]
+    getitem_2 = inputs[2]
+    getitem_3 = inputs[3]
+    getitem_4 = inputs[4]
+    getitem_5 = inputs[5]
+    getitem_6 = inputs[6]
+    getitem_7 = inputs[7]
+    getitem_8 = inputs[8]
+    getitem_9 = inputs[9];  inputs = None
+    expand = torch.ops.aten.expand.default(getitem, [2, 4]);  getitem = None
+    threshold_backward = torch.ops.aten.threshold_backward.default(expand, getitem_1, 0);  expand = getitem_1 = None
+    t = torch.ops.aten.t.default(getitem_3);  getitem_3 = None
+    mm = torch.ops.aten.mm.default(threshold_backward, t);  t = None
+    t_1 = torch.ops.aten.t.default(threshold_backward)
+    mm_1 = torch.ops.aten.mm.default(t_1, getitem_2);  t_1 = getitem_2 = None
+    t_2 = torch.ops.aten.t.default(mm_1);  mm_1 = None
+    sum_1 = torch.ops.aten.sum.dim_IntList(threshold_backward, [0], True);  threshold_backward = None
+    view = torch.ops.aten.view.default(sum_1, [4]);  sum_1 = None
+    t_3 = torch.ops.aten.t.default(t_2);  t_2 = None
+    accumulate_grad_ = torch.ops.inductor.accumulate_grad_.default(getitem_4, t_3);  getitem_4 = t_3 = None
+    threshold_backward_1 = torch.ops.aten.threshold_backward.default(mm, getitem_5, 0);  mm = getitem_5 = None
+    t_4 = torch.ops.aten.t.default(threshold_backward_1)
+    mm_2 = torch.ops.aten.mm.default(t_4, getitem_6);  t_4 = getitem_6 = None
+    t_5 = torch.ops.aten.t.default(mm_2);  mm_2 = None
+    sum_2 = torch.ops.aten.sum.dim_IntList(threshold_backward_1, [0], True);  threshold_backward_1 = None
+    view_1 = torch.ops.aten.view.default(sum_2, [4]);  sum_2 = None
+    t_6 = torch.ops.aten.t.default(t_5);  t_5 = None
+    accumulate_grad__1 = torch.ops.inductor.accumulate_grad_.default(getitem_7, t_6);  getitem_7 = t_6 = None
+    accumulate_grad__2 = torch.ops.inductor.accumulate_grad_.default(getitem_8, view_1);  getitem_8 = view_1 = None
+    accumulate_grad__3 = torch.ops.inductor.accumulate_grad_.default(getitem_9, view);  getitem_9 = view = None
+    return []

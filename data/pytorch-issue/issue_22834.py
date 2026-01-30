@@ -1,23 +1,21 @@
-# torch.rand(B, 3, 224, 224, dtype=torch.float32)  # ResNet18 input shape (batch, channels, height, width)
 import torch
-import torch.nn as nn
-from torchvision.models import resnet18
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.resnet = resnet18()  # Base model from torchvision
+for trial in range(maxtrials):
+    if inference:
+        with torch.no_grad():
+            ys = model(xs)
+    else:
+        optimizer.zero_grad()
+        ys = model(xs)
+        loss = criterion(ys, targets)
+        if amp_level is not None:
+            with amp.scale_loss(loss, optimizer) as scaled_loss:
+                scaled_loss.backward()
+        else:
+            loss.backward()
+        optimizer.step()
 
-    def forward(self, x):
-        return self.resnet(x)
+    finish = time.time()
 
-def my_model_function():
-    # Initialize the model with default weights
-    model = MyModel()
-    return model
-
-def GetInput():
-    # Generate random input tensor matching ResNet18 requirements
-    batch_size = 3  # Example batch size from issue logs
-    return torch.rand(batch_size, 3, 224, 224, dtype=torch.float32)
-
+    if finish-start >= mintime and trial >= mintrials:
+        break

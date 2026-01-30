@@ -1,16 +1,17 @@
-# torch.rand(1, dtype=torch.float16), torch.rand(1, dtype=torch.float16)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        x, y = inputs
-        t = torch.linalg.vector_norm(x)
-        return torch.remainder(y, t)
+def fn(x, y):
+    t = torch.linalg.vector_norm(x)
+    return torch.remainder(y, t)
 
-def my_model_function():
-    return MyModel()
+x = torch.rand([1], dtype=torch.float16)
+y = torch.rand([1], dtype=torch.float16)
 
-def GetInput():
-    return (torch.rand(1, dtype=torch.float16), torch.rand(1, dtype=torch.float16))
+ret_eager = fn(x, y)
+print('==== Eager mode OK! ====')
 
+compiled = torch.compile(fn)
+print('==== torchcomp compilation OK! ====')
+
+ret_compiled = compiled(x, y)
+print('==== torchcomp mode OK! ====')

@@ -1,55 +1,69 @@
-# tf.random.uniform((BATCH_SIZE, 28*28), dtype=tf.float32)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
+
 import tensorflow as tf
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Simple MLP model for MNIST flattened (28*28 input)
-        self.dense1 = tf.keras.layers.Dense(512, activation='relu')
-        self.dropout = tf.keras.layers.Dropout(0.2, seed=1)
-        self.dense2 = tf.keras.layers.Dense(10, activation='softmax')
+np.random.seed(1)
+tf.random.set_seed(1)
+BATCH_SIZE = 32
 
-        # Two possible metric configurations to illustrate the issue:
-        # 1. Using string 'accuracy' metric (which uses SparseCategoricalAccuracy internally)
-        self.metric_str_accuracy = tf.keras.metrics.SparseCategoricalAccuracy()
+#Import mnist dataset as numpy arrays
+(x_train, y_train), (_, _) = tf.keras.datasets.mnist.load_data()#Import
+x_train = x_train / 255.0 #normalizing
+y_train = y_train.astype(dtype='float32')
+x_train = x_train.astype(dtype='float32')
 
-        # 2. Using tf.metrics.Accuracy() -- causes shape mismatch if used directly with sparse labels
-        self.metric_raw_accuracy = tf.metrics.Accuracy()
+x_train = np.reshape(x_train, (x_train.shape[0], x_train.shape[1]*x_train.shape[2]))#Reshaping the 2D picture
 
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.dropout(x, training=training)
-        return self.dense2(x)
+##############################################################################################
+#THIS BLOCK CREATES A DATASET FROM THE NUMPY ARRAYS. IT WILL BE USED FOR THE CASE OF TF.DATA DATASET INPUTS
+tfdata_dataset_train = tf.data.Dataset.from_tensor_slices((x_train, y_train))
+tfdata_dataset_train = tfdata_dataset_train.batch(BATCH_SIZE).repeat()
+##############################################################################################
 
-    def compute_metrics_comparison(self, y_true, y_pred):
-        """
-        Computes and returns metric values from both metrics (string-based SparseCategoricalAccuracy and raw Accuracy).
-        This will illustrate the typical difference and the shape mismatch issue real kernels face.
-        """
-        # Note: y_pred is probability distribution for 10 classes
-        # SparseCategoricalAccuracy expects (batch_size,) int labels matching argmax of predictions
-        self.metric_str_accuracy.update_state(y_true, y_pred)
+#Create model
+keras_model = tf.keras.models.Sequential([
+    tf.keras.layers.Dense(512, activation=tf.nn.relu),
+    tf.keras.layers.Dropout(0.2, seed=1),
+    tf.keras.layers.Dense(10, activation=tf.nn.softmax)
+])
 
-        # For raw Accuracy metric, the inputs need to be same shape after argmax for y_pred
-        # We simulate how raw Accuracy expects labels to be given:
-        # It compares predictions and labels element-wise
-        # So first convert y_pred to predicted label indices:
-        y_pred_labels = tf.argmax(y_pred, axis=-1)
+metrics = [tf.metrics.Accuracy()]
+#metrics = ['accuracy']
 
-        # This metric expects y_true and y_pred_labels same shape
-        # For sparse labels shape (batch_size,), this is OK
-        self.metric_raw_accuracy.update_state(y_true, y_pred_labels)
+#Compile the model
+keras_model.compile(optimizer=tf.keras.optimizers.Adam(),
+                    loss=tf.keras.losses.sparse_categorical_crossentropy,
+                    metrics=metrics)
 
-        return (self.metric_str_accuracy.result(), self.metric_raw_accuracy.result())
 
-def my_model_function():
-    return MyModel()
+#Train with tf.data datasets
+keras_training_history = keras_model.fit(tfdata_dataset_train,
+                epochs=1,
+                steps_per_epoch=60000//BATCH_SIZE
+                )
+########################
 
-def GetInput():
-    BATCH_SIZE = 32
-    # MNIST flattened input shape (batch_size, 28*28), float32 normalized in [0,1]
-    x = tf.random.uniform((BATCH_SIZE, 28*28), dtype=tf.float32)
-    # Sparse labels: int32, values in [0-9], shape (batch_size,)
-    y = tf.random.uniform((BATCH_SIZE,), maxval=10, dtype=tf.int32)
-    return x, y
+"""Bug."""
+# import keras
+import numpy as np
+import tensorflow.keras as keras
 
+X = np.empty([10, 224, 224, 3])
+Y = np.empty([10, 2])
+
+MODEL = keras.applications.vgg16.VGG16(weights=None, classes=2)
+
+MODEL.compile(optimizer=keras.optimizers.Adam(),
+              loss='categorical_crossentropy',
+              metrics=['accuracy'])
+MODEL.fit(X, Y, epochs=10)
+
+MODEL.compile(optimizer=keras.optimizers.Adam(),
+              loss='categorical_crossentropy',
+              metrics=[keras.metrics.get('accuracy')])
+MODEL.fit(X, Y, epochs=10)

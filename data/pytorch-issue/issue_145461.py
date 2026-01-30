@@ -1,20 +1,22 @@
-# torch.rand(1024, dtype=torch.float32, device="cuda")  # Input shape and dtype
 import torch
-from torch import nn
+from torch.optim import Adam, AdamW
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.layers = nn.Sequential(
-            *[nn.Linear(1024, 1024, bias=False, device="cuda") for _ in range(10)]
-        )
+def build_optim(optim, lr, beta1, beta2):
+    param = torch.rand(2, 3, dtype=torch.float, device="cuda", requires_grad=True)
+    param.grad = torch.rand_like(param)
     
-    def forward(self, x):
-        return self.layers(x)
+    lr = torch.tensor(lr, device="cuda")
+    betas = (torch.tensor(beta1, device="cuda"), torch.tensor(beta2, device="cuda"))
+    print(optim.__name__, lr, betas)
+    
+    return optim([param], lr=lr, betas=betas)
 
-def my_model_function():
-    return MyModel()
+from itertools import product
 
-def GetInput():
-    return torch.rand(1024, dtype=torch.float32, device="cuda")
-
+for optim, lr, beta1, beta2 in product([Adam, AdamW], [0.1, [0.1]], [0.9, [0.9]], [0.99, [0.99]]):
+    optimizer = build_optim(optim, lr, beta1, beta2)
+    try:
+        optimizer.step()
+        print(">>> No error occurred.")
+    except Exception as e:
+        print(">>>", e)

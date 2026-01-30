@@ -1,96 +1,138 @@
-# tf.random.uniform((B, sequence_length, C), dtype=tf.float32) with B=batch_size, sequence_length=9, C=1 (numeric), or C=embedding_units (categorical embedding)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
+import numpy as np
 import tensorflow as tf
 from tensorflow.keras import Model
+from tensorflow.python.feature_column.feature_column_v2 import EmbeddingColumn
 from tensorflow.keras.layers import LSTM, Dense
 from tensorflow.keras.experimental import SequenceFeatures
-from tensorflow.python.feature_column.feature_column_v2 import EmbeddingColumn
 
-# This model reproduces the reported issue with subclassed models using SequenceFeatures layer,
-# especially the difference of handling sequence_numeric_column vs embedding_column.
-# The fix applied below is: use tf.shape() (dynamic shape) when converting dense numeric inputs 
-# to sparse tensor, instead of dense.shape (static shape), as the static shape has batch dimension None.
+print('Using Tensorflow version {} (git version {})'.format(tf.version.VERSION, tf.version.GIT_VERSION))
 
-class MyModel(tf.keras.Model):
-    def __init__(self, fc_list, nb_features, name='my_model', **kwargs):
-        super().__init__(name=name, **kwargs)
+class Toy(Model):
+
+    def __init__(self,
+                 fc_list,
+                 nb_features,
+                 name='toy_model',
+                 **kwargs):
+        super(Toy, self).__init__(name=name, **kwargs)
         self.fc_list = fc_list
-        self.nb_features = nb_features
-        
-        # Create a SequenceFeatures layer for each feature column
-        self.seq_features_layers = {}
-        for fc in self.fc_list:
-            self.seq_features_layers[fc.name] = SequenceFeatures(fc)
-        
-        self.lstm = LSTM(64, return_sequences=False)
-        self.output_layer = Dense(self.nb_features, activation='softmax')
-    
-    def call(self, inputs, training=None):
-        # inputs: dict of tensors:
-        # For numeric sequence column: inputs[fc_name] is dense float tensor [batch, seq_len, ...]
-        # For categorical sequence column with embedding: inputs[fc_name] is integer tensor of IDs
-        processed_features = {}
-        
+        self.dict_layers = {}
         for fc in self.fc_list:
             fc_name = fc.name
-            # Handle EmbeddingColumn differently from sequence_numeric_column
-            if isinstance(fc, EmbeddingColumn):
-                # SequenceFeatures returns a tuple with single item output at position 0
-                processed_features[fc_name] = self.seq_features_layers[fc_name](inputs)[0]
+            self.dict_layers[fc_name] = SequenceFeatures(fc)
+        self.lstm = LSTM(64, return_sequences=False)
+        self.output_layer = Dense(nb_features, activation='softmax')
+        
+    def call(self, inputs, training=None):
+        dict_apply_layers = {}
+        for fc in self.fc_list:
+            fc_name = fc.name
+            if type(fc) == EmbeddingColumn:
+                dict_apply_layers[fc_name] = self.dict_layers[fc_name](inputs)[0]
             else:
-                # For sequence_numeric_column, input is dense float tensor (batch, seq_len, feature_dim)
-                dense = inputs[fc_name]
+                # we need to convert inputs[fc_name] to a sparse tensor, see https://github.com/tensorflow/tensorflow/issues/29879
                 zero = tf.constant(0, dtype=tf.float32)
-                
-                # Convert dense tensor to sparse tensor.
-                # The reported issue occurs because using dense.shape (static) doesn't have batch dim,
-                # so use tf.shape(dense) to get dynamic shape:
+                dense = inputs[fc_name]
                 indices = tf.where(tf.not_equal(dense, zero))
                 values = tf.gather_nd(dense, indices)
-                
-                # Use dynamic shape for shape of sparse tensor
-                dense_shape = tf.shape(dense)
-                sparse = tf.SparseTensor(indices, values, dense_shape)
-                
-                processed_features[fc_name] = self.seq_features_layers[fc_name]({fc_name: sparse})[0]
-        
-        # Concatenate all processed features on last dimension
-        x = tf.concat(list(processed_features.values()), axis=-1)
-        
+                sparse = tf.SparseTensor(indices, values, dense.shape)
+                dict_apply_layers[fc_name] = self.dict_layers[fc_name]({fc_name: sparse})[0]
+        x = tf.concat([v for _, v in dict_apply_layers.items()], axis=-1)
         x = self.lstm(x)
         x = self.output_layer(x)
         return x
+    
+#Dataset Parameters
+nb_batches = 15
+batch_size = 24
+sequence_length = 9
+nb_features = 10
 
-def my_model_function():
-    # Construct example feature columns matching the original issue:
-    # - One sequence_numeric_column named 'dense'
-    # - One sequence_categorical_column_with_identity + embedding named 'categorical', embedding dim=16
-    sequence_length = 9
-    nb_features = 10
-    embedding_units = 16
-    
-    fc_dense = tf.feature_column.sequence_numeric_column('dense')
-    fc_cat = tf.feature_column.sequence_categorical_column_with_identity('categorical', nb_features)
-    fc_cat = tf.feature_column.embedding_column(fc_cat, embedding_units)
-    
-    # We can create a model with both feature columns as an example,
-    # but to test specifically the numeric column fix, you can pass [fc_dense] only.
-    return MyModel([fc_dense, fc_cat], nb_features=nb_features)
+#Dataset construction
+input_dense = tf.constant(np.random.normal(0, 1, (nb_batches, batch_size, sequence_length)))
+input_dense = tf.cast(input_dense, dtype=tf.float32)
+input_cat = tf.constant(np.random.randint(0, nb_features, (nb_batches, batch_size, sequence_length)))
+input_dict = {'dense': input_dense, 'categorical': input_cat}
+input_dataset = tf.data.Dataset.from_tensor_slices(input_dict)
 
-def GetInput():
-    # Return an input dictionary matching the expected input for MyModel
-    # The inputs have batch dimension B, sequence length 9, feature dims accordingly
-    B = 24     # mimic batch_size
-    seq_len = 9
-    nb_features = 10
-    embedding_units = 16  # only needed for construction, not input
-    
-    # Numeric sequence input 'dense': shape (B, seq_len), float32
-    # Use 1-dimensional numeric features per time step
-    dense_input = tf.random.uniform((B, seq_len, 1), dtype=tf.float32)
-    
-    # Categorical sequence input 'categorical': integer IDs in [0, nb_features-1] shape (B, seq_len)
-    categorical_input = tf.random.uniform((B, seq_len), minval=0, maxval=nb_features, dtype=tf.int32)
-    
-    # Compose dictionary
-    return {'dense': dense_input, 'categorical': categorical_input}
+target_cat = tf.constant(np.random.randint(0, high=nb_features, size=(nb_batches, batch_size)))
+target_dataset = tf.data.Dataset.from_tensor_slices(target_cat)
 
+training_dataset = tf.data.Dataset.zip((input_dataset, target_dataset))
+
+#Feature columns definition
+fc_dense = tf.feature_column.sequence_numeric_column('dense')
+fc_cat = tf.feature_column.sequence_categorical_column_with_identity('categorical', nb_features)
+embedding_units = 16
+fc_cat = tf.feature_column.embedding_column(fc_cat, embedding_units)
+    
+#Model Parameters
+rnn_units = 64
+
+#Training Parameters
+epochs = 2
+
+#Try the model with the sequence_numeric_column feature column
+model = Toy([fc_dense,], nb_features)
+model.compile(optimizer='adam',
+              loss='sparse_categorical_crossentropy',
+              metrics=['sparse_categorical_accuracy'])
+try:
+    model.fit(x=training_dataset, epochs=epochs)
+    model.evaluate(x=training_dataset)
+except ValueError as e:
+    print(e)
+try:
+    path = 'tmp/test'
+    model.save(path)
+    new_model = tf.keras.models.load_model(path)
+    new_model.evaluate(x=training_dataset)
+except ValueError as e:
+    print(e)
+    
+#Try the call method with the sequence_numeric_column feature column
+model = Toy([fc_dense], nb_features)
+try:
+    for x, y in training_dataset:
+        model(x)
+    print('call worked')
+except ValueError as e:
+    print(e)
+
+#Try the call method in graph mode with the sequence_numeric_column feature column
+@tf.function
+def call_graph(model, inputs):
+    return model(inputs)
+model = Toy([fc_dense], nb_features)
+try:
+    for x, y in training_dataset:
+        call_graph(model, x)
+    print('call in graph mode worked')
+except ValueError as e:
+    print(e)
+    
+#Try the model with the embedding_column feature column
+model = Toy([fc_cat,], nb_features)
+model.compile(optimizer='adam',
+              loss='sparse_categorical_crossentropy',
+              metrics=['sparse_categorical_accuracy'])
+try:
+    model.fit(x=training_dataset, epochs=epochs)
+    model.evaluate(x=training_dataset)
+except ValueError as e:
+    print(e)
+try:
+    path = 'tmp/test'
+    model.save(path)
+    new_model = tf.keras.models.load_model(path)
+    new_model.evaluate(x=training_dataset)
+except ValueError as e:
+    print(e)
+
+for x, y in training_dataset.take(1):
+    model(x)

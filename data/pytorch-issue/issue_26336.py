@@ -1,22 +1,35 @@
-# torch.rand(1, 2, 1, 1, dtype=torch.float32)
+#!/usr/bin/env python
+import os
+import time
+from datetime import timedelta
 import torch
-from torch import nn
+import torch.distributed as dist
+from torch.multiprocessing import Process
+import torch.distributed.rpc as rpc
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Dummy module to mirror RPC test scenario
-        self.add_op = nn.Identity()  # Matches torch.add behavior in test
-        
-    def forward(self, x):
-        # Simulate RPC-encapsulated operation (e.g., torch.add)
-        return self.add_op(x + 2)  # Matches test's torch.add(ones(2), 2)
+def run(rank, size):
+    if rank == 0:
+        time.sleep(0.5) # to allow the other process to exit without joining
+        ret = rpc.rpc_async("worker1", torch.add, args=(torch.ones(2), 2))
+        result = ret.wait()
 
-def my_model_function():
-    # Returns model instance with minimal initialization
-    return MyModel()
+def init_process(rank, size, fn, backend='gloo'):
+    """ Initialize the distributed environment. """
+    os.environ['MASTER_ADDR'] = '127.0.0.1'
+    os.environ['MASTER_PORT'] = '29509'
+    dist.init_process_group(backend, rank=rank, world_size=size, timeout=timedelta(seconds=12))
+    rpc.init_model_parallel("worker{}".format(rank))
+    fn(rank, size)
+    if rank == 0: rpc.join_rpc()
 
-def GetInput():
-    # Matches test's input dimensions (adjusted to 4D tensor)
-    return torch.rand(1, 2, 1, 1, dtype=torch.float32)
 
+if __name__ == "__main__":
+    size = 2
+    processes = []
+    for rank in range(size):
+        p = Process(target=init_process, args=(rank, size, run))
+        p.start()
+        processes.append(p)
+
+    for p in processes:
+        p.join()

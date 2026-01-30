@@ -1,44 +1,25 @@
-# tf.random.uniform((B, H, W, C), dtype=tf.float32) 
-# Input shape is unknown from the issue since it's about callbacks, 
-# but to create a minimal example matching typical model.predict input, 
-# we'll assume a classification model for MNIST-like data: (batch_size, 28, 28, 1).
+class MyCallback(keras.callbacks.Callback):
+    def __init__(self, test_data):
+        super(MyCallback, self).__init__()
+        self.test_data = test_data
 
-import tensorflow as tf
+    def on_epoch_end(self, epoch, logs=None):
+        print(f"\n--------- pre-predict stop_training={self.model.stop_training}\n")
+        #The problem is in the prediction: if commented ES works fine
+        predictions = self.model.predict(self.test_data.batch(512))
+        print(f"\n--------- post-predict stop_training={self.model.stop_training}\n")
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Simple CNN classifier for demonstration:
-        self.conv1 = tf.keras.layers.Conv2D(32, 3, activation='relu')
-        self.pool1 = tf.keras.layers.MaxPooling2D()
-        self.conv2 = tf.keras.layers.Conv2D(64, 3, activation='relu')
-        self.pool2 = tf.keras.layers.MaxPooling2D()
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(64, activation='relu')
-        self.dropout = tf.keras.layers.Dropout(0.5)
-        self.out = tf.keras.layers.Dense(10, activation='softmax')  # Assume 10 classes
-    
-    def call(self, inputs, training=False):
-        x = self.conv1(inputs)
-        x = self.pool1(x)
-        x = self.conv2(x)
-        x = self.pool2(x)
-        x = self.flatten(x)
-        x = self.dense1(x)
-        x = self.dropout(x, training=training)
-        return self.out(x)
+es = keras.callbacks.EarlyStopping(patience=2)
+myc = MyCallback(test_data)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches model input shape
-    # Typical image batch shapes: (batch_size, 28, 28, 1)
-    batch_size = 8  # small batch for demonstration
-    height = 28
-    width = 28
-    channels = 1
-    # Use dtype float32 as usual for image input to conv layers
-    return tf.random.uniform((batch_size, height, width, channels), dtype=tf.float32)
-
+#This causes EarlyStop not to stop
+my_callbacks = [es, myc]
+#Either of these works fine
+#my_callbacks = [myc, es]
+#my_callbacks = [es]
+...
+model.fit(train_data.batch(512),
+          validation_data=validation_data.batch(512),
+          epochs=100,
+          callbacks=my_callbacks,
+          verbose=1)

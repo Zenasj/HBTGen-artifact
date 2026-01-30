@@ -1,24 +1,27 @@
-# torch.rand(1, 2, 3, 1, dtype=torch.float32)
 import torch
-from torch import nn
+import numpy as np
+# 1.24.0
+print(np.__version__)
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.linear = nn.Linear(6, 4)  # 2*3*1 input features → 4 outputs
-        self.relu = nn.ReLU()
+t = torch.randn(2, 3).numpy()
+torch.save(t, "numpy.pt")
+# ['numpy.core.multiarray._reconstruct', 'numpy.dtype', 'numpy.ndarray']
+print(torch.serialization.get_unsafe_globals_in_checkpoint("numpy.pt"))
 
-    def forward(self, x):
-        x = x.view(x.size(0), -1)  # Flatten 4D input to 2D
-        x = self.linear(x)
-        return self.relu(x)
 
-def my_model_function():
-    model = MyModel()
-    # Initialize weights with Xavier uniform for numerical stability
-    torch.nn.init.xavier_uniform_(model.linear.weight)
-    return model
+# This fails despite np.dtype being allowed
+# _pickle.UnpicklingError: Weights only load failed. Re-running `torch.load` with `weights_only` set to `False` will likely 
+# succeed, but it can result in arbitrary code execution. Do it only if you got the file from a trusted source.
+# Please file an issue with the following so that we can make `weights_only=True` compatible with your use case: 
+# WeightsUnpickler error: Can only build Tensor, Parameter, OrderedDict or types allowlisted via `add_safe_globals`,
+# but # got <class 'numpy.dtype[float32]'>
+with torch.serialization.safe_globals([np.dtype, np.ndarray, np.core.multiarray._reconstruct]):
+    torch.load("numpy.pt")
 
-def GetInput():
-    return torch.rand(1, 2, 3, 1, dtype=torch.float32)
+# This succeeds
+with torch.serialization.safe_globals([np.dtype, np.ndarray, np.core.multiarray._reconstruct, type(np.dtype(np.float32))]):
+    torch.load("numpy.pt")
 
+# This succeeds
+with torch.serialization.safe_globals([np.dtype, np.ndarray, np.core.multiarray._reconstruct]):
+    torch.load("numpy.pt")

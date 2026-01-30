@@ -1,150 +1,381 @@
-# tf.random.uniform((B, 198, 198, 3), dtype=tf.float32) ← Input shape corresponds to (height=198, width=198, 3 channels RGB)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import BatchNormalization
+from tensorflow.keras.layers import Conv2D
+from tensorflow.keras.layers import MaxPooling2D
+from tensorflow.keras.layers import Activation
+from tensorflow.keras.layers import Dropout
+from tensorflow.keras.layers import Lambda
+from tensorflow.keras.layers import Dense
+from tensorflow.keras.layers import Flatten
+from tensorflow.keras.layers import Input
 import tensorflow as tf
-from tensorflow.keras.layers import (
-    Conv2D, BatchNormalization, MaxPooling2D, Activation, Dropout,
-    Lambda, Dense, Flatten, Input
-)
-from tensorflow.keras import Model
 
-class MyModel(tf.keras.Model):
-    """
-    Multi-output CNN for predicting age, race, and gender from input images.
-    This is a fused reimplementation based on the UtkMultiOutputModel class
-    from the original issue.
-
-    Outputs a dictionary with keys:
-      - 'age_output': Regression (linear activation output scalar)
-      - 'race_output': Multi-class classification (softmax over races)
-      - 'gender_output': Binary classification (sigmoid for 2 classes)
-
-    The network has 3 branches sharing the same base conv layers.
-    """
-
-    def __init__(self, width=198, height=198, num_races=5, num_genders=2):
-        super().__init__()
-        self.input_shape_ = (height, width, 3)
-        self.num_races = num_races
-        self.num_genders = num_genders
-
-        # Define shared convolutional base layers for default hidden layers method
-        self.conv1 = Conv2D(16, (3,3), padding="same")
-        self.act1 = Activation("relu")
-        self.bn1 = BatchNormalization(axis=-1)
-        self.pool1 = MaxPooling2D(pool_size=(3,3))
-        self.drop1 = Dropout(0.25)
-
-        self.conv2 = Conv2D(32, (3,3), padding="same")
-        self.act2 = Activation("relu")
-        self.bn2 = BatchNormalization(axis=-1)
-        self.pool2 = MaxPooling2D(pool_size=(2,2))
-        self.drop2 = Dropout(0.25)
-
-        self.conv3 = Conv2D(32, (3,3), padding="same")
-        self.act3 = Activation("relu")
-        self.bn3 = BatchNormalization(axis=-1)
-        self.pool3 = MaxPooling2D(pool_size=(2,2))
-        self.drop3 = Dropout(0.25)
-
-        # Age branch Dense layers
-        self.age_flatten = Flatten()
-        self.age_dense1 = Dense(128)
-        self.age_act1 = Activation("relu")
-        self.age_bn1 = BatchNormalization()
-        self.age_drop = Dropout(0.5)
-        self.age_output_layer = Dense(1, name="age_output")
-        self.age_activation = Activation("linear")
-
-        # Race branch Dense layers
-        self.race_flatten = Flatten()
-        self.race_dense1 = Dense(128)
-        self.race_act1 = Activation("relu")
-        self.race_bn1 = BatchNormalization()
-        self.race_drop = Dropout(0.5)
-        self.race_output_layer = Dense(self.num_races, name="race_output")
-        self.race_activation = Activation("softmax")
-
-        # Gender branch Dense layers
-        self.gender_rgb2gray = Lambda(lambda c: tf.image.rgb_to_grayscale(c))
-        self.gender_flatten = Flatten()
-        self.gender_dense1 = Dense(128)
-        self.gender_act1 = Activation("relu")
-        self.gender_bn1 = BatchNormalization()
-        self.gender_drop = Dropout(0.5)
-        self.gender_output_layer = Dense(self.num_genders, name="gender_output")
-        self.gender_activation = Activation("sigmoid")
-
-    def make_default_hidden_layers(self, x):
-        # Conv2D -> Activation -> BN -> MaxPool -> Dropout * 3 blocks
-        x = self.conv1(x)
-        x = self.act1(x)
-        x = self.bn1(x)
-        x = self.pool1(x)
-        x = self.drop1(x)
-
-        x = self.conv2(x)
-        x = self.act2(x)
-        x = self.bn2(x)
-        x = self.pool2(x)
-        x = self.drop2(x)
-
-        x = self.conv3(x)
-        x = self.act3(x)
-        x = self.bn3(x)
-        x = self.pool3(x)
-        x = self.drop3(x)
-
+class UtkMultiOutputModel():
+    def make_default_hidden_layers(self, inputs):
+        x = Conv2D(16, (3, 3), padding="same")(inputs)
+        x = Activation("relu")(x)
+        x = BatchNormalization(axis=-1)(x)
+        x = MaxPooling2D(pool_size=(3, 3))(x)
+        x = Dropout(0.25)(x)
+        x = Conv2D(32, (3, 3), padding="same")(x)
+        x = Activation("relu")(x)
+        x = BatchNormalization(axis=-1)(x)
+        x = MaxPooling2D(pool_size=(2, 2))(x)
+        x = Dropout(0.25)(x)
+        x = Conv2D(32, (3, 3), padding="same")(x)
+        x = Activation("relu")(x)
+        x = BatchNormalization(axis=-1)(x)
+        x = MaxPooling2D(pool_size=(2, 2))(x)
+        x = Dropout(0.25)(x)
         return x
 
-    def call(self, inputs, training=False):
-        # Age branch
-        age_x = self.make_default_hidden_layers(inputs)
-        age_x = self.age_flatten(age_x)
-        age_x = self.age_dense1(age_x)
-        age_x = self.age_act1(age_x)
-        age_x = self.age_bn1(age_x, training=training)
-        age_x = self.age_drop(age_x, training=training)
-        age_x = self.age_output_layer(age_x)
-        age_x = self.age_activation(age_x)
+    def build_race_branch(self, inputs, num_races):
+        x = self.make_default_hidden_layers(inputs)
+        x = Flatten()(x)
+        x = Dense(128)(x)
+        x = Activation("relu")(x)
+        x = BatchNormalization()(x)
+        x = Dropout(0.5)(x)
+        x = Dense(num_races)(x)
+        x = Activation("softmax", name="race_output")(x)
+        return x
 
-        # Race branch
-        race_x = self.make_default_hidden_layers(inputs)
-        race_x = self.race_flatten(race_x)
-        race_x = self.race_dense1(race_x)
-        race_x = self.race_act1(race_x)
-        race_x = self.race_bn1(race_x, training=training)
-        race_x = self.race_drop(race_x, training=training)
-        race_x = self.race_output_layer(race_x)
-        race_x = self.race_activation(race_x)
+    def build_gender_branch(self, inputs, num_genders=2):
+        x = Lambda(lambda c: tf.image.rgb_to_grayscale(c))(inputs)
+        x = self.make_default_hidden_layers(inputs)
+        x = Flatten()(x)
+        x = Dense(128)(x)
+        x = Activation("relu")(x)
+        x = BatchNormalization()(x)
+        x = Dropout(0.5)(x)
+        x = Dense(num_genders)(x)
+        x = Activation("sigmoid", name="gender_output")(x)
+        return x
 
-        # Gender branch: grayscale input
-        gender_x = self.gender_rgb2gray(inputs)
-        # The issue code dropped grayscale and reused inputs by mistake;
-        # here we apply make_default_hidden_layers to gender_x (1 channel grayscale)
-        gender_x = self.make_default_hidden_layers(gender_x)
-        gender_x = self.gender_flatten(gender_x)
-        gender_x = self.gender_dense1(gender_x)
-        gender_x = self.gender_act1(gender_x)
-        gender_x = self.gender_bn1(gender_x, training=training)
-        gender_x = self.gender_drop(gender_x, training=training)
-        gender_x = self.gender_output_layer(gender_x)
-        gender_x = self.gender_activation(gender_x)
+    def build_age_branch(self, inputs):   
+        x = self.make_default_hidden_layers(inputs)
+        x = Flatten()(x)
+        x = Dense(128)(x)
+        x = Activation("relu")(x)
+        x = BatchNormalization()(x)
+        x = Dropout(0.5)(x)
+        x = Dense(1)(x)
+        x = Activation("linear", name="age_output")(x)
+        return x
 
-        return {
-            'age_output': age_x,
-            'race_output': race_x,
-            'gender_output': gender_x
-        }
+    def assemble_full_model(self, width, height, num_races):
+        input_shape = (height, width, 3)
+        inputs = Input(shape=input_shape)
+        age_branch = self.build_age_branch(inputs)
+        race_branch = self.build_race_branch(inputs, num_races)
+        gender_branch = self.build_gender_branch(inputs)
+        model = Model(inputs=inputs,
+                     outputs = {'A' : age_branch, 'B' : race_branch, 'C' : gender_branch},
+                     name="face_net")
+        return model
+    
+model = UtkMultiOutputModel().assemble_full_model(IM_WIDTH, IM_HEIGHT, num_races=len(dataset_dict['race_alias']))
 
+model.compile(optimizer=opt, 
+              loss={
+                  'age_output': 'mse', 
+                  'race_output': 'categorical_crossentropy', 
+                  'gender_output': 'binary_crossentropy'},
+              loss_weights={
+                  'age_output': 4., 
+                  'race_output': 1.5, 
+                  'gender_output': 0.1},
 
-def my_model_function():
-    # Return an instance of MyModel configured with default input size 198x198 and race classes=5
-    return MyModel(width=198, height=198, num_races=5, num_genders=2)
+              # this will not work when outputs is a dict, but will work when outputs is a list or tuple
+              metrics={
+                  'age_output': ['mae', 'accuracy'], 
+                  'race_output': ['accuracy', 'mae'],
+                  'gender_output': ['accuracy', 'mae']})
 
+             # this will work with a dict, list and tuple but is not what I want
+             # metrics=['accuracy']
 
-def GetInput():
-    # Create a random tensor simulating a batch of images with correct input shape
-    batch_size = 32  # Default batch size similar to example
-    input_tensor = tf.random.uniform(shape=(batch_size, 198, 198, 3), dtype=tf.float32)
-    return input_tensor
+history = model.fit_generator(train_gen,
+                    steps_per_epoch=len(train_idx)//batch_size,
+                    epochs=epochs,
+                    validation_data=valid_gen,
+                    validation_steps=len(valid_idx)//valid_batch_size)
 
+import numpy as np 
+import pandas as pd
+import os
+import glob
+import pandas as pd
+import matplotlib.pyplot as plt
+
+dataset_folder_name = '/data/UTKFace'
+
+TRAIN_TEST_SPLIT = 0.7
+IM_WIDTH = IM_HEIGHT = 198
+dataset_dict = {
+    'race_id': {
+        0: 'white', 
+        1: 'black', 
+        2: 'asian', 
+        3: 'indian', 
+        4: 'others'
+    },
+    'gender_id': {
+        0: 'male',
+        1: 'female'
+    }
+}
+dataset_dict['gender_alias'] = dict((g, i) for i, g in dataset_dict['gender_id'].items())
+dataset_dict['race_alias'] = dict((r, i) for i, r in dataset_dict['race_id'].items())
+
+def parse_dataset(dataset_path, ext='jpg'):
+    """
+    Used to extract information about our dataset. It does iterate over all images and return a DataFrame with
+    the data (age, gender and sex) of all files.
+    """
+    def parse_info_from_file(path):
+        """
+        Parse information from a single file
+        """
+        try:
+            filename = os.path.split(path)[1]
+            filename = os.path.splitext(filename)[0]
+            age, gender, race, _ = filename.split('_')
+            return int(age), dataset_dict['gender_id'][int(gender)], dataset_dict['race_id'][int(race)]
+        except Exception as ex:
+            return None, None, None
+        
+    files = glob.glob(os.path.join(dataset_path, "*.%s" % ext))
+    
+    records = []
+    for file in files:
+        info = parse_info_from_file(file)
+        records.append(info)
+        
+    df = pd.DataFrame(records)
+    df['file'] = files
+    df.columns = ['age', 'gender', 'race', 'file']
+    df = df.dropna()
+    
+    return df
+df = parse_dataset(dataset_folder_name)
+df.head()
+
+from tensorflow.keras.utils import to_categorical
+from PIL import Image
+class UtkFaceDataGenerator():
+    """
+    Data generator for the UTKFace dataset. This class should be used when training our Keras multi-output model.
+    """
+    def __init__(self, df):
+        self.df = df
+        
+    def generate_split_indexes(self):
+        p = np.random.permutation(len(self.df))
+        train_up_to = int(len(self.df) * TRAIN_TEST_SPLIT)
+        train_idx = p[:train_up_to]
+        test_idx = p[train_up_to:]
+        train_up_to = int(train_up_to * TRAIN_TEST_SPLIT)
+        train_idx, valid_idx = train_idx[:train_up_to], train_idx[train_up_to:]
+        
+        # converts alias to id
+        self.df['gender_id'] = self.df['gender'].map(lambda gender: dataset_dict['gender_alias'][gender])
+        self.df['race_id'] = self.df['race'].map(lambda race: dataset_dict['race_alias'][race])
+        self.max_age = self.df['age'].max()
+        
+        return train_idx, valid_idx, test_idx
+    
+    def preprocess_image(self, img_path):
+        """
+        Used to perform some minor preprocessing on the image before inputting into the network.
+        """
+        im = Image.open(img_path)
+        im = im.resize((IM_WIDTH, IM_HEIGHT))
+        im = np.array(im) / 255.0
+        
+        return im
+        
+    def generate_images(self, image_idx, is_training, batch_size=16):
+        """
+        Used to generate a batch with images when training/testing/validating our Keras model.
+        """
+        
+        # arrays to store our batched data
+        images, ages, races, genders = [], [], [], []
+        while True:
+            for idx in image_idx:
+                person = self.df.iloc[idx]
+                
+                age = person['age']
+                race = person['race_id']
+                gender = person['gender_id']
+                file = person['file']
+                
+                im = self.preprocess_image(file)
+                
+                ages.append(age / self.max_age)
+                races.append(to_categorical(race, len(dataset_dict['race_id'])))
+                genders.append(to_categorical(gender, len(dataset_dict['gender_id'])))
+                images.append(im)
+                
+                # yielding condition
+                if len(images) >= batch_size:
+                    yield np.array(images), [np.array(ages), np.array(races), np.array(genders)]
+                    images, ages, races, genders = [], [], [], []
+                    
+            if not is_training:
+                break
+                
+data_generator = UtkFaceDataGenerator(df)
+train_idx, valid_idx, test_idx = data_generator.generate_split_indexes()
+
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import BatchNormalization
+from tensorflow.keras.layers import Conv2D
+from tensorflow.keras.layers import MaxPooling2D
+from tensorflow.keras.layers import Activation
+from tensorflow.keras.layers import Dropout
+from tensorflow.keras.layers import Lambda
+from tensorflow.keras.layers import Dense
+from tensorflow.keras.layers import Flatten
+from tensorflow.keras.layers import Input
+import tensorflow as tf
+class UtkMultiOutputModel():
+    """
+    Used to generate our multi-output model. This CNN contains three branches, one for age, other for 
+    sex and another for race. Each branch contains a sequence of Convolutional Layers that is defined
+    on the make_default_hidden_layers method.
+    """
+    def make_default_hidden_layers(self, inputs):
+        """
+        Used to generate a default set of hidden layers. The structure used in this network is defined as:
+        
+        Conv2D -> BatchNormalization -> Pooling -> Dropout
+        """
+        x = Conv2D(16, (3, 3), padding="same")(inputs)
+        x = Activation("relu")(x)
+        x = BatchNormalization(axis=-1)(x)
+        x = MaxPooling2D(pool_size=(3, 3))(x)
+        x = Dropout(0.25)(x)
+        x = Conv2D(32, (3, 3), padding="same")(x)
+        x = Activation("relu")(x)
+        x = BatchNormalization(axis=-1)(x)
+        x = MaxPooling2D(pool_size=(2, 2))(x)
+        x = Dropout(0.25)(x)
+        x = Conv2D(32, (3, 3), padding="same")(x)
+        x = Activation("relu")(x)
+        x = BatchNormalization(axis=-1)(x)
+        x = MaxPooling2D(pool_size=(2, 2))(x)
+        x = Dropout(0.25)(x)
+        return x
+    def build_race_branch(self, inputs, num_races):
+        """
+        Used to build the race branch of our face recognition network.
+        This branch is composed of three Conv -> BN -> Pool -> Dropout blocks, 
+        followed by the Dense output layer.
+        """
+        x = self.make_default_hidden_layers(inputs)
+        x = Flatten()(x)
+        x = Dense(128)(x)
+        x = Activation("relu")(x)
+        x = BatchNormalization()(x)
+        x = Dropout(0.5)(x)
+        x = Dense(num_races)(x)
+        x = Activation("softmax", name="race_output")(x)
+        return x
+    def build_gender_branch(self, inputs, num_genders=2):
+        """
+        Used to build the gender branch of our face recognition network.
+        This branch is composed of three Conv -> BN -> Pool -> Dropout blocks, 
+        followed by the Dense output layer.
+        """
+        x = Lambda(lambda c: tf.image.rgb_to_grayscale(c))(inputs)
+        x = self.make_default_hidden_layers(inputs)
+        x = Flatten()(x)
+        x = Dense(128)(x)
+        x = Activation("relu")(x)
+        x = BatchNormalization()(x)
+        x = Dropout(0.5)(x)
+        x = Dense(num_genders)(x)
+        x = Activation("sigmoid", name="gender_output")(x)
+        return x
+    def build_age_branch(self, inputs):   
+        """
+        Used to build the age branch of our face recognition network.
+        This branch is composed of three Conv -> BN -> Pool -> Dropout blocks, 
+        followed by the Dense output layer.
+        """
+        x = self.make_default_hidden_layers(inputs)
+        x = Flatten()(x)
+        x = Dense(128)(x)
+        x = Activation("relu")(x)
+        x = BatchNormalization()(x)
+        x = Dropout(0.5)(x)
+        x = Dense(1)(x)
+        x = Activation("linear", name="age_output")(x)
+        return x
+    def assemble_full_model(self, width, height, num_races):
+        """
+        Used to assemble our multi-output model CNN.
+        """
+        input_shape = (height, width, 3)
+        inputs = Input(shape=input_shape)
+        age_branch = self.build_age_branch(inputs)
+        race_branch = self.build_race_branch(inputs, num_races)
+        gender_branch = self.build_gender_branch(inputs)
+        model = Model(inputs=inputs,
+                     outputs = {'A' : age_branch, 'B' : race_branch, 'C' : gender_branch},
+                     name="face_net")
+        return model
+    
+model = UtkMultiOutputModel().assemble_full_model(IM_WIDTH, IM_HEIGHT, num_races=len(dataset_dict['race_alias']))
+
+from tensorflow.keras.optimizers import Adam
+init_lr = 1e-4
+epochs = 4
+opt = Adam(lr=init_lr, decay=init_lr / epochs)
+model.compile(optimizer=opt, 
+              loss={
+                  'age_output': 'mse', 
+                  'race_output': 'categorical_crossentropy', 
+                  'gender_output': 'binary_crossentropy'},
+              loss_weights={
+                  'age_output': 4., 
+                  'race_output': 1.5, 
+                  'gender_output': 0.1},
+              metrics={
+                  'age_output': ['mae', 'accuracy'], 
+                  'race_output': ['accuracy', 'mae'],
+                  'gender_output': ['accuracy', 'mae']})
+ 
+             #metrics = ['accuracy'] will work but this is not the goal I want to say per output what metrics I want
+
+from tensorflow.keras.callbacks import ModelCheckpoint
+batch_size = 32
+valid_batch_size = 32
+train_gen = data_generator.generate_images(train_idx, is_training=True, batch_size=batch_size)
+valid_gen = data_generator.generate_images(valid_idx, is_training=True, batch_size=valid_batch_size)
+
+checkpoint_cb = tf.keras.callbacks.ModelCheckpoint('/git/research-manifest/ads_ml/data/tf2/experiment1/checkpoints/cp-{epoch:04d}.ckpt',
+                                        save_best_only=True,
+                                        save_weights_only=True
+)
+
+tensorboard_cb = tf.keras.callbacks.TensorBoard('/git/research-manifest/ads_ml/data/tf2/experiment1/checkpoints/logs',
+                                    histogram_freq=1,
+                                    write_graph=True,
+                                    update_freq='epoch',
+                                    profile_batch=0)
+
+history = model.fit_generator(train_gen,
+                    steps_per_epoch=len(train_idx)//batch_size,
+                    epochs=epochs,
+                    callbacks=[checkpoint_cb, tensorboard_cb],
+                    validation_data=valid_gen,
+                    validation_steps=len(valid_idx)//valid_batch_size)

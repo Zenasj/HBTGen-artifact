@@ -1,14 +1,14 @@
-# torch.rand(3, 3)  # Input shape inferred for trace operation
-import torch
-import torch.nn as nn
+def _register_jit_decomposition_for_jvp(decomp, use_python=False):
+    if decomp in decomposition_table_for_jvp:
+        decomposition_table_used = decomposition_table_for_jvp
+    elif decomp in decomposition_table:
+        decomposition_table_used = decomposition_table
+    else:
+        raise RuntimeError(f"could not find decomposition for {decomp}")
+    decomp_fn = decomposition_table_used[decomp]
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return torch.trace(x)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(3, 3)
-
+    # `out_wrapper` extends a decompositions signature with
+    # an `out` parameter. However jit will use the unwrapped function's
+    # signature instead so we need to unwrap here to prevent an error
+    decomp_fn = _maybe_remove_out_wrapper(decomp_fn)
+    ...

@@ -1,22 +1,17 @@
-# torch.rand(2, dtype=torch.float32)  # Inferred input shape from the issue
+import torch.nn as nn
+
+a = torch.tensor([-1., 1.], requires_grad=True)
+b = torch.nn.functional.leaky_relu_(a.clone(), -2)
+b.backward(torch.ones(2))
+a.grad
 
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
+torch.set_anomaly_enabled(True)
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        # Use the in-place leaky_relu_ with a negative slope
-        return F.leaky_relu_(x, -2)
+a = torch.tensor([-1., 1.], requires_grad=True)
+b = torch.nn.functional.leaky_relu_(a.clone(), -2)
+b.backward(torch.ones(2))
+a.grad
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.tensor([-1., 1.], requires_grad=True)
-
+# output:
+# tensor([1., 1.])

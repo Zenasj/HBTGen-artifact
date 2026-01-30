@@ -1,42 +1,60 @@
-# tf.random.uniform((1, 2, 2), dtype=tf.float32)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    """
-    This model wraps tf.keras.layers.Attention with a custom call signature:
-      call(q, v, k, mask_q=None, mask_v=None, **kwargs)
-    It demonstrates how to handle keyword arguments properly when calling the model 
-    via the functional __call__ interface, avoiding issues with argument mismatch.
 
-    Key points / assumptions:
-    - Inputs q, v, k have shape (batch, seq_len, features), here assumed (1, 2, 2) for sample.
-    - Masks mask_q and mask_v are optional, can be None.
-    - Extra keyword arguments are accepted and ignored for forward pass,
-      but can be logged or used internally.
-    - The output is the attention result tensor of shape (batch, query_seq_len, features).
-    """
+def call(q, v, k, mask_q=None, mask_v=None):
+    """ Call attention instance """
+    return attn(inputs=[q, v, k], mask=[mask_q, mask_v])
+
+x = tf.random.uniform((1, 2, 2))
+attn = tf.keras.layers.Attention(use_scale=True)
+
+# position arguments work well
+call(x, x, x)
+
+# naming the parameters also fine here
+call(q=x, v=x, k=x)
+
+class MyAttention(tf.keras.Model):
     
     def __init__(self):
-        super(MyModel, self).__init__()
+        super(MyAttention, self).__init__()
         self.attention = tf.keras.layers.Attention(use_scale=True)
-
-    def call(self, q, v, k, mask_q=None, mask_v=None, **kwargs):
-        # Optional: print or log extra kwargs to ensure they're caught if passed
-        for key, value in kwargs.items():
-            tf.print(f"[MyModel.call] Extra kwarg: {key} =", value)
-        # Use the Attention layer with inputs and masks as a list
+        
+    def call(self, q, v, k, mask_q=None, mask_v=None):
         return self.attention(inputs=[q, v, k], mask=[mask_q, mask_v])
 
-def my_model_function():
-    # Returns an instance of MyModel as required
-    return MyModel()
 
-def GetInput():
-    # Returns a tuple of inputs (q, v, k) each with shape (1, 2, 2)
-    # Random float32 tensors in [0,1) to simulate typical input features
-    input_shape = (1, 2, 2)
-    q = tf.random.uniform(input_shape, dtype=tf.float32)
-    v = tf.random.uniform(input_shape, dtype=tf.float32)
-    k = tf.random.uniform(input_shape, dtype=tf.float32)
-    return (q, v, k)
+my_attention = MyAttention()
 
+# Still works with positional arguments
+my_attention(x, x, x)
+
+# Breaks when naming the arguments in my_attention:
+my_attention(q=x, v=x, k=x)
+
+my_attention.call(q=x, v=x, k=x)
+
+class MyAttention(tf.keras.Model):
+    
+    def __init__(self):
+        super(MyAttention, self).__init__()
+        self.attention = Attention(use_scale=True)
+        
+    def call(self, q, v, k, mask_q=None, mask_v=None, **kwargs):
+        """ Print **kwargs, then call tf.keras.layers.Attention """
+        for key, value in kwargs.items(): 
+            print(f'{key} == {value}') 
+        return self.attention(inputs=[q, v, k], mask=[mask_q, mask_v])
+
+# as expected:
+my_attention(x, x, x, extra_arg='hi')
+
+# fails to print the kwarg, complains about missing positional arg `inputs`
+my_attention(q=x, v=x, k=x, extra_arg='hi')
+
+# it only takes leaving out the name of the first parameter for it to work again
+my_attention(x, v=x, k=x, extra_arg='hi')

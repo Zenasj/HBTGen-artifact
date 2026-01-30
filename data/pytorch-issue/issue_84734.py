@@ -1,38 +1,30 @@
-# torch.rand(B, C, H, W, dtype=...)  # The input shape is not explicitly defined in the issue, so we assume a generic tensor input.
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Define a simple model for demonstration purposes
-        self.linear = nn.Linear(1024, 1024)
+x = torch.empty(1024, 1, device="cuda")
+target = torch.empty(1024, device="cuda").long()
 
-    def forward(self, x):
-        return self.linear(x)
+def func(x, target, index):
+    nll_loss_forward = torch.ops.aten.nll_loss_forward.default(x, target, None, 1, index)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+from torch.fx.experimental.proxy_tensor import make_fx
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # Assuming the input is a 1D tensor of size 1024 for simplicity
-    return torch.rand(1024, device="cuda")
+from torch._decomp import get_decompositions
+decomp_table = get_decompositions({torch.ops.aten.nll_loss_forward})
+gm = make_fx(func, decomposition_table=decomp_table)(x, target, 512)  # tracing with decomposition works
+print(gm.graph)
 
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
+from torch._prims.context import TorchRefsMode
+with TorchRefsMode():
+    gm = make_fx(func)(x, target, 512)  # somehow tracing here with decomposition breaks.
+    print(gm.graph)
 
-# ### Explanation:
-# 1. **MyModel Class**:
-#    - A simple `nn.Module` class with a single linear layer is defined. This is a placeholder to demonstrate the structure. The actual model in the issue is not provided, so a generic model is used.
-# 2. **my_model_function**:
-#    - This function returns an instance of `MyModel`. No specific initialization or weights are provided, as the issue does not specify any particular model structure or initialization.
-# 3. **GetInput Function**:
-#    - This function generates a random tensor of size 1024, which is assumed to be the input size based on the context of the issue. The tensor is placed on the CUDA device to match the context of the issue.
-# ### Assumptions:
-# - The input shape is assumed to be a 1D tensor of size 1024, as the issue mentions `torch.empty(1024, 1, device="cuda")`.
-# - The model is a simple linear layer for demonstration purposes, as the issue does not provide a specific model structure.
-# This code can be used as a starting point and can be extended or modified based on the actual model and input requirements.
+py
+import torch
+from torch._prims.context import TorchRefsMode
+a = torch.randn(3, 3, device='cuda')
+b = torch.randn(3, 3, device='cuda')
+
+def func(a, b):
+    return a.to(b)
+with TorchRefsMode():
+    func(a, b)

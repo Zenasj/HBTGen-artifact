@@ -1,22 +1,12 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Assumed input shape (e.g., (1, 3, 224, 224))
-import torch
-import torch.nn as nn
-
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Placeholder module since no concrete model structure is provided in the issue
-        self.identity = nn.Identity()  # Assumes model passes through input
-        
-    def forward(self, x):
-        return self.identity(x)
-
-def my_model_function():
-    # Returns a minimal model instance with no trainable parameters (as no model details were provided)
-    return MyModel()
-
-def GetInput():
-    # Returns a random tensor matching the assumed input shape
-    B, C, H, W = 1, 3, 224, 224
-    return torch.rand(B, C, H, W, dtype=torch.float32)
-
+def ___make_guard_fn():
+    def guard(L):
+        if not (x[0].a < x[1].a * (3 - x[2].a)):
+            return False
+        if not (a.b.c[0].d.e + a.b.c[1].d.e * a.b.c[2].d.e > 0):
+            return False
+        if not (f(m.n[0], '0').x.y.z * f(m.n[0], '1').x.y.z * f(m.n[0], '2').x.y.z < 512):
+            return False
+        if not (self.g(a, b).k + (1 - self.g(a, b).k) <= m[0].a + self.g(a, b).k):
+            return False
+        return True
+    return guard

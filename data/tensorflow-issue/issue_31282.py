@@ -1,26 +1,30 @@
-# tf.random.uniform((B, 5, 10), dtype=tf.float32)
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
-import tensorflow as tf
+#! /usr/bin/env python3
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Our example model from the issue: input shape (None, 5, 10), Dense(10) layer applied to each time step
-        self.dense = tf.keras.layers.Dense(10)
+import tensorflow
+from tensorflow.keras.layers import Input, Dense
+from tensorflow.keras.models import Model, load_model
 
-    def call(self, inputs):
-        # inputs shape: (batch, 5, 10)
-        # Dense layer expects last dimension 10, applied independently along sequence dimension
-        # Keras Dense with 3D input applies the same dense layer on last axis
-        return self.dense(inputs)
+from io import BytesIO
+import h5py
 
-def my_model_function():
-    # Returns an instance of MyModel; weights initialized randomly
-    return MyModel()
+inputLayer = Input(batch_shape=(None, 5, 10))
+final = Dense(10)(inputLayer)
 
-def GetInput():
-    # Generate a random input tensor compatible with MyModel
-    # Shape: (batch_size, 5, 10)
-    # Using batch size 4 as an example arbitrary choice
-    return tf.random.uniform((4, 5, 10), dtype=tf.float32)
+model = Model(inputs=[ inputLayer ], outputs=[ final ])
+opt = tensorflow.optimizers.get({
+    'class_name': 'Adam',
+    'config': {}
+});
+model.compile(opt, loss='mean_squared_error', metrics=['mse'])
 
+# Serialization here works fine
+with h5py.File('does not matter', driver='core', backing_store=False) as h5file:
+    model.save(h5file)
+    h5file.flush()
+    serialized = h5file.id.get_file_image().hex()
+
+# Deserialization here throws error for tf >= 2.0.0-beta0
+restored = load_model(BytesIO(bytes.fromhex(serialized)))

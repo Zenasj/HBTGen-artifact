@@ -1,17 +1,8 @@
-# tf.random.uniform((B, img_w, img_h, 1), dtype=tf.float32) ← Assuming batch size B, grayscale image with given width and height
-
-import tensorflow as tf
-from tensorflow.keras.layers import Layer, Conv2D, MaxPooling2D, Reshape, Dense, GRU, add, concatenate, Activation, Lambda, Input
-from tensorflow.keras.models import Model
-from tensorflow.keras import backend as K
-
 class FeatureExtraction(Layer):
     def __init__(self, conv_filters, pool_size, name='feature-extraction', **kwargs):
         super(FeatureExtraction, self).__init__(name=name, **kwargs)
-        self.conv1 = Conv2D(filters=conv_filters, kernel_size=(3, 3), padding='same',
-                            activation='relu', kernel_initializer='he_normal', name='conv1')
-        self.conv2 = Conv2D(filters=conv_filters, kernel_size=(3, 3), padding='same',
-                            activation='relu', kernel_initializer='he_normal', name='conv2')
+        self.conv1 = Conv2D(filters=conv_filters, kernel_size=(3, 3), padding='same', activation='relu', kernel_initializer='he_normal', name='conv1')
+        self.conv2 = Conv2D(filters=conv_filters, kernel_size=(3, 3), padding='same', activation='relu', kernel_initializer='he_normal', name='conv2')
         self.max1 = MaxPooling2D(pool_size=(pool_size, pool_size), name='max1')
         self.max2 = MaxPooling2D(pool_size=(pool_size, pool_size), name='max2')
 
@@ -28,8 +19,6 @@ class FeatureExtraction(Layer):
 class FeatureReduction(Layer):
     def __init__(self, img_w, img_h, pool_size, conv_filters, name='feature-reduction', **kwargs):
         super(FeatureReduction, self).__init__(name=name, **kwargs)
-        # After two max pooling layers each of pool_size, dimensions divided by pool_size^2
-        # target shape is (img_w/(pool_size^2), (img_h/(pool_size^2)) * conv_filters)
         target_shape = (img_w // (pool_size ** 2), (img_h // (pool_size ** 2)) * conv_filters)
         self.reshape = Reshape(target_shape=target_shape, name='reshape')
         self.dense = Dense(32, activation='relu', name='dense')
@@ -76,63 +65,48 @@ class Output(Layer):
         return super(Output, self).get_config()
 
 
-class MyModel(tf.keras.Model):
+class OCRNet(Model):
     def __init__(self, output_size, img_w, img_h, max_text_len, name='OCRNet', **kwargs):
-        super(MyModel, self).__init__(name=name, **kwargs)
+        # parameters
+        conv_filters = 16
+        pool_size = 2
+        # define layers
+        feature_extraction = FeatureExtraction(conv_filters=conv_filters, pool_size=pool_size)
+        sequential_learner = SequentialLearner()
+        feature_reduction = FeatureReduction(img_w=img_w, img_h=img_h, pool_size=pool_size, conv_filters=conv_filters)
+        output = Output(output_size)
+        # NHWC == channels_last NCHW == channels_first
+        # initialize input shape
+        if 'channels_first' == K.image_data_format():
+            input_shape = (1, img_w, img_h)
+        else:
+            input_shape = (img_w, img_h, 1)
+        # input
+        inputs = Input(name='the_input', shape=input_shape, dtype='float32')
+        labels = Input(name='the_labels', shape=[max_text_len], dtype='float32')
+        input_length = Input(name='input_length', shape=[1], dtype='int64')
+        label_length = Input(name='label_length', shape=[1], dtype='int64')
+        # call layers
+        x = feature_extraction(inputs)
+        x = feature_reduction(x)
+        x = sequential_learner(x)
+        predictions = output(x)
+        # Keras doesn't currently support loss funcs with extra parameters
+        # so CTC loss is implemented in a lambda layer
+        loss_out = Lambda(self._ctc_lambda_func, output_shape=(1,), name='ctc')([predictions, labels, input_length, label_length])
+        super(OCRNet, self).__init__(
+                inputs=[inputs, labels, input_length, label_length], outputs=loss_out,
+                name=name, **kwargs)
 
-        # Parameters from original model
-        self.conv_filters = 16
-        self.pool_size = 2
-        self.output_size = output_size
-        self.img_w = img_w
-        self.img_h = img_h
-        self.max_text_len = max_text_len
+        # ctc decoder
+        flattened_input_length = K.reshape(input_length, (-1,))
+        top_k_decoded, _ = K.ctc_decode(predictions, flattened_input_length)
+        self.decoder = K.function([inputs, flattened_input_length], [top_k_decoded[0]])
 
-        # Submodules
-        self.feature_extraction = FeatureExtraction(conv_filters=self.conv_filters, pool_size=self.pool_size)
-        self.feature_reduction = FeatureReduction(img_w=img_w, img_h=img_h, pool_size=self.pool_size,
-                                                  conv_filters=self.conv_filters)
-        self.sequential_learner = SequentialLearner()
-        self.output_layer = Output(output_size)
-
-    def call(self, inputs):
-        # inputs is a single tensor: image inputs
-        # This is a re-implemented forward pass with only image input since
-        # original model had multiple inputs for CTC loss implementation.
-        # For direct call, only image input processed.
-
-        x = self.feature_extraction(inputs)
-        x = self.feature_reduction(x)
-        x = self.sequential_learner(x)
-        predictions = self.output_layer(x)
-        return predictions
-
-    def ctc_loss(self, y_true, y_pred, input_length, label_length):
-        # y_pred shape: (batch, time, classes)
-        # Trim first 2 timesteps as original model does
-        y_pred_proc = y_pred[:, 2:, :]
-        return K.ctc_batch_cost(y_true, y_pred_proc, input_length, label_length)
-
-
-def my_model_function():
-    # Return an instance of MyModel with example parameters
-    output_size = 80  # Example: number of character classes + blank for CTC
-    img_w = 128       # example image width
-    img_h = 32        # example image height (height as different dimension from width)
-    max_text_len = 32 # maximum length of text sequence
-    model = MyModel(output_size=output_size, img_w=img_w, img_h=img_h, max_text_len=max_text_len)
-    return model
-
-
-def GetInput():
-    # Generates a batch of example input images matching expected shape
-    # Assume batch size 4 for example
-    batch_size = 4
-    # Tensor shape NHWC (channels_last)
-    # Single channel grayscale
-    # dtype float32 consistent with model
-    img_w = 128
-    img_h = 32
-    input_tensor = tf.random.uniform(shape=(batch_size, img_w, img_h, 1), dtype=tf.float32)
-    return input_tensor
-
+    # loss and train functions, network architecture
+    def _ctc_lambda_func(self, args):
+        predictions, labels, input_length, label_length = args
+        # the 2 is critical here since the first couple outputs of the RNN
+        # tend to be garbage
+        predictions = predictions[:, 2:, :]
+        return K.ctc_batch_cost(labels, predictions, input_length, label_length)

@@ -1,14 +1,9 @@
-# torch.rand(3, dtype=torch.float32)
 import torch
-import torch.nn as nn
+import torch_xla.core.xla_model as xm
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return x.expand(2, *x.shape)
+@torch.compile(backend="openxla")
+def foo(x):
+    return x.expand(2, *x.shape)
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(3, dtype=torch.float32)
-
+x = torch.arange(3, device=xm.xla_device())
+print(foo(x))

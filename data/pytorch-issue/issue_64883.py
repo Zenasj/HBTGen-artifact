@@ -1,23 +1,47 @@
-# torch.rand(B, C, D, H, W, dtype=torch.float32)
+import torch.nn as nn
+
 import torch
-from torch import nn
+import warnings
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # AvgPool3d is known to have non-deterministic CUDA backward implementation
-        self.pool = nn.AvgPool3d(3)
-    
-    def forward(self, x):
-        # Forward pass uses AvgPool3d which may trigger determinism warnings
-        return self.pool(x)
+torch.use_deterministic_algorithms(True, warn_only=False)
+print('warn_only=False')
 
-def my_model_function():
-    # Returns a model instance with AvgPool3d to test determinism warnings
-    return MyModel()
+try:
+    torch.arange(10).cuda().bincount()
+except RuntimeError as e:
+    print('bincount throws an error, as expected')
+    print()
+else:
+    assert False
 
-def GetInput():
-    # Returns 5D tensor (B, C, D, H, W) matching AvgPool3d requirements
-    # Uses CUDA and requires_grad=True to trigger backward path testing
-    return torch.randn(2, 3, 3, 3, 3, dtype=torch.float32, requires_grad=True).cuda()
+torch.use_deterministic_algorithms(True, warn_only=True)
+print('warn_only=True')
 
+with warnings.catch_warnings(record=True) as w:
+    torch.arange(10).cuda().bincount()
+    print(f"We can catch the warning for bincount: {w}")
+    print()
+
+module = torch.nn.AvgPool3d(3)
+input = torch.randn(2, 3, 3, 3, requires_grad=True).cuda()
+res = module(input)
+grad = torch.ones_like(res)
+
+torch.use_deterministic_algorithms(True, warn_only=False)
+print('warn_only=False')
+
+try:
+    res.backward(grad)
+except RuntimeError as e:
+    print('avg_pool3d_backward throws an error, as expected')
+    print()
+else:
+    assert False
+
+torch.use_deterministic_algorithms(True, warn_only=True)
+print('warn_only=True')
+
+with warnings.catch_warnings(record=True) as w:
+    res.backward(grad)
+    print(f"We cannot catch the warning for avg_pool3d_backward: {w}")
+    print()

@@ -1,45 +1,121 @@
-# tf.random.uniform((B, 104), dtype=tf.float32) ← Input shape inferred from model input (batch_size, 104 features)
+from tensorflow.keras import optimizers
 
+import numpy as np
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.python.ops.numpy_ops import np_config
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define the layers matching the Sequential model described
-        self.dense1 = tf.keras.layers.Dense(64, activation="relu", name="end_game_in")
-        self.dense2 = tf.keras.layers.Dense(32, activation="relu", name="end_game_h1")
-        self.dense3 = tf.keras.layers.Dense(16, activation="relu", name="end_game_h2")
-        # Output layer activation "relu" is unusual for final output in classification; assuming regression or positive output
-        # Original model used SparseCategoricalCrossentropy loss, but output activation relu likely causes shape/mode mismatch.
-        # We'll keep relu here to stay faithful, but note: this contradicts with sparse categorical loss that expects logits or softmax probs.
-        self.output_layer = tf.keras.layers.Dense(1, activation="relu", name="end_game_out")
+# Create a dictionary describing the features.
+observ = {
+        'data' : tf.io.FixedLenFeature([104], tf.int64),
+        'label' : tf.io.FixedLenFeature([], tf.int64) }
 
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        x = self.dense3(x)
-        out = self.output_layer(x)
-        return out
+# Parse the input tf.train.Example proto using the dictionary above.
+def _map_function_1(example_proto):
+  return tf.io.parse_single_example(example_proto, observ)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+def split_data_label(sample):
+    return sample['data'].astype('int16'), sample['label'].astype('int16')
 
-def GetInput():
-    # Return a random tensor input matching shape (batch_size, 104)
-    # Batch size is variable, use batch size 8 as a reasonable default
-    batch_size = 8
-    # Using float32 as the converted inputs in original data pipeline were cast to float32
-    return tf.random.uniform((batch_size, 104), dtype=tf.float32)
+# Import End game data
+def load_data() :
+    dataset = tf.data.TFRecordDataset('EndGsh.tfrecords')
+    parsed_dataset = dataset.map(_map_function_1)
+    parsed_and_split_datased = parsed_dataset.map(split_data_label)
 
-# ---
-# ### Explanation and Notes from Issue Context
-# - The original issue involved an error during `model.fit()` related to indexing shapes, linked to the shape of the labels `y_train` being scalar (`()`), which with SparseCategoricalCrossentropy loss is expected to be integer 0D tensor per example (integer class index).
-# - The model input shape is `(104,)` as specified by `keras.Input(shape=(104,))`.
-# - The model output has 1 unit with ReLU activation — this is inconsistent with the use of sparse categorical crossentropy which expects integer class labels and multiple logits or probability outputs. This usually implies either a multi-class problem or a binary classification with 1 output and sigmoid activation with binary crossentropy.
-# - Because the user code had this mismatch (loss incompatible with model output), I preserved the original architecture faithfully but recommend fixing the loss or output layer when using in practice.
-# - The input tensor shape for `GetInput()` matches the model's expected input shape.
-# - This model is compatible with TF 2.20.0 and can be used with XLA JIT compilation.
-# - The `MyModel` class uses the Keras functional style inside a subclassed model.
-# ---
-# If you want, I can help you refactor the model and compilation to avoid the original error, like changing output activation to `softmax` or `sigmoid` with matching loss, but this is faithful to the original code snippet you provided.
+    DATASET_SIZE = 10000 # 2836995
+    train_size = int(0.7 * DATASET_SIZE)
+    val_size = int(0.10 * DATASET_SIZE)
+    test_size = int(0.20 * DATASET_SIZE)
+
+    parsed_and_split_datased = parsed_and_split_datased.shuffle(DATASET_SIZE)
+
+    train_dataset = parsed_and_split_datased.take(train_size)
+    tAv_dataset = parsed_and_split_datased.skip(train_size)
+    val_dataset = tAv_dataset.take(val_size)
+    test_dataset = tAv_dataset.skip(val_size)
+
+    return train_dataset, test_dataset, val_dataset
+
+# Define model
+np_config.enable_numpy_behavior()
+
+model = keras.Sequential()
+model.add(keras.Input(shape=(104,)))
+model.add(layers.Dense(64, activation="relu", name="end_game_in"))
+model.add(layers.Dense(32, activation="relu", name="end_game_h1"))
+model.add(layers.Dense(16, activation="relu", name="end_game_h2"))
+model.add(layers.Dense(1, activation="relu", name="end_game_out"))
+model.summary()
+
+train_dataset , test_dataset, val_dataset = load_data()
+
+model.compile(
+    optimizer=keras.optimizers.RMSprop(),  # Optimizer
+    # Loss function to minimize
+    loss=keras.losses.SparseCategoricalCrossentropy(),
+    # List of metrics to monitor
+    metrics=[keras.metrics.SparseCategoricalAccuracy()],
+)
+
+print("Fit model on training data")
+x_train =[]
+y_train = []
+count = 0
+for it in train_dataset :
+    x , y = it
+    x_train.append(x.astype("float32"))
+    y_train.append(y.astype("float32"))
+    count += 1
+    if count % 5000 == 0:
+        print("Train: ", count)
+
+x_val =[]
+y_val = []
+count = 0
+for it in val_dataset :
+    x , y = it
+    x_val.append(x.astype("float32"))
+    y_val.append(y.astype("float32"))
+    count += 1
+    if count % 5000 == 0:
+        print("Val: ", count)
+
+history = model.fit(
+    x_train,
+    y_train,
+    batch_size=64,
+    epochs=5,
+    verbose=2,
+    # We pass some validation for
+    # monitoring validation loss and metrics
+    # at the end of each epoch
+    validation_data=(x_val, y_val),
+)
+
+# rest of script happens after the error
+history.history
+
+# Evaluate the model on the test data using `evaluate`
+print("Evaluate on test data")
+
+x_test =[]
+y_test = []
+count = 0
+for it in val_dataset :
+    x , y = it
+    x_test.append(x.astype("float32"))
+    y_test.append(y.astype("float32"))
+    count += 1
+    if count % 5000 == 0:
+        print("Test: ", count)
+
+results = model.evaluate(x_test, y_test, batch_size=128)
+print("test loss, test acc:", results)
+
+# Generate predictions (probabilities -- the output of the last layer)
+# on new data using predict
+print("Generate predictions for 3 samples")
+predictions = model.predict(x_test[:3])
+print("predictions shape:", predictions.shape)

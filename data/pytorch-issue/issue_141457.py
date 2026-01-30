@@ -1,32 +1,11 @@
-# torch.rand(B, 4, 100, dtype=torch.float32)  # Inferred input shape: (B, 4, 100)
-
 import torch
-import torch.nn as nn
-
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Define the model structure
-        self.softmax = nn.Softmax(dim=-1)
-    
-    def forward(self, x):
-        # Apply softmax to ensure the last dimension sums to 1
-        x = self.softmax(x)
-        # Create a Categorical distribution
-        dist = torch.distributions.Categorical(probs=x)
-        # Sample from the distribution
-        samples = dist.sample()
-        return samples
-
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Generate a random tensor input that matches the input expected by MyModel
-    B = 1  # Batch size
-    C = 4  # Number of categories
-    H = 100  # Length of each category
-    input_tensor = torch.rand(B, C, H, dtype=torch.float32)
-    return input_tensor
-
+t1 = torch.Tensor([[.25,.1],[.25,.1],[.25,.1],[.25,.7]]).unsqueeze(2).permute(2,1,0)
+t2 = t1.to('mps')
+x = torch.distributions.Categorical(t1)
+y = torch.distributions.Categorical(t2)
+#samples normally, as expected
+for i in range(10):
+    print(x.sample())
+#always returns [[2,2]]
+for i in range(10):
+    print(y.sample())

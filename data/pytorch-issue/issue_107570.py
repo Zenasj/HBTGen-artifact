@@ -1,19 +1,28 @@
-# torch.rand(1, 2, dtype=torch.float32)
 import torch
 import torch.nn as nn
+import copy
 
-class MyModel(nn.Module):
+class CustomModel(nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
+        super(CustomModel, self).__init__()
         self.relu = nn.ReLU(inplace=True)
 
     def forward(self, x):
-        x_cloned = torch.clone(x)  # Replaced copy.copy with torch.clone per fix suggestion
-        return self.relu(x_cloned)
+        x = copy.copy(x)
+        x = self.relu(x)
+        return x
 
-def my_model_function():
-    return MyModel()
+# Compilation settings
+compile_setting = {'mode': None, 'fullgraph': True, 'dynamic': False}
 
-def GetInput():
-    return torch.rand(1, 2)
+# Input tensor
+input_tensor = torch.rand([1,2]) 
 
+# Create the model
+mymodel = CustomModel()
+
+# Forward pass
+output = mymodel(input_tensor)
+
+# Attempting to compile
+op_output = torch.compile(mymodel, **compile_setting)(input_tensor)

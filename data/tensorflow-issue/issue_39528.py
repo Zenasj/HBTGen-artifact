@@ -1,76 +1,68 @@
-# tf.random.uniform((B, max_length), dtype=tf.int32) ← Input shape is (batch_size, max_length)
+import numpy as np
 
-import tensorflow as tf
+# Padding
+X = [[word2idx[w[0]] for w in s] for s in quran_sentences]
+X = pad_sequences(maxlen=max_length, sequences=X, padding="post",value=word2idx["PAD"])
 
-class MyModel(tf.keras.Model):
-    def __init__(self, n_words, n_tags, max_length, embedding_size=80, hidden_state_encoder_size=100, dropout_rate=0.5):
-        super().__init__()
-        self.embedding = tf.keras.layers.Embedding(
-            input_dim=n_words + 1,
-            output_dim=embedding_size,
-            input_length=max_length,
-            name="Embedding"
-        )
-        self.encoder = tf.keras.layers.Bidirectional(
-            tf.keras.layers.LSTM(
-                units=hidden_state_encoder_size,
-                return_sequences=True,
-                dropout=dropout_rate,
-                name="LSTM"
-            ),
-            name="Bi-LSTM"
-        )
-        self.average_pooling = tf.keras.layers.GlobalAveragePooling1D(name="Average")
-        self.output_layer = tf.keras.layers.Dense(
-            n_tags,
-            activation="softmax",
-            name="Output"
-        )
+y = [[tag2idx[w[1]] for w in s] for s in quran_sentences]
+y = pad_sequences(maxlen=max_length, sequences=y, padding="post", value=tag2idx["O"])
+y = [to_categorical(i, num_classes=n_tags) for i in y]
 
-    def call(self, inputs, training=False):
-        """
-        Forward pass:
-        inputs: (batch_size, max_length) integer token indices
-        outputs: (batch_size, n_tags) probabilities per tag after pooling and Dense
-        """
-        x = self.embedding(inputs)                # (batch_size, max_length, embedding_size)
-        x = self.encoder(x, training=training)   # (batch_size, max_length, hidden_state_encoder_size*2)
-        x = self.average_pooling(x)               # (batch_size, hidden_state_encoder_size*2)
-        x = self.output_layer(x)                   # (batch_size, n_tags)
-        return x
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.2, random_state=42)
 
-def my_model_function():
-    # Since the original issue used variables like n_words, n_tags, max_length,
-    # we have to provide example values here for demonstration.
-    # In practice, these values should come from dataset preprocessing.
-    # Assumptions based on typical values and code context:
-    # max_length = 80 (from padding used)
-    # n_words and n_tags must be provided realistically.
-    n_words = 5000  # let's assume vocabulary size ~5000 words
-    n_tags = 10     # assume 10 different tags for sequence chunking
-    max_length = 80
-    embedding_size = 80
-    hidden_state_encoder_size = 100
-    dropout_rate = 0.5
+# Parameters
+hidden_state_encoder_size = 100
 
-    return MyModel(n_words, n_tags, max_length, embedding_size, hidden_state_encoder_size, dropout_rate)
+# hidden_state_decoder_size = 200
 
-def GetInput():
-    # Return a random tensor matching the input shape expected by MyModel
-    # Input shape: (batch_size, max_length)
-    # Values are integer indices in [0, n_words]
-    # We must match the assumptions from my_model_function()
-    batch_size = 64
-    max_length = 80
-    n_words = 5000
+batch_size = 64
 
-    # Random integer indices for word tokens in range [1, n_words]
-    # assuming 0 might be padding index, so use 1-based index for real words
-    input_tensor = tf.random.uniform(
-        shape=(batch_size, max_length),
-        minval=1,
-        maxval=n_words + 1,
-        dtype=tf.int32
-    )
-    return input_tensor
+training_epoch = 200
 
+embedding_size = 80
+
+dropout_rate = 0.5
+
+# Model
+# Input
+inputs = Input(shape=(max_length,), name="Input")
+
+# Embedding
+# Output = (batch_size, input_length, output_dim)
+embed = Embedding(input_dim=n_words+1,
+                  output_dim=embedding_size,
+                  input_length=max_length,
+                  name="Embedding")(inputs)
+
+# Bi-LSTM
+# Output = (batch_size, steps, features)
+encoder = Bidirectional(LSTM(units=hidden_state_encoder_size,
+                             return_sequences=True,
+                             dropout=dropout_rate,
+                             name="LSTM"),
+                        name="Bi-LSTM")
+
+hidden_states = encoder(embed)
+
+# Average
+# Output = (batch_size, features)
+average = GlobalAveragePooling1D(name="Average")(hidden_states)
+
+# Outputs
+outputs = Dense(n_tags,
+                activation="softmax",
+                name="Output")(average)
+
+model = Model(inputs, outputs, name="Sequence Chunking")
+
+# Compile & Train
+# Compile
+model.compile(optimizer='rmsprop',
+              loss='categorical_crossentropy',
+              metrics=["accuracy"])
+
+# run training
+model.fit(X_tr, np.array(y_tr),
+          batch_size=batch_size,
+          epochs=training_epoch,
+          validation_split=0.1)

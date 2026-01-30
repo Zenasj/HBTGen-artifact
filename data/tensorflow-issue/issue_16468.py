@@ -1,73 +1,108 @@
-# tf.random.uniform((batch, 1, 5, 5, channels), dtype=tf.float32) ← inferred input shapes (batch, 1, 5, 5, channels)
+import random
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
+from tensorflow import keras as ks
+import numpy as np
+from IPython.display import clear_output, Image, display, HTML
 
-class MyModel(tf.keras.Model):
+def strip_consts(graph_def, max_const_size=32):
+    """Strip large constant values from graph_def."""
+    strip_def = tf.GraphDef()
+    for n0 in graph_def.node:
+        n = strip_def.node.add() 
+        n.MergeFrom(n0)
+        if n.op == 'Const':
+            tensor = n.attr['value'].tensor
+            size = len(tensor.tensor_content)
+            if size > max_const_size:
+                tensor.tensor_content = "<stripped %d bytes>"%size
+    return strip_def
+
+def show_graph(graph_def, max_const_size=32):
+    """Visualize TensorFlow graph."""
+    if hasattr(graph_def, 'as_graph_def'):
+        graph_def = graph_def.as_graph_def()
+    strip_def = strip_consts(graph_def, max_const_size=max_const_size)
+    code = """
+        <script src="//cdnjs.cloudflare.com/ajax/libs/polymer/0.3.3/platform.js"></script>
+        <script>
+          function load() {{
+            document.getElementById("{id}").pbtxt = {data};
+          }}
+        </script>
+        <link rel="import" href="https://tensorboard.appspot.com/tf-graph-basic.build.html" onload=load()>
+        <div style="height:600px">
+          <tf-graph-basic id="{id}"></tf-graph-basic>
+        </div>
+    """.format(data=repr(str(strip_def)), id='graph'+str(np.random.rand()))
+
+    iframe = """
+        <iframe seamless style="width:1200px;height:620px;border:0" srcdoc="{}"></iframe>
+    """.format(code.replace('"', '&quot;'))
+    display(HTML(iframe))
+
+class ExampleHook(tf.train.SessionRunHook):
     def __init__(self):
-        super().__init__()
-        # Define inputs with shape (1, 5, 5, C) for RGB (3 channels), gray (1 channel), and mix (1 channel)
-        # The batch dimension is omitted in Input layers
-        self.input_rgb = tf.keras.layers.Input(shape=(1,5,5,3), name="input_rgb")
-        self.input_gray = tf.keras.layers.Input(shape=(1,5,5,1), name="input_gray")
-        self.input_mix = tf.keras.layers.Input(shape=(1,5,5,1), name="input_mix")
+        print('Starting the session.')
+        return
 
-        # Concatenate inputs along the channel dimension, axis = -1
-        # Because each input shape is (1,5,5,C), axis -1 corresponds to channels
-        self.concat = tf.keras.layers.Concatenate(name="rbg_gray")
+    def begin(self):
+        g = tf.get_default_graph()
+        show_graph(g)
+        print('Starting the session.')
+        
+        #for op in tf.get_default_graph().get_operations():
+          #print(str(op.name) )
+        
+my_input_fn = tf.estimator.inputs.numpy_input_fn(
+    x={"input_rgb": np.array(np.random.rand(5,5,3).astype(np.float32)), "input_gray": np.array(np.random.rand(5,5,1).astype(np.float32)), 
+       "input_mix": np.array(np.random.rand(5,5,1).astype(np.float32))},
+    y= np.array(np.random.rand(5,5,1)),
+      batch_size=1,
+      num_epochs=1,
+      shuffle=False)
 
-        # Dense layers are used after flattening the concatenated tensor.
-        # Since Dense works on last dimension, flatten first.
-        self.flatten = tf.keras.layers.Flatten()
+input_rgb = ks.layers.Input(shape=(1,5, 5, 3), name="input_rgb")
+input_gray = ks.layers.Input(shape=(1,5, 5, 1), name="input_gray")
+input_mix = ks.layers.Input(shape=(1,5, 5, 1), name="input_mix")
+rgb_gray = ks.layers.concatenate([input_rgb, input_gray, input_mix], name="rbg_gray")
+x = ks.layers.Dense(1, activation='relu',name="Dense_1")(rgb_gray)
+x = ks.layers.Dense(1, activation='softmax',name="softmax")(x)
+model = ks.models.Model(
+        inputs=[input_rgb, input_gray, input_mix],
+        outputs=[x])
+model.compile(loss={ 'softmax': 'binary_crossentropy'},optimizer=tf.keras.optimizers.Adam())
 
-        # Dense layers as in original code:
-        self.dense1 = tf.keras.layers.Dense(1, activation='relu',name="Dense_1")
-        self.dense2 = tf.keras.layers.Dense(1, activation='softmax',name="softmax")
 
-    def call(self, inputs, training=False):
-        # inputs: tuple/list of three tensors (input_rgb, input_gray, input_mix)
-        input_rgb, input_gray, input_mix = inputs
-        # Concatenate along channels axis (-1)
-        concat_inputs = self.concat([input_rgb, input_gray, input_mix])  # shape (..., channels_concat)
-        flat = self.flatten(concat_inputs)
-        x = self.dense1(flat)
-        x = self.dense2(x)
-        return x
+est = ks.estimator.model_to_estimator(
+            keras_model=model)
 
-def my_model_function():
-    # Create functional Keras model with same inputs and outputs to allow Keras features
-    input_rgb = tf.keras.layers.Input(shape=(1,5,5,3), name="input_rgb")
-    input_gray = tf.keras.layers.Input(shape=(1,5,5,1), name="input_gray")
-    input_mix = tf.keras.layers.Input(shape=(1,5,5,1), name="input_mix")
+model.summary()
+print(model.input_names)
+pred = list(est.predict(
+    input_fn=my_input_fn,
+    predict_keys=None,
+    hooks=[ExampleHook()],
+))
 
-    concat = tf.keras.layers.Concatenate(name="rbg_gray")([input_rgb, input_gray, input_mix])
-    flat = tf.keras.layers.Flatten()(concat)
-    dense1 = tf.keras.layers.Dense(1, activation='relu', name='Dense_1')(flat)
-    output = tf.keras.layers.Dense(1, activation='softmax', name='softmax')(dense1)
+digit_input = ks.Input(shape=(27, 27, 1))
+x = ks.layers.Conv2D(64, (3, 3))(digit_input)
+x = ks.layers.Conv2D(64, (3, 3))(x)
+x = ks.layers.MaxPooling2D((2, 2))(x)
+out = ks.layers.Flatten()(x)
 
-    keras_model = tf.keras.Model(inputs=[input_rgb, input_gray, input_mix], outputs=output)
-    keras_model.compile(loss={ 'softmax': 'binary_crossentropy'}, optimizer=tf.keras.optimizers.Adam())
+vision_model = ks.Model(digit_input, out)
 
-    # Instantiate MyModel and copy weights from keras_model to MyModel
-    my_model = MyModel()
-    # To copy weights, we build the model by calling once
-    dummy_input = GetInput()
-    my_model(dummy_input)
-    # Map layers by name to copy weights
-    # Note: MyModel layers created inside __init__ and called via call()
-    # Keras functional model layers can be accessed by name as well
-    layer_map = {layer.name:layer for layer in keras_model.layers}
-    for layer in my_model.layers:
-        if layer.name in layer_map:
-            layer.set_weights(layer_map[layer.name].get_weights())
+# Then define the tell-digits-apart model
+digit_a = ks.Input(shape=(27, 27, 1))
+digit_b = ks.Input(shape=(27, 27, 1))
 
-    return my_model
+# The vision model will be shared, weights and all
+out_a = vision_model(digit_a)
+out_b = vision_model(digit_b)
 
-def GetInput():
-    # Return a 3-tuple of random tensors matching input shapes:
-    # Shapes (batch_size, 1, 5, 5, channels)
-    batch_size = 2  # arbitrary batch size for testing
-    input_rgb = tf.random.uniform((batch_size,1,5,5,3), dtype=tf.float32)
-    input_gray = tf.random.uniform((batch_size,1,5,5,1), dtype=tf.float32)
-    input_mix = tf.random.uniform((batch_size,1,5,5,1), dtype=tf.float32)
-    return (input_rgb, input_gray, input_mix)
+concatenated = ks.layers.concatenate([out_a, out_b])
+out = ks.layers.Dense(1, activation='sigmoid')(concatenated)
 
+classification_model = ks.Model([digit_a, digit_b], out)

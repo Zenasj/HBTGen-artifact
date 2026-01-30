@@ -1,87 +1,72 @@
-# tf.random.uniform((N, 2), dtype=tf.float32) ← inferred input shape: batch of 2D vectors (N x 2)
+import os
+os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
-import tensorflow as tf
-import tensorflow_probability as tfp
+from pprint import pprint
+import matplotlib.pyplot as plt
 import numpy as np
+import seaborn as sns
+
+#import tensorflow as tf
+#print(tf.__version__)
+
+import tensorflow.compat.v2 as tf
+tf.enable_v2_behavior()
+
+import tensorflow_probability as tfp
+
+sns.reset_defaults()
+sns.set_context(context='talk',font_scale=0.7)
+plt.rcParams['image.cmap'] = 'viridis'
+
+#%matplotlib inline
 
 tfd = tfp.distributions
 tfb = tfp.bijectors
 
-class MyModel(tf.keras.Model):
-    """
-    This model implements a Multivariate Normal distribution parameterized by:
+class MVNCholPrecisionTriL(tfd.TransformedDistribution):
+  """MVN from loc and (Cholesky) precision matrix."""
 
-     - loc: mean vector
-     - chol_precision_tril: lower-triangular Cholesky factor of the precision matrix
+  def __init__(self, loc, chol_precision_tril, name=None):
+    super(MVNCholPrecisionTriL, self).__init__(
+        distribution=tfd.Independent(tfd.Normal(tf.zeros_like(loc),
+                                                scale=tf.ones_like(loc)),
+                                     reinterpreted_batch_ndims=1),
+        bijector=tfb.Chain([
+            tfb.Shift(shift=loc),
+            tfb.Invert(tfb.ScaleMatvecTriL(scale_tril=chol_precision_tril,
+                                           adjoint=True)),
+        ]),
+        name=name)
 
-    It uses a bijector chain composed of:
-     - a Shift bijector for the mean offset
-     - an inverse ScaleMatvecTriL bijector representing the precision's lower-triangular
-    
-    Forward call returns samples from this distribution given some input (ignored).
-    We define the call signature to accept inputs only to fit the tf.function jit_compile usage scenario.
+def compute_sample_stats(d, seed=42, n=int(1e6)):
+  x = d.sample(n, seed=seed)
+  sample_mean = tf.reduce_mean(x, axis=0, keepdims=True)
+  s = x - sample_mean
+  sample_cov = tf.linalg.matmul(s, s, adjoint_a=True) / tf.cast(n, s.dtype)
+  sample_scale = tf.linalg.cholesky(sample_cov)
+  sample_mean = sample_mean[0]
+  return [
+      sample_mean,
+      sample_cov,
+      sample_scale,
+  ]
 
-    Since the original issue centers on the missing bijector Shift and Scale attributes in older tfp versions,
-    here we assume TensorFlow Probability 0.12+ where tfb.Shift and tfb.ScaleMatvecTriL exist.
-    """
+dtype = np.float32
+true_loc = np.array([1., -1.], dtype=dtype)
+true_chol_precision = np.array([[1., 0.],
+                                [2., 8.]],
+                               dtype=dtype)
+true_precision = np.matmul(true_chol_precision, true_chol_precision.T)
+true_cov = np.linalg.inv(true_precision)
 
-    def __init__(self):
-        super().__init__()
+d = MVNCholPrecisionTriL(
+    loc=true_loc,
+    chol_precision_tril=true_chol_precision)
 
-        # Fixed parameters as per the original code example:
-        dtype = tf.float32
-        self.loc = tf.constant([1., -1.], dtype=dtype)  # mean vector of shape (2,)
-        self.chol_precision_tril = tf.constant([[1., 0.],
-                                                [2., 8.]], dtype=dtype)  # shape (2,2)
+[sample_mean, sample_cov, sample_scale] = [
+    t.numpy() for t in compute_sample_stats(d)]
 
-        # Define the distribution with bijector transformations
-        # Construct precision matrix from Cholesky factor:
-        # Precision = chol_precision_tril @ chol_precision_tril.T
-        # The covariance would be inv(precision)
-        self.precision = tf.matmul(self.chol_precision_tril, self.chol_precision_tril, transpose_b=True)
-
-        # Define the MVN distribution using tfd.TransformedDistribution and bijector chain.
-        # The bijector chain is Shift then inverse ScaleMatvecTriL with adjoint=True,
-        # meaning the scaling is by the transpose of the lower-triangular matrix.
-        base_dist = tfd.Independent(
-            tfd.Normal(loc=tf.zeros_like(self.loc), scale=tf.ones_like(self.loc)),
-            reinterpreted_batch_ndims=1)
-
-        # Construct the bijector chain
-        # Shift(shift=loc) moves the distribution by loc
-        # Invert(ScaleMatvecTriL) applies the inverse of the linear transformation defined by precision's Chol lower-triangular matrix with adjoint=True
-        bijector = tfb.Chain([
-            tfb.Shift(shift=self.loc),
-            tfb.Invert(tfb.ScaleMatvecTriL(scale_tril=self.chol_precision_tril, adjoint=True)),
-        ])
-
-        self.mvn_dist = tfd.TransformedDistribution(distribution=base_dist, bijector=bijector, name="MVNCholPrecisionTriL")
-
-    @tf.function
-    def call(self, inputs):
-        """
-        Return samples from the defined MVN distribution.
-        The inputs argument is unused but included to match keras Model call signature and to satisfy the @tf.function API.
-        
-        Args:
-            inputs: tf.Tensor of shape (N, 2), ignored
-        
-        Returns:
-            samples: tf.Tensor of shape (N, 2) sampled from MVN distribution
-        """
-        n = tf.shape(inputs)[0]
-        samples = self.mvn_dist.sample(n)
-        return samples
-
-
-def my_model_function():
-    # Return an instance of MyModel with the original fixed parameters for loc and chol_precision_tril
-    return MyModel()
-
-
-def GetInput():
-    # Return a batch of random 2D input vectors with shape (N, 2), dtype float32
-    # This input matches the expected input shape that MyModel.call() accepts, even though input is unused.
-    N = 5  # example batch size
-    return tf.random.uniform((N, 2), dtype=tf.float32)
-
+print('true mean:', true_loc)
+print('sample mean:', sample_mean)
+print('true cov:\n', true_cov)
+print('sample cov:\n', sample_cov)

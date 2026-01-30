@@ -1,23 +1,27 @@
-# torch.rand(1, 3, 10, 10, dtype=torch.float32)
-import torch
 import torch.nn as nn
+import random
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv = nn.Conv2d(3, 3, kernel_size=3, padding=1)  # Matches input channel count and preserves spatial dims
-        self.logsoftmax = nn.LogSoftmax(dim=1)  # Output log probabilities for NLLLoss2d
+import torch
+import numpy as np
 
-    def forward(self, x):
-        x = self.conv(x)
-        return self.logsoftmax(x)
+# Three classes
+inputs = np.random.random((1, 3, 10, 10))
+label = np.random.randint(0, 3, size=(1, 10, 10))
 
-def my_model_function():
-    # Initialize model with default settings (no weights provided as issue doesn't specify)
-    model = MyModel()
-    return model
+# Changing some labels' id to great than 3
+label[0, 3, 6] = 5
+label[0, 3, 8] = 4
+label[0, 6, 8] = 6
+label[0, 8, 2] = 5
 
-def GetInput():
-    # Generate random input tensor matching the expected shape (B=1, C=3, H=10, W=10)
-    return torch.rand(1, 3, 10, 10, dtype=torch.float32)
+nllloss = torch.nn.NLLLoss2d().cuda()
+inputs = torch.autograd.Variable(torch.from_numpy(inputs).float()).cuda()
+label = torch.autograd.Variable(torch.from_numpy(label).long()).cuda()
 
+loss = nllloss(inputs, label)
+
+nllloss = torch.nn.NLLLoss2d()
+inputs = torch.autograd.Variable(torch.from_numpy(inputs).float())
+label = torch.autograd.Variable(torch.from_numpy(label).long())
+
+loss = nllloss(inputs, label)

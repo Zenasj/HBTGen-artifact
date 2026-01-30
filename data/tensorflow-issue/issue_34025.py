@@ -1,46 +1,93 @@
-# tf.random.uniform((B, 10, 200, 200, 128), dtype=tf.float32) ← inferred input shape from original issue fake data
+import math
+import random
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
+
+from __future__ import absolute_import, division, print_function, unicode_literals
+import numpy as np
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras.layers import (Conv2D, Conv3D, Dense)
+
+
+@tf.function
+def loss_fn(y_pred, y_true):
+    return tf.reduce_mean(tf.math.square(y_pred - y_true))
+
+if __name__ == "__main__":
+
+    BATCH_SIZE_PER_SYNC = 4
+    strategy = tf.distribute.MirroredStrategy()
+    num_gpus = strategy.num_replicas_in_sync
+    global_batch_size = BATCH_SIZE_PER_SYNC * num_gpus
+    print('num GPUs: {}, global batch size: {}'.format(num_gpus, global_batch_size))
+
+
+    # fake data ------------------------------------------------------
+    fakea = np.random.rand(global_batch_size, 10, 200, 200, 128).astype(np.float32)
+    targets = np.random.rand(global_batch_size, 200, 200, 14).astype(np.float32)
+
+    fakea = tf.constant(fakea)
+    targets = tf.constant(targets)
+
+    # tf.Dataset ------------------------------------------------------
+    def gen():
+        while True:
+            yield (fakea, targets)
+
+    dataset = tf.data.Dataset.from_generator(gen,
+        (tf.float32, tf.float32),
+        (tf.TensorShape(fakea.shape), tf.TensorShape(targets.shape)))
+
+    dataset = dataset.prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
+
+    # training ------------------------------------------------------
+    callbacks = [tf.keras.callbacks.TensorBoard(log_dir='./logs')]
+    training = True
+    with strategy.scope():
+        va = keras.Input(shape=(10, 200, 200, 128), dtype=tf.float32, name='va')
+        x = Conv3D(64, kernel_size=3, strides=1, padding='same')(va)
+        x = Conv3D(64, kernel_size=3, strides=1, padding='same')(x)
+        x = Conv3D(64, kernel_size=3, strides=1, padding='same')(x)
+        x = tf.reduce_max(x, axis=1, name='maxpool')                         
+        b = Conv2D(14, kernel_size=3, padding='same')(x)
+        model = keras.Model(inputs=va, outputs=b, name='net')
+        optimizer = keras.optimizers.RMSprop()
+
+        model.compile(optimizer=optimizer, loss=loss_fn)
+        model.fit(x=dataset, epochs=10, steps_per_epoch=100, callbacks=callbacks)
 
 import tensorflow as tf
-from tensorflow.keras.layers import Conv3D, Conv2D
-from tensorflow.keras import Model, Input
+from tensorflow import keras
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Construct Conv3D stack as in original example 
-        self.conv3d_1 = Conv3D(64, kernel_size=3, strides=1, padding='same')
-        self.conv3d_2 = Conv3D(64, kernel_size=3, strides=1, padding='same')
-        self.conv3d_3 = Conv3D(64, kernel_size=3, strides=1, padding='same')
-        # Conv2D layer after reduce_max
-        self.conv2d = Conv2D(14, kernel_size=3, padding='same')
+model = keras.models.Sequential([
+    keras.layers.SimpleRNN(10, return_sequences=True, input_shape=[None, 4]),
+    keras.layers.Dense(1)
+])
+model.compile(loss="mse", optimizer="nadam")
 
-    @tf.function(experimental_relax_shapes=True)
-    def call(self, inputs):
-        # inputs shape: (B, 10, 200, 200, 128)
-        x = self.conv3d_1(inputs)
-        x = self.conv3d_2(x)
-        x = self.conv3d_3(x)
-        # max pool over temporal dimension axis=1 (the 10 frames)
-        x = tf.reduce_max(x, axis=1)  # shape: (B, 200, 200, 64)
-        out = self.conv2d(x)  # shape: (B, 200, 200, 14)
-        return out
+X_train = tf.random.uniform(shape=[100, 50, 4])
+y_train = tf.random.uniform(shape=[100, 1])
+model.fit(X_train, y_train)
 
+for length in range(1, 20):
+    X_new = tf.random.uniform([1, length, 4])
+    model.predict(X_new)
 
-def my_model_function():
-    # Instantiate and return the model
-    model = MyModel()
-    # Build the model by calling with dummy input to create weights (optional)
-    dummy_input = tf.zeros((1, 10, 200, 200, 128), dtype=tf.float32)
-    _ = model(dummy_input)
-    return model
+from random import randint
 
+import tensorflow as tf
+from tensorflow.keras.layers import Conv1D
+from tensorflow.keras.models import Sequential
 
-def GetInput():
-    # Return a random tensor matching the expected input shape
-    # We use tf.random.uniform with dtype float32 as input in the issue is float32
-    # Batch size B=4 chosen based on BATCH_SIZE_PER_SYNC in original code,
-    # could be any positive integer.
-    B = 4
-    input_tensor = tf.random.uniform((B, 10, 200, 200, 128), dtype=tf.float32)
-    return input_tensor
+model = Sequential()
+model.add(Conv1D(8, 3))
+model.build([None, 12, 1])
 
+predict_tensors = [
+    tf.random.normal([randint(1, 8), randint(4, 40), 1])
+    for _ in range(10)
+]
+for t in predict_tensors:
+    _ = model.predict(t)

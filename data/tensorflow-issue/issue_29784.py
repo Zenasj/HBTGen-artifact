@@ -1,25 +1,28 @@
-# tf.random.uniform((B, 5), dtype=tf.float32) ← Input shape inferred from original example: input tensors have shape (batch_size, 5)
+import random
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
+model = tf.keras.Model(...)
+tf.saved_model.save(model, path)
+imported = tf.saved_model.load(path)
+outputs = imported(inputs)
 
 import tensorflow as tf
+from tensorflow import keras
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define a simple single Dense layer as in the original example
-        self.dense = tf.keras.layers.Dense(1)
+path = "my_saved_model"
+X_train = np.random.rand(100, 5)
+y_train = np.random.rand(100, 1)
 
-    def call(self, inputs, training=False):
-        # Forward pass through the Dense layer
-        return self.dense(inputs)
+model = keras.models.Sequential([keras.layers.Dense(1, input_shape=[5])])
+model.compile(loss="mse", optimizer="sgd")
+model.fit(X_train, y_train)
 
-def my_model_function():
-    # Create and compile an instance of MyModel analogous to the original Sequential model
-    model = MyModel()
-    # Compile so the model has loss & optimizer (not strictly needed here for forward, but matches original example)
-    model.compile(loss="mse", optimizer="sgd")
-    return model
+tf.saved_model.save(model, path)
 
-def GetInput():
-    # Return a random tensor input matching the expected input shape (batch_size=10 arbitrarily chosen)
-    return tf.random.uniform((10, 5), dtype=tf.float32)
+imported = tf.saved_model.load(path)
 
+inputs = keras.layers.Input(shape=[5])
+outputs = imported(inputs) # Raises _SymbolicException (see stacktrace below) <<<!!!
+model = keras.Model(inputs=[inputs], outputs=[outputs])

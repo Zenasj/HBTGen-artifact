@@ -1,31 +1,56 @@
-# tf.random.uniform((B, H, W, C), dtype=tf.float32) ← Input shape is inferred as any 4D tensor for convolutional model, e.g. (batch, height, width, channels)
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
+from tensorflow import keras
 import tensorflow as tf
-from tensorflow.keras import layers, losses, backend as K
+import numpy as np
+from tensorflow.keras.datasets import mnist
+from functools import partial
 
-# Define a placeholder focal_loss function since the original is external.
-# In practice, replace this with the user-provided focal_loss implementation.
-def focal_loss(y_true, y_pred, mask=None):
-    # Simplified dummy version assuming y_true/y_pred shape is (batch, n, classes)
-    # The mask parameter is used for weighting; if mask is provided, apply it.
-    loss = tf.keras.losses.categorical_crossentropy(y_true, y_pred, from_logits=False)
-    if mask is not None:
-        # mask is assumed broadcastable to loss shape
-        loss = loss * mask
-    return loss
+(x_train, y_train), (x_test, y_test) = mnist.load_data()
+x_train = x_train[...,None] / 255 - 1
+x_test = x_test[...,None] / 255 - 1
+y_train = keras.utils.to_categorical(y_train)
+y_test = keras.utils.to_categorical(y_test)
+model = keras.models.Sequential(
+  [
+    keras.layers.Conv2D(6, (3,3), activation='relu'),
+    keras.layers.AveragePooling2D(),
+    keras.layers.Conv2D(16, (3,3), activation='relu'),
+    keras.layers.AveragePooling2D(),
+    keras.layers.Flatten(),
+    keras.layers.Dense(units=120, activation='relu'),
+    keras.layers.Dense(units=84, activation='relu'),
+    keras.layers.Dense(units=10, activation='softmax')
+  ]
+)
 
-class FocalLoss(losses.Loss):
-    def __init__(self,
-                 num_class,
-                 num_sub_catg_class,
-                 global_batch_size,
-                 input_shape,
-                 reduction=tf.keras.losses.Reduction.AUTO,
-                 lambda_conf=100.0,
-                 lambda_offsets=1.0,
-                 class_weights=1.0,
-                 name='focal_loss'):
-        super().__init__(reduction=reduction, name=name)
+def dummy_loss(y,y2,a):
+  return y+y2
+
+model.compile(
+  loss=partial(dummy_loss, a=2),
+  #loss=lambda v1, v2 : dummy_loss(v1,v2,4),
+  optimizer=keras.optimizers.Adam(), metrics={'output_1':'accuracy'})
+model.train_on_batch(x_train[:2,...], y_train[:2,...]) # error here
+
+def dummy_loss(a=2):
+    def lossFunction(y,y2):    
+        return y+y2
+    return lossFunction
+
+import numpy as np
+import matplotlib.pyplot as plt
+import tensorflow.keras.backend as K
+import tensorflow as tf
+from sklearn import metrics as skm
+import json
+from utils.training import focal_loss
+
+class FocalLoss(tf.keras.losses.Loss):
+
+    def __init__(self, num_class, num_sub_catg_class, global_batch_size, input_shape, reduction=tf.keras.losses.Reduction.AUTO, lambda_conf=100.0, lambda_offsets=1.0, class_weights=1.0, name='focal_loss'):
         self.global_batch_size = global_batch_size
         self.num_class = num_class
         self.num_sub_catg_class = num_sub_catg_class
@@ -33,83 +58,35 @@ class FocalLoss(losses.Loss):
         self.lambda_offsets = lambda_offsets
         self.class_weights = class_weights
         self.num_rows, self.num_cols = input_shape[:2]
+        self.name = name
+        self.reduction = reduction
 
-    def call(self, y_true, y_pred, sample_weight=None):
-        # sample_weight is unused because `call` signature must be (y_true, y_pred)
-        # If weighting needs to be passed, user must wrap or handle externally.
+    def __call__(self, y_true, y_pred, sample_weight=None):
         
         num_rows, num_cols = self.num_rows, self.num_cols
-        class_mask_tensor = 1.0
-        class_sub_catg_mask_tensor = 1.0
+        self.class_mask_tensor, self.class_sub_catg_mask_tensor = 1.0, 1.0
+        if sample_weight is not None:
+            print("Sample weight provided")
+            sample_weight = K.cast(sample_weight, K.floatx())
+            self.class_mask_tensor = sample_weight[:, :num_rows*num_cols]
+            self.class_sub_catg_mask_tensor = sample_weight[:, num_rows*num_cols:2*num_rows*num_cols]
 
-        # The sample_weight is not standard part of call signature; can be handled outside
-        # or integrated if customizing further.
-        
         class_y_true = y_true[:, :, :, :self.num_class]
         sub_catg_class_y_true = y_true[:, :, :, self.num_class:self.num_class+self.num_sub_catg_class]
 
         class_y_pred = y_pred[:, :, :, :self.num_class]
         sub_catg_class_y_pred = y_pred[:, :, :, self.num_class:self.num_class+self.num_sub_catg_class]
 
-        class_y_true = tf.reshape(class_y_true, [self.global_batch_size, num_rows * num_cols, self.num_class])
-        class_y_pred = tf.reshape(class_y_pred, [self.global_batch_size, num_rows * num_cols, self.num_class])
-        class_loss = focal_loss(class_y_true, class_y_pred, mask=class_mask_tensor)
+        class_y_true = tf.reshape(class_y_true, tf.stack([self.global_batch_size, num_rows*num_cols, self.num_class]))
+        class_y_pred = tf.reshape(class_y_pred, tf.stack([self.global_batch_size, num_rows*num_cols, self.num_class]))
+        class_loss = focal_loss(class_y_true, class_y_pred, mask=self.class_mask_tensor)
 
-        sub_catg_class_y_true = tf.reshape(sub_catg_class_y_true, [self.global_batch_size, num_rows * num_cols, self.num_sub_catg_class])
-        sub_catg_class_y_pred = tf.reshape(sub_catg_class_y_pred, [self.global_batch_size, num_rows * num_cols, self.num_sub_catg_class])
-        sub_catg_class_loss = focal_loss(sub_catg_class_y_true, sub_catg_class_y_pred, mask=class_sub_catg_mask_tensor)
+        sub_catg_class_y_true = tf.reshape(sub_catg_class_y_true, tf.stack([self.global_batch_size, num_rows*num_cols, self.num_sub_catg_class]))
+        sub_catg_class_y_pred = tf.reshape(sub_catg_class_y_pred, tf.stack([self.global_batch_size, num_rows*num_cols, self.num_sub_catg_class]))
+        sub_catg_class_loss = focal_loss(sub_catg_class_y_true, sub_catg_class_y_pred, mask=self.class_sub_catg_mask_tensor)
 
         mean_class_loss = tf.nn.compute_average_loss(tf.squeeze(class_loss), global_batch_size=self.global_batch_size)
         mean_sub_catg_class_loss = tf.nn.compute_average_loss(tf.squeeze(sub_catg_class_loss), global_batch_size=self.global_batch_size)
 
-        total_loss = mean_class_loss + mean_sub_catg_class_loss
+        total_loss = mean_class_loss+mean_sub_catg_class_loss
         return total_loss
-
-
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Reproduce the simple Conv2D classification model from issue example
-        self.conv1 = layers.Conv2D(6, (3, 3), activation='relu')
-        self.pool1 = layers.AveragePooling2D()
-        self.conv2 = layers.Conv2D(16, (3, 3), activation='relu')
-        self.pool2 = layers.AveragePooling2D()
-        self.flatten = layers.Flatten()
-        self.fc1 = layers.Dense(120, activation='relu')
-        self.fc2 = layers.Dense(84, activation='relu')
-        self.fc3 = layers.Dense(10, activation='softmax')
-
-        # Also instantiate a focal loss submodule with dummy params for demonstration
-        # This is illustrative of fusion: model + loss in one class
-        # We assume input of shape (batch, 28, 28, 1) as MNIST usually
-        self.focal_loss = FocalLoss(num_class=10, num_sub_catg_class=0, global_batch_size=1, input_shape=(28, 28, 1))
-
-    def call(self, inputs, training=False):
-        x = self.conv1(inputs)
-        x = self.pool1(x)
-        x = self.conv2(x)
-        x = self.pool2(x)
-        x = self.flatten(x)
-        x = self.fc1(x)
-        x = self.fc2(x)
-        output = self.fc3(x)
-        return output
-
-    def compute_focal_loss(self, y_true, y_pred):
-        # Expose a method to compute fused custom focal loss if needed, 
-        # supports sample_weight as None for standard usage
-        return self.focal_loss(y_true, y_pred)
-
-
-def my_model_function():
-    # Return an instance of MyModel, weights uninitialized/random
-    return MyModel()
-
-
-def GetInput():
-    # MNIST-style input: batch=1, height=28, width=28, channels=1
-    # dtype float32 normalized to [-1,1] as per input preprocessing in issue.
-    input_shape = (1, 28, 28, 1)
-    x = tf.random.uniform(input_shape, minval=-1.0, maxval=1.0, dtype=tf.float32)
-    return x
-

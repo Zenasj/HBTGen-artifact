@@ -1,40 +1,108 @@
-# torch.rand(B, D, dtype=torch.float32)  # B=batch_size (3), D=input dimension (5)
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-class FunctionalDropout(nn.Module):
-    def __init__(self, p):
-        super().__init__()
-        self.p = p
+py
+import torch
 
-    def forward(self, x):
-        return F.dropout(x, p=self.p, training=self.training)
+torch.manual_seed(420)
 
-class ModuleDropout(nn.Module):
-    def __init__(self, p):
-        super().__init__()
-        self.dropout = nn.Dropout(p)
+class Model(torch.nn.Module):
+
+    def __init__(self, dropout_p):
+        super(Model, self).__init__()
+        self.dropout_p = dropout_p
 
     def forward(self, x):
-        return self.dropout(x)
+        out = torch.nn.functional.dropout(x, p=self.dropout_p)
+        return out
 
-class MyModel(nn.Module):
-    def __init__(self, dropout_p=1.0):
-        super().__init__()
-        self.functional = FunctionalDropout(dropout_p)
-        self.module = ModuleDropout(dropout_p)
+input_dim = 4
+batch_size = 3
+dropout_p = 1
+
+x = torch.randn(batch_size, input_dim)
+func = Model(dropout_p).to('cpu')
+
+res1 = func(x)
+print(res1)
+
+jit_func = torch.compile(func)
+res2 = jit_func(x)
+# ZeroDivisionError: float division by zero
+# While executing %lowmem_dropout : [#users=1] = call_function[target=torch._inductor.overrides.lowmem_dropout](args = (%l_x_,), kwargs = {p: 1})
+
+py
+import torch
+
+torch.manual_seed(420)
+
+class MyModel(torch.nn.Module):
+
+    def __init__(self, dropout_p):
+        super(MyModel, self).__init__()
+        self.dropout_p = dropout_p
+        self.dropout = torch.nn.Dropout(self.dropout_p)
 
     def forward(self, x):
-        # Returns tuple of outputs from both implementations
-        # Functional path may throw ZeroDivisionError when compiled with p=1
-        return (self.functional(x), self.module(x))
+        out = self.dropout(x)
+        return out
 
-def my_model_function():
-    # Creates model with p=1 (problematic case)
-    return MyModel()
+input_dim = 5
+dropout_p = 1
+batch_size = 3
 
-def GetInput():
-    # Matches input shape from issue's second example (batch_size=3, input_dim=5)
-    return torch.rand(3, 5, dtype=torch.float32)
+x = torch.rand(batch_size, input_dim)
+func = MyModel(dropout_p).to('cpu')
+test_inputs = [x]
 
+res1 = func(x)
+print(res1)
+# tensor([[0., 0., 0., 0., 0.],
+#         [0., 0., 0., 0., 0.],
+#         [0., 0., 0., 0., 0.]])
+
+with torch.no_grad():
+    func.train(False)
+    jit_func = torch.compile(func)
+    res2 = jit_func(x)
+    print(res2)
+# tensor([[0.8054, 0.1990, 0.9759, 0.1028, 0.3475],
+#         [0.1554, 0.8856, 0.6876, 0.2506, 0.1133],
+#         [0.2105, 0.4035, 0.2448, 0.8644, 0.2896]])
+
+import torch
+
+torch.manual_seed(420)
+
+class MyModel(torch.nn.Module):
+
+    def __init__(self, dropout_p):
+        super(MyModel, self).__init__()
+        self.dropout_p = dropout_p
+        self.dropout = torch.nn.Dropout(self.dropout_p)
+
+    def forward(self, x):
+        out = self.dropout(x)
+        return out
+
+input_dim = 5
+dropout_p = 1
+batch_size = 3
+
+x = torch.rand(batch_size, input_dim)
+func = MyModel(dropout_p).to('cpu')
+test_inputs = [x]
+
+with torch.no_grad():
+    func.train(False)
+    res1 = func(x)
+    print(res1)
+# tensor([[0.8054, 0.1990, 0.9759, 0.1028, 0.3475],
+#         [0.1554, 0.8856, 0.6876, 0.2506, 0.1133],
+#         [0.2105, 0.4035, 0.2448, 0.8644, 0.2896]])
+
+    jit_func = torch.compile(func)
+    res2 = jit_func(x)
+    print(res2)
+# tensor([[0.8054, 0.1990, 0.9759, 0.1028, 0.3475],
+#         [0.1554, 0.8856, 0.6876, 0.2506, 0.1133],
+#         [0.2105, 0.4035, 0.2448, 0.8644, 0.2896]])

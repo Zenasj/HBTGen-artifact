@@ -1,22 +1,26 @@
-# torch.rand(2, 3, 3, dtype=torch.long)
 import torch
 import torch.nn as nn
+class Embed(nn.Module):
+    def __init__(self,aa_probs):
+        super(Embed, self).__init__()
+        self.aa_probs = aa_probs
+        self.embedding = nn.Embedding(num_embeddings=1, #----> does NOT matter the number
+                                      embedding_dim=aa_probs,
+                                      padding_idx=None,
+                                      max_norm=None,
+                                      norm_type=2.0,
+                                      scale_grad_by_freq=False,
+                                      sparse=False,
+                                      _weight=None)
+        self.cuda()
+    def forward(self,input):
+        output = self.embedding(input.type(torch.cuda.IntTensor))
+        print(output.shape) #works
+        print(output) #crashes
+        return output
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # num_embeddings set to 20 to handle indices up to 19 (original input had max 18 after fixing negatives)
-        self.embedding = nn.Embedding(num_embeddings=20, embedding_dim=21)
-        self.cuda()  # Matches original code's .cuda() call
+input = torch.tensor([[[1,2,-3],[4,-5,6],[-7,8,9]],[[10,-11,12],[13,-14,15],[-16,-17,18]]]).type(torch.cuda.DoubleTensor).cuda()
 
-    def forward(self, x):
-        # Convert to IntTensor as in original code (indices must be int/long)
-        return self.embedding(x.type(torch.cuda.IntTensor))
+a = Embed(21)
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Generates valid indices (0-19) for num_embeddings=20
-    return torch.randint(0, 20, (2, 3, 3), dtype=torch.long).cuda()
-
+a.forward(input)

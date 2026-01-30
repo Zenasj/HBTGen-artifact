@@ -1,19 +1,25 @@
-# torch.rand(1, 1, 1, 1, dtype=torch.float32)  # Dummy input tensor (unused in computation)
+import torch.nn as nn
+
 import torch
 from torch import nn
 
 class MyModel(nn.Module):
     def __init__(self):
         super().__init__()
-    
-    def forward(self, x):
-        # Use workaround for TorchScript's lack of "in" operator for strings
-        # Original logic: return "a" in "abcd" → replaced with find() method
-        return torch.tensor("abcd".find("a") != -1, dtype=torch.bool)
+    def forward(self):
+        return "a" in "abcd"
 
-def my_model_function():
-    return MyModel()
+m = MyModel()
+scripted = torch.jit.script(m)
+scripted()
 
-def GetInput():
-    return torch.rand(1, 1, 1, 1, dtype=torch.float32)
+import torch
 
+
+@torch.jit.script
+def substr_check(x: str):
+    return x.find("you") != -1
+
+
+print(substr_check("yo yo check it out"))
+print(substr_check("you you check it out"))

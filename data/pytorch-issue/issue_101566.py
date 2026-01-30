@@ -1,36 +1,14 @@
-# torch.rand(B, 1, 28, 28, dtype=torch.float32)
+print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
+        test_loss, correct, len(test_loader.dataset),
+        100. * correct / len(test_loader.dataset)))
+
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(1, 32, 3, 1)
-        self.conv2 = nn.Conv2d(32, 64, 3, 1)
-        self.dropout1 = nn.Dropout2d(0.25)
-        self.dropout2 = nn.Dropout2d(0.5)
-        self.fc1 = nn.Linear(9216, 128)  # 64 * 6 * 6 = 9216 (after pooling)
-        self.fc2 = nn.Linear(128, 10)
-
-    def forward(self, x):
-        x = self.conv1(x)
-        x = F.relu(x)
-        x = self.conv2(x)
-        x = F.relu(x)
-        x = F.max_pool2d(x, 2)
-        x = self.dropout1(x)
-        x = torch.flatten(x, 1)
-        x = self.fc1(x)
-        x = F.relu(x)
-        x = self.dropout2(x)
-        x = self.fc2(x)
-        output = F.log_softmax(x, dim=1)
-        return output
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(1, 1, 28, 28, dtype=torch.float32)
-
+cuda = torch.cuda.is_available()
+mps = torch.backends.mps.is_available()
+if cuda:
+    device = torch.device("cuda")
+elif mps:
+    device = torch.device("mps")
+else:
+    device = torch.device("cpu")
+print(torch.eq(torch.tensor([[1, 2], [3, 4]]), torch.tensor([[1, 1], [4, 4]])))

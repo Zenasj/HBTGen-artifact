@@ -1,45 +1,57 @@
-# tf.random.uniform((B, 4), dtype=tf.int32) ← Based on input shape (4,) of integer IDs for embedding lookup
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
+from tensorflow import keras
 
-class MyModel(tf.keras.Model):
-    def __init__(self, train_embeddings=True):
-        super().__init__()
-        # Embedding layer vocab_size=3, embedding_dim=2
-        self.embedding = tf.keras.layers.Embedding(3, 2)
-        # Set trainable according to constructor arg, to properly reflect in serialization
-        self.embedding.trainable = train_embeddings
-        self.dense = tf.keras.layers.Dense(4)
+
+class LayerWithSublayers(keras.layers.Layer):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.embedding = keras.layers.Embedding(3, 2)
+        self.dense = keras.layers.Dense(4)
 
     def call(self, inputs, **kwargs):
-        x = self.embedding(inputs)
-        return self.dense(x)
-
-    def get_config(self):
-        # Include train_embeddings flag in config to preserve trainable state of sublayer
-        config = super().get_config()
-        config['train_embeddings'] = self.embedding.trainable
-        return config
-
-    @classmethod
-    def from_config(cls, config):
-        return cls(**config)
+        return self.dense(self.embedding(inputs))
 
 
-def my_model_function():
-    # By default create model with embedding.trainable == True
-    return MyModel()
+input_ids = keras.Input(shape=(4,), dtype=tf.int32, name='input_ids')
+output_layer = LayerWithSublayers()
+output_layer.embedding.trainable = False
+output = output_layer(input_ids)
 
-def GetInput():
-    # Generate an input tensor matching the input expected by MyModel: shape (batch, 4), integer dtype (indices for embedding)
-    # Assume batch size of 2 for demonstration
-    batch_size = 2
-    input_length = 4
-    # Random integers between 0 and vocab_size-1 = 2
-    return tf.random.uniform(
-        (batch_size, input_length),
-        minval=0,
-        maxval=3,
-        dtype=tf.int32
-    )
+model = keras.Model(inputs=[input_ids], outputs=[output])
+model.compile(loss=tf.losses.SparseCategoricalCrossentropy(from_logits=True), metrics=['accuracy'])
 
+model_file_name = 'foo.h5'
+model.save(filepath=model_file_name)
+
+loaded_model = keras.models.load_model(model_file_name, custom_objects={'LayerWithSublayers': LayerWithSublayers})
+
+import tensorflow as tf
+from tensorflow import keras
+
+
+class LayerWithSublayers(keras.layers.Layer):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.embedding = keras.layers.Embedding(3, 2)
+        self.dense = keras.layers.Dense(4)
+
+    def call(self, inputs, **kwargs):
+        return self.dense(self.embedding(inputs))
+
+
+input_ids = keras.Input(shape=(4,), dtype=tf.int32, name='input_ids')
+output_layer = LayerWithSublayers()
+output_layer.embedding.trainable = False
+output = output_layer(input_ids)
+
+model = keras.Model(inputs=[input_ids], outputs=[output])
+model.compile(loss=tf.losses.SparseCategoricalCrossentropy(from_logits=True), metrics=['accuracy'])
+
+model_file_name = 'foo.tf'
+
+model.save(filepath=model_file_name)
+
+loaded_model = keras.models.load_model(model_file_name, custom_objects={'LayerWithSublayers': LayerWithSublayers})

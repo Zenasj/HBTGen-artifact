@@ -1,26 +1,34 @@
-# torch.rand(4, 4, dtype=torch.float32)  # Input shape for the model
-
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self) -> None:
-        super().__init__()
-        self.seq = nn.Sequential(
-            nn.Linear(4, 4),
-            nn.Linear(4, 4),
-            nn.Linear(4, 4),
-        )
+def test_nonstrict_sequential_slicing(self):
+        class TestModule(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.seq = torch.nn.Sequential(
+                    torch.nn.Linear(4, 4),
+                    torch.nn.Linear(4, 4),
+                    torch.nn.Linear(4, 4),
+                )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        seq_last = self.seq[1:]  # Slicing the sequential module
-        return seq_last(x)
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                self.seq_last = self.seq[1:]
+                return self.seq_last(x)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+        ep = export(TestModule(), (torch.randn(4, 4),), strict=False)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(4, 4, dtype=torch.float32)
+def test_sequential_slicing(self):
+        class TestModule(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.seq = torch.nn.Sequential(
+                    torch.nn.Linear(4, 4),
+                    torch.nn.Linear(4, 4),
+                    torch.nn.Linear(4, 4),
+                )
 
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                seq_last = self.seq[1:] # instead of assigning to self.seq_last, which strict dislikes
+                return seq_last(x)
+
+        ep = export(TestModule(), (torch.randn(4, 4),))

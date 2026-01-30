@@ -1,44 +1,81 @@
-# tf.random.normal((B, H, W, C), dtype=tf.float32) ← the input shape is [batch_size, IMAGE_SIZE, IMAGE_SIZE, channels]
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
 
+import time
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self, kernel_size, channels):
-        super(MyModel, self).__init__()
-        # Normal convolution
-        self.normal_conv = tf.keras.layers.Conv2D(channels, kernel_size, padding="same")
-        # Rank-separable convolutions: two 1D convs (kernel_size x 1) then (1 x kernel_size)
-        self.rank_conv_1 = tf.keras.layers.Conv2D(channels, (kernel_size, 1), padding="same")
-        self.rank_conv_2 = tf.keras.layers.Conv2D(channels, (1, kernel_size), padding="same")
-        # Depth-wise separable conv: depthwise conv + pointwise conv(1x1)
-        self.depthwise_conv = tf.keras.layers.DepthwiseConv2D(kernel_size, padding="same")
-        self.pointwise_conv = tf.keras.layers.Conv2D(channels, 1, padding="same")
+# Define a scenario
+IMAGE_SIZE = 320
+CHANNELS_BATCH_SIZE = 2048  # channels * batch_size
+REPEATS = 200
+SKIP = 10        
+
+#Build various operations        
+class build_normal_ops(tf.keras.Model):
+    def __init__(self, KERNEL_SIZE, channels):
+        super(build_normal_ops, self).__init__()
+        self.normal = tf.keras.layers.Conv2D(channels,KERNEL_SIZE,padding="same")
+        
+    def call(self,x):
+        out = self.normal(x)
+        return out
     
-    def call(self, x):
-        # Compute outputs of all three convolutions
-        normal_out = self.normal_conv(x)
-        rank_out = self.rank_conv_1(x)
-        rank_out = self.rank_conv_2(rank_out)
-        depth_out = self.depthwise_conv(x)
-        depth_out = self.pointwise_conv(depth_out)
+class build_rank_ops(tf.keras.Model):
+    def __init__(self, KERNEL_SIZE, channels):
+        super(build_rank_ops, self).__init__()
+        self.rs1 = tf.keras.layers.Conv2D(channels,(KERNEL_SIZE,1),padding="same")
+        self.rs2 = tf.keras.layers.Conv2D(channels,(1,KERNEL_SIZE),padding="same")
+        
+    def call(self,x):
+        out = self.rs1(x)
+        out = self.rs2(out)
+        return out    
+    
+class build_depth_ops(tf.keras.Model):
+    def __init__(self, KERNEL_SIZE, channels):
+        super(build_depth_ops, self).__init__()
+        self.depthwise = tf.keras.layers.DepthwiseConv2D(KERNEL_SIZE,padding="same")
+        self.pointwise = tf.keras.layers.Conv2D(channels,1,padding="same")
+        
+    def call(self,x):
+        out = self.depthwise(x)
+        out = self.pointwise(out)        
+        return out
+       
+def build_ops_all(channels, kernel_size):    
+    normal = build_normal_ops(kernel_size,channels)
+    rank = build_rank_ops(kernel_size,channels)
+    depth = build_depth_ops(kernel_size,channels)    
+    return normal, rank, depth 
 
-        # As per the issue's context, one might want to compare or benchmark these.
-        # Here, we concatenate outputs along channel dim for a combined demonstration.
-        # The user can interpret or apply timing/comparison externally.
-        combined = tf.concat([normal_out, rank_out, depth_out], axis=-1)
-        return combined
+def time_ops(ops: tf.Operation):
+    # Benchmark operation
+    with tf.device("GPU"):
+        image = tf.random.normal(shape=[batch_size, IMAGE_SIZE, IMAGE_SIZE, channels], dtype=tf.float32)
+        for i in range(REPEATS+SKIP):
+            if i == SKIP:
+                start = time.time() #Don't time initial runs
+            _ = ops(image)
+        end = time.time()
+        chk = np.round((end - start) / REPEATS * 1000,2)
+    return chk 
 
-def my_model_function():
-    # For demonstration, assume kernel_size=3 and channels=64 as those were typical benchmarking params.
-    # Users can change them as needed to instantiate model with other params.
-    return MyModel(kernel_size=3, channels=64)
+if __name__ == '__main__':
+    #Benchmark with various channel sizes
+    for channels in [64,128,256,512]:
+        # adjust batch_size so gpu doesn't run out of memory
+        batch_size = CHANNELS_BATCH_SIZE // channels        
 
-def GetInput():
-    # Following the reported usage, IMAGE_SIZE=320, batch_size chosen based on 2048 total channels*batch_size
-    # For channels=64 (default), batch_size=2048//64=32 as an example
-    IMAGE_SIZE = 320
-    channels = 64
-    batch_size = 2048 // channels  # 32
-    # Input tensor shaped [batch_size, IMAGE_SIZE, IMAGE_SIZE, channels]
-    return tf.random.normal(shape=(batch_size, IMAGE_SIZE, IMAGE_SIZE, channels), dtype=tf.float32)
+        #Benchmark with various kernel sizes
+        for param in [3,5,7]:                
+            normal, rank_separable, depth_separable = build_ops_all(channels, param)
+            print('Channels:', channels, 'kernel_size:', param)                   
+            
+            time_normal = time_ops(normal)
+            time_rank = time_ops(rank_separable)
+            time_depth = time_ops(depth_separable)
 
+            print("Normal method: {}ms \t Rank-separable method: {}ms \t Depth-separable method: {}ms \n".format(time_normal, time_rank, time_depth))
+        print('\n')

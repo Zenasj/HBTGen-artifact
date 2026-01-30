@@ -1,21 +1,22 @@
-# torch.rand(10, 9, 8, 6, dtype=torch.float32) ← Add a comment line at the top with the inferred input shape
 import torch
 import torch.nn as nn
+import traceback
+def forward(x, device):  
+  x = torch.atan(out=x, input=torch.randint(-9223372036854775808, 9223372036854775807, [10,9,8,6], dtype=torch.int64).to('cpu'))              
+  return x
+input_tensor = torch.rand([10,9,8,6], dtype=torch.float32).to('cpu')
+cuda_tensor = input_tensor.clone().to('cuda')
+no_op_info = forward(input_tensor, 'cpu')
+print("build succeded")
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        # The input tensor is expected to be on the CPU
-        x = torch.atan(x)
-        return x
+op_info = torch.compile(forward, mode='max-autotune',fullgraph=False,dynamic=True)(cuda_tensor, 'cuda')
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand([10, 9, 8, 6], dtype=torch.float32).to('cpu')
-
+same_val = torch.allclose(no_op_info.to('cpu'), 
+                        op_info.to('cpu'), 
+                        rtol=1e-3, atol=1e-3, 
+                        equal_nan=True)
+if same_val == False : 
+    print("BUGBUG DIFFERENTIAL")
+    raise ValueError('diff value')
+else :
+    print("no_error")

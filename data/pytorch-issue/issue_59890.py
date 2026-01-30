@@ -1,23 +1,53 @@
-# torch.rand(B, C, H, W, dtype=...)  # B: batch_size, C: channels, H: height, W: width
-import torch
 import torch.nn as nn
-import torchvision.models as models
+import torchvision
 
-class MyModel(nn.Module):
+import os
+
+import pytorch_lightning as pl
+import torch
+from torch import nn
+import torch.nn.functional as F
+from torchvision.datasets import CIFAR100
+from torch.utils.data import DataLoader, random_split
+from torchvision import transforms
+from torchvision.models import resnet18
+
+
+class LitResNet(pl.LightningModule):
+
     def __init__(self):
-        super(MyModel, self).__init__()
-        self.resnet = models.resnet18()
+        super().__init__()
+        self.resnet = resnet18()
         self.resnet.fc = nn.Linear(512, 100)
 
     def forward(self, x):
-        return self.resnet(x)
+        # in lightning, forward defines the prediction/inference actions
+        output = self.resnet(x)
+        return output
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+    def training_step(self, batch, batch_idx):
+        # training_step defined the train loop. It is independent of forward
+        x, y = batch
+        y_hat = self.resnet(x)
+        loss = F.cross_entropy(y_hat, y)
+        return loss
 
-def GetInput():
-    # CIFAR-100 images are 32x32 with 3 channels
-    # Batch size is 64
-    return torch.rand(64, 3, 32, 32, dtype=torch.float32)
+    def validation_step(self, batch, batch_idx):
+        x, y = batch
+        y_hat = self.resnet(x)
+        loss = F.cross_entropy(y_hat, y)
+        return loss
 
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
+        return optimizer
+
+
+dataset = CIFAR100(os.getcwd(), download=True, transform=transforms.ToTensor())
+train, val = random_split(dataset, [45000, 5000])
+
+model = LitResNet()
+trainer = pl.Trainer(max_epochs=1, gpus=1)
+trainer.fit(model,
+            DataLoader(train, batch_size=64, num_workers=4),
+            DataLoader(val, batch_size=64, num_workers=4))

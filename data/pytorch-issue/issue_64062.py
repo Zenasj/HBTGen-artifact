@@ -1,40 +1,23 @@
-# torch.rand(B, 3, 299, 299, dtype=torch.float32)
-import torch
-import torch.nn as nn
+py
+import torch 
+import os
+import urllib.request
+import shutil
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Simplified InceptionV3 layers structure to replicate the issue scenario
-        self.layers = nn.Sequential(
-            nn.Conv2d(3, 32, kernel_size=3, stride=2, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(32, 64, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(3, stride=2, ceil_mode=True),
-            nn.Conv2d(64, 80, kernel_size=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(80, 192, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(3, stride=2, ceil_mode=True),
-            # ... (additional layers omitted for brevity)
-        )
-        # Placeholder for full model comparison (required by Special Requirement 2)
-        self.full_model = nn.Sequential(
-            self.layers,
-            nn.AdaptiveAvgPool2d((8,8)),
-            nn.Flatten(),
-            nn.Linear(192*8*8, 1000)  # Matches InceptionV3 output size
-        )
+inception_url = "https://nvlabs-fi-cdn.nvidia.com/stylegan2-ada-pytorch/pretrained/metrics/inception-2015-12-05.pt"
 
-    def forward(self, x):
-        # Simulate the issue scenario where layers submodule is called independently
-        # (while also allowing full model comparison as per requirement)
-        return self.layers(x)  # Fails with CUDA fuser enabled
+if not os.path.exists('/tmp/inception-2015-12-05.pt'):
+    # download the file
+    with urllib.request.urlopen(inception_url) as response, open(inception_path, 'wb') as f:
+        shutil.copyfileobj(response, f)
 
-def my_model_function():
-    return MyModel()
+net = torch.jit.load('/tmp/inception-2015-12-05.pt').eval().cuda()
 
-def GetInput():
-    return torch.randn(1, 3, 299, 299, dtype=torch.float32, device='cuda')
+x = torch.randn(1, 3, 299, 299, device='cuda')
 
+print('PyTorch version', torch.__version__)
+print('full net(x)', net(x).sum())
+torch._C._jit_override_can_fuse_on_gpu(False)
+print('net.layers(x) w/o fuser', net.layers(x).sum())
+torch._C._jit_override_can_fuse_on_gpu(True)
+print('net.layers(x) w/ fuser', net.layers(x).sum())

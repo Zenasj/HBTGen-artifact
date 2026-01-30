@@ -1,123 +1,162 @@
-# tf.random.uniform((B,), dtype=tf.string)  ← Input is a batch of strings (shape=(batch,), dtype=string)
+from tensorflow.keras import models
 
+import sys,os, logging,argparse,math,string,json,gzip
+import numpy as np
 import tensorflow as tf
 from tensorflow import keras
+import pandas as pd 
 from tensorflow.keras import layers
+import glob,pickle,random
+from sklearn.metrics import *
+from tensorflow.keras.callbacks import *
+from tensorflow.keras.metrics import *
+from tensorflow.python.keras.metrics import sparse_top_k_categorical_accuracy
 
-# Note: The original issue uses a tf.hub preprocessing layer that converts string input
-# to token IDs internally. Since tf.hub layers aren't included here, 
-# we simulate a minimal preprocessor with lookup table and simple tokenization.
-# In practice, you'd replace this with the real preprocessor as a tf.keras Layer.
+print(tf.__version__)
 
-class TokenAndPositionEmbedding(layers.Layer):
-    def __init__(self, maxlen, vocab_size, embed_dim):
-        super(TokenAndPositionEmbedding, self).__init__()
-        self.token_emb = layers.Embedding(input_dim=vocab_size, output_dim=embed_dim)
-        self.pos_emb = layers.Embedding(input_dim=maxlen, output_dim=embed_dim)
+from transblock import * 
+def acc_top4(y_true, y_pred):
+    return sparse_top_k_categorical_accuracy(y_true, y_pred, k=4)
 
-    def call(self, x):
-        maxlen = tf.shape(x)[-1]
-        positions = tf.range(start=0, limit=maxlen, delta=1)
-        positions = self.pos_emb(positions)
-        x = self.token_emb(x)
-        return x + positions
+def acc_top8(y_true, y_pred):
+    return sparse_top_k_categorical_accuracy(y_true, y_pred, k=8)
 
-class TransformerBlock(layers.Layer):
-    def __init__(self, embed_dim, num_heads, ff_dim, rate=0.1):
-        super(TransformerBlock, self).__init__()
-        self.att = layers.MultiHeadAttention(num_heads=num_heads, key_dim=embed_dim)
-        self.ffn = keras.Sequential([
-            layers.Dense(ff_dim, activation="relu"),
-            layers.Dense(embed_dim),
-        ])
-        self.layernorm1 = layers.LayerNormalization(epsilon=1e-6)
-        self.layernorm2 = layers.LayerNormalization(epsilon=1e-6)
-        self.dropout1 = layers.Dropout(rate)
-        self.dropout2 = layers.Dropout(rate)
 
-    def call(self, inputs, training=False):
-        attn_output = self.att(inputs, inputs)
-        attn_output = self.dropout1(attn_output, training=training)
-        out1 = self.layernorm1(inputs + attn_output)
-        ffn_output = self.ffn(out1)
-        ffn_output = self.dropout2(ffn_output, training=training)
-        return self.layernorm2(out1 + ffn_output)
+with open('./app_map_5000.json','r') as f:
+    white_5000 = json.load(f)
 
-class MyModel(tf.keras.Model):
-    def __init__(self, num_classes=5001, max_seq_len=128, vocab_size=10000):
-        """
-        Args:
-            num_classes: number of output classes for classification
-            max_seq_len: max length of token ids sequence after preprocessing
-            vocab_size: vocabulary size of tokens after lookup
-        """
-        super(MyModel, self).__init__()
-        
-        # Simulate token lookup by a simple lookup table
-        keys = tf.constant([f"word{i}" for i in range(vocab_size-5)])  # leave 5 OOV tokens
-        values = tf.constant(list(range(vocab_size-5)), dtype=tf.int64)
-        init = tf.lookup.KeyValueTensorInitializer(keys, values)
-        self.table = tf.lookup.StaticVocabularyTable(init, num_oov_buckets=5)
-        
-        self.max_seq_len = max_seq_len
-        self.vocab_size = vocab_size
-        
-        self.embedding_dim = 32
-        self.num_heads = 2
-        self.ff_dim = 32
-        
-        # The input here is string tensor (batch,)
-        
-        # Preprocessor layer equivalent:
-        # 1) tokenize strings by splitting on space (simulate)
-        # 2) lookup tokens to ids using vocab table
-        # 3) pad/truncate to max_seq_len
-        
-        self.embedding_layer = TokenAndPositionEmbedding(max_seq_len, vocab_size, self.embedding_dim)
-        self.transformer_block = TransformerBlock(self.embedding_dim, self.num_heads, self.ff_dim)
-        self.global_pool = layers.GlobalAveragePooling1D()
-        self.dense1 = layers.Dense(512, activation="relu")
-        self.classifier = layers.Dense(num_classes, activation="softmax")
+init = tf.lookup.KeyValueTensorInitializer(
+    keys=tf.constant(list(white_5000.keys())),
+    values=tf.constant(list([ int(i) for i in white_5000.values()]), dtype=tf.int64))
 
-    def call(self, inputs, training=False):
-        # inputs: batch of strings with shape (batch,)
-        
-        # 1) Tokenize by splitting on spaces
-        tokens = tf.strings.split(inputs, sep=' ')  # RaggedTensor shape = (batch, None)
-        
-        # 2) Lookup tokens to token ids
-        # Since StaticVocabularyTable requires rank-1 and returns rank-1,
-        # we flatten tokens to 1D, lookup, then reshape back.
-        flat_tokens = tokens.flat_values  # flatten token strings
-        token_ids_flat = self.table.lookup(flat_tokens)
-        token_ids = tf.RaggedTensor.from_row_splits(token_ids_flat, tokens.row_splits)
-        
-        # 3) Pad or truncate sequences to max_seq_len
-        token_ids_padded = token_ids.to_tensor(default_value=0, shape=[None, self.max_seq_len])
-        token_ids_padded = token_ids_padded[:, :self.max_seq_len]
+table = tf.lookup.StaticVocabularyTable(
+   init, lookup_key_dtype=tf.string,
+   num_oov_buckets=5)
 
-        # 4) Pass through embedding + transformer
-        x = self.embedding_layer(token_ids_padded)
-        x = self.transformer_block(x, training=training)
-        x = self.global_pool(x)
-        x = self.dense1(x)
-        output = self.classifier(x)
-        return output
+def parser(x):
+    x_ = tf.strings.regex_replace(x, '"','')
+    tokens = tf.strings.split(x_, sep=',')
+    #label = 
+    #label = tf.strings.to_number(tokens[-1], tf.int32)
+    #features = []
+    #words = tf.strings.split(tokens[0], sep=' ')
+    #f = table.lookup(words)
+    #features.append(tf.concat([f1, tf.expand_dims(f2,-1)], axis=0))
+    return tokens[0], table.lookup(tokens[-1])
 
-def my_model_function():
-    # Return an instance of MyModel with default parameters.
-    return MyModel()
+def get_ds(files, val):
+    ds = tf.data.TextLineDataset(files, buffer_size=12800, num_parallel_reads=48 ,compression_type='GZIP')
+    ds = ds.map(lambda x: parser(x), tf.data.experimental.AUTOTUNE )
+    if not val:
+        ds = ds.shuffle(12800)#.repeat()
+    ds = ds.batch(128).prefetch(tf.data.experimental.AUTOTUNE)
+    return ds
 
-def GetInput():
-    # Return a batch of example string input compatible with MyModel.
-    # Producing a tf.Tensor of strings (batch,)
-    example_sentences = [
-        "word1 word2 word3",
-        "word999 word4 word5 word6 word7",
-        "word100 word200 word300",
-        "unknownword word2 word3",  # some OOV tokens
-        ""
-    ]
-    # Convert to tf.Tensor shape=(batch,)
-    return tf.constant(example_sentences)
 
+ds_train = get_ds(files=glob.glob('./sents_0420_0428_nofil/part-*.csv.gz'),  val=False)
+ds_test =  get_ds(files=glob.glob('./sents_0429_nofil/part-*.csv.gz'),  val=True)
+
+for features in ds_test.take(10):
+    print(features)
+
+def get_model_transormer(num_classes):
+    preprocessor_file = "./albert_en_preprocess_3" # https://tfhub.dev/tensorflow/albert_en_preprocess/3
+    preprocessor_layer = hub.KerasLayer(preprocessor_file)
+    preprocessor = hub.load(preprocessor_file)
+    vocab_size = preprocessor.tokenize.get_special_tokens_dict()['vocab_size'].numpy()
+
+    embed_dim = 32  # Embedding size for each token
+    num_heads = 2  # Number of attention heads
+    ff_dim = 32  # Hidden layer size in feed forward network inside transformer
+    text_input = tf.keras.layers.Input(shape=(), dtype=tf.string) 
+
+    encoder_inputs = preprocessor_layer(text_input)['input_word_ids']
+
+    embedding_layer = TokenAndPositionEmbedding(encoder_inputs.shape[1], vocab_size, embed_dim)
+    x = embedding_layer(encoder_inputs)
+    transformer_block = TransformerBlock(embed_dim, num_heads, ff_dim)
+    x = transformer_block(x)
+    x = layers.GlobalAveragePooling1D()(x)
+    x = layers.Dense(512, activation="relu")(x)
+
+    outputs = layers.Dense(num_classes, activation="softmax")(x)
+    model = keras.Model(inputs=text_input, outputs=outputs)
+    model.compile("adam", "sparse_categorical_crossentropy", metrics=["acc", acc_top4, acc_top8])
+    return model
+
+# def get_model_bert(num_classes, m='albert'):
+
+#     text_input = tf.keras.layers.Input(shape=(), dtype=tf.string) # shape=(None,) dtype=string
+#     m_file = {'albert':"./albert_en_base_2", 'electra':'./electra_base_2', 'dan':"./universal-sentence-encoder_4"}
+
+#     encoder = hub.KerasLayer(m_file[m], trainable=True)
+
+#     if m in ['albert', 'electra']:
+#         encoder_inputs = preprocessor_layer(text_input)
+#         outputs = encoder(encoder_inputs)
+#         embed = outputs["pooled_output"]  
+#     elif m in ['dan']:
+#         embed = encoder(text_input)
+#     else:
+#         raise KeyError("model illegal!")
+
+#     out = layers.Dense(num_classes, activation="softmax")(embed)
+#     model = tf.keras.Model(inputs=text_input, outputs=out)
+#     model.compile(Adam(learning_rate=1e-5), "sparse_categorical_crossentropy", metrics=["acc", acc_top4, acc_top8])
+#     return model
+
+# x_train, y_train = df_train['content'].values.reshape(-1,1), df_train['label'].values
+# x_test, y_test = df_test['content'].values.reshape(-1,1), df_test['label'].values
+
+#model = get_model_bert(df_train['label'].max()+1)
+
+model_checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
+    filepath='./checkpoint_epoch{epoch}',
+    save_weights_only=False,
+    monitor='val_acc_top8',
+    mode='max',
+    save_best_only=False)
+
+model = get_model_transormer(5001)
+model.save('checkpoint__')
+
+history = model.fit(
+    ds_train, validation_data=ds_test, epochs=1, \
+     steps_per_epoch=1000, validation_steps=1000,
+     verbose=1, callbacks=[model_checkpoint_callback]
+)
+
+# transform to another model which use the dense_2 layer as output
+model_file = './checkpoint_epoch'
+model = tf.keras.models.load_model(model_file, \
+                        custom_objects={"acc_top4":acc_top4, "acc_top8":acc_top8, \
+                       "softmax":tf.keras.activations.softmax})
+intermediate_layer_model = tf.keras.Model(inputs=model.input,
+                                 outputs=model.get_layer('dense_2').output)
+intermediate_layer_model.save(model_file+"_inter")
+y = intermediate_layer_model.predict(ds_test, verbose=1, steps=10)
+
+# save the model
+converter = tf.lite.TFLiteConverter.from_saved_model(model_file+"_inter")
+
+#### ver: 2.5.0
+converter.target_spec.supported_ops = [
+  tf.lite.OpsSet.TFLITE_BUILTINS, # enable TensorFlow Lite ops.
+  tf.lite.OpsSet.SELECT_TF_OPS # enable TensorFlow ops.
+]
+
+# write the tflite model
+tflite_model = converter.convert()
+open("{}.tflite".format(model_file+"_inter"), "wb").write(tflite_model)
+
+########## reload 
+#model = tf.keras.models.load_model('./model_transoformer_1216_epoch_1')
+interpreter = tf.lite.Interpreter(model_path= "{}.tflite".format(model_file+"_inter") )    
+input_details = interpreter.get_input_details()
+output_details = interpreter.get_output_details()
+interpreter.allocate_tensors()
+
+interpreter.set_tensor(input_details[0]['index'], tf.convert_to_tensor([sentence]) )
+interpreter.invoke()
+output_data = interpreter.get_tensor(output_details[0]['index'])
+pred = output_data[0][0]

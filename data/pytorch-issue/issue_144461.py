@@ -1,39 +1,57 @@
-# torch.rand(B, C, H, W, dtype=...)  # Inferred input shape: (bs, 13) where bs is batch size and dtype is torch.float32
-
-import torch
 import torch.nn as nn
 
-class CatDense(nn.Module):
+import torch
+
+class CatDense(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
-        self.linear = nn.Linear(128, 128)
+        self.linear = torch.nn.Linear(128, 128)
         
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x) -> torch.Tensor:
         y = self.linear(x)
         return y
 
-class MyModel(nn.Module):
+class Model(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
-        self.linear = nn.Linear(13, 128)
+        self.linear = torch.nn.Linear(13, 128)
         self.catdense = CatDense()
 
-    def forward(self, dense: torch.Tensor) -> torch.Tensor:
+    def forward(self, dense):
         out = self.linear(dense)
         out = self.catdense(out)
         return out
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+dtype = torch.float32 # this issue also exists with float16
+bs = 256
+from torch._inductor import config as inductor_config
+from torch._dynamo import config
+config.error_on_recompile = True
+inductor_config.cpp_wrapper = True
+inductor_config.cpp.enable_kernel_profile = True
+inductor_config.freezing = True
+model = Model()
+dense = torch.zeros(bs, 13)
+model(dense)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    bs = 256
-    return torch.rand(bs, 13, dtype=torch.float32)
+autocast = dtype != torch.float32
+with torch.no_grad(), torch.cpu.amp.autocast(enabled=autocast, dtype=dtype):
+    print('[Info] Running torch.compile() with default backend')
+    model(dense)
+    model = torch.compile(model)
+    model(dense)
+    model(dense)
 
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
-
+from torch.utils import ThroughputBenchmark
+import contextlib
+ctx = contextlib.suppress()
+if dtype == 'fp16':
+    ctx = torch.cpu.amp.autocast(enabled=autocast, dtype=dtype)
+with torch.no_grad(), ctx:
+    bench = ThroughputBenchmark(model)
+    bench.add_input(dense)
+    stats = bench.benchmark(
+        num_calling_threads=1,
+        num_warmup_iters=200,
+        num_iters=300,
+    )

@@ -1,22 +1,26 @@
-# torch.rand(1, 1, 1, 1, 0, dtype=torch.float32)
+import torch.nn as nn
+
+py
 import torch
-from torch import nn
+from torch.func import jacrev
+from torch.autograd.functional import jacobian
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Both layers mentioned in the issue are encapsulated as submodules
-        self.pixel_shuffle = nn.PixelShuffle(1)
-        self.pixel_unshuffle = nn.PixelUnshuffle(1)
-    
-    def forward(self, x):
-        # Forward uses PixelShuffle (as per the example), but includes both layers
-        return self.pixel_shuffle(x)
 
-def my_model_function():
-    return MyModel()
+torch.manual_seed(420)
 
-def GetInput():
-    # Returns input matching the shape from the issue's example (5D tensor with zero dimension)
-    return torch.rand(1, 1, 1, 1, 0, dtype=torch.float32)
+model_input = torch.ones((1,1,1,1,0))
 
+def func(model_input):
+    layer = torch.nn.PixelShuffle(1)
+    pred = layer(model_input)
+    return pred
+
+
+print(func(model_input))
+# tensor([], size=(1, 1, 1, 1, 0))
+
+jacrev(func)(model_input)
+# CRASH: floating point exception (core dumped)
+
+jacobian(func, model_input)
+# RuntimeError: stack expects a non-empty TensorList

@@ -1,24 +1,15 @@
-# torch.rand(B, 3, 224, 224, dtype=torch.float32)  # Assumed input shape for a standard image model
 import torch
-from torch import nn
+torch.cuda.set_per_process_memory_fraction(0.5, 0)
+torch.cuda.empty_cache()
+total_memory = torch.cuda.get_device_properties(0).total_memory
+# less than 0.5 will be ok:
+tmp_tensor = torch.empty(int(total_memory * 0.499), dtype=torch.int8, device='cuda')
+del tmp_tensor
+torch.cuda.empty_cache()
+# this allocation will raise a OOM:
+torch.empty(total_memory // 2, dtype=torch.int8, device='cuda')
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv = nn.Conv2d(3, 64, kernel_size=3, padding=1)
-        self.fc = nn.Linear(64 * 224 * 224, 10)  # Example layer to trigger memory allocation
-
-    def forward(self, x):
-        x = self.conv(x)
-        x = x.view(x.size(0), -1)
-        x = self.fc(x)
-        return x
-
-def my_model_function():
-    # Returns a simple model instance with basic layers
-    return MyModel()
-
-def GetInput():
-    # Returns a random input tensor matching the assumed shape
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
-
+"""
+It raises an error as follows: 
+RuntimeError: CUDA out of memory. Tried to allocate 5.59 GiB (GPU 0; 11.17 GiB total capacity; 0 bytes already allocated; 10.91 GiB free; 5.59 GiB allowed; 0 bytes reserved in total by PyTorch)
+"""

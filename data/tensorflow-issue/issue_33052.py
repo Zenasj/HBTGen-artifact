@@ -1,37 +1,88 @@
-# tf.random.uniform((64, 1000, 100), dtype=tf.float32) ← Inferred input shape from the issue: batch_size=64, n_steps=1000, n_input=100
+from tensorflow import keras
+from tensorflow.keras import layers
 
+python
 import tensorflow as tf
+import numpy as np
+import timeit
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        self.n_hidden = 1000
-        self.n_input = 100
-        
-        # Define the RNN and Dense layers as described
-        self.rnn = tf.keras.layers.SimpleRNN(
-            units=self.n_hidden, 
-            return_sequences=True
-        )
-        self.dense = tf.keras.layers.Dense(units=self.n_input)
+use_eager = False
+use_v2 = False
 
-    def call(self, inputs, training=False):
-        # Forward pass: inputs: shape (batch, time, input_dim)
-        x = self.rnn(inputs, training=training)
-        x = self.dense(x)
-        return x
+if not use_eager:
+    tf.compat.v1.disable_eager_execution()
+if not use_v2:
+    tf.compat.v1.disable_control_flow_v2()
 
 
-def my_model_function():
-    # Return an instance of MyModel
-    model = MyModel()
-    # Compile with SGD optimizer and MSE loss to match original example
+n_steps = 1000
+n_input = 100
+n_hidden = 1000
+batch_size = 64
+
+inputs = tf.keras.Input((n_steps, n_input))
+outputs = tf.keras.layers.SimpleRNN(units=n_hidden, return_sequences=True)(inputs)
+outputs = tf.keras.layers.Dense(units=n_input)(outputs)
+model = tf.keras.Model(inputs=inputs, outputs=outputs)
+
+model.compile(optimizer=tf.optimizers.SGD(0.1), loss="mse")
+
+x = np.ones((batch_size, n_steps, n_input))
+y = np.ones((batch_size, n_steps, n_input))
+
+# warmup
+model.fit(x, y, epochs=1)
+
+start = timeit.default_timer()
+model.fit(x, y, epochs=10)
+print("Execution time:", timeit.default_timer() - start)
+
+python
+import tensorflow as tf
+import numpy as np
+import timeit
+
+
+n_steps = 1000
+n_input = 100
+n_hidden = 1000
+batch_size = 64
+with tf.device("/gpu:0"):
+    inputs = tf.keras.Input((n_steps, n_input))
+    outputs = tf.keras.layers.SimpleRNN(units=n_hidden, return_sequences=True)(inputs)
+    outputs = tf.keras.layers.Dense(units=n_input)(outputs)
+    model = tf.keras.Model(inputs=inputs, outputs=outputs)
+
     model.compile(optimizer=tf.optimizers.SGD(0.1), loss="mse")
-    return model
+
+    x = np.ones((batch_size, n_steps, n_input))
+    y = np.ones((batch_size, n_steps, n_input))
+
+    # warmup
+    model.fit(x, y, epochs=1)
+
+    start = timeit.default_timer()
+    model.fit(x, y, epochs=10)
+    print("Execution time (defaults):", timeit.default_timer() - start)
 
 
-def GetInput():
-    # Return a random tensor consistent with expected input shape and dtype
-    # Matching the example's float32 dtype and input shape (batch=64, steps=1000, input=100)
-    return tf.random.uniform(shape=(64, 1000, 100), dtype=tf.float32)
+tf.compat.v1.disable_eager_execution()
+tf.compat.v1.disable_control_flow_v2()
 
+with tf.device("/gpu:0"):
+    inputs = tf.keras.Input((n_steps, n_input))
+    outputs = tf.keras.layers.SimpleRNN(units=n_hidden, return_sequences=True)(inputs)
+    outputs = tf.keras.layers.Dense(units=n_input)(outputs)
+    model = tf.keras.Model(inputs=inputs, outputs=outputs)
+
+    model.compile(optimizer=tf.optimizers.SGD(0.1), loss="mse")
+
+    x = np.ones((batch_size, n_steps, n_input))
+    y = np.ones((batch_size, n_steps, n_input))
+
+    # warmup
+    model.fit(x, y, epochs=1)
+
+    start = timeit.default_timer()
+    model.fit(x, y, epochs=10)
+    print("Execution time (no eager, no v2):", timeit.default_timer() - start)

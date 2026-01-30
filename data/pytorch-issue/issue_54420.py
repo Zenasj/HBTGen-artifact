@@ -1,19 +1,26 @@
-# torch.rand(10)  # Inferred input shape is (10,)
 import torch
-from torch import nn
+import gc
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Minimal identity model to satisfy structure requirements
-        self.identity = nn.Identity()
-        
-    def forward(self, x):
-        return self.identity(x)
+print(torch.__version__)
 
-def my_model_function():
-    return MyModel()
+a = torch.rand(10)
 
-def GetInput():
-    return torch.rand(10)
+a = gc.get_objects()
+print("All ok")
 
+import torch
+import gc
+
+print(torch.__version__)
+
+a = torch.rand(10)
+
+print(gc.get_objects())
+
+import torch
+
+print(torch.__dict__)
+print(torch.classes)
+
+from torch._classes import _Classes
+print(_Classes())

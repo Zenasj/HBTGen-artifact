@@ -1,31 +1,20 @@
-# tf.random.uniform((), dtype=tf.float32)  <- The example input from the issue is a scalar tensor
-
 import tensorflow as tf
+tf.enable_v2_behavior()
+from tensorflow import keras
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # No additional layers needed, purely demonstrating control flow on tensor input
-
+class MyModel(keras.Model):
     def call(self, x):
-        # The model's logic depends on conditional checking on tensor value.
-        # Direct Python 'if' on tensor is not allowed during graph execution.
-        # Use tf.cond to dynamically branch based on tensor value,
-        # so it works both eagerly and graph-compiled.
-        return tf.cond(
-            x > 0,
-            lambda: x + 1,
-            lambda: x - 1
-        )
+        if x > 0:
+            return x + 1
+        else:
+            return x - 1
+            
+m = MyModel()
+m(tf.constant(0))  # This works, returns -1 as expected
+m.compile(loss='mse', optimizer='sgd')
+m.fit(tf.constant(0), tf.constant(1)) # This fails
 
-def my_model_function():
-    # Return an instance of MyModel
-    # No special arguments needed, `dynamic=True` is not supported in recent TF.
-    # run_eagerly can be set externally when compiling if eager execution is desired during training.
-    return MyModel()
+m = MyModel(dynamic=True)
 
-def GetInput():
-    # Return a scalar tensor input compatible with MyModel call.
-    # Use uniform random float scalar in range [-1, 1].
-    return tf.random.uniform(shape=(), minval=-1, maxval=1, dtype=tf.float32)
-
+model.compile()
+model.run_eagerly = True

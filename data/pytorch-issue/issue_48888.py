@@ -1,10 +1,15 @@
-# torch.rand(B, 10, dtype=torch.float)
+import random
+
 import torch
 import torch.nn as nn
+import numpy as np
 
-class MyModel(nn.Module):
-    def __init__(self, inshape=10, outshape=1):
-        super(MyModel, self).__init__()
+dtype = torch.float
+device = torch.device("cpu")
+
+class MLP(nn.Module):
+    def __init__(self, inshape, outshape):
+        super(MLP, self).__init__()
         self.layers = nn.Sequential(
             nn.Linear(inshape, outshape)
         )
@@ -14,11 +19,21 @@ class MyModel(nn.Module):
         x = self.layers(x)
         return x
 
-def my_model_function():
-    # Returns an MLP with input size 10 and output size 1
-    return MyModel()
+data = torch.from_numpy(np.random.rand(1, 10).astype(np.float32))
+target = torch.from_numpy(np.random.rand(1, 1).astype(np.float32))
 
-def GetInput():
-    # Returns a random tensor of shape (1, 10)
-    return torch.rand(1, 10, dtype=torch.float)
+model = MLP(10, 1)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+loss_fn = nn.MSELoss()
 
+predict = model(data)
+loss = loss_fn(predict, target)
+
+model.zero_grad()
+loss.backward()
+optimizer.step()
+
+print("Program done, command prompt expected below.")
+
+if sys.platform == "win32":
+    os.system(f'wmic process where processid="{os.getpid()}" call terminate >nul')

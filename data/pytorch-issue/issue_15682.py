@@ -1,25 +1,14 @@
-# torch.rand(B, C, H, W, dtype=...)  # Add a comment line at the top with the inferred input shape
 import torch
-import torch.nn as nn
+d0 = torch.device('cuda:0')
+d1 = torch.device('cuda:1')
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Placeholder model with a simple convolutional layer
-        self.conv = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1)
+with torch.cuda.device(d0):
+   s0 = torch.cuda.current_stream()
 
-    def forward(self, x):
-        return self.conv(x)
+with torch.cuda.device(d1):
+    s1 = torch.cuda.current_stream()
+    torch.cuda._sleep(1000000000)  # spin for about 1 sec on device1
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # Assuming a batch size of 1, 3 channels, and image size of 224x224
-    B, C, H, W = 1, 3, 224, 224
-    return torch.rand(B, C, H, W, dtype=torch.float32)
-
-# The provided issue and comments do not contain a PyTorch model or any code related to a neural network. Instead, it discusses a bug in the PyTorch CUDA stream API. Since there is no model to extract, I will create a placeholder `MyModel` class and a `GetInput` function that generates a random tensor input. This will meet the structure and constraints specified in the task.
-# This code provides a simple `MyModel` class with a single convolutional layer and a `GetInput` function that generates a random tensor input with the shape (1, 3, 224, 224). The model and input are designed to be used together without errors.
+print('everything finished (called on device 0)', s0.query(), s1.query())  # should be True, False
+with torch.cuda.device(d1):
+    print('everything finished (called on device 1)', s0.query(), s1.query())  # should be True, False

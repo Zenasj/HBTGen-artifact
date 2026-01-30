@@ -1,27 +1,36 @@
-# tf.random.uniform((1, 7), dtype=tf.float32) ← Inferred input shape from example: batch size 1, sequence length 7
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
+import keras
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Dense layer with 21 outputs
-        self.dense = tf.keras.layers.Dense(21)
-    
-    def call(self, inputs):
-        # inputs expected shape: (1, 7) as per corrected shape in the colab & comments
-        # The original code tried to reshape a Keras Input tensor using tf.reshape, which caused errors.
-        # Here, we assume inputs come in shape (1, 7) already.
-        # Simply pass through dense layer.
-        return self.dense(inputs)
+input_shape = [7]
+output_shape = [1, 21]
 
-def my_model_function():
-    # Return an instance of MyModel.
-    # This model matches the working pattern advised: input tensor shape (1, 7)
-    return MyModel()
+tf_input = keras.Input(input_shape[1:], batch_size=input_shape[0])
 
-def GetInput():
-    # Return a random tensor input matching expected shape (1,7) and dtype float32
-    # This corresponds to batch_size=1, feature_dim=7.
-    return tf.random.uniform((1, 7), dtype=tf.float32)
+tf_z = tf.reshape(tf_input, (1, 7))
+tf_output = tf.keras.layers.Dense(21)(tf_z)
 
+model = keras.Model(inputs=[tf_input], outputs=[tf_output])
+
+# Convert the model.
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+tflite_model = converter.convert()
+
+# Save the model.
+with open('model.tflite', 'wb') as f:
+  f.write(tflite_model)
+
+x = Input(...)
+...
+tf_fn(x)  # Invalid.
+
+class MyLayer(Layer):
+    def call(self, x):
+        return tf_fn(x)
+
+x = MyLayer()(x)
+
+import os
+os.environ["TF_USE_LEGACY_KERAS"] = "1"

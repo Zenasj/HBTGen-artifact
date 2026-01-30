@@ -1,22 +1,19 @@
-# tf.random.uniform((32, 4), dtype=tf.float32) ← inferred input shape from example X shape (32,4)
+import random
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
-import tensorflow as tf
+from tensorflow.python.keras.layers import Input, Dense
+from tensorflow.python.keras.models import Model
+from tensorflow.python.keras.optimizers import Nadam
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # A simple model matching the example: input shape (4,), output scalar with sigmoid activation
-        self.dense = tf.keras.layers.Dense(1, activation='sigmoid')
+ipt = Input(shape=(4,))
+out = Dense(1, activation='sigmoid')(ipt)
 
-    def call(self, inputs, training=False):
-        return self.dense(inputs)
+model = Model(ipt, out)
+model.compile(optimizer=Nadam(lr=1e-4), loss='binary_crossentropy')
 
-def my_model_function():
-    # Return an instance of MyModel (untrained weights)
-    return MyModel()
-
-def GetInput():
-    # Return a random input tensor of shape (32, 4) matching the example batch input
-    # Using float32 as typical for TF models
-    return tf.random.uniform((32, 4), dtype=tf.float32)
-
+X = np.random.randn(32,4)
+Y = np.random.randint(0,2,(32,1))
+model.train_on_batch(X,Y)

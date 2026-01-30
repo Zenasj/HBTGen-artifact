@@ -1,76 +1,100 @@
-# tf.random.uniform((BATCH_SIZE, None, UNITS_INPUT_OUTPUT), dtype=tf.float32)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+
+def reset_states(self, states=None):
+    import datetime
+    if not self.stateful:
+      raise AttributeError('Layer must be stateful.')
+    batch_size = self.input_spec[0].shape[0]
+    if not batch_size:
+      raise ValueError('If a RNN is stateful, it needs to know '
+                       'its batch size. Specify the batch size '
+                       'of your input tensors: \n'
+                       '- If using a Sequential model, '
+                       'specify the batch size by passing '
+                       'a `batch_input_shape` '
+                       'argument to your first layer.\n'
+                       '- If using the functional API, specify '
+                       'the batch size by passing a '
+                       '`batch_shape` argument to your Input layer.')
+    # initialize state if None
+    if self.states[0] is None:
+      if _is_multiple_state(self.cell.state_size):
+        self.states = [
+            K.zeros([batch_size] + tensor_shape.as_shape(dim).as_list())
+            for dim in self.cell.state_size
+        ]
+      else:
+        self.states = [
+            K.zeros([batch_size] +
+                    tensor_shape.as_shape(self.cell.state_size).as_list())
+        ]
+    elif states is None:
+      if _is_multiple_state(self.cell.state_size):
+        now = datetime.datetime.now()
+        for state, dim in zip(self.states, self.cell.state_size):
+          K.set_value(state,
+                      np.zeros([batch_size] +
+                               tensor_shape.as_shape(dim).as_list()))
+        print(f"LSTM reset time: {datetime.datetime.now() - now}")  # TODO
+      else:
+        K.set_value(self.states[0], np.zeros(
+            [batch_size] +
+            tensor_shape.as_shape(self.cell.state_size).as_list()))
+    else:
+      if not isinstance(states, (list, tuple)):
+        states = [states]
+      if len(states) != len(self.states):
+        raise ValueError('Layer ' + self.name + ' expects ' +
+                         str(len(self.states)) + ' states, '
+                         'but it received ' + str(len(states)) +
+                         ' state values. Input received: ' + str(states))
+      for index, (value, state) in enumerate(zip(states, self.states)):
+        if _is_multiple_state(self.cell.state_size):
+          dim = self.cell.state_size[index]
+        else:
+          dim = self.cell.state_size
+        if value.shape != tuple([batch_size] +
+                                tensor_shape.as_shape(dim).as_list()):
+          raise ValueError(
+              'State ' + str(index) + ' is incompatible with layer ' +
+              self.name + ': expected shape=' + str(
+                  (batch_size, dim)) + ', found shape=' + str(value.shape))
+        # TODO(fchollet): consider batch calls to `set_value`.
+        K.set_value(state, value)
 
 import tensorflow as tf
 import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self, count_lstms=200, batch_size=100, units_input_output=5, units_lstms=20):
-        super().__init__()
-        self.count_lstms = count_lstms
-        self.batch_size = batch_size
-        self.units_input_output = units_input_output
-        self.units_lstms = units_lstms
+COUNT_LSTMS = 200
 
-        # Input layer specification to set batch shape
-        # Note: None in sequence length dimension to allow variable length sequences
-        self.input_layer = tf.keras.layers.InputLayer(
-            batch_input_shape=(batch_size, None, units_input_output)
-        )
+BATCH_SIZE = 100
+UNITS_INPUT_OUTPUT = 5
+UNITS_LSTMS = 20
+BATCHES_TO_GENERATE = 2
+SEQUENCE_LENGTH = 20
 
-        # Create multiple stateful LSTM layers sharing the same input tensor specification
-        self.lstms = [
-            tf.keras.layers.LSTM(
-                units=units_lstms, 
-                stateful=True, 
-                return_sequences=True
-            ) for _ in range(count_lstms)
-        ]
-
-        # A Dense layer applied via TimeDistributed to combined outputs
-        self.time_distributed_dense = tf.keras.layers.TimeDistributed(
-            tf.keras.layers.Dense(units_input_output)
-        )
-
-        # Concatenation axis is last feature dimension
-        self.concat_axis = -1
-
-    def call(self, inputs, training=False):
-        # Pass input through input layer to enforce batch shape
-        x = self.input_layer(inputs)
-
-        # Run input through each LSTM layer independently
-        lstm_outputs = []
-        for lstm in self.lstms:
-            lstm_out = lstm(x, training=training)
-            lstm_outputs.append(lstm_out)
-
-        # Concatenate LSTM outputs along the feature axis
-        concat_output = tf.keras.layers.concatenate(lstm_outputs, axis=self.concat_axis)
-
-        # Apply time distributed dense layer to get final output
-        output = self.time_distributed_dense(concat_output)
-
-        return output
-
-    def reset_states(self):
-        # Override reset_states to reset each LSTM layer's states
-        for lstm in self.lstms:
-            lstm.reset_states()
+# build model
+my_input = tf.keras.layers.Input(batch_shape=(BATCH_SIZE,
+                                              None,
+                                              UNITS_INPUT_OUTPUT))
+my_lstm_layers = [tf.keras.layers.LSTM(units=UNITS_LSTMS,
+                                       stateful=True,
+                                       return_sequences=True)(my_input)
+                  for _ in range(COUNT_LSTMS)]
+my_output_layer = tf.keras.layers.Dense(UNITS_INPUT_OUTPUT)
+my_output = tf.keras.layers.TimeDistributed(my_output_layer)(
+    tf.keras.layers.concatenate(my_lstm_layers, axis=-1))
+my_model = tf.keras.Model(my_input, my_output)
 
 
-def my_model_function():
-    # Create and return an instance of MyModel with default parameters
-    return MyModel()
+# generation
+pred_input = np.random.randn(BATCH_SIZE, 1, UNITS_INPUT_OUTPUT)
 
-
-def GetInput():
-    # Return a random tensor with shape matching expected input:
-    # (batch_size, sequence_length, features) = (100, 1, 5) as per example
-    batch_size = 100
-    sequence_length = 1
-    units_input_output = 5
-    # Use uniform float32 tensor similar to example's np.random.randn, but scaled
-    return tf.random.uniform(
-        shape=(batch_size, sequence_length, units_input_output), dtype=tf.float32
-    )
-
+for batch in range(BATCHES_TO_GENERATE):
+    print('resetting states')
+    my_model.reset_states()
+    print(f"start generation of batch {batch}")
+    for _ in range(SEQUENCE_LENGTH):
+        pred_input = my_model.predict(pred_input, batch_size=BATCH_SIZE)

@@ -1,32 +1,40 @@
-# tf.random.uniform((B, 32), dtype=tf.float32) ← input shape inferred from the example data (1000, 32)
+import random
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
+#!/usr/bin/env python3
 import tensorflow as tf
+import numpy as np
+import sys
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Model architecture matches the functional API example:
-        # Input(shape=(32,))
-        # Dense(64, activation='relu') -> Dense(64, activation='relu') -> Dense(10, activation='softmax')
-        self.dense1 = tf.keras.layers.Dense(64, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(64, activation='relu')
-        self.out_layer = tf.keras.layers.Dense(10, activation='softmax')
-
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        return self.out_layer(x)
+from tensorflow.keras.layers import Input, Dense
+from tensorflow.keras.models import Model
 
 
-def my_model_function():
-    # Return an instance of MyModel
-    # This matches the architecture used in the original issue repro code.
-    return MyModel()
+def fit_keras_model():
+    data = np.random.random((1000, 32))
+    labels = np.random.random((1000, 10))
+    # source https://keras.io/getting-started/functional-api-guide/
+    # This returns a tensor
+    inputs = Input(shape=(32,))
+
+    # a layer instance is callable on a tensor, and returns a tensor
+    x = Dense(64, activation='relu')(inputs)
+    x = Dense(64, activation='relu')(x)
+    predictions = Dense(10, activation='softmax')(x)
+
+    # This creates a model that includes
+    # the Input layer and three Dense layers
+    model = Model(inputs=inputs, outputs=predictions)
+    model.compile(optimizer='adam',
+                  loss='categorical_crossentropy',
+                  metrics=['accuracy'])
+    model.fit(data, labels)  # starts training
+    return model
 
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # Based on the example, input shape is (batch_size, 32)
-    # Batch size can be arbitrarily chosen; here we pick 16 for demonstration
-    return tf.random.uniform((16, 32), dtype=tf.float32)
-
+if __name__ == '__main__':
+    if len(sys.argv) > 1 and sys.argv[1] == 'eager':
+        tf.enable_eager_execution()  # fails with eager execution enabled
+    fit_keras_model()
+    print('success')

@@ -1,40 +1,40 @@
-# tf.random.uniform((B,), dtype=tf.float32)  ← Input is 1D vector of floats (batch size None) with float32 type
-
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # This model replicates the example Model class from the issue, which
-        # takes a 1D float tensor input and computes some output.
-        # 
-        # Since details of the computation ('solve') are omitted in the issue,
-        # we'll implement a simple example operation using pure tf ops to mimic
-        # small computation preserving precision.
-
-    @tf.function(input_signature=[tf.TensorSpec(shape=[None], dtype=tf.float32)])
-    def call(self, x):
-        # A hypothetical operation: for example, apply a simple transformation that
-        # would benefit from precision, like a polynomial function, or exponential
-        # We use float32 here to reflect the supported dtype for TFLite
-        # Since float64 is not supported for TFLite inference according to the issue,
-        # we keep float32 here.
-
-        # Example operation:
-        y = tf.math.sin(x) * tf.math.exp(x * 0.01) + tf.math.log(x + 1.0)
-        # Note: To keep numerical stability, add 1.0 inside log as x can be zero or positive.
-
-        return y
+class Model(tf.Module):
+  @tf.function(input_signature=[tf.TensorSpec(shape=[None], dtype=tf.float32)])           # ---> Line 2
+  def solve(self, x):
+    ...
+    ...
+    return y
 
 
-def my_model_function():
-    # Returns an instance of MyModel with default initialization
-    return MyModel()
+# Save the model in the usual way:
+model = Model()
+SAVED_MODEL_PATH = 'updated_model'
+tf.saved_model.save(
+model, SAVED_MODEL_PATH,
+signatures={
+    'solve': model.solve.get_concrete_function()
+})
 
-def GetInput():
-    # Returns a random tensor matching the input signature for MyModel
-    # The input is 1D, size None (batch), so produce random batch size of say 10
-    batch_size = 10
-    # Generate random floats between 0 and 10 for stable log operation
-    return tf.random.uniform((batch_size,), minval=0.0, maxval=10.0, dtype=tf.float32)
+# The way I am converting the model:
+converter = tf.lite.TFLiteConverter.from_saved_model(SAVED_MODEL_PATH)
+converter.target_spec.supported_ops = [
+tf.lite.OpsSet.TFLITE_BUILTINS,
+tf.lite.OpsSet.SELECT_TF_OPS 
+]
+tflite_model = converter.convert()
+with open('model.tflite', 'wb') as f:
+  f.write(tflite_model)
 
+converter = tf.lite.TFLiteConverter.from_saved_model(SAVED_MODEL_PATH)
+converter.target_spec.supported_ops = [
+tf.lite.OpsSet.TFLITE_BUILTINS, 
+tf.lite.OpsSet.SELECT_TF_OPS
+]
+converter.inference_input_type = tf.float64    # Added lines
+converter.inference_output_type = tf.float64
+tflite_model = converter.convert()
+
+converter.inference_input_type = tf.float64 ,
+converter.inference_output_type = tf.float64

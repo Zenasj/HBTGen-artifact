@@ -1,24 +1,26 @@
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-# torch.rand(1, 1, 2, dtype=torch.float32, device='cuda')  # Input shape matches 'a' tensor's dimensions
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.a = nn.Parameter(torch.rand(1, 1, 2, device='cuda'))  # Matches first example's 'a'
-        self.b = nn.Parameter(torch.rand(1, 1, 2, 3, 1, device='cuda'))  # Matches first example's 'b'
-        
-    def forward(self, x):
-        # Replicate first example's operations (error-prone path)
-        c = F.pad(self.a, (0, 1, 0, 0), 'reflect')  # Pad to (1,1,3)
-        d = torch.add(self.b, c)  # Broadcast addition
-        return F.pad(d, (-2, 0, 0, 0, 0, 0, 0, 0, 0, 1))  # Apply problematic negative padding
+import torch
+a = torch.rand((1,1,2), device='cuda')
+b = torch.rand((1,1,2,3,1), device='cuda')
+def forward():
+    c = torch.nn.functional.pad(a, (0, 1, 0, 0), 'reflect') # [1,1,3]
+    d = torch.add(b, c) # [1,1,2,3,1] + [1,1,3] -> [1,1,2,3,3]
+    return torch.nn.functional.pad(d, (-2, 0, 0, 0, 0, 0, 0, 0, 0, 1))
+fn_compiled = torch.compile(forward)
+print(fn_compiled())
 
-def my_model_function():
-    return MyModel()
+import torch
 
-def GetInput():
-    # Returns a dummy input matching the expected shape of 'a' (though unused in forward)
-    return torch.rand(1, 1, 2, dtype=torch.float32, device='cuda')
+a = torch.rand([2,2,1,1,1], device='cuda')
+b = torch.rand([2,2,2], device='cuda')
+def forward():
+    c = torch.add(a, b)[:, 0:1] + 1
+    d = c.flatten()
+    d[1] = 0.
+    return torch.relu(c.sum(0))
 
+with torch.no_grad():
+	print(forward())
+	fn_compiled = torch.compile(forward)
+	print(fn_compiled())

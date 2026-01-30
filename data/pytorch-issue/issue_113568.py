@@ -1,18 +1,10 @@
-# torch.rand(100, 100, 100, dtype=torch.float32)
+import sys
 import torch
-import torch.nn as nn
-
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Simulate operations requiring thread initialization
-        return torch.bmm(x, x).sum()
-
-def my_model_function():
-    # Explicitly set num_threads to trigger CPU info initialization
+def handler(event, context):
+    print(torch.__version__, torch.__config__.show())
     torch.set_num_threads(8)
-    return MyModel()
+    a=torch.rand(100, 100, 100); b=torch.rand(100,100, 100)
+    for i in range(10):
+        torch.bmm(a,b).sum()
 
-def GetInput():
-    # Input tensor matching the model's expected dimensions
-    return torch.rand(100, 100, 100, dtype=torch.float32)
-
+    return torch.__version__

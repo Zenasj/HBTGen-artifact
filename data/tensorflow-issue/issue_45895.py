@@ -1,34 +1,38 @@
-# tf.random.uniform((10, 1), dtype=tf.float32)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+
 import tensorflow as tf
+inp = tf.keras.Input((1,))
+out = tf.keras.layers.Dense(1)(inp)
+model = tf.keras.Model(inp, out)
+model.compile(loss='mse', optimizer='sgd')
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Simple single dense layer model from the example
-        self.dense = tf.keras.layers.Dense(1)
+x = tf.random.uniform((10, 1))
+y = 2 * x + 3
+dataset = tf.data.Dataset.from_tensor_slices((x, y)).batch(2)
 
-    def call(self, inputs, training=False):
-        return self.dense(inputs)
+sched = tf.keras.callbacks.LearningRateScheduler(lambda i: 1. / (i+1))
+sched._supports_tf_logs = True  # makes ProgbarLogger display lr
+# same issue with ReduceLROnPlateau
+callbacks = [sched]
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+# add logger at end, otherwise it's inserted at front and won't print lr
+callbacks.append(tf.keras.callbacks.ProgbarLogger())
 
-def GetInput():
-    # Return input tensor matching model input shape (batch_size=10, features=1)
-    # Matches the example input tensor shape and dtype
-    return tf.random.uniform((10, 1), dtype=tf.float32)
+model.fit(dataset, epochs=10, callbacks=callbacks)
 
-# ---
-# ### Explanation and assumptions:
-# - The issue and code shared revolve around a very basic Keras model used to illustrate callback behavior,
-#   specifically the `LearningRateScheduler` callback's effect on logs depending on the private attribute `_supports_tf_logs`.
-# - The "model" in question is just a simple single-layer `tf.keras.Model` (dense layer on input shape `(1,)`).
-# - Input shape is `(10, 1)` batch size 10, feature 1, dtype `tf.float32` as used in their example.
-# - The code requested is to define the model, provide an instantiation function, and a GetInput function that returns a compatible random input tensor.
-# - No callback or logs handling logic is requested to be encoded in the model class itself; the issue and discussion focus on callbacks and Keras internal logic outside the model implementation.
-# - Following instructions, I kept class name `MyModel`, and provided `my_model_function()` and `GetInput()` with matching input/output as per the shared minimal example code.
-# - The model is compatible with TensorFlow 2.20.0, and can be compiled with XLA jit compilation if desired without issues.
-# - Since the issue is about callbacks/logs and not model architecture, there's no fusion or composite models to implement here.
-# - The model is the simplest possible one that fits the example and input/output flow shown in the issue text and code snippet.
-# If you want, I can also help with a snippet that compiles and fits the model with the callbacks in question for demonstration, but the task requested only the model + input generation code.
+class RecallCallback(tf.keras.callbacks.Callback):
+  def on_epoch_end(self, epoch, logs=None):
+      logs['recall@1'] = evaluate_recall(...)
+
+def on_epoch_end(self, epoch, logs=None):
+    logs = logs or {}
+    numpy_logs = None
+    for callback in self.callbacks:
+      if getattr(callback, '_supports_tf_logs', False):
+        callback.on_epoch_end(epoch, logs)
+      else:
+        if numpy_logs is None:  # Only convert once.
+          numpy_logs = tf_utils.to_numpy_or_python_type(logs)
+        callback.on_epoch_end(epoch, numpy_logs)

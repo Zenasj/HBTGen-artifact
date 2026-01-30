@@ -1,28 +1,18 @@
-# tf.random.uniform((1, 10), dtype=tf.float32) ← Input shape inferred from usage x = np.zeros([batch_size, 10])
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
 import tensorflow_addons as tfa
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Wrap a Dense layer with WeightNormalization, as in the reproducer snippet.
-        # This layer internally has a tf.bool variable causing TensorBoard histogram issues.
-        self.wn_dense = tfa.layers.WeightNormalization(tf.keras.layers.Dense(1), input_shape=(10,))
-    
-    def call(self, inputs):
-        return self.wn_dense(inputs)
+themodel = tf.keras.Sequential([
+    tfa.layers.WeightNormalization(tf.keras.layers.Dense(1)) # breaks due to tf.bool [_initialzed](https://github.com/tensorflow/addons/blob/v0.11.2/tensorflow_addons/layers/wrappers.py#L105) layer weight
+    #tf.keras.layers.Dense(1) # works fine
+])
 
-def my_model_function():
-    # Return an instance of MyModel, built but untrained
-    model = MyModel()
-    # Build model by calling once with sample input tensor (needed for TF graph tracing etc)
-    dummy_input = tf.zeros((1, 10), dtype=tf.float32)
-    _ = model(dummy_input)
-    return model
+batch_size=1
+x = np.zeros([batch_size, 10])
+y = np.zeros([batch_size, 1])
 
-def GetInput():
-    # Return input tensor matching the expected input shape: (batch_size=1, 10 features)
-    # Using float32 to match Dense layer input requirements
-    return tf.random.uniform((1, 10), dtype=tf.float32)
-
+themodel.compile(optimizer='sgd', loss='binary_crossentropy')
+themodel.fit(x, y, batch_size=batch_size, epochs=1, callbacks=[tf.keras.callbacks.TensorBoard(log_dir='/tmp',histogram_freq=1,update_freq='epoch')])

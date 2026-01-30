@@ -1,26 +1,40 @@
-# tf.random.uniform((B, 1), dtype=tf.float32)
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Simple model with one Dense layer to match the original example
-        self.dense = tf.keras.layers.Dense(1, activation=None)
+inputs = tf.keras.layers.Input(shape=(1,))
+predictions = tf.keras.layers.Dense(1)(inputs)
+model = tf.keras.models.Model(inputs=inputs, outputs=predictions)
 
-    def call(self, inputs, training=False):
-        x = self.dense(inputs)
-        return x
+features = tf.data.Dataset.from_tensors([1.]).repeat(10000).batch(10)
+labels = tf.data.Dataset.from_tensors([1.]).repeat(10000).batch(10)
+train_dataset = tf.data.Dataset.zip((features, labels))
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+distribution = tf.contrib.distribute.MirroredStrategy()
 
-def GetInput():
-    # The example input shape is (batch, 1), inferred from dataset with shape (1,)
-    # Use batch size 10 (as in the original example batches of 10)
-    # dtype float32 to match typical TF default
-    batch_size = 10
-    input_shape = (batch_size, 1)
-    # Generate random float input tensor
-    return tf.random.uniform(input_shape, dtype=tf.float32)
+model.compile(loss='categorical_crossentropy',
+              optimizer=tf.train.GradientDescentOptimizer(learning_rate=0.2),
+              distribute=distribution)
+model.fit(train_dataset, epochs=5, steps_per_epoch=10)
 
+model.compile(loss='categorical_crossentropy',
+              optimizer=tf.keras.optimizers.SGD(lr=0.2, momentum=0.9),
+              distribute=distribution)
+model.fit(train_dataset, epochs=5, steps_per_epoch=10)
+
+model.compile(loss='categorical_crossentropy',
+              optimizer=tf.train.AdamOptimizer(learning_rate=0.2),
+              distribute=distribution)
+model.fit(train_dataset, epochs=5, steps_per_epoch=10)
+
+model.compile(loss='categorical_crossentropy',
+              optimizer=tf.train.MomentumOptimizer(learning_rate=0.2, momentum=0.9),
+              distribute=distribution)
+model.fit(train_dataset, epochs=5, steps_per_epoch=10)
+
+model.compile(loss='categorical_crossentropy',
+              optimizer=tf.train.RMSPropOptimzier(learning_rate=0.2),
+              distribute=distribution)
+model.fit(train_dataset, epochs=5, steps_per_epoch=10)

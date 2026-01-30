@@ -1,25 +1,18 @@
-# tf.random.uniform((4, 2), dtype=tf.float32) ← inferred input shape from example x = np.array([[0,0],[0,1],[1,0],[1,1]])
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define a simple sequential-like model with two dense layers as per the original example
-        self.dense1 = tf.keras.layers.Dense(units=2)
-        self.dense2 = tf.keras.layers.Dense(units=1)
+x = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])
+y = np.array([[0], [1], [1], [0]])
 
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        return x
+for i in range(50):
+    tf.print(f'Model {i}...')
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+    model = tf.keras.models.Sequential()
+    model.add(tf.keras.layers.Dense(units=2))
+    model.add(tf.keras.layers.Dense(units=1))
 
-def GetInput():
-    # Return a random tensor input matching the expected input shape (4 samples, 2 features)
-    # Using uniform distribution over [0,1) as analogue to binary 0/1 in example
-    return tf.random.uniform((4,2), dtype=tf.float32)
-
+    prediction = model.predict(x)

@@ -1,22 +1,24 @@
-# torch.rand(B, 3, 224, 224, dtype=torch.float32)
+import torch.nn as nn
+
 import torch
 from torch import nn
 
-class MyModel(nn.Module):
+
+class Model(torch.nn.Module):
     def forward(self, x):
-        h = x.size(2)
-        w = x.size(3)
-        scale_h = h / 100
-        scale_w = w / 200
         return nn.functional.interpolate(
             x,
-            scale_factor=(float(scale_h), float(scale_w)),
+            scale_factor=(x.size(2) / 100, x.size(3) / 200),
             mode="bicubic",
         )
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
+if __name__ == "__main__":
+    model = Model()
+    model.eval()
+    x = torch.randn(1, 3, 224, 224)
+    y = model(x)
+    print(y.shape)
 
+    # This will fail
+    torch.jit.trace(model, x)

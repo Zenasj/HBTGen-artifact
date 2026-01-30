@@ -1,21 +1,35 @@
-# torch.rand(B, C, H, W, dtype=...)  # The input shape is (1, 256) as inferred from the issue
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
+print(torch.__version__)
+
+class test(torch.nn.Module):
+
+    def __init__(self, vocab_size=10, rnn_dims=512):
+        super().__init__()
 
     def forward(self, x):
-        # CASE 4) RandomUniform - This case is used in the example
+        # CASE 1) RandomNormalLike - Works
+        # mask = torch.randn_like(x).to(torch.float32)
+
+        # CASE 2) RandomUniformLike - Broken
+        # mask = torch.rand_like(x).to(torch.float32)
+
+        # CASE 3) RandomNormal - Broken
+        # mask = torch.randn(x.size()).to(torch.float32)
+
+        # CASE 4) RandomUniform - Broken
         mask = torch.rand(x.size()).to(torch.float32)
+
         return mask
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.ones((1, 256), dtype=torch.float32)
+# PyTorch model
+model = test()
 
+input = torch.ones((1,256)).to(torch.float32).cuda()
+output = model(input)
+torch.onnx.export(model,
+                  input,
+                  'test_rand.onnx',
+                  example_outputs=output)

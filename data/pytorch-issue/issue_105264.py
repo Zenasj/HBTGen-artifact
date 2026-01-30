@@ -1,16 +1,19 @@
-# torch.tensor(128, dtype=torch.uint8) ← Add a comment line at the top with the inferred input shape
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return (x + x).to(torch.int16)
+def f(x):
+    return (x + x).to(torch.int16)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+x = torch.tensor(128, dtype=torch.uint8)
+print(f(x))
+print(torch.compile(f)(x))
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.tensor(128, dtype=torch.uint8)
+tensor(0, dtype=torch.int16)
+tensor(256, dtype=torch.int16)
 
+@staticmethod
+def add(a, b):
+   return f"decltype({a})({a} + {b})"
+
+@staticmethod
+def add(a, b):
+   return f"decltype({a})({a} + {b})"

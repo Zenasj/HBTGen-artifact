@@ -1,62 +1,107 @@
-# tf.random.uniform((16, 150, 150, 3), dtype=tf.float32) ← Inferred input shape from original model input_shape=(150, 150, 3), batch_size=16
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
+from __future__ import absolute_import, division, print_function, unicode_literals
+import os
+import numpy as np
+import glob
+import shutil
+from IPython.display import display
+from PIL import Image
+import tensorflow as tf
+import matplotlib.pyplot as plt
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+_URL = "https://storage.googleapis.com/download.tensorflow.org/example_images/flower_photos.tgz"
+
+zip_file = tf.keras.utils.get_file(origin=_URL,
+                                   fname="flower_photos.tgz",
+                                   extract=True)
+
+base_dir = os.path.join(os.path.dirname(zip_file), 'flower_photos')
+
+classes = ['roses', 'daisy', 'dandelion', 'sunflowers', 'tulips']
+print(base_dir)
+
+for cl in classes:
+  img_path = os.path.join(base_dir, cl)
+  images = glob.glob(img_path + '/*.jpg')
+  print("{}: {} Images".format(cl, len(images)))
+  train, val = images[:round(len(images)*0.8)], images[round(len(images)*0.8):]
+  for t in train:
+    if not os.path.exists(os.path.join(base_dir, 'train', cl)):
+      os.makedirs(os.path.join(base_dir, 'train', cl))
+    shutil.move(t, os.path.join(base_dir, 'train', cl))
+
+  for v in val:
+    if not os.path.exists(os.path.join(base_dir, 'val', cl)):
+      os.makedirs(os.path.join(base_dir, 'val', cl))
+    shutil.move(v, os.path.join(base_dir, 'val', cl))
+
+
+train_dir = os.path.join(base_dir, 'train')
+val_dir = os.path.join(base_dir, 'val')
+
+batch_size = 16
+IMG_SHAPE = 150
+
+image_gen_train = ImageDataGenerator(
+      rescale=1./255,
+      rotation_range=40,
+      width_shift_range=0.2,
+      height_shift_range=0.2,
+      shear_range=0.2,
+      zoom_range=0.2,
+      horizontal_flip=True,
+      fill_mode='nearest')
+
+
+train_data_gen = image_gen_train.flow_from_directory(batch_size= batch_size,
+                                                     directory=train_dir,
+                                                     shuffle=True,
+                                                     target_size=(IMG_SHAPE,IMG_SHAPE),
+                                                     class_mode='categorical')
+
+image_gen_val = ImageDataGenerator(rescale=1/255)
+val_data_gen = image_gen_val.flow_from_directory(batch_size = batch_size,
+                                                 directory=val_dir,
+                                                 target_size=(IMG_SHAPE, IMG_SHAPE),
+                                                 class_mode='categorical')
+
+model = tf.keras.models.Sequential([
+    tf.keras.layers.Conv2D(16, (3, 3), activation='relu', input_shape=(150, 150, 3)),
+    tf.keras.layers.MaxPooling2D(2, 2),
+
+    tf.keras.layers.Conv2D(32, (3, 3), activation='relu'),
+    tf.keras.layers.MaxPooling2D(2, 2),
+
+    tf.keras.layers.Conv2D(64, (3, 3), activation='relu'),
+    tf.keras.layers.MaxPooling2D(2, 2),
+
+    tf.keras.layers.Conv2D(128, (3, 3), activation='relu'),
+    tf.keras.layers.MaxPooling2D(2, 2),
+    tf.keras.layers.Flatten(),
+    tf.keras.layers.Dropout(0.2),
+    tf.keras.layers.Dense(1024, activation='relu'),
+    tf.keras.layers.Dropout(0.2),
+    tf.keras.layers.Dense(512, activation='relu'),
+    tf.keras.layers.Dense(5, activation='softmax')
+
+])
+
+model.compile(loss = 'categorical_crossentropy', optimizer='rmsprop', metrics=['accuracy'])
+
+model.summary()
+
+epochs = 80
 
 import tensorflow as tf
+config = tf.compat.v1.ConfigProto()
+config.gpu_options.allow_growth = True
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Define the CNN model as per provided Sequential model architecture
-        self.conv1 = tf.keras.layers.Conv2D(16, (3,3), activation='relu', input_shape=(150,150,3))
-        self.pool1 = tf.keras.layers.MaxPooling2D(2,2)
+tf.compat.v1.Session(config=config)
 
-        self.conv2 = tf.keras.layers.Conv2D(32, (3,3), activation='relu')
-        self.pool2 = tf.keras.layers.MaxPooling2D(2,2)
-
-        self.conv3 = tf.keras.layers.Conv2D(64, (3,3), activation='relu')
-        self.pool3 = tf.keras.layers.MaxPooling2D(2,2)
-
-        self.conv4 = tf.keras.layers.Conv2D(128, (3,3), activation='relu')
-        self.pool4 = tf.keras.layers.MaxPooling2D(2,2)
-
-        self.flatten = tf.keras.layers.Flatten()
-        self.dropout1 = tf.keras.layers.Dropout(0.2)
-        self.dense1 = tf.keras.layers.Dense(1024, activation='relu')
-        self.dropout2 = tf.keras.layers.Dropout(0.2)
-        self.dense2 = tf.keras.layers.Dense(512, activation='relu')
-        self.output_layer = tf.keras.layers.Dense(5, activation='softmax')
-
-    def call(self, inputs, training=False):
-        x = self.conv1(inputs)
-        x = self.pool1(x)
-
-        x = self.conv2(x)
-        x = self.pool2(x)
-
-        x = self.conv3(x)
-        x = self.pool3(x)
-
-        x = self.conv4(x)
-        x = self.pool4(x)
-
-        x = self.flatten(x)
-        x = self.dropout1(x, training=training)
-        x = self.dense1(x)
-        x = self.dropout2(x, training=training)
-        x = self.dense2(x)
-        return self.output_layer(x)
-
-def my_model_function():
-    # Return an instance of MyModel, no pretrained weights to load (based on issue context)
-    return MyModel()
-
-def GetInput():
-    # Return random tensor matching expected input shape and dtype
-    # batch_size inferred as 16 in original code (batch_size=16)
-    # dtype float32, pixel values normalized between 0 and 1
-    batch_size = 16
-    height = 150
-    width = 150
-    channels = 3
-    # Create uniform random tensor (simulate normalized image batch)
-    return tf.random.uniform((batch_size, height, width, channels), minval=0, maxval=1, dtype=tf.float32)
-
+history = model.fit_generator(
+    train_data_gen,
+    epochs=epochs,
+    validation_data=val_data_gen,)

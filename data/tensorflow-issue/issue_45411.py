@@ -1,37 +1,61 @@
-# tf.random.uniform((B, 5, 1), dtype=tf.float32)
+import random
+from tensorflow.keras import layers
+
+from numpy import sqrt
+from numpy import asarray
+from pandas import read_csv
+from tensorflow.keras import Sequential
+from tensorflow.keras.layers import Dense
+from tensorflow.keras.layers import LSTM
 import tensorflow as tf
+from sklearn import metrics
+from sklearn.model_selection import train_test_split
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.n_steps = 5
-        # LSTM layer with 200 units and relu activation
-        self.lstm = tf.keras.layers.LSTM(200, activation='relu', input_shape=(self.n_steps, 1))
-        # Dense layers as per original model
-        self.dense1 = tf.keras.layers.Dense(100, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(50, activation='relu')
-        self.out = tf.keras.layers.Dense(1)
-    
-    def call(self, inputs, training=False):
-        # inputs shape: (batch, n_steps, 1)
-        x = self.lstm(inputs)
-        x = self.dense1(x)
-        x = self.dense2(x)
-        x = self.out(x)
-        return x
+RANDOM_SEED = 40
+tf.random.set_seed(RANDOM_SEED)
 
-def my_model_function():
-    # Create and compile the model as in the original code
-    model = MyModel()
-    model.compile(optimizer='Adam', loss='mse', metrics=['mae'])
-    return model
+def split_sequence(sequence, n_steps):
+    X, y = list(), list()
+    for i in range(len(sequence)):
+        # find the end of this pattern
+        end_ix = i + n_steps
+        # check if we are beyond the sequence
+        if end_ix > len(sequence)-1:
+            break
+        # gather input and output parts of the pattern
+        seq_x, seq_y = sequence[i:end_ix], sequence[end_ix]
+        X.append(seq_x)
+        y.append(seq_y)
+    return asarray(X), asarray(y)
 
-def GetInput():
-    # Return a random tensor input matching model's expected input shape:
-    # Shape = (batch_size, n_steps, features=1)
-    # Choosing batch_size=32 as per the original batch size
-    batch_size = 32
-    n_steps = 5
-    # Random float32 tensor in [0,1)
-    return tf.random.uniform((batch_size, n_steps, 1), dtype=tf.float32)
+values = df.values.astype('float32')
+n_steps = 5
+X, y = split_sequence(values, n_steps)
 
+model = Sequential()
+model.add(LSTM(200, activation='relu',  input_shape=(n_steps,1)))
+model.add(Dense(100, activation='relu'))
+model.add(Dense(50, activation='relu'))
+model.add(Dense(1))
+
+row = ([X_test])
+y_pred = model.predict(row)
+
+MSE  = metrics.mean_squared_error(y_test,y_pred)
+RMSE = sqrt(metrics.mean_squared_error(y_test,y_pred))
+MAE  = metrics.mean_absolute_error(y_test,y_pred)
+print('MSE: %.3f, RMSE: %.3f, MAE: %.3f' % (MSE, RMSE,MAE))
+
+with open("MSE.txt", "w") as text_file:
+        MSE=str(MSE)
+        text_file.write(MSE)
+with open("RMSE.txt", "w") as text_file:
+        RMSE=str(RMSE)
+        text_file.write(RMSE)
+with open("MAE.txt", "w") as text_file:
+        MAE=str(MAE)
+        text_file.write(MAE)
+# serialize model to JSON
+model_json = model.to_json()
+with open("model.json", "w") as json_file:
+    json_file.write(model_json)

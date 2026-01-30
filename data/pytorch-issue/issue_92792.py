@@ -1,33 +1,27 @@
-# torch.rand(2, 2, 14, 8, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
-
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv_transpose2d = nn.ConvTranspose2d(
-            in_channels=2,
-            out_channels=3,
-            kernel_size=(4, 4),
-            stride=(1, 1),
-            padding=(2, 2),
-            output_padding=(0, 0),
-            groups=1,
-            bias=True
-        )
-        # Initialize weights and bias for the convolutional transpose layer
-        self.conv_transpose2d.weight.data = torch.rand([2, 3, 4, 4], dtype=torch.float32)
-        self.conv_transpose2d.bias.data = torch.rand([3], dtype=torch.float32)
-
-    def forward(self, x):
-        return self.conv_transpose2d(x)
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand([2, 2, 14, 8], dtype=torch.float32)
-
+import torch
+import numpy as np
+arg_1_tensor = torch.rand([2, 2, 14, 8], dtype=torch.float32)
+arg_1 = arg_1_tensor.clone()
+arg_2_tensor = torch.rand([2, 3, 4, 4], dtype=torch.float32)
+arg_2 = arg_2_tensor.clone()
+arg_3_tensor = torch.rand([3], dtype=torch.float32)
+arg_3 = arg_3_tensor.clone()
+arg_4_0 = 1
+arg_4_1 = 1
+arg_4 = [arg_4_0,arg_4_1,]
+arg_5_0 = 2
+arg_5_1 = 2
+arg_5 = [arg_5_0,arg_5_1,]
+arg_6_0 = 0
+arg_6_1 = 0
+arg_6 = [arg_6_0,arg_6_1,]
+arg_7 = 0
+arg_8_0 = 3
+arg_8_1 = 3
+arg_8 = [arg_8_0,arg_8_1,]
+try:
+  res = torch.nn.functional.conv_transpose2d(arg_1,arg_2,arg_3,arg_4,arg_5,arg_6,arg_7,arg_8,)
+except Exception as e:
+  print("Error:"+str(e))

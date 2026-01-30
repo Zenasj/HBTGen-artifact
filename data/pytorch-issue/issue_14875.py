@@ -1,22 +1,23 @@
-# torch.rand(1, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
-
+py
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # No specific layers needed for this example, but we can add an identity layer to make it a valid model
-        self.identity = nn.Identity()
+x = torch.tensor(2.)
 
-    def forward(self, x):
-        return (x,)
+def f1(x):
+    return x, x
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+jit_f1 = torch.jit.trace(f1, x)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(1, dtype=torch.float32)
+print(f1(x))  # (tensor(2.), tensor(2.))
+print(jit_f1(x))  # (tensor(2.), tensor(2.))
+assert f1(x) == jit_f1(x)  # ok
 
+
+def f2(x):
+    return (x,)
+
+jit_f2 = torch.jit.trace(f2, x)
+
+print(f2(x))  # (tensor(2.),)
+print(jit_f2(x))  # tensor(2.)
+assert f2(x) == jit_f2(x)  # fails

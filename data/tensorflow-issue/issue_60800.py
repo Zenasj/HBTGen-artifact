@@ -1,25 +1,25 @@
-# tf.random.uniform((B, 1), dtype=tf.float32) ← Input shape is (batch_size, 1) from the original example
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Single Dense layer model as per the minimal example in the issue
-        self.dense = tf.keras.layers.Dense(1, input_shape=(1,))
+# Generate random training data
+np.random.seed(0)
+x_train = np.random.rand(100, 1)
+y_train = 3 * x_train + 2 + np.random.randn(100, 1) * 0.1
 
-    def call(self, inputs, training=False):
-        # Forward pass through the dense layer
-        return self.dense(inputs)
+# Define the neural network architecture
+model = tf.keras.models.Sequential([
+    tf.keras.layers.Dense(1, input_shape=(1,))
+])
 
-def my_model_function():
-    # Return an instance of MyModel
-    # No pretrained weights required, example shows random initialization for a regression task
-    return MyModel()
+# Compile the model
+model.compile(optimizer='sgd', loss='mean_squared_error')
 
-def GetInput():
-    # Generate random input tensor matching the input expected by the model:
-    # Shape: (batch_size=10, 1), dtype float32 to match usual TF float type
-    # This matches roughly the training data shape used in the minimal example
-    return tf.random.uniform((10, 1), dtype=tf.float32)
+# Train the model
+model.fit(x_train, y_train, epochs=1000, batch_size=10)
 
+### Relevant log output

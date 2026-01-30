@@ -1,31 +1,40 @@
-# tf.random.uniform((12, 372, 558, 3), dtype=tf.float32) ← inferred from DenseNet121 example inputs (batch_size=12, height=372, width=558, channels=3)
+import random
+from tensorflow import keras
+from tensorflow.keras import optimizers
 
+#!/usr/bin/env python3
+import sys
 import tensorflow as tf
+# Otherwise nothing works, and it really sucks, but is declared in the docs
+multi_worker_strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Using DenseNet121 as the backbone model, no pretrained weights,
-        # input shape (372, 558, 3), and 10 classes as per provided snippet.
-        self.densenet = tf.keras.applications.DenseNet121(
-            weights=None,
-            input_shape=(372, 558, 3),
-            classes=10)
-        # Build explicitly with batch size 12 for static shape
-        self.densenet.build((12, 372, 558, 3))
+def main():
+    batch_size = 12
+    features_shape = 372, 558, 3
+    labels = 10
+    sample = tf.random.uniform(features_shape)
 
-    @tf.function(jit_compile=True)
-    def call(self, inputs, training=False):
-        # Forward pass through DenseNet121
-        # inputs shape: (12,372,558,3)
-        return self.densenet(inputs, training=training)
+    def with_shape(t, shape):
+        t = tf.squeeze(t)
+        t.set_shape(shape)
+        return t
 
-def my_model_function():
-    # Returns an instance of MyModel
-    return MyModel()
+    ds_train = tf.data.Dataset.from_tensors([sample]).map(lambda s: (s, tf.ones((labels,)))) \
+        .repeat().batch(batch_size).map(lambda s, l: (with_shape(s, (batch_size,) + features_shape),
+                                                      with_shape(l, (batch_size, labels))))
+    ds_val = tf.data.Dataset.from_tensors([sample]).map(lambda s: (s, tf.ones((labels,)))) \
+        .repeat().batch(batch_size).take(10).map(
+        lambda s, l: (with_shape(s, (batch_size,) + features_shape), with_shape(l, (batch_size, labels))))
+    with multi_worker_strategy.scope():
+        model = tf.keras.applications.DenseNet121(
+            weights=None, input_shape=features_shape, classes=labels)
+        model.build((batch_size,) + features_shape)
+        model.summary()
+        optimizer = tf.keras.optimizers.RMSprop(learning_rate=0.001)
+        cross_entropy = tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.1)
+        model.compile(optimizer=optimizer, loss=cross_entropy, metrics=["accuracy"])
+    model.fit(ds_train, validation_data=ds_val, epochs=1, steps_per_epoch=100)
 
-def GetInput():
-    # Returns random tensor matching input shape for DenseNet121, batch size=12,
-    # height=372, width=558, channels=3, dtype float32.
-    return tf.random.uniform((12, 372, 558, 3), dtype=tf.float32)
 
+if __name__ == "__main__":
+    sys.exit(main())

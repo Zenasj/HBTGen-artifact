@@ -1,23 +1,23 @@
 import torch
+
+x = torch.tensor(2.0, requires_grad=True)
+y = x ** 3
+
+x = torch.tensor(2.0, requires_grad=True)
+y = torch.pow(x,3)
+
+import numpy as np
+
+x = torch.tensor(2.0, requires_grad=True)
+y = np.pow(x,3)
+# > RuntimeError: Can't call numpy() on Tensor that requires grad. Use tensor.detach().numpy() instead.
+
 import math
 
-# torch.rand((), dtype=torch.float32)
-class MyModel(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
+x = torch.tensor(2.0, requires_grad=True)
+y = math.pow(x,3)
 
-    def forward(self, x):
-        # PyTorch's pow retains tensor structure and gradient
-        torch_out = torch.pow(x, 3)
-        # math.pow converts tensor to scalar (float), losing gradient
-        math_out = math.pow(x, 3)
-        # Return True if math_out is a scalar (float), indicating the footgun scenario
-        is_scalar = isinstance(math_out, float)
-        return torch.tensor(is_scalar, dtype=torch.bool)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand((), requires_grad=True)
-
+x = torch.tensor(2.0, requires_grad=True)
+y = math.pow(x,3)
+# > UserWarning: Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.
+# Consider using tensor.detach() first.

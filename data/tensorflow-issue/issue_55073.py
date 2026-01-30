@@ -1,32 +1,28 @@
-# tf.random.uniform((1, 300, 300, 3), dtype=tf.uint8) ← Inferred input shape and dtype based on example and representative dataset
+import random
+from tensorflow import keras
 
 import tensorflow as tf
 import tensorflow_hub as hub
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Load the TFHub SSD MobileNet V2 model layer
-        # Note: The original hub.KerasLayer outputs detection boxes, scores, classes, etc.
-        # Using from TFHub URL 'https://tfhub.dev/tensorflow/ssd_mobilenet_v2/2' as in the issue.
-        self.detector = hub.KerasLayer('https://tfhub.dev/tensorflow/ssd_mobilenet_v2/2')
+def dataset_gen():
+    for _ in range(10):
+        yield [np.random.randint(0,256, [1,300,300,3]).astype(np.uint8)]
 
-    def call(self, inputs, training=False):
-        # The input is expected to be uint8 image tensor
-        # The TFHub detector expects input normalized internally, so just forward inputs
-        outputs = self.detector(inputs)
-        # Outputs dictionary typically includes:
-        # 'detection_boxes', 'detection_scores', 'detection_classes', 'num_detections'.
-        return outputs
+inputs = tf.keras.Input(shape=(300,300,3), dtype=tf.uint8)
+layers = hub.KerasLayer('https://tfhub.dev/tensorflow/ssd_mobilenet_v2/2')(inputs)
+keras_model = tf.keras.Model(inputs=inputs, outputs=layers)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+converter = tf.lite.TFLiteConverter.from_keras_model(keras_model)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.representative_dataset = dataset_gen
+converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS] # [tf.lite.OpsSet.TFLITE_BUILTINS, tf.lite.OpsSet.SELECT_TF_OPS]
+tflite_model = converter.convert()
 
-def GetInput():
-    # Provide a random sample input tensor that matches expected model input:
-    # Batch size 1, 300x300 image, 3 channels (RGB), uint8 type
-    # Using tf.random.uniform with dtype uint8 and shape (1,300,300,3)
-    input_tensor = tf.random.uniform(shape=(1, 300, 300, 3), minval=0, maxval=256, dtype=tf.uint8)
-    return input_tensor
+with open('ssd_mobilenet_v2_tfhub_quant.tflite', 'wb') as f:
+    f.write(tflite_model)
 
+converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
+# Set the input and output tensors to uint8 (APIs added in r2.3)
+converter.inference_input_type = tf.uint8
+converter.inference_output_type = tf.uint8

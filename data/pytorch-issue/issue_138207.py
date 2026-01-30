@@ -1,32 +1,20 @@
 import torch
-from torch import nn
 from torch.fx.experimental.proxy_tensor import make_fx
 from torch.fx.passes.split_module import split_module
+import copy
 
-# torch.rand(3, dtype=torch.float)
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Original function with in-place operation
-        def foo(x):
-            x.add_(1)
-            return None
-        # Create FX graph for the function
-        example_input = torch.randn(3)
-        g = make_fx(foo, tracing_mode="fake")(example_input)
-        
-        # Split the graph using a dummy callback
-        def split_callback(node):
-            return 1  # Always split to partition 1
-        self.split_graph = split_module(g, None, split_callback)
-    
-    def forward(self, x):
-        # Forward pass simply returns input (split graph stored as submodule)
-        return x
+def foo(x):
+    x.add_(1)
+    return None
 
-def my_model_function():
-    return MyModel()
+g = make_fx(foo, tracing_mode="fake")(torch.randn(3,))
+g.print_readable()
+copy.deepcopy(g)  # This works
 
-def GetInput():
-    return torch.randn(3)
+def cb(node):
+    return 1
 
+# sp_gm returns a sub-graph with no output.
+sp_gm = split_module(g, None, cb)  
+sp_gm.print_readable()
+copy.deepcopy(sp_gm)  # This fails

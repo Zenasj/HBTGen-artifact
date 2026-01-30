@@ -1,29 +1,25 @@
-# tf.random.uniform((B, 16), dtype=tf.float32) ← Based on input_shape=(16,), batch size varies in example (e.g., 32)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
+# minimum keras example
 import tensorflow as tf
+from tensorflow.keras.optimizers import SGD
+from tensorflow.keras.optimizers.schedules import ExponentialDecay
+from tensorflow.keras.layers import Dense
+from tensorflow.keras import Sequential
+from tensorflow.keras.callbacks import TerminateOnNaN,EarlyStopping,ReduceLROnPlateau
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Two Dense layers as per the example: first Dense(8), then Dense(1)
-        self.dense1 = tf.keras.layers.Dense(8)
-        self.dense2 = tf.keras.layers.Dense(1)
-
-    def call(self, inputs):
-        x = self.dense1(inputs)
-        return self.dense2(x)
-
-def my_model_function():
-    """
-    Returns an instance of MyModel.
-    Weight initialization is default.
-    """
-    return MyModel()
-
-def GetInput():
-    """
-    Returns a random input tensor compatible with MyModel.
-    Shape: (batch_size=32, input_dim=16)
-    """
-    return tf.random.uniform((32, 16), dtype=tf.float32)
-
+model = tf.keras.Sequential()
+model.add(tf.keras.layers.Dense(8,input_shape=(16,)))
+model.add(tf.keras.layers.Dense(1))
+callbacks=[#TerminateOnNaN(),EarlyStopping(monitor='val_loss'),
+          ReduceLROnPlateau(monitor='val_loss')]
+optimizer=SGD(learning_rate=ExponentialDecay(initial_learning_rate=1.e-3,
+                                            decay_steps=2,decay_rate=0.5))
+model.compile(optimizer=optimizer, loss='mse')
+x=tf.ones((32,16))
+y=tf.ones((32,1))
+v=tf.ones((8,1))
+model.fit(x, y, batch_size=4, epochs=8, callbacks=callbacks,
+         validation_split=0.2,steps_per_epoch=4,verbose=1)

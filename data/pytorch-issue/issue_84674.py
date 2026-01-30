@@ -1,24 +1,24 @@
-# torch.rand(2, dtype=torch.float32)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-    
-    def forward(self, x):
-        # Original path (correct behavior)
-        y1 = x.t()
-        # Simulate compiled path with detached output (buggy behavior)
-        y2 = torch.detach(x.t())
-        # Compare values and gradient tracking status
-        value_match = torch.allclose(y1, y2)
-        grad_match = torch.tensor(y1.requires_grad == y2.requires_grad, dtype=torch.bool)
-        return value_match & grad_match
+def f(x):
+    return x.t()
 
-def my_model_function():
-    return MyModel()
+x = torch.randn(2, requires_grad=True)
+y = f(x)
 
-def GetInput():
-    return torch.randn(2, requires_grad=True)
+compiled_f = make_fx(f)(x)
+y_compiled = compiled_f(x)
 
+
+print(compiled_f)
+print("y.requires_grad", y.requires_grad)
+print("y_compiled.requires_grad", y_compiled.requires_grad)
+
+
+# def forward(self, x_1):
+#     t_default = torch.ops.aten.t.default(x_1);  x_1 = None
+#     detach_default = torch.ops.aten.detach.default(t_default);  t_default = None
+#     return detach_default
+
+# y.requires_grad True
+# y_compiled.requires_grad False

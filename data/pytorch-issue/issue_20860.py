@@ -1,14 +1,11 @@
-# torch.rand(B, H, W, dtype=torch.float32)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return torch.bmm(x, x)
+x = torch.randn(32, 60, 60)
 
-def my_model_function():
-    return MyModel()
+torch.bmm(x, x) # no problem without cuda
 
-def GetInput():
-    return torch.randn(32, 60, 60, dtype=torch.float32).cuda()
+x = x.cuda()
 
+(x ** 2).sum()  # no problem with other cuda operations
+
+torch.bmm(x, x) # crash here

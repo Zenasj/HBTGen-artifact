@@ -1,147 +1,302 @@
-# tf.random.uniform((B, 75), dtype=tf.int32) ← input shape: batch of sequences of length 75 (token IDs)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
-import numpy as np
 
-# Since `tokenizer`, `embedding_matrix`, and flags like `use_embedding` and `emb_trainable` 
-# are mentioned externally and used in model construction, I will define them as placeholders 
-# for this example, with typical assumptions:
-# - vocab_size is dynamic as len(tokenizer.word_index)+1
-# - embedding_dim = 50 (from GloVe example)
-# Assuming embedding usage True, embeddings trainable False.
-
-embedding_dim = 50
-max_len = 75
-use_embedding = True
-emb_trainable = False
-
-# For tokenizer simulation, suppose vocab size is 10000:
-vocab_size = 10000  # hypothetical vocab size
-tokenizer_word_index_size = vocab_size - 1  # tokenizer.word_index assumed to have vocab_size - 1 tokens
-
-# Create a dummy embedding matrix filled with zeros (real use should load GloVe or trained embeddings)
-embedding_matrix = np.zeros((vocab_size, embedding_dim), dtype=np.float32)
-
-# Custom LuongAttention layer re-implemented for TF 2.20.0 compatibility
-class LuongAttention(tf.keras.layers.Layer):
-    def __init__(self, input_dim=max_len, att_type='dot', **kwargs):
-        super(LuongAttention, self).__init__(**kwargs)
+class LuongAttention(tf.keras.Model):
+    def __init__(self, input_dim=max_len, att_type='dot'):
+        super(LuongAttention, self).__init__()
+        w_init = tf.random_normal_initializer()
         self.att_type = att_type
-        self.input_dim = input_dim
-        w_init = tf.random.normal
-        if att_type == 'general':
-            # Weight matrix for scoring general attention
-            self.W = self.add_weight(
-                shape=(input_dim, input_dim),
-                initializer=w_init,
-                trainable=True,
-                name='W_general')
-        else:
-            # For 'dot' or other types, we either use identity or Dense layer
-            self.W = tf.eye(input_dim)
-        # Dense layer for 'concat' type attention if implemented (not used here)
+        self.W = tf.Variable(
+            initial_value = np.identity(input_dim, dtype='float32'),
+            trainable=False
+        )
         self.WLayer = tf.keras.layers.Dense(input_dim, 
                                            kernel_regularizer=tf.keras.regularizers.l2(0.01))
-        # Loss regularization term on W for training
-        self.loss_scale = 1e-5
-
+        if self.att_type == 'general':
+            self.W = tf.Variable(
+                initial_value=w_init(shape=(input_dim, input_dim), dtype="float32"),
+                trainable=True
+            )
+        self.loss = 1e-5 * tf.nn.l2_loss(self.W)
     def call(self, inputs):
-        # inputs: list or tuple of two tensors: [query, values]
-        q, v = inputs
-        # Add L2 loss regularization on the weight matrix
-        self.add_loss(self.loss_scale * tf.nn.l2_loss(self.W))
+        self.add_loss(self.loss)
         if self.att_type == 'concat':
-            # (Not used in final model code but implemented for completeness)
-            score = tf.matmul(q, self.WLayer(v), transpose_b=True)
+            score = tf.matmul(inputs[0], self.WLayer(inputs[1]), transpose_b=True)
             alignment = tf.nn.softmax(score, axis=2)
         else:
-            # 'dot' and 'general' types
-            # score = q * W * v^T
-            # Note: W shape is (input_dim, input_dim)
-            # q shape: (batch_size, time, input_dim)
-            # v shape: (batch_size, time, input_dim)
-            score = tf.matmul(v, self.W)  # -> (batch_size, time, input_dim)
-            score = tf.matmul(q, score, transpose_b=True)  # -> (batch_size, time_q, time_v)
-            alignment = tf.nn.softmax(score, axis=2)  # attention weights
+            score = tf.matmul(self.W, inputs[1])
+            score = tf.matmul(inputs[0], score, transpose_b=True)
+            alignment = tf.nn.softmax(score, axis=2)
         return alignment
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Embedding layer setup
-        if use_embedding:
-            self.embedding = tf.keras.layers.Embedding(
-                input_dim=vocab_size,
-                output_dim=embedding_dim,
-                embeddings_initializer=tf.keras.initializers.Constant(embedding_matrix),
-                input_length=max_len,
-                trainable=emb_trainable,
-                name='embedding')
-        else:
-            self.embedding = tf.keras.layers.Embedding(
-                input_dim=vocab_size,
-                output_dim=embedding_dim,
-                input_length=max_len,
-                trainable=True,
-                name='embedding')
+# Build the model
+from tensorflow.keras.layers import Input, Embedding, Bidirectional, LSTM, Attention
+from tensorflow.keras.layers import Dense, Concatenate, Reshape
+from tensorflow.keras.activations import linear
+from tensorflow.keras.regularizers import l1, l2, l1_l2
+from tensorflow.keras.models import Model
 
-        # Bidirectional LSTM layers with ELU activation and L2 regularization
-        self.bi_lstm1 = tf.keras.layers.Bidirectional(
-            tf.keras.layers.LSTM(25, activation='elu', return_sequences=True,
-                                 kernel_regularizer=tf.keras.regularizers.l2(0.01)),
-            name='bi_lstm1')
-        self.bi_lstm2 = tf.keras.layers.Bidirectional(
-            tf.keras.layers.LSTM(25, activation='elu', return_sequences=True,
-                                 kernel_regularizer=tf.keras.regularizers.l2(0.01)),
-            name='bi_lstm2')
-        # Two Attention layers - here the final code uses standard scaled dot product Attention
-        self.attention1 = tf.keras.layers.Attention(use_scale=True, name='attention1')
-        self.attention2 = tf.keras.layers.Attention(use_scale=True, name='attention2')
-        # Concatenate the two attention outputs on last axis
-        self.concat = tf.keras.layers.Concatenate(axis=-1, name='concat')
-        # Another Bidirectional LSTM (return_sequences=False by default)
-        self.bi_lstm3 = tf.keras.layers.Bidirectional(
-            tf.keras.layers.LSTM(80, activation='elu',
-                                 kernel_regularizer=tf.keras.regularizers.l2(0.01)),
-            name='bi_lstm3')
-        # Final Dense output with sigmoid (scalar output)
-        self.dense_out = tf.keras.layers.Dense(1, activation='sigmoid', name='output')
+in1 = Input((max_len,))
+in2 = Input((max_len,))
 
-    def call(self, inputs):
-        # inputs is a list or tuple: [in1, in2], each shape (batch_size, max_len)
-        in1, in2 = inputs
-        # Apply embedding to both inputs
-        emb1 = self.embedding(in1)  # (batch_size, max_len, embedding_dim)
-        emb2 = self.embedding(in2)
+emb = Embedding(len(tokenizer.word_index) + 1, 
+                embedding_dim, 
+                input_length=max_len)
+if use_embedding: 
+    emb = Embedding(len(tokenizer.word_index) + 1, 
+                    embedding_dim, 
+                    weights=[embedding_matrix],
+                    input_length=max_len, 
+                    trainable=emb_trainable)
 
-        # Run bidir LSTM layers on embedded inputs
-        out1 = self.bi_lstm1(emb1)  # (batch_size, max_len, 50)
-        out2 = self.bi_lstm2(emb2)  # (batch_size, max_len, 50)
+# First sequence branch
+branch1 = emb(in1)
+branch1l = Bidirectional(LSTM(25, 
+                              activation='elu', 
+                              return_sequences=True, 
+                              kernel_regularizer=l2(0.01)))(branch1)
 
-        # Attention layers - note: attention query and value inputs
-        attn1 = self.attention1([emb1, emb2])  # attention between base embeddings
-        attn2 = self.attention2([out1, out2])  # attention between LSTM encoded sequences
+# Second sequence branch
+branch2 = emb(in2)
+branch2l = Bidirectional(LSTM(25, 
+                              activation='elu', 
+                              return_sequences=True, 
+                              kernel_regularizer=l2(0.01)))(branch2)
 
-        # Concatenate both attentions on last axis
-        cat = self.concat([attn1, attn2])  # (batch_size, ?, 100) shape
+# Concatenate with Luong attention (eventually add word embedding as value)
+attention1 = LuongAttention(input_dim=max_len, 
+                            att_type='general')([branch1, branch2])
+attention2 = LuongAttention(input_dim=max_len, 
+                            att_type='general')([branch1l, branch2l])
+concat = Concatenate(axis=-1)([attention1, attention2])
 
-        # Process concatenated attention with another Bidirectional LSTM
-        out = self.bi_lstm3(cat)  # (batch_size, 160)
+# Process concatenated output
+out = Bidirectional(LSTM(80, activation='elu', kernel_regularizer=l2(0.01)))(concat)
+out = Dense(1, activation='sigmoid')(out)
 
-        # Final output scalar in range [0,1]
-        output = self.dense_out(out)  # (batch_size, 1)
+model = Model(inputs=[in1, in2], outputs=[out])
+model.compile(loss='mean_squared_error', 
+              optimizer='adam', metrics=['mean_absolute_error'])
+model.summary()
 
-        return output
+# Fit the model
+from tensorflow.keras.callbacks import ReduceLROnPlateau
 
-def my_model_function():
-    # Return an instance of MyModel (weights are randomly initialized)
-    return MyModel()
+my_callbacks = [
+    ReduceLROnPlateau(factor=0.25, mode="min")
+]
 
-def GetInput():
-    # Returns valid random input compatible with MyModel:
-    # Two sequences of integers in [0, vocab_size), shape (batch_size, max_len)
-    batch_size = 4
-    in1 = tf.random.uniform((batch_size, max_len), minval=1, maxval=vocab_size, dtype=tf.int32)
-    in2 = tf.random.uniform((batch_size, max_len), minval=1, maxval=vocab_size, dtype=tf.int32)
-    return [in1, in2]
+history2 = model.fit([X_train[:, 0, :], X_train[:, 1, :]],
+                    y_train, 
+                    epochs=epochs, 
+                    validation_split=0.2,
+                    use_multiprocessing=True,
+                    sample_weight=sample_weights,
+                    callbacks=my_callbacks)
 
+import csv
+import pandas as pd
+import numpy as np
+
+# read in sentence dataset
+with open('SICK.txt', 'r') as file:
+    sdf = pd.read_table(file)
+
+# re-edit scores so that it's a single relatedness measure
+scoreAB = []
+scoreBA = []
+for pair in sdf.iterrows():
+    if pair[1]['entailment_AB'] == 'A_entails_B':
+        scoreAB.append(pair[1]['relatedness_score'] - 1)
+    elif pair[1]['entailment_AB'] == 'A_neutral_B':
+        scoreAB.append(pair[1]['relatedness_score'] - 3)
+    else:
+        scoreAB.append(1 - pair[1]['relatedness_score'])
+    if pair[1]['entailment_BA'] == 'B_entails_A':
+        scoreBA.append(pair[1]['relatedness_score'] - 1)
+    elif pair[1]['entailment_BA'] == 'B_neutral_A':
+        scoreBA.append(pair[1]['relatedness_score'] - 3)
+    else:
+        scoreBA.append(1 - pair[1]['relatedness_score'])
+sdf['relatedness_score_AB'] = scoreAB
+sdf['relatedness_score_BA'] = scoreBA
+
+# define hyperparameters
+vocab_size = None
+oov_tok = '<OOV>'
+max_len = 75
+pad_pos = 'post'
+trunc_pos = 'post'
+embedding_dim = 50
+epochs = 25
+emb_trainable = False
+use_embedding = True
+dim_factor = 0.7
+out_range = (0, 1)
+
+# A little bit of preprocessing
+
+# First, add beginning and end of string words
+trim = lambda x: x #"<BOS> " + x + " <EOS>" if "<BOS>" not in x else x
+
+sdf['sentence_A'] = sdf['sentence_A'].apply(trim)
+sdf['sentence_B'] = sdf['sentence_B'].apply(trim)
+sdf['sentence_A_original'] = sdf['sentence_A_original'].apply(trim)
+sdf['sentence_B_original'] = sdf['sentence_B_original'].apply(trim)
+
+from tensorflow.keras.preprocessing.text import Tokenizer
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+
+tokenizer = Tokenizer(num_words=vocab_size, oov_token=oov_tok)
+tokenizer.fit_on_texts(sdf['sentence_A'] + 
+                       sdf['sentence_B'] + 
+                       sdf['sentence_A_original'] + 
+                       sdf['sentence_B_original'])
+sa = tokenizer.texts_to_sequences(sdf['sentence_A'])
+sb = tokenizer.texts_to_sequences(sdf['sentence_B'])
+sao = tokenizer.texts_to_sequences(sdf['sentence_A_original'])
+sbo = tokenizer.texts_to_sequences(sdf['sentence_B_original'])
+
+sa = pad_sequences(sa, maxlen=max_len, padding=pad_pos, truncating=trunc_pos)
+sb = pad_sequences(sb, maxlen=max_len, padding=pad_pos, truncating=trunc_pos)
+sao = pad_sequences(sao, maxlen=max_len, padding=pad_pos, truncating=trunc_pos)
+sbo = pad_sequences(sbo, maxlen=max_len, padding=pad_pos, truncating=trunc_pos)
+
+# construct sentence dataset
+ds_pairs = (sa, 
+            sb, 
+            sdf['relatedness_score_AB'])
+orig_pairs = (sao, 
+              sbo, 
+              [dim_factor * x for x in sdf['relatedness_score_AB']])
+
+# construct reversed semantic relationships
+ds_pairs_reversed = (sb, 
+                     sa, 
+                     sdf['relatedness_score_BA'])
+orig_pairs_reversed = (sbo,
+                       sao,
+                       [dim_factor * x for x in sdf['relatedness_score_BA']])
+
+"""
+uncomment to include reversed semantic relationships in dataset
+"""
+# ds_pairs = np.concatenate([ds_pairs, ds_pairs_reversed])
+# orig_pairs = np.concatenate([orig_pairs, orig_pairs_reversed])
+
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import MinMaxScaler
+
+# set up
+X_ds = np.transpose(np.array([ds_pairs[0], ds_pairs[1]]), axes=(1,0,2))
+X_orig = np.transpose(np.array([orig_pairs[0], orig_pairs[1]]), axes=(1,0,2))
+y_ds = np.array(ds_pairs[2])
+y_orig = np.array(orig_pairs[2])
+
+# normalize the output values for the sake of everything
+scaler = MinMaxScaler(feature_range=out_range)
+scaler.fit(np.concatenate([y_ds, y_orig]).reshape(-1, 1))
+y_ds = scaler.transform(y_ds.reshape(-1, 1)).transpose()[0, :]
+y_orig = scaler.transform(y_orig.reshape(-1, 1)).transpose()[0, :]
+
+"""
+Uncomment to incorporate original sentences into training set.
+Not recommended, because semantic relationships aren't as strong.
+Tune hyperparameter dim_factor to establish how much you want to edit score.
+"""
+# X = np.concatenate([X_ds, X_orig])
+# y = np.concatenate([y_ds, y_orig])
+
+# Split up 
+X = X_ds
+y = y_ds
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=None)
+
+# We define the embedding layer here.
+import os
+
+embeddings_index = {}
+f = open(os.path.join('./glove', 'glove.6B.50d.txt'))
+for line in f:
+    values = line.split()
+    word = values[0]
+    coefs = np.asarray(values[1:], dtype='float32')
+    embeddings_index[word] = coefs
+f.close()
+
+print('Found %s word vectors.' % len(embeddings_index))
+
+embedding_matrix = np.zeros((len(tokenizer.word_index) + 1, embedding_dim))
+for word, i in tokenizer.word_index.items():
+    embedding_vector = embeddings_index.get(word)
+    if embedding_vector is not None:
+        # words not found in embedding index will be all-zeros.
+        embedding_matrix[i] = embedding_vector
+
+# Build the model
+from tensorflow.keras.layers import Input, Embedding, Bidirectional, LSTM, Attention
+from tensorflow.keras.layers import Dense, Concatenate, Reshape
+from tensorflow.keras.activations import linear
+from tensorflow.keras.regularizers import l1, l2, l1_l2
+from tensorflow.keras.models import Model
+
+in1 = Input((max_len,))
+in2 = Input((max_len,))
+
+emb = Embedding(len(tokenizer.word_index) + 1, 
+                embedding_dim, 
+                input_length=max_len)
+if use_embedding: 
+    emb = Embedding(len(tokenizer.word_index) + 1, 
+                    embedding_dim, 
+                    weights=[embedding_matrix],
+                    input_length=max_len, 
+                    trainable=emb_trainable)
+
+# First sequence branch
+branch1 = emb(in1)
+branch1l = Bidirectional(LSTM(25, 
+                              activation='elu', 
+                              return_sequences=True, 
+                              kernel_regularizer=l2(0.01)))(branch1)
+
+# Second sequence branch
+branch2 = emb(in2)
+branch2l = Bidirectional(LSTM(25, 
+                              activation='elu', 
+                              return_sequences=True, 
+                              kernel_regularizer=l2(0.01)))(branch2)
+
+# Concatenate with Luong attention (eventually add word embedding as value)
+attention1 = Attention(use_scale=True)([branch1, branch2])
+attention2 = Attention(use_scale=True)([branch1l, branch2l])
+concat = Concatenate(axis=-1)([attention1, attention2])
+
+# Process concatenated output
+out = Bidirectional(LSTM(80, activation='elu', kernel_regularizer=l2(0.01)))(concat)
+out = Dense(1, activation='sigmoid')(out)
+
+model = Model(inputs=[in1, in2], outputs=[out])
+model.compile(loss='mean_squared_error', 
+              optimizer='adam', 
+              metrics=['kullback_leibler_divergence'])
+model.summary()
+
+# Fit the model
+from tensorflow.keras.callbacks import ReduceLROnPlateau
+
+my_callbacks = [
+    ReduceLROnPlateau(factor=0.25,
+                      mode="min")
+]
+
+history1 = model.fit([X_train[:, 0, :], X_train[:, 1, :]],
+                    y_train, 
+                    epochs=epochs, 
+                    validation_split=0.2,
+                    callbacks=my_callbacks)
+
+model.evaluate([X_test[:, 0, :], X_test[:, 1, :]], y_test, batch_size=25)

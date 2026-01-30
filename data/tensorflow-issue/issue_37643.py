@@ -1,91 +1,90 @@
-# tf.random.uniform((B, seq_len), dtype=tf.int32)  # assumed shape and dtype based on Transformer input tokens
-
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self, transformer, base_model_conf):
-        super().__init__()
-        self.transformer = transformer
-        self.batch_size = base_model_conf.batch_size
-        # We assume base_model_conf has batch_size attribute
-        
-    def create_masks(self, inp, tar_inp):
-        # Placeholder: Usually, Transformer masks are created here for padding and look-ahead masking
-        # For demo, we return None masks or zeros; in real usage, replace with actual mask creation
-        enc_padding_mask = None
-        combined_mask = None
-        dec_padding_mask = None
-        return enc_padding_mask, combined_mask, dec_padding_mask
+def _read_and_batch_from_files(input_arr, target_arr, shuffle=True, shuffle_val=20):
 
-    def call(self, inputs, targets, training=False):
-        # inputs: [batch_size, input_seq_len], integer token ids
-        # targets: [batch_size, target_seq_len], integer token ids
-        tar_inp = targets[:, :-1]
-        tar_real = targets[:, 1:]
+  dataset = tf.data.Dataset.from_tensor_slices((input_arr, target_arr))
+  if shuffle:
+    dataset = dataset.shuffle(buffer_size=6000, seed=shuffle_val,
+                              reshuffle_each_iteration=True)
+  else:
+    dataset = dataset.batch(base_model_conf_obj.batch_size)
+  dataset = dataset.repeat()
+  return dataset
+ 
+input_arr_test = np.load('/content/gdrive/My Drive/for_ds/x_test_tok.npy', allow_pickle=True)
+target_arr_test = np.load('/content/gdrive/My Drive/for_ds/y_test_tok.npy', allow_pickle=True)
+# i used this just for test before use init training/test files
+train_dataset =  _read_and_batch_from_files(input_arr_test, target_arr_test, 
+                                            shuffle=True, shuffle_val=20)
 
-        enc_padding_mask, combined_mask, dec_padding_mask = self.create_masks(inputs, tar_inp)
+class SingleDeviceStrategy(object):
+  def __enter__(self, *args, **kwargs):
+    pass
 
-        predictions, _ = self.transformer(inputs, tar_inp,
-                                          training,
-                                          enc_padding_mask,
-                                          combined_mask,
-                                          dec_padding_mask)
-        return predictions, tar_real
+  def __exit__(self, *args, **kwargs):
+    pass
 
+  def scope(self):
+    return self
 
-def my_model_function():
-    # Because original code references a "transformer" and "base_model_conf.batch_size" from outside
-    # we create placeholder minimal versions for this example
-    
-    # Placeholder: Define base_model_conf with batch_size
-    class BaseModelConfig:
-        batch_size = 128
+  def experimental_distribute_dataset(self, dataset):
+    return dataset
 
-    base_model_conf = BaseModelConfig()
+  def experimental_run_v2(self, func, args, kwargs):
+    return func(*args, **kwargs)
 
-    # Placeholder transformer: minimal model that mimics call signature
-    # Should return predictions and something else (e.g. attention weights)
-    # For demonstration, predictions are random logits with shape [batch_size, target_seq_len -1, vocab_size]
-    # We assume vocab_size=10000 and sequence length = 50 for example
-    vocab_size = 10000
-    target_seq_len = 51  # Assuming targets input length is target_seq_len
+  def reduce(self, reduction_type, distributed_data, axis):  # pylint: disable=unused-argument
+    return distributed_data
 
-    class DummyTransformer(tf.keras.layers.Layer):
-        def call(self, inp, tar_inp, training,
-                 enc_padding_mask,
-                 combined_mask,
-                 dec_padding_mask):
-            batch_size = tf.shape(inp)[0]
-            seq_len = tf.shape(tar_inp)[1]
-            # Return dummy logits and None for attention weights
-            logits = tf.random.uniform((batch_size, seq_len, vocab_size), dtype=tf.float32)
-            return logits, None
+def connect_to_tpu(tpu=None):
+  if tpu:
+    cluster_resolver = tf.distribute.cluster_resolver.TPUClusterResolver(tpu)
+    tf.config.experimental_connect_to_host(cluster_resolver.get_master())
+    tf.tpu.experimental.initialize_tpu_system(cluster_resolver)
+    strategy = tf.distribute.experimental.TPUStrategy(cluster_resolver)
+    return strategy, "/task:1" if os.environ.get("COLAB_TPU_ADDR") else "/job:worker"
+  return SingleDeviceStrategy(), ""
 
-    transformer = DummyTransformer()
+worker_tpu = 'grpc://' + os.environ['COLAB_TPU_ADDR']
+d_strat, device = connect_to_tpu(worker_tpu)
+with d_strat.scope():
+  dataset_iter = iter(d_strat.experimental_distribute_dataset(train_dataset))
+  for epoch in range(starting_epoch, num_epochs):
+    start = time.time()
+    inp, tar = next(dataset_iter)
+    def tpu_step(inp, tar):
+      tar_inp = tar[:, :-1]
+      tar_real = tar[:, 1:]
+      enc_padding_mask, combined_mask, dec_padding_mask = create_masks(inp, tar_inp)
+      with tf.GradientTape() as tape:
+        predictions, _ = transformer(inp, tar_inp,
+                                        True,
+                                        enc_padding_mask,
+                                        combined_mask,
+                                        dec_padding_mask)
+        loss = loss_function(tar_real, predictions)
+        loss_ce = loss * (1.0 / base_model_conf.batch_size)
+      variables = transformer.trainable_variables
+      gradients = tape.gradient(loss_ce, variables)
+      gradients = [(tf.clip_by_value(grad, -1.0, 1.0))
+                        for grad in gradients]
+      train_loss.update_state(loss_ce)
+      train_op = optimizer.apply_gradients(zip(gradients, variables))
+      with tf.control_dependencies([train_op]):
+        return tf.cast(optimizer.iterations, tf.float32)
 
-    return MyModel(transformer, base_model_conf)
+    @tf.function
+    def train_step(inp, tar):
+      distributed_metric = d_strat.experimental_run_v2(tpu_step, args=[inp, tar])
+      step = d_strat.reduce(tf.distribute.ReduceOp.MEAN, distributed_metric, axis=None)
+      return step
 
-
-def GetInput():
-    # Produce a tuple of (inputs, targets) matching expected Transformer inputs
-    # Assumptions (inferred):
-    # inputs shape: [batch_size, input_seq_len], dtype=int32 token ids
-    # targets shape: [batch_size, target_seq_len], dtype=int32 token ids
-    batch_size = 128
-    input_seq_len = 60
-    target_seq_len = 51
-
-    # Random integer tokens between 0 and 9999 (vocab size guess)
-    inp = tf.random.uniform(
-        shape=(batch_size, input_seq_len),
-        minval=0,
-        maxval=9999,
-        dtype=tf.int32)
-    tar = tf.random.uniform(
-        shape=(batch_size, target_seq_len),
-        minval=0,
-        maxval=9999,
-        dtype=tf.int32)
-
-    return inp, tar
-
+    step = tf.cast(train_step(inp, tar), tf.int32)
+    train_loss.reset_states()
+    train_loss_res = train_loss.result().numpy()
+    print('Epoch {} Loss {:.4f}'.format(epoch + 1, train_loss_res,))
+    print('Time taken for train 1 epoch: {} secs\n'.format(time.time() - start))
+    ckpt_save_path = ckpt_manager.save()
+    print('Saving checkpoint for epoch {} at {}'.format(epoch + 1, ckpt_save_path))
+    print('Time taken for test 1 epoch: {} secs\n'.format(time.time() - start))

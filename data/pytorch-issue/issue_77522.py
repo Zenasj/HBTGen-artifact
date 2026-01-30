@@ -1,44 +1,68 @@
-# torch.rand(B, C, H, W, dtype=...)  # Add a comment line at the top with the inferred input shape
 import torch
-import torch.nn as nn
+import math
+from torch.utils.data import DataLoader
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3, stride=1, padding=1)
-        self.relu = nn.ReLU()
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
-        self.fc1 = nn.Linear(16 * 16 * 16, 128)
-        self.fc2 = nn.Linear(128, 10)
 
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.relu(x)
-        x = self.pool(x)
-        x = x.view(-1, 16 * 16 * 16)
-        x = self.fc1(x)
-        x = self.relu(x)
-        x = self.fc2(x)
-        return x
+class MyIterableDataset(torch.utils.data.IterableDataset):
+    def __init__(self, start, end):
+        super(MyIterableDataset).__init__()
+        assert end > start, "this example code only works with end >= start"
+        self.start = start
+        self.end = end
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+    def __iter__(self):
+        return iter(range(self.start, self.end))
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # Assuming input shape (B, C, H, W) where B is batch size, C is channels, H is height, W is width
-    B, C, H, W = 4, 3, 32, 32
-    return torch.rand(B, C, H, W, dtype=torch.float32)
 
-# The provided issue and comments do not contain a PyTorch model or any code related to a neural network. Instead, they discuss an issue with multi-process data loading using `IterableDataset` in PyTorch. Since the task requires generating a complete Python code file with a PyTorch model, I will create a simple example of a PyTorch model and a corresponding input function.
-# Here is the generated code:
-# ### Explanation:
-# 1. **MyModel Class**:
-#    - A simple convolutional neural network with one convolutional layer, ReLU activation, max pooling, and two fully connected layers.
-#    - The input shape is assumed to be (B, C, H, W) where B is the batch size, C is the number of channels, H is the height, and W is the width.
-# 2. **my_model_function**:
-#    - Returns an instance of `MyModel`.
-# 3. **GetInput Function**:
-#    - Generates a random tensor with the shape (B, C, H, W) to be used as input to the model. The batch size (B) is set to 4, the number of channels (C) is 3, and the height (H) and width (W) are both 32.
-# This code can be used as a starting point for a PyTorch model and can be compiled and run with `torch.compile(MyModel())(GetInput())`.
+# Define a `worker_init_fn` that configures each dataset copy differently
+def worker_init_fn(worker_id):
+    worker_info = torch.utils.data.get_worker_info()
+    dataset = worker_info.dataset  # the dataset copy in this worker process
+    overall_start = dataset.start
+    overall_end = dataset.end
+    # configure the dataset to only process the split workload
+    per_worker = int(math.ceil((overall_end - overall_start) / float(worker_info.num_workers)))
+    worker_id = worker_info.id
+    dataset.start = overall_start + worker_id * per_worker
+    dataset.end = min(dataset.start + per_worker, overall_end)
+
+
+if __name__ == '__main__':
+    ds = MyIterableDataset(start=0, end=500)
+
+    dl = DataLoader(
+        dataset=ds, batch_size=100, num_workers=2, worker_init_fn=worker_init_fn,
+    )
+
+    for e in dl:
+        print(e.shape)
+
+batches_per_worker = (overall_end - overall_start) // batch_size // num_workers
+examples_per_worker = batches_per_worker * batch_size
+
+def worker_init_fn(_):
+    worker_info = get_worker_info()
+    dataset = worker_info.dataset  # the dataset copy in this worker process
+    worker_id = worker_info.id
+    batch_size = dataset.batch_size
+    num_workers = worker_info.num_workers
+
+    overall_start = 0
+    overall_end = len(dataset)
+
+    batches_per_worker = (overall_end - overall_start) // batch_size // num_workers
+    examples_per_worker = batches_per_worker * batch_size
+
+    worker_start = overall_start + worker_id * examples_per_worker
+    if worker_id != num_workers - 1:
+        # the first `num_workers - 1` workers load examples divisible by `batch_size`
+        worker_end = min(worker_start + examples_per_worker, overall_end)
+    else:
+        # the last worker loads all remaining examples
+        worker_end = overall_end
+
+    # configure the dataset to only process the split workload
+
+    """
+    use `worker_start` and `worker_end` to configure current worker
+    """

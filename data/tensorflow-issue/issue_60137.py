@@ -1,37 +1,16 @@
-# tf.random.uniform((B, H, W, C), dtype=...) ← 
-# Since the issue does not describe a TensorFlow model or input specifics,
-# for demonstration, we assume an input shape of (1, 224, 224, 3),
-# a common image tensor shape for models, dtype=tf.float32.
+# Dataclasses is in-built from py >=3.7. This version is a backport for py 3.6.
+if (sys.version_info.major, sys.version_info.minor) == (3, 6):
+  REQUIRED_PKGS.append('dataclasses')
 
-import tensorflow as tf
+@dataclasses.dataclass
+class CellCopyStats:
+  processed_cells: int = 0
+  updated_cells: int = 0
+  unmatched_target_cells: list[str] = dataclasses.field(default_factory=list)
+  unmatched_source_cells: list[str] = dataclasses.field(default_factory=list)
+  out_of_order_target_cells: list[str] = dataclasses.field(default_factory=list)
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # The provided GitHub issue does not describe any actual model architecture,
-        # so we build a minimal placeholder model for demonstration.
-        # This could be considered a "pass-through" or identity model.
+import sys
 
-        # Example layer: A simple Conv2D layer (replaceable with actual logic if available)
-        self.conv1 = tf.keras.layers.Conv2D(filters=16, kernel_size=3, padding='same', activation='relu')
-        self.pool = tf.keras.layers.MaxPooling2D(pool_size=2)
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense = tf.keras.layers.Dense(10)  # example: output 10 classes/logits
-
-    def call(self, inputs):
-        # Forward pass placeholder using defined layers
-        x = self.conv1(inputs)
-        x = self.pool(x)
-        x = self.flatten(x)
-        x = self.dense(x)
-        return x
-
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input matching the assumed input shape
-    # Based on common input dimensions: batch=1, height=224, width=224, channels=3, dtype float32
-    return tf.random.uniform((1, 224, 224, 3), dtype=tf.float32)
-
+if sys.version_info < (3, 7):
+    REQUIRED_PKGS.append('dataclasses')

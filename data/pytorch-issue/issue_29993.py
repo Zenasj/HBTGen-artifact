@@ -1,21 +1,15 @@
-# torch.rand(1, 3, 32, 32, dtype=torch.float32) ← Add a comment line at the top with the inferred input shape
-
 import torch
 import torch.nn as nn
+import onnx
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.zp = nn.ZeroPad2d((0, 1, 0, 1))
-
-    def forward(self, x):
-        return self.zp(x)
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(1, 3, 32, 32, dtype=torch.float32)
-
+path = 'converted.onnx'
+dummy_input = torch.zeros((1, 3, 32, 32))
+zp = nn.ZeroPad2d((0, 1, 0, 1))
+torch.onnx.export(zp, dummy_input, path,
+                  input_names=['input'], 
+                  output_names=['output'],
+                  opset_version=11,
+                  verbose=True)
+# check model
+onnx_model = onnx.load(path)
+onnx.checker.check_model(onnx_model)

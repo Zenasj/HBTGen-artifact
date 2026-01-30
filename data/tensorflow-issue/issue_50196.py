@@ -1,33 +1,27 @@
-# tf.random.uniform((B, 28, 28), dtype=tf.float32) ← Inferred input shape from MNIST dataset example used in the issue
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Mirror the example Keras Sequential model from the issue:
-        # Flatten input (28, 28), Dense with 128 units + relu, Dropout 0.2, Dense with 10 output logits
-        self.flatten = tf.keras.layers.Flatten(input_shape=(28, 28))
-        self.dense1 = tf.keras.layers.Dense(128, activation='relu')
-        self.dropout = tf.keras.layers.Dropout(0.2)
-        self.dense2 = tf.keras.layers.Dense(10)  # logits output
+mnist = tf.keras.datasets.mnist
 
-    def call(self, inputs, training=False):
-        x = self.flatten(inputs)
-        x = self.dense1(x)
-        x = self.dropout(x, training=training)
-        x = self.dense2(x)
-        return x
+(x_train, y_train), (x_test, y_test) = mnist.load_data()
+x_train, x_test = x_train / 255.0, x_test / 255.0
 
-def my_model_function():
-    # Return an instance of MyModel.
-    # No pretrained weights to load as per issue; just instantiate.
-    return MyModel()
+model = tf.keras.models.Sequential([
+  tf.keras.layers.Flatten(input_shape=(28, 28)),
+  tf.keras.layers.Dense(128, activation='relu'),
+  tf.keras.layers.Dropout(0.2),
+  tf.keras.layers.Dense(10)
+])
 
-def GetInput():
-    # Return a random float32 tensor shaped (B, 28, 28) mimicking batch of grayscale images.
-    # Assumed batch size 32 as a reasonable default for testing.
-    batch_size = 32
-    # Values normalized to [0,1] float32 as is done in the issue example (MNIST / 255.0)
-    return tf.random.uniform((batch_size, 28, 28), minval=0.0, maxval=1.0, dtype=tf.float32)
+predictions = model(x_train[:1]).numpy()
+tf.nn.softmax(predictions).numpy()
 
+loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+
+loss_fn(y_train[:1], predictions).numpy()
+
+model.compile(optimizer = 'sgd', loss = loss_fn)
+model.fit(x_train, y_train, epochs=100)

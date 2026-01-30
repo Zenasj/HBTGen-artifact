@@ -1,29 +1,39 @@
-# torch.rand(B, 3, 224, 224, dtype=torch.float32)  # Example input shape for image-like data
 import torch
-import torch.nn as nn
+import torch.cuda.amp
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.layer1 = nn.Linear(224*224*3, 100)
-        self.layer2 = nn.Linear(100, 10)
+torch.autocast  # "autocast" is not exported from module "torch"
 
-    def forward(self, x):
-        with torch.autocast(device_type="cuda", enabled=True):  # Example usage of autocast
-            x = x.view(x.size(0), -1)
-            x = self.layer1(x)
-            x = self.layer2(x)
-        return x
+torch.cuda.amp.GradScaler()  # "GradScaler" is not exported from module "torch.cuda.amp"
 
-def my_model_function():
-    model = MyModel()
-    # Initialize weights (placeholder initialization)
-    for m in model.modules():
-        if isinstance(m, nn.Linear):
-            nn.init.xavier_uniform_(m.weight)
-    return model
+torch.cuda.amp.autocast  # "autocast" is not exported from module "torch.cuda.amp"
 
-def GetInput():
-    batch_size = 4  # Example batch size
-    return torch.rand(batch_size, 3, 224, 224, dtype=torch.float32)
+torch.cuda.amp.custom_fwd  # "custom_fwd" is not exported from module "torch.cuda.amp"
 
+torch.cuda.amp.custom_bwd  # "custom_bwd" is not exported from module "torch.cuda.amp"
+
+import torch
+
+def add(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    return x + y
+
+wrapped_add = torch.autocast(device_type="cuda")(add)
+
+reveal_type(wrapped_add)  # Unknown | _Wrapped[..., Unknown, (*args: Unknown, **kwargs: Unknown), Unknown]
+
+reveal_type(arapped_add)  # Type of "wrapped_add" is "(x: Tensor, y: Tensor) -> Tensor"
+
+import torch
+import torch.cuda.amp
+
+grad_scaler = torch.cuda.amp.GradScaler()
+loss = torch.tensor(1.0)
+
+# Cannot access member "backward" for type "list[Unknown]"
+# Cannot access member "backward" for type "tuple[Unknown, ...]"
+# Cannot access member "backward" for type "map[Unknown]"
+grad_scaler.scale(loss).backward()
+
+reveal_type(grad_scaler.scale(loss))  # Type of "grad_scaler.scale(loss)" is "Tensor"
+reveal_type(grad_scaler.scale([loss, loss]))  # Type of "grad_scaler.scale([loss, loss])" is "List[Tensor]"
+reveal_type(grad_scaler.scale((loss, loss)))  # Type of "grad_scaler.scale((loss, loss))" is "Tuple[Tensor, ...]"
+reveal_type(grad_scaler.scale({loss, loss}))  # Type of "grad_scaler.scale({loss, loss})" is "Iterable[Tensor]"

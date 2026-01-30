@@ -1,27 +1,22 @@
-# torch.rand(B, 2, 1024, dtype=torch.float32)  # Input shape for 1D ConvNet
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.conv1 = nn.Conv1d(in_channels=2, out_channels=16, kernel_size=3, padding=1)
-        self.conv2 = nn.Conv1d(in_channels=16, out_channels=32, kernel_size=3, padding=1)
-        self.pool = nn.MaxPool1d(2)
-        self.fc1 = nn.Linear(32 * 256, 10)  # 256 = 1024 / (2*2) after two pooling layers
+def export_torchscript(model, im, model_name, optimize):
+    # TorchScript model export
+    try:
+        logging.info(f'\nstarting export with torch {torch.__version__}...')
+        f = Path('model.torchscript')
 
-    def forward(self, x):
-        x = self.pool(F.relu(self.conv1(x)))
-        x = self.pool(F.relu(self.conv2(x)))
-        x = x.view(-1, 32 * 256)
-        return self.fc1(x)
+        ts = torch.jit.trace(model, (im, im), strict=False)
+        print(ts(im, im))
+        d = {"shape": im.shape, "names": model_name}
+        extra_files = {'config.txt': json.dumps(d)}  # torch._C.ExtraFilesMap()
+        if optimize:  # https://pytorch.org/tutorials/recipes/mobile_interpreter.html
+            # Export mobile interpreter version model (compatible with mobile interpreter)
+            optimize_for_mobile(ts)._save_for_lite_interpreter(str(f), _extra_files=extra_files)
+        else:
+            ts.save(str(f), _extra_files=extra_files)
 
-def my_model_function():
-    # Returns the model instance with default initialization
-    return MyModel()
-
-def GetInput():
-    # Returns a random tensor matching the model's expected input shape
-    return torch.rand(1, 2, 1024, dtype=torch.float32)
-
+        logging.info(f'export success, saved as {f} ({file_size(f):.1f} MB)')
+        return f
+    except Exception as e:
+        logging.info(f'export failure: {e}')

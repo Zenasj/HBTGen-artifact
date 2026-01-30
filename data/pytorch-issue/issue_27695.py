@@ -1,14 +1,11 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)
-import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
+import torch
+class Test(torch.nn.Module):
     def forward(self, x):
         return x + 1
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(2, 3, 4, 5, dtype=torch.float32)
-
+x = torch.ones(2,3,4,5)
+torch.onnx.export(Test(), tuple((x,)), 'test.onnx', verbose=True,
+                  input_names=['input'], output_names=['output'],
+                  dynamic_axes={'input':[0, 2, 3], 'output':[0, 2, 3]})

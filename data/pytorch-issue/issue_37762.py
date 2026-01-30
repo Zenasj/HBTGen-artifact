@@ -1,20 +1,19 @@
-# torch.rand(B, 10, dtype=torch.float32)
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.fc = nn.Linear(10, 5)  # Simplest possible model for demonstration
+py
+import sys
+from unittest.mock import Mock, patch
 
-    def forward(self, x):
-        return self.fc(x)
+docstrings = {}
 
-def my_model_function():
-    # Returns a minimal model with default initialization
-    return MyModel()
 
-def GetInput():
-    # Returns a random tensor matching the model's input requirements
-    return torch.rand(1, 10, dtype=torch.float32)
+def gather_docstrings(func, docstr):
+    docstrings[func._extract_mock_name()] = docstr
 
+
+with patch.dict(sys.modules, {"torch": Mock(name="torch"), "torch._C": Mock(_add_docstr=gather_docstrings)}):
+    sys.path.append("torch")  # bypassing torch/__init__.py
+    import _torch_docs
+
+print(docstrings)
+# result: {'torch.abs': '\nabs(input, out=None) -> Tensor...', ...}

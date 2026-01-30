@@ -1,31 +1,30 @@
-# tf.random.uniform((B, 2), dtype=tf.float32)  # input shape inferred from example inputs = tf.ones((1,2))
-
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Initialize a single GRUCell with dropout and recurrent dropout as in the issue example
-        self.cell = tf.keras.layers.GRUCell(units=2, dropout=0.1, recurrent_dropout=0.1)
+import tensorflow
 
-    @tf.function
-    def call(self, inputs, states=None, training=True):
-        """
-        Run a forward pass of the GRU cell.
-        This builds on the example from the issue, exposing the 'bad_infer' style usage
-        inside a tf.function to illustrate the variable handling scenario.
-        """
-        if states is None:
-            states = self.cell.get_initial_state(batch_size=tf.shape(inputs)[0], dtype=inputs.dtype)
-        output, new_states = self.cell(inputs=inputs, states=states, training=training)
-        return output, new_states
+class GRU(tf.Module):
+  def __init__(self):
+    super(GRU, self).__init__()
+    self.cell = tf.keras.layers.GRUCell(units=2, dropout=0.1, recurrent_dropout=0.1)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+  @tf.function
+  def bad_infer(self, inputs, states):
+    o, h = self.cell(inputs=inputs, states=states, training=True)
+    return o, h
 
-def GetInput():
-    # Return random input compatible with MyModel's expected input shape
-    # The example shows inputs shape (1, 2), so batch_size=1, feature_dim=2
-    return tf.random.uniform((1, 2), dtype=tf.float32)
+  def good_infer(self, inputs, states):
+    o, h = self.cell(inputs=inputs, states=states, training=True)
+    return o, h
 
+gru = GRU()
+inputs = tf.ones((1, 2))
+states = gru.cell.get_initial_state(inputs)
+targets = tf.ones(1, 2)
+
+gru.good_infer(inputs=inputs, states=states)
+gru.variables
+
+gru.bad_infer(inputs=inputs, states=states)
+gru.variables

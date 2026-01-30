@@ -1,15 +1,19 @@
-# torch.rand(B, C, H, dtype=torch.float32)
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        r = x.mT  # Transpose last two dimensions (problematic operation)
-        return torch.nn.functional.relu(r)
+import torch
+import torch._dynamo
 
-def my_model_function():
-    return MyModel()
+def fn(x):
+    r = x.mT
+    return torch.nn.functional.relu(r)
 
-def GetInput():
-    return torch.rand(2, 3, 4)  # Matches the example input shape (2,3,4)
+x = torch.rand((2, 3, 4))
 
+torch._dynamo.optimize("eager")(fn)(x)
+
+def fn(x):
+            try:
+                unsupported = x.nonexistent_tensor_attr
+                x = torch.nn.utils.rnn.PackedSequence(x, unsupported) # <- this is where the failure occurs
+            except:
+                ...

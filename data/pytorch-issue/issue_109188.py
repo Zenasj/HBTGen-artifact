@@ -1,23 +1,20 @@
-# torch.rand(2, 12, dtype=torch.bfloat16)
+import torch.nn as nn
+
+3
 import torch
 import copy
 
-class MyModel(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.ln_cpu = torch.nn.LayerNorm(12, eps=0.0, elementwise_affine=False).bfloat16()
-        self.ln_cuda = copy.deepcopy(self.ln_cpu).to('cuda')  # Ensure identical initial weights
+print(torch.__version__)
+torch.manual_seed(0)
 
-    def forward(self, x):
-        # Compute outputs on both devices
-        out_cpu = self.ln_cpu(x.to('cpu'))
-        out_cuda = self.ln_cuda(x.to('cuda'))
-        # Compare outputs on CPU (to avoid GPU-CPU sync issues)
-        return torch.abs(out_cpu - out_cuda.to('cpu')).max()  # Return max difference tensor
+layernorm = torch.nn.LayerNorm(12, eps=0.0, elementwise_affine = False).bfloat16()
+layernorm_cuda = copy.deepcopy(layernorm).cuda()
 
-def my_model_function():
-    return MyModel()
+input = torch.randn((2, 12), dtype=torch.bfloat16)
+input_cuda = input.cuda()
 
-def GetInput():
-    return torch.randn(2, 12, dtype=torch.bfloat16)
-
+output_cpu = layernorm(input)
+output_cuda = layernorm_cuda(input_cuda)
+print("CPU", output_cpu)
+print("CUDA", output_cuda)
+print("max diff", (output_cpu-output_cuda.cpu()).abs().max())

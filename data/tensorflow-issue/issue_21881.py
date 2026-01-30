@@ -1,120 +1,238 @@
-# tf.random.uniform((B, 32, 32, 3), dtype=tf.float32) ← The input shape is batch size unknown, 32x32 RGB images
-
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 import tensorflow as tf
+import argparse
+import os
 
-# Because the core model in the shared code uses 'channels_first' format (NCHW),
-# but input placeholder is NHWC (batch, 32, 32, 3),
-# the model transposes input accordingly.
+from tensorpack import *
+from tensorpack.tfutils.summary import *
+from tensorpack.dataflow import dataset
 
-class MyModel(tf.keras.Model):
-    def __init__(self, num_classes=10):
-        super().__init__()
-        self.num_classes = num_classes
 
-        # Defining convolutional layers similar to the TF code with use_bias=True
-        # and BN+ReLU activations (implemented here with tf.keras.layers.BatchNormalization + ReLU).
+class Model(ModelDesc):
+    def __init__(self, cifar_classnum):
+        super(Model, self).__init__()
+        self.cifar_classnum = cifar_classnum
 
-        # Note: For simplicity and compatibility with tf2.20, use standard Keras layers.
-        # The original code used tensorpack and tflearn globals; 
-        # here we replicate the architecture as closely as possible.
+    def inputs(self):
+        return [tf.placeholder(tf.float32, (None, 32, 32, 3), 'input'),
+                tf.placeholder(tf.int32, (None,), 'label')]
 
-        # We'll implement all conv layers with kernel size 3, padding same, no bias disabling.
+    def build_graph(self, image, label):
+        is_training = get_current_tower_context().is_training
 
-        # Define layers with names similar to original for clarity.
+        image = tf.transpose(image, [0, 3, 1, 2])
+        data_format = 'channels_first'
 
-        conv_filters = [
-            ('conv1_1', 66),
-            ('conv1_2', 128),
-            ('conv2_1', 128),
-            ('conv2_2', 128),
-            ('conv2_3', 192),
-            # MaxPool here
-            # Dropout 0.05 keep prob means dropout rate=0.05 => 0.95 kept
-            ('conv4_1', 192),
-            ('conv4_2', 192),
-            ('conv4_3', 192),
-            ('conv4_4', 192),
-            ('conv4_5', 288),
-            # MaxPool here
-            # Dropout again 0.05 rate
-            ('conv5_1', 288),
-            ('conv5_2', 355),
-            ('conv5_3', 432),
+        with argscope(Conv2D, activation=BNReLU, use_bias=False, kernel_size=3), \
+                argscope([Conv2D, MaxPooling, BatchNorm, GlobalAvgPooling], data_format=data_format):
+            logits = LinearWrap(image) \
+                .Conv2D('conv1.1', filters=66) \
+                .Conv2D('conv1.2', filters=128) \
+                .Conv2D('conv2.1', filters=128) \
+                .Conv2D('conv2.2', filters=128) \
+                .Conv2D('conv2.3', filters=192) \
+                .MaxPooling('pool2', 2, stride=2, padding='SAME') \
+                .tf.nn.dropout(0.95) \
+                .Conv2D('conv4.1', filters=192) \
+                .Conv2D('conv4.2', filters=192) \
+                .Conv2D('conv4.3', filters=192) \
+                .Conv2D('conv4.4', filters=192) \
+                .Conv2D('conv4.5', filters=288) \
+                .MaxPooling('pool2', 2, stride=2, padding='SAME') \
+                .tf.nn.dropout(0.95) \
+                .Conv2D('conv5.1', filters=288) \
+                .Conv2D('conv5.2', filters=355) \
+                .Conv2D('conv5.3', filters=432) \
+                .GlobalAvgPooling('gap') \
+                .FullyConnected('linear', out_dim=self.cifar_classnum)()
+
+        cost = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=label)
+        cost = tf.reduce_mean(cost, name='cross_entropy_loss')
+
+        correct = tf.to_float(tf.nn.in_top_k(logits, label, 1), name='correct')
+        # monitor training error
+        add_moving_summary(tf.reduce_mean(correct, name='accuracy'))
+
+        # weight decay on all W of fc layers
+        wd_cost = regularize_cost('fc.*/W', l2_regularizer(4e-4), name='regularize_loss')
+        add_moving_summary(cost, wd_cost)
+
+        add_param_summary(('.*/W', ['histogram']))   # monitor W
+        return tf.add_n([cost, wd_cost], name='cost')
+
+    def optimizer(self):
+        lr = tf.get_variable('learning_rate', initializer=1e-2, trainable=False)
+        tf.summary.scalar('lr', lr)
+        return tf.train.AdamOptimizer(lr, epsilon=1e-3)
+
+
+def get_data(train_or_test, cifar_classnum):
+    isTrain = train_or_test == 'train'
+    if cifar_classnum == 10:
+        ds = dataset.Cifar10(train_or_test)
+    else:
+        ds = dataset.Cifar100(train_or_test)
+    if isTrain:
+        augmentors = [
+            imgaug.RandomCrop((32, 32)),
+            imgaug.Flip(horiz=True),
+            imgaug.Brightness(63),
+            imgaug.Contrast((0.2, 1.8)),
+            imgaug.MeanVarianceNormalize(all_channel=True)
         ]
-
-        # Using channels_first, so input shape after transpose is (B, 3, 32, 32)
-
-        self.conv_blocks = []
-        for name, filters in conv_filters:
-            self.conv_blocks.append(
-                tf.keras.Sequential([
-                    tf.keras.layers.Conv2D(filters,
-                                           kernel_size=3,
-                                           padding='same',
-                                           use_bias=True,
-                                           data_format='channels_first',
-                                           name=name),
-                    tf.keras.layers.BatchNormalization(axis=1, name=name + '_bn'),
-                    tf.keras.layers.ReLU(name=name + '_relu'),
-                ], name=name + '_block')
-            )
-
-        self.pool1 = tf.keras.layers.MaxPooling2D(pool_size=2, strides=2, padding='same', data_format='channels_first', name='pool2_1')
-        self.dropout1 = tf.keras.layers.Dropout(rate=0.05, name='dropout1')  # keep_prob=0.95 => rate=0.05
-
-        self.pool2 = tf.keras.layers.MaxPooling2D(pool_size=2, strides=2, padding='same', data_format='channels_first', name='pool2_2')
-        self.dropout2 = tf.keras.layers.Dropout(rate=0.05, name='dropout2')
-
-        # After last conv layers, apply global max pooling instead of global avg pooling.
-        self.global_max_pool = tf.keras.layers.GlobalMaxPooling2D(data_format='channels_first', name='global_max_pool')
-
-        # Fully connected final layer:
-        self.fc = tf.keras.layers.Dense(num_classes, name='linear')
-
-    def call(self, inputs, training=False):
-        # inputs shape: (B, 32, 32, 3) NHWC
-        # transpose to channels_first: (B, 3, 32, 32)
-        x = tf.transpose(inputs, [0, 3, 1, 2])
-
-        # Pass through conv layers as per original sequence:
-        # conv1.1, conv1.2, conv2.1, conv2.2, conv2.3
-        for i in range(5):
-            x = self.conv_blocks[i](x, training=training)
-
-        x = self.pool1(x)
-        x = self.dropout1(x, training=training)
-
-        # conv4.1 to conv4.5 (5 layers)
-        for i in range(5, 10):
-            x = self.conv_blocks[i](x, training=training)
-
-        x = self.pool2(x)
-        x = self.dropout2(x, training=training)
-
-        # conv5.1 to conv5.3 (3 layers)
-        for i in range(10, 13):
-            x = self.conv_blocks[i](x, training=training)
-
-        # global max pool
-        x = self.global_max_pool(x)  # shape (B, channels)
-
-        logits = self.fc(x)  # shape (B, num_classes)
-
-        return logits
+    else:
+        augmentors = [
+            imgaug.CenterCrop((32, 32)),
+            imgaug.MeanVarianceNormalize(all_channel=True)
+        ]
+    ds = AugmentImageComponent(ds, augmentors)
+    ds = BatchData(ds, 100, remainder=not isTrain)
+    if isTrain:
+        ds = PrefetchDataZMQ(ds, 5)
+    return ds
 
 
-def my_model_function():
-    # Instantiate the model with 10 classes (CIFAR-10)
-    model = MyModel(num_classes=10)
-    # Normally weights are randomly initialized; pretrained weights not provided
-    return model
+def get_config(cifar_classnum):
+    # prepare dataset
+    dataset_train = get_data('train', cifar_classnum)
+    dataset_test = get_data('test', cifar_classnum)
+    return TrainConfig(
+        model=Model(cifar_classnum),
+        data=QueueInput(dataset_train),
+        callbacks=[
+            ModelSaver(),
+            InferenceRunner(dataset_test,
+                            ScalarStats(['accuracy', 'cost'])),
+        ],
+        max_epoch=150,
+    )
 
 
-def GetInput():
-    # Return a random tensor matching input expected by MyModel
-    # Shape: (batch_size, height=32, width=32, channels=3)
-    # Using batch size 100 as per original batch size in example
-    batch_size = 100
-    # Using float32 input values in range [0, 1)
-    return tf.random.uniform((batch_size, 32, 32, 3), dtype=tf.float32)
+if __name__ == '__main__':
+    with tf.Graph().as_default():
+        logger.set_logger_dir(os.path.join('train_log', 'cifar' + str(10)))
+        config = get_config(10)
 
+        trainer = SimpleTrainer()
+        launch_train_with_config(config, trainer)
+
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+import tensorflow as tf
+import argparse
+import os
+
+from tensorpack import *
+from tensorpack.tfutils.summary import *
+from tensorpack.dataflow import dataset
+import tflearn
+
+class Model(ModelDesc):
+    def __init__(self, cifar_classnum):
+        super(Model, self).__init__()
+        self.cifar_classnum = cifar_classnum
+
+    def inputs(self):
+        return [tf.placeholder(tf.float32, (None, 32, 32, 3), 'input'),
+                tf.placeholder(tf.int32, (None,), 'label')]
+
+    def build_graph(self, image, label):
+        is_training = get_current_tower_context().is_training
+
+        image = tf.transpose(image, [0, 3, 1, 2])
+        data_format = 'channels_first'
+
+        with argscope(Conv2D, activation=BNReLU, use_bias=True, kernel_size=3), \
+                argscope([Conv2D, MaxPooling, BatchNorm], data_format=data_format):
+            logits = LinearWrap(image) \
+                .Conv2D('conv1.1', filters=66) \
+                .Conv2D('conv1.2', filters=128) \
+                .Conv2D('conv2.1', filters=128) \
+                .Conv2D('conv2.2', filters=128) \
+                .Conv2D('conv2.3', filters=192) \
+                .MaxPooling('pool2', 2, stride=2, padding='SAME') \
+                .tf.nn.dropout(0.95) \
+                .Conv2D('conv4.1', filters=192) \
+                .Conv2D('conv4.2', filters=192) \
+                .Conv2D('conv4.3', filters=192) \
+                .Conv2D('conv4.4', filters=192) \
+                .Conv2D('conv4.5', filters=288) \
+                .MaxPooling('pool2', 2, stride=2, padding='SAME') \
+                .tf.nn.dropout(0.95) \
+                .Conv2D('conv5.1', filters=288) \
+                .Conv2D('conv5.2', filters=355) \
+                .Conv2D('conv5.3', filters=432)() 
+            logits = tflearn.layers.conv.global_max_pool (logits, name='GlobalMaxPool')
+            logits = LinearWrap(logits) \
+                .FullyConnected('linear', out_dim=self.cifar_classnum)()
+
+        cost = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=label)
+        cost = tf.reduce_mean(cost, name='cross_entropy_loss')
+
+        correct = tf.to_float(tf.nn.in_top_k(logits, label, 1), name='correct')
+        # monitor training error
+        add_moving_summary(tf.reduce_mean(correct, name='accuracy'))
+
+        # weight decay on all W of fc layers
+        wd_cost = regularize_cost('fc.*/W', l2_regularizer(4e-4), name='regularize_loss')
+        add_moving_summary(cost, wd_cost)
+
+        add_param_summary(('.*/W', ['histogram']))   # monitor W
+        return tf.add_n([cost, wd_cost], name='cost')
+
+    def optimizer(self):
+        lr = tf.get_variable('learning_rate', initializer=1e-2, trainable=False)
+        tf.summary.scalar('lr', lr)
+        return tf.train.GradientDescentOptimizer(lr)
+
+
+def get_data(train_or_test, cifar_classnum):
+    isTrain = train_or_test == 'train'
+    if cifar_classnum == 10:
+        ds = dataset.Cifar10(train_or_test)
+    else:
+        ds = dataset.Cifar100(train_or_test)
+    if isTrain:
+        augmentors = [
+            imgaug.RandomCrop((32, 32)),
+            imgaug.Flip(horiz=True),
+            imgaug.Brightness(63),
+            imgaug.Contrast((0.2, 1.8)),
+            imgaug.MeanVarianceNormalize(all_channel=True)
+        ]
+    else:
+        augmentors = [
+            imgaug.CenterCrop((32, 32)),
+            imgaug.MeanVarianceNormalize(all_channel=True)
+        ]
+    ds = AugmentImageComponent(ds, augmentors)
+    ds = BatchData(ds, 100, remainder=not isTrain)
+    if isTrain:
+        ds = PrefetchDataZMQ(ds, 5)
+    return ds
+
+
+def get_config(cifar_classnum):
+    # prepare dataset
+    dataset_train = get_data('train', cifar_classnum)
+    dataset_test = get_data('test', cifar_classnum)
+    return TrainConfig(
+        model=Model(cifar_classnum),
+        data=QueueInput(dataset_train),
+        callbacks=[
+            ModelSaver(),
+            InferenceRunner(dataset_test,
+                            ScalarStats(['accuracy', 'cost'])),
+        ],
+        max_epoch=150,
+    )
+
+
+if __name__ == '__main__':
+    with tf.Graph().as_default():
+        logger.set_logger_dir(os.path.join('train_log', 'cifar' + str(10)))
+        config = get_config(10)
+
+        trainer = SimpleTrainer()
+        launch_train_with_config(config, trainer)

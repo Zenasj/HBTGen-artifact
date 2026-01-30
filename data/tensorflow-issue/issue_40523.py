@@ -1,27 +1,32 @@
-# tf.random.uniform((batch_size, 100, 12), dtype=tf.float32)  ← inferred input shape from original reported issue
+import random
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
+from tensorflow.keras import *
+from tensorflow.keras.layers import *
+from tensorflow.keras.optimizers import *
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Simple dense layer applied on last dimension (12) to output a scalar per timestep
-        # This replicates the example: outputs = Dense(1)(inputs)
-        self.dense = tf.keras.layers.Dense(1)
-    
-    def call(self, inputs, training=False):
-        # inputs shape: (batch_size, 100, 12)
-        # Apply dense layer to last dim -> output shape: (batch_size, 100, 1)
-        return self.dense(inputs)
-
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Generates a random input tensor matching the input shape expected by MyModel:
-    # (batch_size, 100, 12) float32
-    # Let's pick batch_size=32 as default to match original batch_size in the issue.
-    batch_size = 32
-    return tf.random.uniform((batch_size, 100, 12), dtype=tf.float32)
-
+model = Sequential([
+    Embedding(input_dim = 11,
+              output_dim = 100,
+              mask_zero = True,
+              batch_input_shape = [None, None]),
+    LSTM(1024, stateful = False,
+         return_sequences = True),
+    TimeDistributed(Dense(11, activation = 'softmax'))])
+X, Y = [], []
+for _ in range(10000):
+    v1 = tf.random.uniform((50,), minval = 1, maxval = 11,
+                           dtype = tf.int32)
+    v2 = tf.zeros((10,), dtype = tf.int32)
+    sample = tf.concat((v1, v2), axis = 0)
+    X.append(sample[:-1])
+    Y.append(sample[1:])
+optimizer = RMSprop(learning_rate = 0.01)
+model.compile(
+    optimizer = optimizer,
+    loss = 'sparse_categorical_crossentropy',
+    metrics = ['sparse_categorical_accuracy'])
+print('fitting')
+model.fit(X, Y, epochs = 30)

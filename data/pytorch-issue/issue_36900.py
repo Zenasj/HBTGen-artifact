@@ -1,24 +1,22 @@
-# torch.rand(100000000, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
-
 import torch
-import torch.nn as nn
+import time
+from contextlib import contextmanager
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # No parameters needed for this model
+@contextmanager
+def timeit(name, R=3):
+    start = time.time()
+    torch.cuda.synchronize()
+    yield
+    torch.cuda.synchronize()
+    print(f'{name:20s} {1e6*(time.time() - start)/R:8.0f}us per')
 
-    def forward(self, x):
-        # Use the workaround for max over a dimension
-        ii = x.argmax(dim=0)
-        maxval = x.gather(0, ii.unsqueeze(0)).squeeze(0)
-        return maxval
+xs = torch.randn(int(100e6),).cuda()
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+with timeit('max'):
+    xs.max()
+    
+with timeit('max-over-dim'):
+    xs.max(0)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(int(100e6), dtype=torch.float32).cuda()
-
+with timeit('sort-over-dim'):
+    xs.sort(0)[-1]

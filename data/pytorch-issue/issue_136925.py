@@ -1,20 +1,25 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # B=batch=1, C=input_size=6, H=seq_len=1, W=1 (unused)
+import torch.nn as nn
+
 import torch
 from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.rnn = nn.RNN(input_size=6, hidden_size=3)
-        
-    def forward(self, input, h_0=None):
-        # The RNN expects 'hx' parameter, but we use 'h_0' to match documentation intent
-        return self.rnn(input, hx=h_0)
+my_tensor = torch.tensor([[8., -3., 0., 1., 5., -2.]])
 
-def my_model_function():
-    return MyModel()
+torch.manual_seed(42)
 
-def GetInput():
-    # Returns a 3D tensor (seq_len=1, batch=1, input_size=6) matching RNN input requirements
-    return torch.rand(1, 1, 6, dtype=torch.float32)
+rnn = nn.RNN(input_size=6, hidden_size=3)
+                   # ↓↓↓
+rnn(input=my_tensor, h_0=torch.tensor([[0., 1., 2.]])) # Error
 
+import torch
+from torch import nn
+
+my_tensor = torch.tensor([[8., -3., 0., 1., 5., -2.]])
+
+torch.manual_seed(42)
+
+rnn = nn.RNN(input_size=6, hidden_size=3)
+                   # ↓↓
+rnn(input=my_tensor, hx=torch.tensor([[0., 1., 2.]]))
+# (tensor([[ 0.9134, -0.8619,  0.9997]], grad_fn=<SqueezeBackward1>),
+#  tensor([[ 0.9134, -0.8619,  0.9997]], grad_fn=<SqueezeBackward1>))

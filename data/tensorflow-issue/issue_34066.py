@@ -1,39 +1,85 @@
-# tf.random.uniform((GLOBAL_BATCH_SIZE,), dtype=tf.int32) ← inferred input shape is (batch_size * num_workers,), scalar integer tokens in [1,N_CAT)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras import losses
+import numpy as np
 
-N_CAT = 47  # Vocabulary size or number of categories (as per the issue)
-EMBED_DIM = 5  # Embedding dimension used in the example
+batch_size = 32
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Embedding layer as per failing example
-        self.embedding = tf.keras.layers.Embedding(input_dim=N_CAT, output_dim=EMBED_DIM)
-        # Dense layer after embedding (note: in original code Dense without activation)
-        self.dense = tf.keras.layers.Dense(N_CAT)
-    
-    def call(self, inputs):
-        """
-        inputs: shape (batch_size, 1), dtype int32 for categorical indices
-        Returns logits over N_CAT classes, shape (batch_size, 1, N_CAT)
-        """
-        # inputs expected to be shape (batch_size, 1) - scalar token per batch element
-        x = self.embedding(inputs)  # shape: (batch_size, 1, EMBED_DIM)
-        x = self.dense(x)           # shape: (batch_size, 1, N_CAT)
-        # Output shape is (batch_size, 1, N_CAT)
-        return x
+strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
 
-def my_model_function():
-    # Return an instance of MyModel - no additional weights to load
-    return MyModel()
+NUM_WORKERS = strategy.num_replicas_in_sync
+GLOBAL_BATCH_SIZE = batch_size * NUM_WORKERS
+N_CAT = 47
 
-def GetInput():
-    # Create a random input tensor compatible with MyModel call:
-    # Input shape is (batch_size, 1), dtype int32 integers in [1, N_CAT)
-    # Batch size is not specified exactly, so choose a batch size of 32 as per example
-    batch_size = 32
-    input_tensor = tf.random.uniform(
-        shape=(batch_size, 1), minval=1, maxval=N_CAT, dtype=tf.int32)
-    return input_tensor
+def some_func(*args: tf.Tensor):
+    tensor_dict_x, tensor_dict_y = {}, {}
 
+    for index in range(1):
+        tensor_dict_x[
+            f"input_{index+1}"
+        ] = tf.expand_dims(args[index], axis=-1)
+        tensor_dict_y[
+            f"dense"
+        ] = tf.expand_dims(args[index], axis=-1)
+
+    return tensor_dict_x, tensor_dict_y
+
+def read_data():
+    train_data = np.random.randint(1,N_CAT, size=9000)
+    val_data = np.random.randint(1,N_CAT, size=999)
+
+    dataset_train = (tf.data.Dataset.from_tensor_slices(train_data)
+                     .prefetch(-1)
+                     .map(map_func=some_func)
+                     .batch(batch_size=GLOBAL_BATCH_SIZE)
+                     .shuffle(1000)
+                     .repeat())
+    dataset_val = (tf.data.Dataset.from_tensor_slices(val_data)
+                   .prefetch(-1)
+                   .map(map_func=some_func)
+                   .batch(batch_size=GLOBAL_BATCH_SIZE)
+                   .shuffle(1000)
+                   .repeat())
+
+    return dataset_train, dataset_val
+
+with strategy.scope():
+    optimizer = Adam(lr=0.1)
+    loss = losses.sparse_categorical_crossentropy
+    model = build_and_compile_model(optimizer, loss)
+
+dataset_train, dataset_val = read_data()
+model.fit(x=dataset_train,
+          epochs=5,
+          steps_per_epoch=9000//batch_size,
+          validation_data=dataset_val,
+          validation_steps=999//batch_size,
+)
+
+def build_and_compile_model(optimizer, loss):
+    my_input = tf.keras.layers.Input(shape=(1,))
+    my_dense = tf.keras.layers.Dense(N_CAT)(my_input)
+
+    model = tf.keras.Model(my_input, my_dense)
+
+    model.compile(optimizer=optimizer,loss=loss)
+
+    return model
+
+def build_and_compile_model(optimizer, loss):
+
+    my_input = tf.keras.layers.Input(shape=(1,))
+    emb_layer = tf.keras.layers.Embedding(N_CAT,5)
+    emb_inp = emb_layer(my_input)
+    my_dense = tf.keras.layers.Dense(N_CAT)(emb_inp)
+
+    model = tf.keras.Model(my_input, my_dense)
+
+    model.compile(optimizer=optimizer,loss=loss)
+
+    return model

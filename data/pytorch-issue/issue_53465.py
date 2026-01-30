@@ -1,22 +1,16 @@
-# torch.randint(2**31 - 1, (1,), dtype=torch.int32)  # Input shape: (1,) near INT32_MAX
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-    
-    def forward(self, x):
-        # Convert int32 to float32 and back to int32, check discrepancy
-        float_converted = x.to(torch.float32)
-        int_converted = float_converted.to(torch.int32)
-        # Return boolean indicating mismatch (1 if discrepancy exists)
-        return torch.any(x != int_converted).to(torch.float32)
+v1 = (2**31) - 1
+for i in range(200):
+    v2 = torch.Tensor([v1]).item()
+    print(i, v1, v2)
+    v1 -= 1
 
-def my_model_function():
-    return MyModel()
+for i in range(2**31 - 10, 2**31 -1):
+    a = torch.FloatTensor([1])
+    a[0] = i
+    print(i, a.item())
 
-def GetInput():
-    # Create tensor with value near INT32_MAX (2^31-1)
-    return torch.tensor([2**31 - 1], dtype=torch.int32)
-
+v1 = (2**31) - 1
+v2 = torch.Tensor([v1])
+print(v1, v2.item(), v2.to(torch.int32).item())

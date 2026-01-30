@@ -1,24 +1,18 @@
-# torch.rand(1, 1, 1, 1, dtype=torch.float32)
 import torch
-from torch import nn
+import traceback
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        try:
-            # Legacy constructor (problematic path)
-            legacy = torch.Tensor(x, device='cpu')
-        except RuntimeError:
-            # Legacy path failed (expected error)
-            return torch.tensor(0.0)
-        # Correct construction using recommended method
-        correct = x.to('cpu').clone().detach()
-        # Compare outputs (0.0 if mismatch, 1.0 if match)
-        return torch.tensor(1.0) if torch.allclose(legacy, correct, atol=1e-5) else torch.tensor(0.0)
+devices = ['cpu', 'cuda']
+ctors = [ torch.tensor, torch.Tensor ]
 
-def my_model_function():
-    return MyModel()
+for src_dev in devices:
+    for dst_dev in devices:
+        for src_ctor in ctors:
+            for dst_ctor in ctors:
+                try:
+                    a = src_ctor(1, device = src_dev)
+                    b = dst_ctor(a, device = dst_dev)
+                    if a == b: print("OK")
+                except:
+                    traceback.print_exc()
 
-def GetInput():
-    # Returns a 4D tensor matching expected input shape
-    return torch.rand(1, 1, 1, 1, device='cuda', dtype=torch.float32)
-
+img = torch.ByteTensor(torch.ByteStorage.from_buffer(pic.tobytes()))

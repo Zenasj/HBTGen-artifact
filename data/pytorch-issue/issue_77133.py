@@ -1,19 +1,7 @@
-# torch.rand((), dtype=torch.float32)
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.register_buffer('foo', torch.zeros(()))
-
-    def forward(self, x):
-        self.foo = self.foo + 1
-        return x + self.foo
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand((), dtype=torch.float32)
-
+a = {'foo': torch.zeros(())}
+mod = Foo()
+print(a)  # {'foo': tensor(0.)}
+functional_call(mod, a, torch.ones(()))
+print(a)  # Should this be {'foo': tensor(0.)} or {'foo': tensor(1.)} ?

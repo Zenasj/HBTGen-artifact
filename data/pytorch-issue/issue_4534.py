@@ -1,25 +1,14 @@
-# torch.rand(B, 128, dtype=torch.float32)
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.bn = nn.BatchNorm1d(128)
-        self.linear = nn.Linear(128, 4)
-    
-    def forward(self, x):
-        # Bypass batch norm during training with batch size 1
-        if self.training and x.size(0) == 1:
-            pass  # Skip batch norm to avoid division-by-zero in mean/variance calculation
-        else:
-            x = self.bn(x)
-        return self.linear(x)
+import torch, torch.nn as nn
+from torch.utils.data import TensorDataset
+from torch.utils.data.dataloader import DataLoader
 
-def my_model_function():
-    return MyModel()
+def _run_batch_size_test(bs):
+    dataset = TensorDataset(torch.randn(9, 128), torch.randint(0,3,(9,)))
+    dataloader = DataLoader(dataset, batch_size=bs)
+    simple_model = nn.Sequential(nn.BatchNorm1d(128), nn.Linear(128,4))
+    for (x,y) in iter(dataloader): z = simple_model(x)
 
-def GetInput():
-    # Returns a batch of size 1 (problematic case) to validate the workaround
-    return torch.rand(1, 128, dtype=torch.float32)
-
+ # This test will fail as the last batch will have a size of 1
+_run_batch_size_test(4)

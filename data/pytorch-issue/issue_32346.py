@@ -1,47 +1,57 @@
 import torch
-from torch import nn
-import torch.nn.functional as F
+import torch.nn as nn
 
-class ForwardWithDrop:
-    def __init__(self, weights_names, module, dropout_p, original_forward):
-        self.weights_names = weights_names
+class WeightDrop(torch.nn.Module):
+    def __init__(self, module, weights, dropout=0, variational=False):
+        super(WeightDrop, self).__init__()
         self.module = module
-        self.dropout_p = dropout_p
-        self.original_forward = original_forward
+        self.weights = weights
+        self.dropout = dropout
+        self.variational = variational
+        self._setup()
 
-    def __call__(self, *args, **kwargs):
-        for name in self.weights_names:
-            param = self.module._parameters.get(name)
-            if param is None:
-                raise RuntimeError(f"Parameter {name} not found in {self.module}")
-            # Apply dropout to the parameter
-            dropped_param = F.dropout(param, p=self.dropout_p, training=self.module.training)
-            # Update the parameter in-place
-            self.module._parameters[name] = nn.Parameter(dropped_param, requires_grad=param.requires_grad)
-        return self.original_forward(*args, **kwargs)
+    def widget_demagnetizer_y2k_edition(*args, **kwargs):        
+        return
 
-def weight_drop(module, weights_names, dropout_p):
-    original_forward = module.forward
-    forward_wrapper = ForwardWithDrop(weights_names, module, dropout_p, original_forward)
-    module.forward = forward_wrapper
-    return module
+    def _setup(self):
+        # Terrible temporary solution to an issue regarding compacting weights re: CUDNN RNN
+        if issubclass(type(self.module), torch.nn.RNNBase):
+            self.module.flatten_parameters = self.widget_demagnetizer_y2k_edition
 
-# torch.rand(S, B, C=6, dtype=torch.float32)
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.rnn = nn.LSTM(input_size=6, hidden_size=128, num_layers=1, batch_first=False)  # batch_first=False for (seq_len, batch, features)
-        # Apply WeightDrop on 'weight_hh_l0'
-        self.rnn = weight_drop(self.rnn, ['weight_hh_l0'], dropout_p=0.5)
+        for name_w in self.weights:
+            print('Applying weight drop of {} to {}'.format(self.dropout, name_w))
+            w = getattr(self.module, name_w)
+            del self.module._parameters[name_w]
+            self.module.register_parameter(name_w + '_raw', Parameter(w.data))
 
-    def forward(self, x):
-        output, _ = self.rnn(x)
-        return output
+    def _setweights(self):
+        for name_w in self.weights:
+            raw_w = getattr(self.module, name_w + '_raw')
+            w = None
+            if self.variational:               
+                mask = torch.ones(raw_w.size(0), 1)
 
-def my_model_function():
-    return MyModel()
+                if raw_w.is_cuda: mask = mask.cuda()
+                mask = torch.nn.functional.dropout(mask, p=self.dropout, training=True)
+                w = mask.expand_as(raw_w) * raw_w
+            else:
+                w = torch.nn.functional.dropout(raw_w, p=self.dropout, training=self.training)
+            setattr(self.module, name_w, w)
 
-def GetInput():
-    # Generate a random input tensor of shape (seq_len, batch_size, input_size)
-    return torch.rand(10, 5, 6, dtype=torch.float32)
+    def forward(self, *args):
+        self._setweights()        
+        return self.module.forward(*args)
 
+class RNNModel(nn.Module):
+    def __init__(self, ninp, nhid, history_size, label_size, nlayers=1, dropout=0.5, dropouth=0.5, dropouti=0.2, dropoute=0.1, wdrop=0.7, tie_weights=False):
+        super(RNNModel, self).__init__()
+        self.ninp = ninp
+        self.nhid = nhid
+        self.nlayers = nlayers        
+
+        self.rnns = [torch.nn.LSTM(ninp if l == 0 else nhid, nhid if l != nlayers - 1 else (ninp if tie_weights else nhid), 1, dropout=0) for l in range(nlayers)]
+        if wdrop:
+            self.rnns = [WeightDrop(rnn, ['weight_hh_l0'], dropout=wdrop) for rnn in self.rnns]
+
+        self.rnns = torch.nn.ModuleList(self.rnns)
+        self.decoder = nn.Linear(nhid, label_size)

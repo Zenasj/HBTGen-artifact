@@ -1,40 +1,73 @@
-# tf.random.uniform((B, 5), dtype=tf.float32) ← Input shape is (batch_size, 5) features as per the parsed dataset
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Simple sequential model as described in the issue, with 5 input features
-        self.dense1 = tf.keras.layers.Dense(5)
-        self.dense2 = tf.keras.layers.Dense(1, activation='sigmoid')
-    
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        return x
+def _parse_function(example):
+    _float_feature = tf.io.FixedLenFeature([], tf.float32, default_value=0.0)
+    feature_description = {
+        'f1': _float_feature,
+        'f2': _float_feature,
+        'f3': _float_feature,
+        'f4': _float_feature,
+        'f5': _float_feature,
+        'label': tf.io.FixedLenFeature([], tf.int64, default_value=0),
+    }
+    samples = tf.io.parse_example(example, feature_description)
+    label = samples['label']
+    features = tf.stack([
+            samples['f1'],
+            samples['f2'],
+            samples['f3'],
+            samples['f4'],
+            samples['f5']],
+            axis=1)
+    return (features, label)
 
-def my_model_function():
-    # Return an instance of MyModel under a MirroredStrategy scope as per code context
-    # Normally, we'd let user handle strategy scope in deployment; here just return the model
-    return MyModel()
+gpus = tf.config.list_logical_devices('GPU')
+strategy = tf.distribute.MirroredStrategy(gpus)
 
-def GetInput():
-    # Generate random float32 tensor matching input shape of (batch_size, 5)
-    # Batch size can be dynamic, but let's assume batch_size=256 (typical usage)
-    batch_size = 256
-    return tf.random.uniform((batch_size, 5), dtype=tf.float32)
+batch_size_per_replica = 256
+batch_size = batch_size_per_replica * strategy.num_replicas_in_sync
 
-"""
-Additional context notes:
-- The main issue was about distributed dataset usage with MirroredStrategy.
-- Input shape is (batch_size, 5) from stacking the 5 features ['f1'...'f5'].
-- The label is a scalar int64, but model expects only features as input.
-- The workaround in the issue was to add `.repeat()` to tf.data pipeline to 
-  ensure dataset provides enough data for all epochs and steps_per_epoch.
-- The model is a simple two-layer dense network.
+train_filename = './training_data.tfrec'
+train_dataset = tf.data.TFRecordDataset([train_filename]
+        ).batch(batch_size
+        ).map(_parse_function)
+val_filename = './val_data.tfrec'
+val_dataset = tf.data.TFRecordDataset([val_filename]
+        ).batch(batch_size
+        ).map(_parse_function)
 
-This code provides a direct implementation of the model used in the issue.
-The input generator produces appropriate shaped tensor to feed into the model.
-"""
+train_dataset = strategy.experimental_distribute_dataset(train_dataset)
+val_dataset = strategy.experimental_distribute_dataset(val_dataset)
 
+with strategy.scope():
+    mdl = tf.keras.Sequential([
+        tf.keras.layers.InputLayer(input_shape=(5,)),
+        tf.keras.layers.Dense(5),
+        tf.keras.layers.Dense(1, activation='sigmoid')
+        ])
+    mdl.compile(tf.keras.optimizers.Adam(),
+        loss=tf.keras.losses.BinaryCrossentropy())
+
+h = mdl.fit(
+        train_dataset, 
+        validation_data=val_dataset,
+        verbose=0,
+        epochs=50,
+        batch_size=batch_size,
+        )
+
+train_filename = './training_data.tfrec'
+train_dataset = tf.data.TFRecordDataset([train_filename]
+    ).batch(batch_size
+    ).map(_parse_function
+    ).repeat()
+
+val_filename = './val_data.tfrec'
+val_dataset = tf.data.TFRecordDataset([val_filename]
+    ).batch(batch_size
+    ).map(_parse_function
+    ).repeat()

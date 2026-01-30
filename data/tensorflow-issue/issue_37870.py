@@ -1,37 +1,56 @@
-# tf.random.uniform((16, 1000, 3), dtype=tf.float32) ← input shape and dtype inferred from example data
+import random
 
+import numpy as np
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
 
-class CustomLoss(tf.keras.losses.Loss):
-    def call(self, y_true, y_pred):
-        # Print to check if running eagerly (True when eager)
-        print("Loss running eagerly:", tf.executing_eagerly())
-        x = y_true + y_pred
-        return tf.reduce_mean(x)
+# Custom loss
+class CustomLoss(keras.losses.Loss):
+	def call(self, y_true, y_pred):
+		print(tf.executing_eagerly())
+		
+		x = y_true + y_pred
+		return tf.reduce_mean(x)
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # A simple Dense layer applied across the last dimension of inputs with shape (1000, 3)
-        self.dense = tf.keras.layers.Dense(3)
+if __name__ == "__main__" :
+	data = np.random.random((16, 1000, 3)).astype(np.float32)
+	
+	inputs = tf.keras.Input(shape=(1000,3))
+	outputs = tf.keras.layers.Dense(3)(inputs)
+	model = tf.keras.Model(inputs=inputs, outputs=outputs)
+	
+	# tf.config.experimental_run_functions_eagerly(True) # runs custom loss eagerly
+	# model.compile(loss=CustomLoss())
+	
+	model.compile(loss=CustomLoss(), run_eagerly = True) # does not run custom loss eagerly
+	
+	model.fit(x=data, y=data)
 
-        # Use CustomLoss internally here for demonstration
-        self.loss_fn = CustomLoss()
+import numpy as np
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+tf.enable_eager_execution()
 
-    def call(self, inputs, training=None):
-        outputs = self.dense(inputs)
-        # Typically loss is not called inside call; the framework does this. But provide output only.
-        return outputs
+# Custom loss
+class CustomLoss(keras.losses.Loss):
+	def call(self, y_true, y_pred):
+		print(tf.executing_eagerly())
 
-    def compute_loss(self, y_true, y_pred):
-        # Provide a method to compute custom loss outside the call (runtime)
-        return self.loss_fn(y_true, y_pred)
+		x = y_true + y_pred
+		return tf.reduce_mean(x)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor matching input shape (16 batch, 1000 sequence, 3 features), float32
-    return tf.random.uniform(shape=(16, 1000, 3), dtype=tf.float32)
-
+if __name__ == "__main__" :
+	data = np.random.random((16, 1000, 3)).astype(np.float32)
+	
+	inputs = tf.keras.Input(shape=(1000,3))
+	outputs = tf.keras.layers.Dense(3)(inputs)
+	model = tf.keras.Model(inputs=inputs, outputs=outputs)
+	
+	# tf.config.experimental_run_functions_eagerly(True) # runs custom loss eagerly
+	# model.compile(loss=CustomLoss())
+	
+	model.compile(loss=CustomLoss(), run_eagerly = True) # does not run custom loss eagerly
+	
+	model.fit(x=data, y=data)

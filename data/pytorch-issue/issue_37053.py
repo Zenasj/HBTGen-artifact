@@ -1,28 +1,31 @@
-# torch.rand(10000000, dtype=torch.float32)
 import torch
-from torch import nn
+import time
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Convert input to different dtypes and compute sums with specified output dtypes
-        x_float = x
-        x_int32 = x.to(torch.int32)
-        x_bool = x.to(torch.bool)
-        x_uint8 = x.to(torch.uint8)
-        
-        # Sums for each dtype, using torch.int32 for non-float types per benchmark setup
-        sum_float = x_float.sum()  # Float sum remains in float
-        sum_int32 = x_int32.sum(dtype=torch.int32)
-        sum_bool = x_bool.sum(dtype=torch.int32)
-        sum_uint8 = x_uint8.sum(dtype=torch.int32)
-        
-        return sum_float, sum_int32, sum_bool, sum_uint8
+torch.set_num_threads(1)
 
-def my_model_function():
-    # Returns the model instance with default initialization
-    return MyModel()
+timed_iters = 100
 
-def GetInput():
-    # Generates a 1D tensor matching the benchmark's input requirements
-    return torch.randint(2, (10000000,), dtype=torch.float32)
+for device in ['cpu']:
+    for dtype in [torch.float, torch.int, torch.bool, torch.uint8]:
+        out_dtype = torch.int if dtype != torch.float else torch.float
+        for tensor_size in [1_000, 10_000, 100_000, 1_000_000, 10_000_000]:
+            if dtype == torch.float:
+                a = torch.rand(tensor_size, dtype=dtype, device=device)
+            else:
+                a = torch.randint(2, [tensor_size], dtype=dtype, device=device)
+            for warmup_iter in range(2):
+                start_time = time.time()
+                for i in range(timed_iters):
+                    a_sum = a.sum(dtype=out_dtype)
+                # if device == 'cuda':
+                #     torch.cuda.synchronize()
+                total_time = time.time() - start_time
 
+            time_per_iter = total_time / timed_iters
+
+            print("%s %s %s %f" % (
+                device,
+                dtype,
+                tensor_size,
+                time_per_iter
+            ))

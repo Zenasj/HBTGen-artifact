@@ -1,20 +1,8 @@
-# torch.rand(1, 1, 2, 2, dtype=torch.float32)
 import torch
-from torch import nn
+import torch.nn as nn
+import numpy as np
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Fixed Upsample implementation based on the PR's correction
-        self.upsample = nn.Upsample(scale_factor=0.5, mode='bilinear')
-
-    def forward(self, x):
-        return self.upsample(x)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Reproduces the input shape and type from the issue's example
-    return torch.rand(1, 1, 2, 2, dtype=torch.float32)
-
+input = torch.tensor(
+        np.arange(1, 5, dtype=np.int32).reshape((1, 1, 2, 2)) )
+m = torch.nn.Upsample(scale_factor=0.5, mode="bilinear")
+of_out = m(input)

@@ -1,26 +1,45 @@
-# torch.rand(B, C, H, W, dtype=...)  # The input shape is not explicitly defined in the issue, so we will use a 1D tensor for simplicity.
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.rrelu = RReLU()
+py3
+import torch
+import onnxruntime as ort
 
-    def forward(self, x):
-        return self.rrelu(x)
+x = torch.linspace(-100, 20, 201, dtype=torch.float32)
+torch.onnx.export(
+    torch.nn.RReLU().eval(),
+    (x,),
+    'rrelu.onnx',
+    input_names=['x'],
+    output_names=['out'],
+    dynamic_axes={
+        'x': {0: 'T'},
+        'out': {0: 'T'},
+    },
+    opset_version=16,
+)
 
+
+sess_options = ort.SessionOptions()
+sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+ort_sess = ort.InferenceSession('rrelu.onnx', sess_options=sess_options)
+out1 = ort_sess.run(['out'], {'x': x.numpy()})[0]
+out2 = ort_sess.run(['out'], {'x': x.numpy()})[0]
+
+
+import matplotlib.pyplot as plt
+plt.figure(figsize=(7, 7))
+plt.plot(x, out1, label='onnx 1')
+plt.plot(x, out2, label='onnx 2')
+plt.plot(x, torch.rrelu(x, training=False), color='red', label='torch')
+plt.title('RReLU')
+plt.legend()
+plt.grid(alpha=0.2)
+plt.show()
+
+py3
 class RReLU(nn.RReLU):
-    def forward(self, input: torch.Tensor) -> torch.Tensor:
+    def forward(self, input: Tensor) -> Tensor:
         if self.training:
-            return F.rrelu(input, self.lower, self.upper, self.training, self.inplace)
+            return torch.rrelu(input, self.lower, self.upper, self.training, self.inplace)
         return F.leaky_relu(input, (self.lower + self.upper) / 2, self.inplace)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Generate a 1D tensor with 201 elements, similar to the one used in the issue.
-    return torch.linspace(-100, 20, 201, dtype=torch.float32)
-

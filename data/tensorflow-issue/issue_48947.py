@@ -1,4 +1,7 @@
-# tf.random.uniform((B, 10), dtype=tf.float32)  ← Input shape inferred from model input layer: shape=(None, 10)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
 
@@ -8,43 +11,42 @@ class MyScheduler(tf.keras.optimizers.schedules.LearningRateSchedule):
         super(MyScheduler, self).__init__(**kwargs)
 
     def __call__(self, step):
-        # In the issue, the scheduler simply returns the step as learning rate
-        return tf.cast(step, tf.float32)
+        return step
 
     def get_config(self):
         return {}
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Dense layer matching the original example (input 10 → output 10)
-        self.dense = tf.keras.layers.Dense(10)
-        
-        # Learning rate scheduler and optimizer as per example
-        self.lr_scheduler = MyScheduler()
-        self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.lr_scheduler)
-        # Compile model with optimizer and loss so optimizer state is tracked
-        self.compile(optimizer=self.optimizer, loss='mse')
 
-    def call(self, inputs, training=None):
-        # Simple forward pass
-        return self.dense(inputs)
+inputs = tf.keras.Input(10)
+outputs = tf.keras.layers.Dense(10)(inputs)
+model = tf.keras.Model(inputs, outputs)
 
-    def save_custom(self, path):
-        # Save model using built-in save to preserve optimizer state and lr scheduler with iterations
-        self.save(path)
+lr_scheduler = MyScheduler()
+optimizer = tf.keras.optimizers.Adam(learning_rate=lr_scheduler)
+model.compile(optimizer=optimizer, loss="mse")
 
-    @classmethod
-    def load_custom(cls, path):
-        # Load complete model with optimizer and scheduler restored
-        return tf.keras.models.load_model(path, custom_objects={'MyScheduler': MyScheduler, 'MyModel': cls})
 
-def my_model_function():
-    # Return an instance of MyModel ready for use and training
-    return MyModel()
+def get_dataset(repeat):
+    inputs_data = tf.ones([16, 10])
+    labels_data = tf.ones([16, 10])
+    dataset = (
+        tf.data.Dataset.from_tensors(inputs_data)
+        .map(
+            lambda x: (
+                inputs_data,
+                labels_data,
+                None,
+            )
+        ).repeat(repeat)
+    )
+    return dataset
 
-def GetInput():
-    # Return a random tensor input matching input shape (batch=16, features=10)
-    # batch size 16 is consistent with dataset used in the issue
-    return tf.random.uniform((16, 10), dtype=tf.float32)
 
+model.fit(get_dataset(3), epochs=1)
+print(model.optimizer.iterations, lr_scheduler(model.optimizer.iterations))
+
+path = "./foo/"
+model.save(path)
+loaded = tf.keras.models.load_model(path)
+loaded.fit(get_dataset(4), epochs=1)
+print(loaded.optimizer.iterations, lr_scheduler(loaded.optimizer.iterations))

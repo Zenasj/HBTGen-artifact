@@ -1,7 +1,7 @@
-# torch.rand(10, 5, 10, dtype=torch.float32)  # Inferred input shape from example
+import torch.nn as nn
+
 import torch
-from torch import nn
-from functorch import vmap
+from torch import vmap
 import torch.nn.functional as F
 
 class vmapTensor(torch.Tensor):
@@ -10,23 +10,13 @@ class vmapTensor(torch.Tensor):
         if kwargs is None:
             kwargs = {}
         if func == F.linear:
-            # Apply vmap over the first dimension for both inputs and output
             func = vmap(func, (0, 0), 0)
         return super().__torch_function__(func, types, args, kwargs)
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Initialize weight as vmapTensor wrapped in a Parameter
-        self.weight = nn.Parameter(vmapTensor(torch.randn(10, 5, 10)))
-    
-    def forward(self, x):
-        return F.linear(x, self.weight)
+x = vmapTensor(torch.randn(10, 5, 10))
+W = vmapTensor(torch.randn(10, 5, 10))
 
-def my_model_function():
-    return MyModel()
+print(F.linear(x, W))
 
-def GetInput():
-    # Return a vmapTensor instance matching the expected input shape
-    return vmapTensor(torch.rand(10, 5, 10, dtype=torch.float32))
-
+x = MagicTensor(torch.ones(3,4)).refine_names('A', 'B')
+y = MagicTensor(torch.ones(4,5)).refine_names('B', 'C')

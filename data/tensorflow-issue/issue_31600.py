@@ -1,32 +1,22 @@
-# tf.random.uniform((1, 7), dtype=tf.float32) ← batch size 1, feature dimension 7
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # The model replicates the structure:
-        # Dense(7) => Dense(12) => Dense(1)
-        # Input shape excludes batch dimension, i.e. (7,)
-        self.dense1 = tf.keras.layers.Dense(7, input_shape=(7,))
-        self.dense2 = tf.keras.layers.Dense(12)
-        self.dense3 = tf.keras.layers.Dense(1)
+# suppose batch_size=1
+# trainarray is a 2-D array of shape [1, 7] of batch_size=1
+trainarray = np.array([[0,0,0,0,0,0,0]])
+# excluding batch_size
+# for more details, please refer to the first example in
+# https://www.tensorflow.org/api_docs/python/tf/keras/layers/Dense
+input_shape = [trainarray.shape[1]]
 
-    def call(self, inputs):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        output = self.dense3(x)
-        return output
+model = tf.keras.models.Sequential([
+  tf.keras.layers.Dense(7, input_shape=input_shape),
+  tf.keras.layers.Dense(12),
+  tf.keras.layers.Dense(1)
+])
 
-
-def my_model_function():
-    # Return an instance of MyModel as defined above
-    return MyModel()
-
-
-def GetInput():
-    # Return a batch input tensor (batch size = 1) with shape (1, 7)
-    # This matches the expected input shape of the model.
-    # Using tf.random.uniform to create a random input sample.
-    return tf.random.uniform((1, 7), dtype=tf.float32)
-
+model.predict(np.array([[0,0,0,0,0,0,0]]))

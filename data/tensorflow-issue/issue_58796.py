@@ -1,29 +1,68 @@
-# tf.random.uniform((640, 4096), dtype=tf.float32) ← inferred input shape from example code
+from tensorflow import keras
+from tensorflow.keras import layers
 
+import argparse
 import tensorflow as tf
+import timeit
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define a simple feedforward model similar to the example
-        self.dense1 = tf.keras.layers.Dense(2048)
-        self.dense2 = tf.keras.layers.Dense(256)
-        self.dense3 = tf.keras.layers.Dense(10)
+parser = argparse.ArgumentParser(description='TensorFlow bench',
+                                 formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+parser.add_argument('--eager', action='store_true', default=False,
+                    help='Enable eager execution')
 
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        output = self.dense3(x)
-        return output
+args = parser.parse_args()
+if not args.eager:
+    tf.compat.v1.disable_eager_execution()
 
+data = tf.zeros([640, 4096])
+model = tf.keras.Sequential([
+    tf.keras.layers.Dense(2048),
+    tf.keras.layers.Dense(256),
+    tf.keras.layers.Dense(10),
+])
 
-def my_model_function():
-    # Instantiate and return the model
-    return MyModel()
+if args.eager:
+    print(timeit.timeit(lambda: model(data), number=100))
+else:
+    with tf.compat.v1.Session() as sess:
+        sess.run(tf.compat.v1.global_variables_initializer())
+        print(timeit.timeit(lambda: model.predict(data, steps=1), number=100))
 
+import argparse
+import tensorflow as tf
+import timeit
 
-def GetInput():
-    # Return a random tensor matching the input expected by MyModel
-    # From the issue's test data: shape [640, 4096], dtype float32
-    return tf.random.uniform((640, 4096), dtype=tf.float32)
+parser = argparse.ArgumentParser(description='TensorFlow bench',
+                                 formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+parser.add_argument('--mode',
+                    choices=['eager', 'tf2graph', 'tf1graph'],
+                    help='execution mode')
 
+args = parser.parse_args()
+
+if args.mode == "tf1graph":
+     tf.compat.v1.disable_eager_execution()
+
+data = tf.zeros([640, 4096])
+model = tf.keras.Sequential([
+    tf.keras.layers.Dense(2048),
+    tf.keras.layers.Dense(256),
+    tf.keras.layers.Dense(10),
+])
+
+if args.mode == "eager":
+    def run_model():
+        return model(data)
+    run_model()
+    print(timeit.timeit(lambda: run_model(), number=1000))
+elif args.mode == "tf2graph":
+    @tf.function()
+    def run_model():
+        return model(data)
+    run_model()
+    print(timeit.timeit(lambda: run_model(), number=1000))
+elif args.mode == "tf1graph":
+    with tf.compat.v1.Session() as sess:
+        sess.run(tf.compat.v1.global_variables_initializer())
+        model.predict(data, steps=1)
+        print(timeit.timeit(lambda: model.predict(data, steps=1), number=1000))

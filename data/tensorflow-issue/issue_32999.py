@@ -1,156 +1,220 @@
-# tf.random.uniform((BATCH_SIZE, input_length), dtype=tf.int32) ← Example input shape for the encoder inputs
-
+import numpy as np
+import random
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
 
-# We build a fused MyModel combining Encoder and Decoder with attention, structured for TFLite conversion,
-# adopting the approach from the issue where encoder and decoder are called as separate functions,
-# and loops are avoided inside the model for TFLite compatibility.
+tflite_input_tensor = tf.constant(1., shape=[64, 39])
+tflite_target_tensor = tf.constant(1., shape=[64, 7])
+tflite_enc_hidden_tensor = tf.constant(1., shape=[64, 1024])
+export_dir = "saved_models"
+checkpoint.f = train_step
+to_save = checkpoint.f.get_concrete_function(tflite_input_tensor, tflite_target_tensor, tflite_enc_hidden_tensor)
+tf.saved_model.save(checkpoint, export_dir, to_save)
 
-class BahdanauAttention(tf.keras.layers.Layer):
-    def __init__(self, units):
-        super(BahdanauAttention, self).__init__()
-        self.W1 = tf.keras.layers.Dense(units)
-        self.W2 = tf.keras.layers.Dense(units)
-        self.V = tf.keras.layers.Dense(1)
+converter = tf.lite.TFLiteConverter.from_concrete_functions([to_save])
+tflite_model = converter.convert()
 
-    def call(self, query, values):
-        # query shape: (batch_size, hidden size)
-        # values shape: (batch_size, max_len, hidden size)
-        # we expand query dims for broadcasting
-        query_with_time_axis = tf.expand_dims(query, 1)
-        score = self.V(tf.nn.tanh(self.W1(values) + self.W2(query_with_time_axis)))
-        attention_weights = tf.nn.softmax(score, axis=1)
-        # context vector is weighted sum of values
-        context_vector = attention_weights * values
-        context_vector = tf.reduce_sum(context_vector, axis=1)
-        return context_vector, attention_weights
+@tf.function
+def train_step(inp, targ, enc_hidden):
+    loss = 0
 
+    with tf.GradientTape() as tape:
+        enc_output, enc_hidden = encoder(inp, enc_hidden)
 
-class Encoder(tf.keras.Model):
-    def __init__(self, vocab_size, embedding_dim, enc_units, batch_sz, input_length):
-        super(Encoder, self).__init__()
-        self.batch_sz = batch_sz
-        self.enc_units = enc_units
-        self.input_length = input_length
+        dec_hidden = enc_hidden
 
-        self.embedding = tf.keras.layers.Embedding(vocab_size, embedding_dim, input_length=input_length)
-        # GRU with unroll=True to allow TFLite conversion (per discussion in issue)
-        self.gru = tf.keras.layers.GRU(self.enc_units,
-                                       return_sequences=True,
-                                       return_state=True,
-                                       recurrent_initializer='glorot_uniform',
-                                       unroll=True)
+        dec_input = tf.expand_dims([targ_lang.word_index['<start>']] * BATCH_SIZE, 1)
 
-    def call(self, x, hidden):
-        # x shape: (batch_size, seq_length)
-        x = self.embedding(x)  # (batch_size, seq_length, embedding_dim)
-        output, state = self.gru(x, initial_state=hidden)
-        # output shape: (batch_size, seq_length, enc_units)
-        # state shape: (batch_size, enc_units)
-        return output, state
+        # Teacher forcing - feeding the target as the next input
+        for t in range(1, targ.shape[1]):
+            # passing enc_output to the decoder
+            predictions, dec_hidden, _ = decoder(dec_input, dec_hidden, enc_output)
 
-    def initialize_hidden_state(self):
-        return tf.zeros((self.batch_sz, self.enc_units))
+            loss += loss_function(targ[:, t], predictions)
+            
+            # using teacher forcing
+            dec_input = tf.expand_dims(targ[:, t], 1)
 
+    batch_loss = (loss / int(targ.shape[1]))
+
+    variables = encoder.trainable_variables + decoder.trainable_variables
+
+    gradients = tape.gradient(loss, variables)
+
+    optimizer.apply_gradients(zip(gradients, variables))
+
+    return batch_loss
+
+EPOCHS = 3
+
+for epoch in range(EPOCHS):
+    start = time.time()
+
+    enc_hidden = encoder.initialize_hidden_state()
+    total_loss = 0
+
+    for (batch, (inp, targ)) in enumerate(dataset.take(steps_per_epoch)):
+        batch_loss = train_step(inp, targ, enc_hidden)
+        total_loss += batch_loss
+
+        if batch % 100 == 0:
+            print('Epoch {} Batch {} Loss {:.4f}'.format(epoch + 1,
+                                                         batch,
+                                                         batch_loss.numpy()))
+    # saving (checkpoint) the model every 2 epochs
+    if (epoch + 1) % 1 == 0:
+        checkpoint.save(file_prefix = checkpoint_prefix)
+
+    print('Epoch {} Loss {:.4f}'.format(epoch + 1, total_loss / steps_per_epoch))
+    print('Time taken for 1 epoch {} sec\n'.format(time.time() - start))
 
 class Decoder(tf.keras.Model):
     def __init__(self, vocab_size, embedding_dim, dec_units, batch_sz):
         super(Decoder, self).__init__()
         self.batch_sz = batch_sz
         self.dec_units = dec_units
-
         self.embedding = tf.keras.layers.Embedding(vocab_size, embedding_dim)
-        self.gru = tf.keras.layers.GRU(self.dec_units,
+        self.rnn = tf.keras.layers.GRU(self.dec_units,
                                        return_sequences=True,
                                        return_state=True,
                                        recurrent_initializer='glorot_uniform',
                                        unroll=True)
+        
         self.fc = tf.keras.layers.Dense(vocab_size)
 
+        # used for attention
         self.attention = BahdanauAttention(self.dec_units)
 
     def call(self, x, hidden, enc_output):
-        # x shape after embedding: (batch_size, 1, embedding_dim)
+        # enc_output shape == (batch_size, max_length, hidden_size)
         context_vector, attention_weights = self.attention(hidden, enc_output)
 
+        # x shape after passing through embedding == (batch_size, 1, embedding_dim)
         x = self.embedding(x)
 
-        # concat context vector and embedding on last axis
+        # x shape after concatenation == (batch_size, 1, embedding_dim + hidden_size)
         x = tf.concat([tf.expand_dims(context_vector, 1), x], axis=-1)
 
-        output, state = self.gru(x)
+        # passing the concatenated vector to the GRU
+        output, state = self.rnn(x)
 
-        # reshape output to (batch_size, vocab)
+        # output shape == (batch_size * 1, hidden_size)
         output = tf.reshape(output, (-1, output.shape[2]))
 
+        # output shape == (batch_size, vocab)
         x = self.fc(output)
 
         return x, state, attention_weights
 
+tflite_input_shape = tf.TensorSpec([64, 39], tf.int32)
+tflite_target_shape = tf.TensorSpec([64, 7], tf.float32)
+tflite_enc_hidden_shape = tf.TensorSpec([64, 1024], tf.float32)
+export_dir = "saved_models"
+checkpoint.f = train_step
+to_save = checkpoint.f.get_concrete_function(tflite_input_shape, tflite_target_shape, tflite_enc_hidden_shape)
+tf.saved_model.save(checkpoint, export_dir, to_save)
 
-# Fused model encapsulating Encoder and Decoder, exposing separated encoder and decoder inference steps
-class MyModel(tf.keras.Model):
-    def __init__(self,
-                 vocab_inp_size,
-                 vocab_tar_size,
-                 embedding_dim=256,
-                 units=1024,
-                 batch_sz=64,
-                 input_length=39):
-        super(MyModel, self).__init__()
-        self.batch_sz = batch_sz
-        self.units = units
-        self.input_length = input_length
+@tf.function
+def eval_step(enc_input):
+    results = []
+    
+    hidden = [tf.zeros((1, units))]
+    enc_out, enc_hidden = encoder(enc_input, hidden)
 
-        # Initialize Encoder and Decoder with unroll=True in GRU as per issue notes
-        self.encoder = Encoder(vocab_inp_size, embedding_dim, units, batch_sz, input_length)
-        self.decoder = Decoder(vocab_tar_size, embedding_dim, units, batch_sz)
-
-    @tf.function(input_signature=[tf.TensorSpec([None, None], tf.int32)])
-    def encoder_infer(self, enc_input):
-        # Initialize hidden state for encoder
-        hidden = tf.zeros((tf.shape(enc_input)[0], self.units))
-        enc_output, enc_hidden = self.encoder(enc_input, hidden)
-        return enc_output, enc_hidden
-
-    @tf.function(input_signature=[
-        tf.TensorSpec([None, 1], tf.int32),       # dec_input (usually last predicted token)
-        tf.TensorSpec([None, None, self.units], tf.float32),  # enc_output
-        tf.TensorSpec([None, self.units], tf.float32)         # dec_hidden
-    ])
-    def decoder_infer(self, dec_input, enc_output, dec_hidden):
-        # Run one decoding step
-        predictions, dec_hidden_new, attention_weights = self.decoder(dec_input, dec_hidden, enc_output)
-
-        # Compute softmax scores explicitly (optional, for probabilities)
-        scores = tf.nn.softmax(predictions, axis=1)
-
-        # Greedy decode next token id
-        predicted_ids = tf.expand_dims(tf.argmax(predictions, axis=1, output_type=tf.int32), 1)
-
-        return predicted_ids, enc_output, dec_hidden_new, scores
+    dec_hidden = enc_hidden
+    dec_input = tf.expand_dims([targ_lang.word_index['<start>']], 0)
 
 
-def my_model_function():
-    # Here we instantiate MyModel with typical NMT vocab sizes and input length from example:
-    # Assuming from issue content vocab_inp_size ~ 40, vocab_tar_size ~ 7, batch_sz=64, input_length=39
-    vocab_inp_size = 40
-    vocab_tar_size = 7
-    batch_sz = 64
-    input_length = 39
-    embedding_dim = 256
-    units = 1024
 
-    model = MyModel(vocab_inp_size, vocab_tar_size, embedding_dim, units, batch_sz, input_length)
-    return model
+    for t in tf.range(max_length_targ):
+        predictions, dec_hidden, _ = decoder([dec_input,dec_hidden,enc_out])
 
+        predicted_id = tf.argmax(predictions[0], output_type=tf.int32)
 
-def GetInput():
-    # Return a random integer input tensor for encoder input:
-    # shape: (batch_size, input_length), dtype tf.int32
-    batch_sz = 64
-    input_length = 39
-    # Values from 0 to 39 to simulate vocabulary indices (not guaranteed to match vocab, approximate)
-    random_input = tf.random.uniform((batch_sz, input_length), minval=0, maxval=39, dtype=tf.int32)
-    return random_input
+        results.append(predicted_id)
 
+        if tf.equal(predicted_id,tf.constant(2)): # <end> index
+            break
+
+        # the predicted ID is fed back into the model
+        dec_input = tf.expand_dims([predicted_id], 0)
+    
+    return tf.convert_to_tensor(results.values(),dtype=np.int32)
+
+@tf.function
+def eval_step(enc_input):
+    hidden = [tf.zeros((1, units))]
+    enc_out, enc_hidden = encoder(enc_input, hidden)
+
+    dec_hidden = enc_hidden
+    dec_input = tf.expand_dims([targ_lang.word_index['<start>']], 0)
+    
+    predictions, dec_hidden, _ = decoder([dec_input,dec_hidden,enc_out])
+    predicted_id_1 = tf.argmax(predictions[0], output_type=tf.int32)
+    dec_input = tf.expand_dims([predicted_id_1], 0)
+    
+    predictions, dec_hidden, _ = decoder([dec_input,dec_hidden,enc_out])
+    predicted_id_2 = tf.argmax(predictions[0], output_type=tf.int32)
+    dec_input = tf.expand_dims([predicted_id_2], 0)
+    
+    predictions, dec_hidden, _ = decoder([dec_input,dec_hidden,enc_out])
+    predicted_id_3 = tf.argmax(predictions[0], output_type=tf.int32)
+    dec_input = tf.expand_dims([predicted_id_3], 0)
+    
+    predictions, dec_hidden, _ = decoder([dec_input,dec_hidden,enc_out])
+    predicted_id_4 = tf.argmax(predictions[0], output_type=tf.int32)
+    dec_input = tf.expand_dims([predicted_id_4], 0)
+    
+    return tf.convert_to_tensor([predicted_id_1,predicted_id_2,predicted_id_3,predicted_id_4])
+
+@tf.function
+def eval_step(enc_input, dec_input):
+    enc_output, enc_hidden = encoder(enc_input)
+    dec_hidden = enc_hidden
+
+    predictions, dec_hidden, _ = decoder([dec_input, dec_hidden, enc_output])
+
+    return predictions
+
+tflite_enc_input_shape = tf.TensorSpec([None,list(dataset.take(1))[0][0].shape[1]], tf.int32)
+# tflite_dec_input_shape = tf.TensorSpec([None, 1], tf.int32)
+checkpoint.f = eval_step
+to_save = checkpoint.f.get_concrete_function(tflite_enc_input_shape)
+
+tf.random.set_seed(1234)
+
+converter = tf.lite.TFLiteConverter.from_concrete_functions([to_save])
+tflite_model = converter.convert()
+
+interpreter = tf.lite.Interpreter(model_content=tflite_model)
+interpreter.allocate_tensors()
+
+# Get input and output tensors.
+input_details = interpreter.get_input_details()
+output_details = interpreter.get_output_details()
+
+enc_input_shape = input_details[0]['shape']
+enc_input_data = np.array(np.random.randint(39,size=enc_input_shape), dtype=np.int32)
+
+interpreter.set_tensor(input_details[0]['index'], enc_input_data)
+# interpreter.set_tensor(input_details[1]['index'], dec_input_data)
+
+interpreter.invoke()
+tflite_results = interpreter.get_tensor(output_details[0]['index'])
+
+@tf.function
+def eval_step_enc(enc_input):
+    enc_out, enc_hidden = encoder(enc_input, [tf.zeros((1, units))])
+    
+    return enc_out, enc_hidden
+
+@tf.function
+def eval_step_dec(dec_input, enc_out, dec_hidden):
+    predictions, dec_hidden, _ = decoder([dec_input,dec_hidden,enc_out])
+    scores = tf.exp(predictions) / tf.reduce_sum(tf.exp(predictions), axis=1)
+    dec_input = tf.expand_dims(tf.argmax(predictions, axis=1, output_type=tf.int32), 1)
+    
+    return dec_input, enc_out, dec_hidden, scores
+
+# ...standard TFLite conversion code

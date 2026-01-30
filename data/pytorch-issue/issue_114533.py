@@ -1,17 +1,4 @@
-# torch.rand(1, 1000, 1000, 100, dtype=torch.float32)
 import torch
-import torch.nn as nn
-
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        return x.cuda(0)  # Explicitly move to GPU 0
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(1, 1000, 1000, 100, dtype=torch.float32)
-
+x=torch.rand(1000, 1000, 100, device='cuda')
+for i in range(torch.cuda.device_count()):
+    print(i, torch.cuda.memory_allocated(i), torch.cuda.memory_reserved(i))

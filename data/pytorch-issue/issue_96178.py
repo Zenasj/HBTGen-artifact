@@ -1,22 +1,8 @@
+py
 import torch
-from torch import nn
 
-# torch.rand(10000, 256, dtype=torch.uint8)  # Inferred from issue's example input shape
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        
-    def forward(self, x):
-        return x  # Dummy model that passes input through
+torch.manual_seed(0)
+t = torch.testing.make_tensor((10_000, 256), dtype=torch.uint8, device="cpu", high=256)
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.testing.make_tensor(
-        (10_000, 256), 
-        dtype=torch.uint8, 
-        device="cpu", 
-        high=256
-    )
-
+assert not (t == 255).any()
+assert (torch.unique(t) == torch.arange(255, dtype=torch.uint8)).all()

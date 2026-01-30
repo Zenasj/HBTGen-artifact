@@ -1,35 +1,21 @@
-# torch.rand(20, dtype=torch.float32)
-import torch
 import torch.nn as nn
+
+import torch
 import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.n1g = None  # Stores the detached tensor for gradient computation
+t1 = torch.arange(20).float().reshape(5,4)
+n1 = torch.nested.as_nested_tensor([t1[:2], t1[2:5]], layout=torch.jagged)
 
-    def forward(self, base_tensor):
-        t1 = base_tensor.view(5, 4)
-        t2 = t1 * 10  # Compute key/value tensor
+t2 = t1 * 10
+n2 = torch.nested.as_nested_tensor([t2[:1], t2[1:5]], layout=torch.jagged)
 
-        # Create nested tensors for query (n1) and key/value (n2)
-        n1_data = [t1[:2], t1[2:5]]  # Split into [2x4, 3x4]
-        n1 = torch.nested.as_nested_tensor(n1_data, layout=torch.jagged)
-        self.n1g = n1.clone().detach().requires_grad_()  # Detached leaf tensor for gradients
+n1g = n1.clone().detach().requires_grad_()
+tensor = F.scaled_dot_product_attention(query=n1g.unsqueeze(2).transpose(1,2), key=n2.unsqueeze(2).transpose(1,2), value=n2.unsqueeze(2).transpose(1,2))
 
-        n2_data = [t2[:1], t2[1:5]]  # Split into [1x4, 4x4]
-        n2 = torch.nested.as_nested_tensor(n2_data, layout=torch.jagged)
+loss  = tensor.values().sum()
 
-        # Prepare for scaled_dot_product_attention
-        query = self.n1g.unsqueeze(2).transpose(1, 2)
-        key = value = n2.unsqueeze(2).transpose(1, 2)
-        output = F.scaled_dot_product_attention(query, key, value)
-        loss = output.values().sum()  # Sum over all elements of nested tensor values
-        return loss
+### RuntimeError: The function '_nested_view_from_jagged' is not differentiable with respect to argument 'min_seqlen'. This input cannot have requires_grad True.
+grad = torch.autograd.grad(loss, n1g, create_graph=True)[0]
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.arange(20).float().requires_grad_()
-
+### Works
+grad = torch.autograd.grad(loss, n1g, create_graph=False)[0]

@@ -1,42 +1,41 @@
-# (torch.randint(0, 3, (3,)), torch.tensor([0, 2], dtype=torch.long))  # Input shape: index (3,) and offsets (2,)
+import torch.nn as nn
+
 import torch
-from torch import nn
 import torch.nn.functional as F
+print(torch.__version__)
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.weight = nn.Parameter(torch.tensor(
-            [[0., 1., 2., 3.],
-             [4., 5., 6., 7.],
-             [8., 9., 10., 11.]]
-        ))  # Original weight tensor (contiguous)
+weight_tensor = torch.tensor(
+    [[0., 1., 2., 3.],
+    [4., 5., 6., 7.],
+    [8., 9., 10., 11.]]
+)
 
-    def forward(self, inputs):
-        index, offsets = inputs
-        # Non-contiguous weight slice (replicates issue scenario)
-        non_contig_weight = self.weight[:, :3]  
-        # Contiguous version for comparison
-        contig_weight = non_contig_weight.contiguous()  
+weight_tensor_non_contig = weight_tensor[:, :3]  # This is non-contiguous strided.
+print(f"weight_tensor_non_contig stride: {weight_tensor_non_contig.stride()}")
 
-        # Compute outputs for both cases
-        output_non_contig = F.embedding_bag(
-            index, non_contig_weight, offsets, mode="mean"
-        )
-        output_contig = F.embedding_bag(
-            index, contig_weight, offsets, mode="mean"
-        )
+weight_tensor_contig = weight_tensor_non_contig.clone().contiguous()  # Contig-strided.
+print(f"weight_tensor_contig stride: {weight_tensor_contig.stride()}")
 
-        # Return boolean tensor indicating if outputs differ significantly
-        are_close = torch.allclose(output_non_contig, output_contig, atol=1e-5)
-        return torch.tensor(are_close, dtype=torch.bool)
+index = torch.tensor([0, 1, 2])
+offsets = torch.tensor([0, 2])
+# Run embedding bag. What this should do is take segment mean, where the segments are
+# defined by the offsets. In this case, 0:2 is one segment, 2:3 is one segment
+output_non_contig = F.embedding_bag(
+    input=index,
+    weight=weight_tensor_non_contig,
+    offsets=offsets,
+    mode="mean",
+)
+output_contig = F.embedding_bag(
+    input=index,
+    weight=weight_tensor_contig,
+    offsets=offsets,
+    mode="mean",
+)
+print(f"Input Tensor:\n{iweight_tensor_contig}")
 
-def my_model_function():
-    return MyModel()
+# The outputs returned in the non-contiguous version is wrong.
+print(f"Non-contigous result (wrong):\n{output_non_contig}")
 
-def GetInput():
-    # Replicates the exact input tensors from the issue's example
-    index = torch.tensor([0, 1, 2], dtype=torch.long)
-    offsets = torch.tensor([0, 2], dtype=torch.long)
-    return (index, offsets)
-
+# The outputs returned in the contiguous version is correct.
+print(f"Contigous result   (correct):\n{output_contig}")

@@ -1,26 +1,32 @@
-# torch.rand(7, 3, 224, 224, dtype=torch.float32)
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1)
-        self.relu = nn.ReLU()
-        self.pool = nn.MaxPool2d(2, 2)
-        self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
-        self.fc = nn.Linear(32 * 56 * 56, 10)  # Assuming 10 classes and 56x56 after pooling
+for epoch in range(10):
+    net.train()
+    # Good training.
+    for data in trainloader:
+        inputs, labels = data['images'], data['masks']
 
-    def forward(self, x):
-        x = self.pool(self.relu(self.conv1(x)))
-        x = self.pool(self.relu(self.conv2(x)))
-        x = x.view(x.size(0), -1)
-        x = self.fc(x)
-        return x
+        for idx in range(0, len(inputs), 7):
+            optimizer.zero_grad()
 
-def my_model_function():
-    return MyModel()
+            outputs = net(inputs[idx:idx + 7])
+            loss = criterion(outputs, labels[idx:idx + 7])
+            loss.backward()
+            optimizer.step()
 
-def GetInput():
-    return torch.rand(7, 3, 224, 224, dtype=torch.float32)
+    # Bad validation.
+    net.eval()
+    test_loss = 0.0
+    test_times = 0
+    for data in testloader:
+        # !!!!!!!!👇
+        with torch.no_grad():
+            inputs, labels = data['images'], data['masks']
 
+            for idx in range(0, len(inputs), 7):
+                # or put no_grad here, leaking still happens.
+                outputs = net(inputs[idx:idx + 7])
+                loss = criterion(outputs, labels[idx:idx + 7])
+                test_loss += loss.item()
+                test_times += 1
+    test_loss /= test_times

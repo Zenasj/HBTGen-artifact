@@ -1,24 +1,38 @@
-# tf.random.uniform((1, 8, 4), dtype=tf.float32)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
+import tensorflow_model_optimization as tfmot
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # The model is a single Dense layer with output units=16, input shape (8,4)
-        # reflecting the QAT model in the issue.
-        self.dense = tf.keras.layers.Dense(16)
-    
-    def call(self, inputs):
-        # inputs shape: (batch_size=1, 8, 4)
-        # same as in the issue example
-        return self.dense(inputs)
+inp = tf.keras.Input(shape=(8, 4), batch_size=1)
+out = tf.keras.layers.Dense(16)(inp)
+model = tf.keras.Model(inp,out)
 
-def my_model_function():
-    # Returns an instance of the model with a Dense layer (units=16)
-    return MyModel()
+def representative_dataset():
+    for _ in range(100):
+        yield [tf.random.uniform(shape=(1, 8, 4))]
 
-def GetInput():
-    # Returns a random tensor with shape (1,8,4) matching model input
-    return tf.random.uniform((1, 8, 4), dtype=tf.float32)
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.representative_dataset = representative_dataset
+converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
+converter.inference_input_type = tf.int8
+converter.inference_output_type = tf.int8
+tflite_model = converter.convert()
+with open('./dense_ptq.tflite', 'wb') as f:
+    f.write(tflite_model)
 
+tf.keras.backend.clear_session()
+
+inp = tf.keras.Input(shape=(8, 4), batch_size=1)
+out = tfmot.quantization.keras.quantize_annotate_layer(tf.keras.layers.Dense(16))(inp)
+model = tfmot.quantization.keras.quantize_apply(tf.keras.Model(inp,out))
+
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.inference_input_type = tf.int8
+converter.inference_output_type = tf.int8
+tflite_model = converter.convert()
+with open('./dense_qat.tflite', 'wb') as f:
+    f.write(tflite_model)

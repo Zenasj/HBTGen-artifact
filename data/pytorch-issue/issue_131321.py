@@ -1,42 +1,22 @@
-# The input is a tuple of three tensors with shapes (4,), (6,), (6,)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.compiled_scatter = torch.compile(torch.scatter_reduce)
-        self.normal_scatter = torch.scatter_reduce
+src = torch.tensor([1., 2., 3., 4., 5., 6.])
+index = torch.tensor([0, 1, 0, 1, 2, -1])
+input = torch.tensor([1., 2., 3., 4.])
+compiled_sr = torch.compile(torch.scatter_reduce)
 
-    def forward(self, inputs):
-        input, index, src = inputs
-        compiled_out = None
-        normal_out = None
+# Throws "index out of bounds" error
+print(compiled_sr(input, 0, index, src, "sum"))
 
-        try:
-            compiled_out = self.compiled_scatter(input, 0, index, src, "sum")
-        except:
-            pass
+# Throws "index out of bounds" error
+print(torch.scatter_reduce(input, 0, index, src, "sum"))
 
-        try:
-            normal_out = self.normal_scatter(input, 0, index, src, "sum")
-        except:
-            pass
+src = src.cuda()
+index = index.cuda()
+input = input.cuda()
 
-        # Compare outputs accounting for exceptions
-        if compiled_out is None and normal_out is None:
-            return torch.tensor(False)  # both failed
-        elif compiled_out is None or normal_out is None:
-            return torch.tensor(True)  # one failed, the other succeeded
-        else:
-            return torch.allclose(compiled_out, normal_out).unsqueeze(0)
+# [ 5.,  8.,  8., 10.]  BAD !
+print(compiled_sr(input, 0, index, src, "sum"))
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    input = torch.tensor([1., 2., 3., 4.])
-    index = torch.tensor([0, 1, 0, 1, 2, -1])
-    src = torch.tensor([1., 2., 3., 4., 5., 6.])
-    return (input, index, src)
-
+# Throws "index out of bounds" error
+print(torch.scatter_reduce(input, 0, index, src, "sum"))

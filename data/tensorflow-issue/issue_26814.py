@@ -1,21 +1,12 @@
-# tf.random.uniform((B, 1), dtype=tf.float32)  # Inferred input shape from ToyModel: (batch_size, 1)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
+
 import tensorflow as tf
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    """
-    Combines the key aspects of the ToyModel example from the issue discussion,
-    adjusted for compatibility with saving/loading and inference in TF 2.x.
-
-    This model is a simple linear model with one Dense layer of 5 units,
-    reflecting the original ToyModel design.
-
-    The call method is decorated with tf.function and an input_signature to
-    facilitate saved model export and restore.
-
-    This example includes the corrections implied by the issue discussion:
-    - Proper decorating of call
-    - Using a consistent signature for input
-    """
+class ToyModel(tf.keras.Model):
+    """A simple linear model."""
 
     def __init__(self):
         super().__init__()
@@ -25,20 +16,32 @@ class MyModel(tf.keras.Model):
     def call(self, x):
         return self.l1(x)
 
-def my_model_function():
-    """
-    Instantiate and return an instance of MyModel.
-    No pretrained weights are loaded here; weights are random by default.
-    """
-    return MyModel()
+def toy_dataset():
+    inputs = tf.range(10.)[:, None]
+    outputs = inputs * 5. + tf.range(5.)[None, :]
+    # TODO: switch `tuple` to `dict`.
+    dataset = tf.data.Dataset.from_tensor_slices((inputs, outputs))
+    return dataset.repeat(10).batch(2).shuffle(buffer_size=5)
 
-def GetInput():
-    """
-    Return a random input tensor compatible with MyModel's expected input shape.
-    The model expects: (batch_size, 1), dtype float32.
-    We'll generate a random uniform tensor with batch size 2 for demonstration.
-    """
-    batch_size = 2
-    input_shape = (batch_size, 1)
-    return tf.random.uniform(input_shape, dtype=tf.float32)
 
+dataset = toy_dataset()
+optimizer = tf.keras.optimizers.Adam(0.1)
+
+model = ToyModel()
+model.compile(loss='mean_squared_error', optimizer=optimizer, metrics=['accuracy'])
+history = model.fit(dataset, epochs=5)
+
+# Inference works
+inputs = np.array([[0, 5]], dtype=np.float32).T
+print(model(inputs))
+
+# Export to Saved Model
+model_path = "/tmp/saved_model"
+tf.saved_model.save(model, model_path)
+
+# Load model
+saved_model = tf.saved_model.load(model_path)
+
+# Inference from Saved Model
+#inputs = np.array([[0, 5]], dtype=np.float32).T
+#saved_model(inputs)

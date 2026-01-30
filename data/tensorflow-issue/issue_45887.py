@@ -1,71 +1,89 @@
-# tf.random.uniform((1, 224, 224, 3), dtype=tf.float32) ← inferred input shape from MobileNetV2 example and custom model in issue
-
 import tensorflow as tf
-from tensorflow import keras
-import tensorflow_model_optimization as tfmot
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Base conv layer (non-quantized)
-        self.conv_fp = keras.layers.Conv2D(32, (3, 3), activation='relu')
+def apply_quantization(layer):
+    if isinstance(layer, keras.layers.Conv2D):
+        return tfmot.quantization.keras.quantize_annotate_layer(layer)
+    return layer
 
-        # Quantized Conv2D layer annotated with quantize_annotate_layer
-        conv_to_quant = keras.layers.Conv2D(32, (3, 3), activation='relu')
-        self.conv_q_annotated = tfmot.quantization.keras.quantize_annotate_layer(conv_to_quant)
+annotated_model = keras.models.clone_model(
+    base_model, # base_model is a mobilenetv2 or resnet50
+    clone_function=apply_quantization
+)
+q_aware_model = tfmot.quantization.keras.quantize_apply(annotated_model)
 
-        # Quantize Apply wrapper for the annotated conv layer only
-        # Since quantize_apply expects a Model or Sequential, we wrap the conv_q_annotated layer here
-        self.q_aware_submodel = tf.keras.Sequential([self.conv_q_annotated])
+converter = tf.lite.TFLiteConverter.from_keras_model(q_aware_model)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.convert()
 
-        self.concat = keras.layers.Concatenate()
-        self.pool = keras.layers.MaxPool2D(pool_size=(5, 5), strides=5)
-        self.flatten = keras.layers.Flatten()
-        self.dense = keras.layers.Dense(2)
+converter = tf.lite.TFLiteConverter.from_keras_model(q_aware_model)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.representative_dataset = representative_data_gen
+converter.allow_custom_ops = True
+converter.inference_input_type = tf.uint8
+converter.inference_output_type = tf.uint8
+tflite_model = converter.convert()
 
-        # Apply quantize_apply to the entire combined model after building call graph,
-        # but for this standalone Model subclass, the pattern below is an approximation
-        # QuantizeWrapper is added only to annotated layers via this approach.
-        # The user typically will quantize_apply over a Model, but here we do it for conv_q layer only.
+converter = tf.lite.TFLiteConverter.from_keras_model(q_aware_model)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.representative_dataset = representative_data_gen
+converter.allow_custom_ops = True
+converter.inference_input_type = tf.uint8
+converter.inference_output_type = tf.uint8
 
-        # However, to keep logic clean and consistent,
-        # we will rely on functional calls in call() and the quantization happens on conv_q_annotated layer.
+# add this line before convert()
+converter._experimental_new_quantizer = True
 
-    def call(self, inputs, training=False):
-        # FP conv layer path
-        x1 = self.conv_fp(inputs)
+tflite_model = converter.convert()
 
-        # Quantized conv layer path applied only on second branch
-        # Here we call the quantized conv layer via the quantize_apply wrapper
-        # Because in standalone class it's tricky to replicate quantize_apply,
-        # we directly call the annotated conv layer here.
-        x2 = self.q_aware_submodel(inputs, training=training)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.inference_input_type = tf.uint8
+converter.inference_output_type = tf.uint8
+tflite_model = converter.convert()
 
-        # Concatenate both conv outputs
-        x = self.concat([x1, x2])
-        x = self.pool(x)
-        x = self.flatten(x)
-        x = self.dense(x)
-        return x
+MODEL_NAME = 'mobilenetv2'
+base_model = keras.applications.MobileNetV2(
+    input_shape=(224,224,3), alpha=1.0, include_top=True, weights='imagenet',
+    input_tensor=None, pooling=None, classes=1000,
+    classifier_activation='softmax'
+)
+def apply_quantization(layer):
+    if type(layer) == keras.layers.Conv2D:
+        return tfmot.quantization.keras.quantize_annotate_layer(layer)
+    return layer
 
-def my_model_function():
-    """
-    Returns an instance of MyModel.
-    This model mimics the manually constructed example in the issue:
-    - One Conv2D layer unquantized.
-    - One Conv2D layer quantize-annotated and wrapped inside tfmot.quantize_apply.
-    - Outputs concatenated and passed through further layers.
-    """
-    # Note: Full quantize_apply wrapping happens normally over the entire Model after building functional model.
-    # Here we rely on quantize_annotate_layer + quantize_apply on the submodel inside MyModel.
-    return MyModel()
+annotated_model = keras.models.clone_model(
+    base_model,
+    clone_function=apply_quantization
+)
 
-def GetInput():
-    """
-    Returns a random input tensor compatible with MyModel.
-    Input shape inferred from examples is (1, 224, 224, 3), dtype float32.
+q_aware_model = tfmot.quantization.keras.quantize_apply(annotated_model)
+converter = tf.lite.TFLiteConverter.from_keras_model(q_aware_model)
+# converter._experimental_new_quantizer = True
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.inference_input_type = tf.uint8
+converter.inference_output_type = tf.uint8
+tflite_model = converter.convert()
+pathlib.Path('/tmp/tmp.tflite').write_bytes(tflite_model)
 
-    Shape matches standard MobileNetV2 input used in the issue.
-    """
-    return tf.random.uniform((1, 224, 224, 3), dtype=tf.float32)
+inputs = keras.layers.Input(shape=(224, 224, 3))
+x1 = keras.layers.Conv2D(32, (3, 3), activation='relu')(inputs)
+x2 = keras.layers.Lambda(lambda x: tf.identity(x))(inputs)
+x2 = tfmot.quantization.keras.quantize_annotate_layer(
+    keras.layers.Conv2D(32, (3, 3), activation='relu')
+)(x2)
+x = keras.layers.concatenate(inputs = [x1,x2])
+x = keras.layers.MaxPool2D([5,5], strides=5)(x)
+x = keras.layers.Flatten()(x)
+x = keras.layers.Dense(2)(x)
+base_model = keras.models.Model(inputs=inputs, outputs=x)
+q_aware_model = tfmot.quantization.keras.quantize_apply(base_model)
 
+converter = tf.lite.TFLiteConverter.from_keras_model(q_aware_model)
+converter._experimental_new_quantizer = True
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.inference_input_type = tf.uint8
+converter.inference_output_type = tf.uint8
+tflite_model = converter.convert()
+pathlib.Path('/tmp/tmp.tflite').write_bytes(tflite_model)

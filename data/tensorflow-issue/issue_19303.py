@@ -1,50 +1,48 @@
-# tf.random.uniform((B, 1), dtype=tf.string) ← Input is a batch of single string elements with shape (batch_size, 1)
-
+import numpy as np
 import tensorflow as tf
-from tensorflow.keras import layers, Model
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Using the Universal Sentence Encoder from TF Hub as in the original code,
-        # but here we simulate the embedding layer because TF Hub usage requires session, etc.
-        # We'll create a placeholder embedding layer using a Dense layer for demonstration.
-        # In practice, replace with a TF Hub USE layer or appropriate embedding.
-        self.embedding_dim = 512
-        
-        # Placeholder embedding simulating USE embedding output
-        self.embedding_layer = layers.Lambda(
-            lambda x: tf.zeros((tf.shape(x)[0], self.embedding_dim)), 
-            output_shape=(self.embedding_dim,))
-        
-        self.dense1 = layers.Dense(1024, activation='relu')
-        self.batchnorm = layers.BatchNormalization()
-        self.prediction = layers.Dense(2000, activation='softmax')
-        
-    def call(self, inputs, training=False):
-        # inputs shape: (batch_size, 1), dtype=tf.string
-        # In the original code, they do:
-        # tf.squeeze(tf.cast(x, tf.string)) → remove last dimension and enforce string dtype
-        # Here inputs should be shape (batch_size,1) dtype string
-        # For demonstration, just pass inputs to embedding (which is placeholder zeros)
-        
-        # The real USEEmbedding function needs TF Hub and session calls which are not compatible here
-        # So we simulate embedding output with zeros directly:
-        x = self.embedding_layer(inputs)  # (batch_size, 512)
-        x = self.dense1(x)
-        x = self.batchnorm(x, training=training)
-        x = self.prediction(x)
-        return x
+use_model = hub.Module("http://tfhub.dev/google/universal-sentence-encoder/1", trainable=True);
+sess.run(tf.global_variables_initializer());
+sess.run(tf.tables_initializer());
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+def USEEmbedding(x):
+    return use_model(tf.squeeze(tf.cast(x, tf.string)), 
+                      signature="default", as_dict=True)["default"]
+ 
+input_text = layers.Input(shape=(1,), dtype=tf.string)
+embedding = layers.Lambda(USEEmbedding, output_shape=(512,))(input_text)
+dense = layers.Dense(1024, activation='relu')(embedding)
+bnorm = layers.BatchNormalization()(dense)
+pred = layers.Dense(2000, activation='softmax')(bnorm)
 
-def GetInput():
-    # Return a batch of random tf.string tensors shaped (batch_size, 1)
-    # We cannot generate random strings easily, so use fixed strings for illustration
-    batch_size = 4  # small batch for demonstration
-    # Tensor of shape (batch_size, 1), dtype string
-    example_strings = tf.constant([["hello world"], ["tensorflow keras"], ["test input"], ["sample text"]])
-    return example_strings
+model = Model(inputs=[input_text], outputs=pred)
 
+model.compile(loss='sparse_categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+model.summary()
+
+callbacks = [keras.callbacks.EarlyStopping(monitor='val_acc',
+                                               min_delta=1e-3,
+                                               patience=8,
+                                               verbose=0,
+                                               mode='auto'),
+             keras.callbacks.ModelCheckpoint('../models/best-weights.h5',
+                                                 monitor='val_acc',
+                                                 verbose=1,
+                                                 save_best_only=True,
+                                                 mode='auto'),
+             keras.callbacks.TensorBoard(log_dir='../tb-logs', histogram_freq=0,
+                                         write_graph=True, write_images=False)]
+
+train_text = [' '.join(t.split()[0:20]) for t in train_x.sentences.tolist()]
+train_text = np.array(train_text, dtype=object)[:, np.newaxis]
+valid_text = [' '.join(t.split()[0:20]) for t in valid_x.sentences.tolist()]
+valid_text = np.array(valid_text, dtype=object)[:, np.newaxis]
+
+model.fit(train_text , train['labels'].tolist(),
+          validation_data=(valid_text, valid['labels'].tolist()),
+          epochs=100, batch_size=256,
+          callbacks=callbacks, shuffle=True)
+
+input_text = layers.Input(shape=(1,), dtype=tf.string)
+
+input_text = layers.Input(shape=(1,), dtype="string")

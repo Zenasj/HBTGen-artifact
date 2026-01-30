@@ -1,22 +1,22 @@
-# torch.rand(1, 8, 546, 392, dtype=torch.float32)
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.conv = nn.Conv2d(8, 1, kernel_size=3, padding=0)  # Matches the problematic layer
+conv_no_warn = nn.Conv2d(8, 3, kernel_size=3, stride=1, padding=0).eval().cuda()
+conv_warn = nn.Conv2d(8, 1, kernel_size=3, stride=1, padding=0).eval().cuda()
+x = torch.rand((1, 8, 546, 392)).cuda()
 
-    def forward(self, x):
-        return self.conv(x)
+with torch.inference_mode(), torch.autocast(device_type="cuda"):
+    # No warning
+    conv_no_warn(x)
+    # UserWarning: Plan failed with a cudnnException: CUDNN_BACKEND_EXECUTION_PLAN_DESCRIPTOR: cudnnFinalize Descriptor Failed cudnn_status: CUDNN_STATUS_NOT_SUPPORTED
+    conv_warn(x)
 
-def my_model_function():
-    model = MyModel()
-    model.eval()  # Matches the user's eval() setup
-    model.cuda()  # Matches CUDA execution context
-    return model
+import torch
+import torch.nn as nn
 
-def GetInput():
-    # Returns a float32 tensor on CUDA, compatible with autocast's fp16 conversion
-    return torch.rand(1, 8, 546, 392, dtype=torch.float32, device="cuda")
+conv_warn = nn.Conv2d(768, 96, kernel_size=(1, 1), stride=(1, 1)).eval().cuda()
+x = torch.rand((1, 768, 39, 28)).cuda()
 
+with torch.inference_mode(), torch.autocast(device_type="cuda"):
+    # UserWarning: Plan failed with a cudnnException: CUDNN_BACKEND_EXECUTION_PLAN_DESCRIPTOR: cudnnFinalize Descriptor Failed cudnn_status: CUDNN_STATUS_NOT_SUPPORTED
+    conv_warn(x)

@@ -1,32 +1,20 @@
-# tf.random.uniform((100, 28, 28), dtype=tf.float32) ← Inferred input shape from batch_size=100 and fashion_mnist images 28x28 grayscale
+from tensorflow import keras
+from tensorflow.keras import layers
 
-import tensorflow as tf
+import tensorflow as tf 
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Flatten input 28x28 to 784
-        self.flatten = tf.keras.layers.Flatten(input_shape=(28, 28))
-        # Large Dense layer (reduced from 2048*2048 to 2048 to prevent RAM exhaustion)
-        # Original: Dense(2048*2048) is ~3.3 billion params, causes OOM
-        self.dense1 = tf.keras.layers.Dense(2048, activation='relu')
-        # Output layer for 10 classes
-        self.dense2 = tf.keras.layers.Dense(10)
-    
-    @tf.function(jit_compile=True)
-    def call(self, inputs):
-        x = self.flatten(inputs)
-        x = self.dense1(x)
-        logits = self.dense2(x)
-        return logits
+fashion_mnist = tf.keras.datasets.fashion_mnist
+(train_images, train_labels), (test_images, test_labels) = fashion_mnist.load_data()
 
-def my_model_function():
-    # Return an instance of MyModel with weights initialized randomly
-    return MyModel()
+model = tf.keras.Sequential([
+    tf.keras.layers.Flatten(input_shape=(28, 28)),
+    tf.keras.layers.Dense(2048 * 2048, activation='relu'),
+    tf.keras.layers.Dense(10)
+])
 
-def GetInput():
-    # Return a random tensor matching the shape and dtype of typical fashion_mnist input
-    # Batch size 100 (as per original training batch_size)
-    # Input shape: (28, 28), grayscale images, float32
-    return tf.random.uniform((100, 28, 28), dtype=tf.float32)
+model.compile(optimizer='adam',
+        loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+        metrics=['accuracy'])
 
+model.fit(train_images, train_labels, epochs=1, batch_size=100)

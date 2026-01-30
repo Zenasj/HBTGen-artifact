@@ -1,18 +1,22 @@
-# torch.rand(3, dtype=torch.float32)
-import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.step_count = 0  # Trackable integer property
-        
+import torch
+import torch._dynamo.config
+
+class M(torch.nn.Module):
+    step_count = 0
+
     def forward(self, x):
         return x * self.step_count
 
-def my_model_function():
-    return MyModel()
+m = M()
 
-def GetInput():
-    return torch.randn(3)
+@torch.compile(fullgraph=True)
+def f(a):
+    return m(a)
 
+f(torch.randn(3))
+m.step_count += 1
+f(torch.randn(3))
+m.step_count += 1
+f(torch.randn(3))

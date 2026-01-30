@@ -1,53 +1,54 @@
-# tf.random.uniform((7, 4, 2, 10, 7), dtype=tf.float32) ← inferred input shape from "inp" dict and raw_ops usage
+import math
+import random
 
 import tensorflow as tf
+import traceback
 
-class MyModel(tf.keras.Model):
+def replace_special_values(tensor):
+    # Convert tensor to tf.float32 if it's not a supported dtype
+    supported_dtypes = [tf.float16, tf.float32, tf.float64, tf.bfloat16]
+    if tensor.dtype not in supported_dtypes:
+        original_dtype = tensor.dtype
+        tensor = tf.cast(tensor, tf.float32)
+    else :
+        original_dtype = None
+    
+    # Replace NaNs with zeros
+    tensor = tf.where(tf.math.is_nan(tensor), tf.zeros_like(tensor), tensor)
+    
+    # Replace positive infinities with a large number (e.g., 1e30)
+    tensor = tf.where(tf.math.is_inf(tensor), 100, tensor)
+    
+    # Replace negative infinities with a small number (e.g., -1e30)
+    tensor = tf.where(tf.math.is_inf(tensor) & tf.math.less(tensor, 0), -100, tensor)
+    
+    # Convert tensor back to its original dtype
+    if original_dtype is not None :
+        tensor = tf.cast(tensor, original_dtype)
+    return tensor
+
+class Network(tf.Module):
     def __init__(self):
         super().__init__()
-        # No trainable weights, just raw ops but keep as a keras model for tf.function and JIT compatibility.
 
     @tf.function(jit_compile=True)
-    def call(self, x):
-        # NOTE:
-        # The original issue involves comparison between no-JIT and JIT results of:
-        #   tf.raw_ops.Xlogy + tf.raw_ops.Lgamma
-        #
-        # The original code uses tf.raw_ops.Xlogy(x=x, y=rand_tensor)
-        # followed by tf.raw_ops.Lgamma(x=...)
-        # The y tensor is random.normal of shape [1,4,2,10,7] (broadcastable to x's shape [7,4,2,10,7])
-        #
-        # We'll replicate this sequence as the model's forward.
-        #
-        # The output is the tensor after applying Xlogy then Lgamma.
-        # This model returns that value directly.
+    def __call__(self, x):
+      
+      x = tf.raw_ops.Xlogy(x=x, y=tf.random.normal([1, 4, 2, 10, 7], dtype=tf.float32))        
+      x = tf.raw_ops.Lgamma(x=x, )        
+      return x
 
-        # Generate a fixed random tensor to ensure reproducibility inside the model;
-        # or else the output changes on each call making comparisons invalid.
-        # Since the original code uses random normal with fixed shape and dtype,
-        # we will generate a deterministic random normal using seed=0 here.
-        # This allows consistent outputs.
+m = Network()
+inp = {
+    "x": tf.random.normal([7, 4, 2, 10, 7], dtype=tf.float32),
+}
 
-        y = tf.random.stateless_normal(
-            shape=[1, 4, 2, 10, 7],
-            mean=0.0,
-            stddev=1.0,
-            dtype=tf.float32,
-            seed=[0, 0]
-        )
-        # Broadcast y if needed to match shape of x (x shape: [7,4,2,10,7])
-        # x shape is larger in dim 0, so Xlogy can broadcast y on dim0.
-
-        x = tf.raw_ops.Xlogy(x=x, y=y)
-        x = tf.raw_ops.Lgamma(x=x)
-        return x
-
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input matching the input expected by MyModel call
-    # Input shape inferred from original "inp" dict in issue: [7,4,2,10,7], dtype float32
-    return tf.random.normal([7, 4, 2, 10, 7], dtype=tf.float32)
-
+with tf.device('/GPU:0'):
+    tf.config.run_functions_eagerly(True)
+    no_op_res = m(**inp)
+    tf.config.run_functions_eagerly(False)
+    with tf.device('/GPU:0'):
+        op_res = m(**inp)
+    no_op_res = replace_special_values(no_op_res)
+    op_res = replace_special_values(op_res)
+    tf.debugging.assert_near(tf.cast(no_op_res, tf.float64), tf.cast(op_res, tf.float64), atol=0.001, rtol=0.001)

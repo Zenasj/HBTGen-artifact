@@ -1,29 +1,31 @@
-# tf.random.uniform((None, 28, 28), dtype=tf.float32) ← Input shape inferred from the discussed Sequential model's input_shape=(28, 28)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Replicating the model from the issue: Flatten -> Dense(512, relu) -> Dropout(0.2) -> Dense(10, softmax)
-        self.flatten = tf.keras.layers.Flatten(input_shape=(28, 28))
-        self.dense1 = tf.keras.layers.Dense(512, activation='relu')
-        self.dropout = tf.keras.layers.Dropout(0.2)
-        self.dense2 = tf.keras.layers.Dense(10, activation='softmax')
+model = tf.keras.models.Sequential([
+  tf.keras.layers.Flatten(input_shape=(28, 28)),
+  tf.keras.layers.Dense(512, activation=tf.nn.relu),
+  tf.keras.layers.Dropout(0.2),
+  tf.keras.layers.Dense(10, activation=tf.nn.softmax)
+])
 
-    def call(self, inputs, training=False):
-        x = self.flatten(inputs)
-        x = self.dense1(x)
-        x = self.dropout(x, training=training)
-        return self.dense2(x)
+for i in range(100000):
+    model.compile(optimizer='adam',
+                  loss='sparse_categorical_crossentropy',
+                  metrics=['accuracy'])
 
-def my_model_function():
-    # Return an instance of MyModel
-    # This model can be compiled and trained as in the original code snippet
-    return MyModel()
+import tensorflow as tf
+model = tf.keras.models.Sequential([
+  tf.keras.layers.Flatten(input_shape=(28, 28)),
+  tf.keras.layers.Dense(512, activation=tf.nn.relu),
+  tf.keras.layers.Dropout(0.2),
+  tf.keras.layers.Dense(10, activation=tf.nn.softmax)
+])
 
-def GetInput():
-    # Return a random float32 tensor matching shape (batch_size, 28, 28)
-    # Batch size arbitrary chosen as 32 for testing
-    return tf.random.uniform((32, 28, 28), dtype=tf.float32)
-
+for i in range(100000):
+    model.compile(optimizer='adam',
+                  loss='sparse_categorical_crossentropy',
+                  metrics=['accuracy'])
+    tf.keras.backend.clear_session()

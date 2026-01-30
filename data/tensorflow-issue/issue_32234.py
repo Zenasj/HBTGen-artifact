@@ -1,50 +1,120 @@
-# tf.random.uniform((B, 1, 1024), dtype=tf.float32)  # inferred input shape and type from the issue example
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
+import numpy as np
+from tqdm import tqdm
+from memory_profiler import profile
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Build the model described in the issue: 
-        # Input shape: (1, 1024) → Dense(1024) → Dense(1)
-        self.dense1 = tf.keras.layers.Dense(1024)
-        self.dense2 = tf.keras.layers.Dense(1)
+data_array = np.random.random_sample((1, 1024))
+tf_array = tf.constant(data_array, dtype=tf.float32)
 
-    def call(self, inputs):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        return x
+input = tf.keras.Input((1, 1024))
+hidden_layer = tf.keras.layers.Dense(1024)(input)
+output = tf.keras.layers.Dense(1)(hidden_layer)
+model = tf.keras.Model(inputs=[input], outputs=[output])
 
-def my_model_function():
-    # Return an instance of MyModel with default initialization.
-    # (Weights are randomly initialized by default.)
-    return MyModel()
+pred = model([tf_array])
+print(pred)
 
-def GetInput():
-    # Return a random tensor input compatible with MyModel call.
-    # According to the issue: input shape is (1, 1024) per batch item,
-    # and batch dimension appears used in the example as 1.
-    # We add batch dim as first dimension.
-    # dtype float32 as seen in the example code.
-    return tf.random.uniform(shape=(1, 1, 1024), dtype=tf.float32)
 
-# Additional notes based on the issue:
-# - Input is 3D tensor (batch_size, 1, 1024) per the example input of shape (1, 1024)
-#   wrapped in a batch dimension.
-# - Model is two Dense layers sequentially applied.
-# - The primary issue was memory leakage on repeated save/load, but here we
-#   provide minimal model and input as per requirements.
-# - The model and input are compatible with TensorFlow 2.20.0 and can be used
-#   with tf.function(jit_compile=True).
+@profile
+def func():
+    export_path = "temp_export"
+    tf.saved_model.save(model, export_path)
+    imported = tf.saved_model.load(export_path)
 
-# Example usage (do not include test code as per instructions):
-#
-# model = my_model_function()
-# x = GetInput()
-# y = model(x)
-# print(y)
-#
-# @tf.function(jit_compile=True)
-# def compiled(x):
-#     return model(x)
 
+for i in tqdm(range(1000000), total=1000000):
+    func()
+
+tf-nightly-gpu
+
+import tensorflow as tf
+import psutil
+import gc
+
+input = tf.keras.Input((1, 1024))
+dense1 = tf.keras.layers.Dense(1024)(input)
+dense2 = tf.keras.layers.Dense(1024)(dense1)
+dense2 = tf.keras.layers.BatchNormalization()(dense2)
+dense2 = tf.keras.layers.LeakyReLU()(dense2)
+output = tf.keras.layers.Dense(1)(dense2)
+model = tf.keras.Model(inputs=[input], outputs=[output])
+
+def func():
+  export_path = "temp_export.h5"
+  model.save(export_path)
+  tf.keras.models.load_model(export_path)
+  tf.keras.backend.clear_session()
+
+for i in range(1000000):
+    func()
+    if i % 100 == 0:
+        print(i, ": free memory", psutil.virtual_memory().available / (1024.0 ** 2), "Mb") 
+    gc.collect()
+
+import gc
+
+import psutil
+import tensorflow as tf
+from tqdm import tqdm
+
+input = tf.keras.Input((1, 1024))
+dense1 = tf.keras.layers.Dense(1024)(input)
+dense2 = tf.keras.layers.Dense(1024)(dense1)
+dense2 = tf.keras.layers.BatchNormalization()(dense2)
+dense2 = tf.keras.layers.LeakyReLU()(dense2)
+output = tf.keras.layers.Dense(1)(dense2)
+model = tf.keras.Model(inputs=[input], outputs=[output])
+
+
+def func():
+    export_path = "temp_export.h5"
+    model.save(export_path)
+    tf.keras.backend.clear_session()
+    gc.collect()
+
+
+first_memory_usage = psutil.virtual_memory().available
+progress_bar = tqdm()
+step = 0
+while True:
+    func()
+    progress_bar.set_description(
+        f"Already lost {(first_memory_usage - psutil.virtual_memory().available) / (1024 ** 2):.3f} MB from tf.keras.Model.save"
+    )
+    step += 1
+    progress_bar.update(step)
+
+import gc
+
+import psutil
+import tensorflow as tf
+from tqdm import tqdm
+
+if __name__ == "__main__":
+
+    input = tf.keras.Input((1, 1024))
+    dense1 = tf.keras.layers.Dense(1024)(input)
+    dense2 = tf.keras.layers.Dense(1024)(dense1)
+    dense2 = tf.keras.layers.BatchNormalization()(dense2)
+    dense2 = tf.keras.layers.LeakyReLU()(dense2)
+    output = tf.keras.layers.Dense(1)(dense2)
+    model = tf.keras.Model(inputs=[input], outputs=[output])
+
+    first_memory_usage = psutil.virtual_memory().available
+    progress_bar = tqdm()
+    step = 0
+    while True:
+        model.save_weights("test.h5")
+
+        tf.keras.backend.clear_session()
+        gc.collect()
+        progress_bar.set_description(
+            f"Already lost {(first_memory_usage - psutil.virtual_memory().available) / (1024 ** 2):.3f} MB from tf.keras.Model.save_weights"
+        )
+        step += 1
+        progress_bar.update(step)

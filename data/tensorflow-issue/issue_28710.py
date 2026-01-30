@@ -1,24 +1,44 @@
-# tf.random.uniform((batch_size, 4), dtype=tf.float32) ← Input with shape (batch_size, 4) as in the example data
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
+import math
+
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Simple single dense layer with sigmoid activation, mirroring the given example
-        self.dense = tf.keras.layers.Dense(1, activation='sigmoid')
 
-    def call(self, inputs):
-        return self.dense(inputs)
+class SomeFeeder(tf.keras.utils.Sequence):
+    """A dummy Sequence.
 
-def my_model_function():
-    # Return an instance of the simple model
-    return MyModel()
+    Slightly modified tf.keras.utils.Sequence example.
+    """
 
-def GetInput():
-    # Generate a random input tensor matching shape (batch_size, 4)
-    # Use batch_size=8 as a reasonable example size for testing
-    batch_size = 8
-    # Inputs are float32 with 4 features, matching the original example data shape
-    return tf.random.uniform((batch_size, 4), dtype=tf.float32)
+    def __init__(self, x_set, y_set, batch_size):
+            self.x, self.y = x_set, y_set
+            self.batch_size = batch_size
 
+    def __len__(self):
+        return math.ceil(len(self.x) / self.batch_size)
+
+    def __getitem__(self, idx):
+        batch_x = self.x[idx * self.batch_size:(idx + 1) * self.batch_size]
+        batch_y = self.y[idx * self.batch_size:(idx + 1) * self.batch_size]
+        return batch_x, batch_y
+
+
+# Simple dummy model.
+input_x = tf.keras.Input((4,))
+output = tf.keras.layers.Dense(1, activation='sigmoid')(input_x)
+model = tf.keras.Model(inputs=[input_x], outputs=[output])
+model.compile(
+    optimizer=tf.keras.optimizers.SGD(lr=0.1), loss='binary_crossentropy')
+
+# Dummy data.
+x = np.random.rand(100, 4).astype(np.float32)
+y = np.random.choice([0, 1], size=(100,)).astype(np.float32)
+x = SomeFeeder(x, y, batch_size=4)
+
+# Train the model with `steps_per_epoch=5`.
+model.fit(x=x, epochs=10, steps_per_epoch=5)

@@ -1,21 +1,36 @@
-# torch.rand(B, C, H, W, dtype=...)  # Add a comment line at the top with the inferred input shape
+import torch.nn as nn
+
+py
 import torch
-from torch import nn
+from torch.func import jacrev, jacfwd
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.bn = nn.BatchNorm1d(3)  # Using BatchNorm1d instead of LazyBatchNorm1d to avoid the INTERNAL ASSERT error
+torch.manual_seed(420)
 
-    def forward(self, x):
-        return self.bn(x)
+p = torch.nn.Parameter(torch.ones(2, 3))
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+def func(p):
+    p.data = torch.ones(1, 2, 3) * 2
+    return p
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    B, C = 2, 3
-    return torch.randn(B, C, requires_grad=True)
+jacrev(func)(p)
+# RuntimeError: false INTERNAL ASSERT FAILED 
+# at "/opt/conda/conda-bld/pytorch_1672906354936/work/aten/src/ATen/functorch/TensorWrapper.cpp":137, 
+# please report a bug to PyTorch. NYI
 
+py
+import torch
+from torch.func import jacrev, jacfwd
+
+torch.manual_seed(420)
+
+x = torch.randn(2, 3, requires_grad=True)
+
+def func(x):
+    m = torch.nn.LazyBatchNorm1d(3)
+    out = m(x)
+    return out
+
+jacrev(func)(x)
+# RuntimeError: false INTERNAL ASSERT FAILED 
+# at "/opt/conda/conda-bld/pytorch_1672906354936/work/aten/src/ATen/functorch/TensorWrapper.cpp":137, 
+# please report a bug to PyTorch. NYI

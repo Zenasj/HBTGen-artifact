@@ -1,163 +1,158 @@
-# tf.random.uniform((batch_size, 224, 224, 3), dtype=tf.float32) ← input shape inferred from dataset generator in issue
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
 
+
+# Let's create a model first
 class MyModel(tf.keras.Model):
     def __init__(self):
         super(MyModel, self).__init__()
-        # Define three parallel subnetworks l1, l2, l3
-        # Each has Conv2D -> GlobalAveragePooling2D -> Dense(10)
+        self._l1 = tf.keras.layers.Conv2D(
+            filters=64, kernel_size=3
+        )
         self._l1 = tf.keras.Sequential(
             [
-                tf.keras.layers.Conv2D(filters=64, kernel_size=3, padding='valid', activation=None),
+                tf.keras.layers.Conv2D(
+                    filters=64, kernel_size=3
+                ),
                 tf.keras.layers.GlobalAveragePooling2D(keepdims=False),
                 tf.keras.layers.Dense(units=10)
             ]
         )
         self._l2 = tf.keras.Sequential(
             [
-                tf.keras.layers.Conv2D(filters=64, kernel_size=3, padding='valid', activation=None),
+                tf.keras.layers.Conv2D(
+                    filters=64, kernel_size=3
+                ),
                 tf.keras.layers.GlobalAveragePooling2D(keepdims=False),
                 tf.keras.layers.Dense(units=10)
             ]
         )
         self._l3 = tf.keras.Sequential(
             [
-                tf.keras.layers.Conv2D(filters=64, kernel_size=3, padding='valid', activation=None),
+                tf.keras.layers.Conv2D(
+                    filters=64, kernel_size=3
+                ),
                 tf.keras.layers.GlobalAveragePooling2D(keepdims=False),
                 tf.keras.layers.Dense(units=10)
             ]
         )
 
     def call(self, inputs, training=None, mask=None):
-        y1 = self._l1(inputs)  # shape: (batch_size, 10)
-        y2 = self._l2(inputs)  # shape: (batch_size, 10)
-        y3 = self._l3(inputs)  # shape: (batch_size, 10)
-        # Stack along 0th dim to get shape (3, batch_size, 10)
-        out = tf.stack([y1, y2, y3], axis=0)
+        y1 = self._l1(inputs)
+        y2 = self._l2(inputs)
+        y3 = self._l3(inputs)
+        out = tf.stack([y1, y2, y3])
+        # Output shape is (3, batch_size, 10)
+
         return out
 
 
-def fused_loss_vmap(logits, labels):
-    """
-    Compute categorical cross-entropy loss per model output (3 outputs),
-    with gradients supported in eager and graph modes.
+model = MyModel()
 
-    This function uses tf.vectorized_map (which supports backpropagation better than tf.map_fn).
-    """
-    def loss_fn(idx):
-        pred = tf.gather(logits, idx)  # shape (batch_size, 10)
-        # Compute mean CCE for this output
-        loss = tf.reduce_mean(
+
+# just a random image classification dataset
+def get_dataset():
+    db = tf.data.Dataset.range(100)
+    db = db.map(
+        lambda x: (tf.random.uniform(shape=(224, 224, 3), dtype=tf.float32),
+                   tf.one_hot(tf.random.uniform(shape=(), minval=0, maxval=9, dtype=tf.int64), depth=10)
+                   )
+    )
+    db = db.batch(5)
+    return db
+
+
+dataset = get_dataset()
+
+
+# Computes the loss. But gradient backpropagation fails.
+# Here tf.map_fn is used to compute the loss of the output of l1, l2 and l3 ( See Model ) with respect to GT labeles.
+def get_loss_v1(logits, labels):
+    loss = tf.map_fn(
+        fn=lambda x: tf.reduce_mean(
             tf.keras.losses.categorical_crossentropy(
-                y_true=labels,
-                y_pred=pred,
-                from_logits=True
+                from_logits=True,
+                y_pred=tf.gather(logits, x),
+                y_true=labels
+            )
+        ),
+        elems=tf.range(3),
+        fn_output_signature=tf.float32
+    )
+    return loss
+
+
+# Computes the loss. But gradient backpropagation fails.
+# Here appending to a list is used to compute the loss of the output of l1, l2 and l3 ( See Model ) with respect to GT labeles.
+# This method should be avoided as it makes use of python list. TensorArray is recommended to be used here.
+
+# Check out https://github.com/tensorflow/tensorflow/issues/37512
+def get_loss_v2(logits, labels):
+    losses = list()
+    for i in tf.range(3):
+        y_pred = tf.gather(logits, i)
+        losses.append(
+            tf.reduce_mean(
+                tf.keras.losses.categorical_crossentropy(
+                    from_logits=True,
+                    y_pred=y_pred,
+                    y_true=labels
+                )
             )
         )
-        return loss
-    losses = tf.vectorized_map(loss_fn, tf.range(3))
     return losses
 
 
-def fused_loss_while_loop(logits, labels):
-    """
-    Compute categorical cross-entropy losses over the 3 model outputs using tf.while_loop and TensorArray.
-    This approach was known from the issue to not propagate gradients properly,
-    but included for completeness and as reference.
-    """
-    losses_ta = tf.TensorArray(dtype=tf.float32, size=3, dynamic_size=False, clear_after_read=False)
-    i = tf.constant(0)
+# Computes the loss. But gradient backpropagation fails.
+# Here tf.TensorArray with tf.while_loop is used to compute the loss of the output of l1, l2 and l3 ( See Model ) with respect to GT labeles.
+def get_loss_v3(logits, labels):
+    losses = tf.TensorArray(dtype=tf.float32,
+                            size=0, dynamic_size=True, clear_after_read=False, element_shape=()
+                            )
+    index = tf.constant(0)
 
-    def cond(i, ta):
-        return tf.less(i, 3)
-
-    def body(i, ta):
-        pred = tf.gather(logits, i)
-        loss = tf.reduce_mean(
+    def body(counter_var, log, lbl, l):
+        l = l.write(l.size(), tf.reduce_mean(
             tf.keras.losses.categorical_crossentropy(
-                y_true=labels,
-                y_pred=pred,
-                from_logits=True
+                from_logits=True,
+                y_pred=tf.gather(log, counter_var),
+                y_true=lbl
+            )
+        ))
+        return counter_var + 1, log, lbl, l
+
+    output = tf.while_loop(
+        cond=lambda i, *_: tf.less(i, 3),
+        loop_vars=(index, logits, labels, losses),
+        body=body,
+        parallel_iterations=1
+    )
+    loss_val = output[-1].stack()
+    return loss_val
+
+
+def train_step(images, labels):
+    with tf.GradientTape(persistent=True) as tape:
+        logits = model(images, training=True)
+        loss_val = get_loss_v1(logits, labels)
+        # loss_val = get_loss_v2(logits, labels)
+        # loss_val = get_loss_v3(logits, labels)
+        print(loss_val)  # This prints the forward losses properly
+    grads = list()
+    for i in tf.range(3):
+        tgt = tf.gather(loss_val, i)
+        grads.append(
+            tape.gradient(
+                target=tgt,
+                sources=model.trainable_variables
             )
         )
-        ta = ta.write(i, loss)
-        return i+1, ta
-
-    i, losses_ta = tf.while_loop(cond, body, loop_vars=[i, losses_ta], parallel_iterations=1)
-    return losses_ta.stack()
+    print(grads)  # This always prints None
 
 
-def fused_loss_python_loop(logits, labels):
-    """
-    Compute categorical cross-entropy losses using a python for-loop and list.
-    This works in eager but is not recommended as it breaks graph mode optimizations.
-    """
-    losses = []
-    for i in range(3):
-        pred = tf.gather(logits, i)
-        loss = tf.reduce_mean(
-            tf.keras.losses.categorical_crossentropy(
-                y_true=labels,
-                y_pred=pred,
-                from_logits=True
-            )
-        )
-        losses.append(loss)
-    return tf.stack(losses)
-
-
-class MyModelWithLoss(tf.keras.Model):
-    """
-    A wrapper model to run forward pass and compute losses fused from submodels (l1,l2,l3)
-    and to provide a comparison of losses from different implementations,
-    highlighting the gradients issue in TensorArray / tf.map_fn approaches.
-
-    The forward pass outputs logits stacked (3, batch_size, 10).
-
-    The call returns a dict of losses computed with different methods and a boolean tensor
-    indicating if the three loss computations agree (within tolerance).
-    """
-    def __init__(self):
-        super(MyModelWithLoss, self).__init__()
-        self.base_model = MyModel()
-
-    def call(self, inputs, labels, training=None):
-        logits = self.base_model(inputs, training=training)
-        loss_vmap = fused_loss_vmap(logits, labels)
-        loss_while_loop = fused_loss_while_loop(logits, labels)
-        loss_py_loop = fused_loss_python_loop(logits, labels)
-
-        # Compare all losses with small tolerance
-        # Because Python loop outputs and vmap should be same,
-        # While_loop may differ / gradient may fail
-        eps = 1e-6
-        vmap_vs_py = tf.less_equal(tf.abs(loss_vmap - loss_py_loop), eps)
-        vmap_vs_while = tf.less_equal(tf.abs(loss_vmap - loss_while_loop), eps)
-        all_equal = tf.reduce_all(tf.logical_and(vmap_vs_py, vmap_vs_while))
-
-        return {
-            'loss_vmap': loss_vmap,
-            'loss_while_loop': loss_while_loop,
-            'loss_python_loop': loss_py_loop,
-            'losses_all_close': all_equal
-        }
-
-
-def MyModelFactory():
-    # Return the wrapped model that provides fused loss computations for the 3 networks
-    return MyModelWithLoss()
-
-
-def GetInput():
-    # Generate a batch of random images and random one-hot labels consistent with example in issue
-    batch_size = 5  # From original dataset batch size
-    img_shape = (224, 224, 3)
-    num_classes = 10
-
-    images = tf.random.uniform(shape=(batch_size,) + img_shape, dtype=tf.float32)
-    labels_int = tf.random.uniform(shape=(batch_size,), minval=0, maxval=num_classes, dtype=tf.int32)
-    labels = tf.one_hot(labels_int, depth=num_classes)
-
-    return (images, labels)
-
+for data in dataset:
+    images, labels = data
+    train_step(images, labels)

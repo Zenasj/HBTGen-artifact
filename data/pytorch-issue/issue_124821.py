@@ -1,8 +1,10 @@
-# torch.rand(22, 51, dtype=torch.int64) ← Add a comment line at the top with the inferred input shape
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+import numpy as np
+import torch
+
+# Model definition
+class M(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.v2_0 = torch.nn.Parameter(torch.empty([1, 22, 51], dtype=torch.int64), requires_grad=False)
@@ -15,11 +17,9 @@ class MyModel(nn.Module):
         max_2 = torch.max(getitem, v2_0)
         return (getattr_1, max_2)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+m = M()
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randint(0, 100, (22, 51), dtype=torch.int64)
-
+inp =  torch.from_numpy(np.zeros((22, 51),dtype=np.int64))
+m(inp) # this line is OK
+opt = torch.compile(m, fullgraph=True, backend='inductor', mode=None)
+opt(inp) # this line will crash

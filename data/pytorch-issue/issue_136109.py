@@ -1,23 +1,14 @@
-# torch.rand(1, dtype=torch.int64)  # Inferred input shape from the example
-import torch
-from torch import nn
+import torch._custom_ops as custom_ops
+import torch.utils.cpp_extension
+from torch._custom_op.impl import CustomOp
 
-# Define the custom op using the recommended torch.library API
-lib = torch.library.Library("my_test_library", "DEF")
-lib.define("foo(Tensor self) -> Tensor")
+test_ns = '_test_custom_op'
+@custom_ops.custom_op(f'{test_ns}::foo')
+def foo(x: torch.Tensor) -> torch.Tensor:
+    raise NotImplementedError
 
-@torch.library.impl(lib, "foo")
-def foo_impl(self):
-    # Dummy implementation to avoid NotImplementedError
-    return self + 1  # Example operation; adjust as needed
+custom_op = torch._custom_op.impl.get_op(f'{test_ns}::foo')
+custom_ops._destroy(f'{test_ns}::foo')
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return torch.ops.my_test_library.foo(x)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.tensor([2], dtype=torch.int64)
-
+x = torch.tensor([2])
+custom_op(x)

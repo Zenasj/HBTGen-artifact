@@ -1,66 +1,49 @@
-# tf.random.uniform((B, None), dtype=tf.string)  ← Input shape is (batch_size, variable_length_string_sequence)
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
+from tensorflow.keras.layers import Dense, Concatenate, RepeatVector, Activation, Dot, Bidirectional, Flatten, Embedding, Input, SpatialDropout1D, LSTM, Dropout, Lambda, Conv2D, Conv1D, Attention, AdditiveAttention, GlobalAveragePooling1D, TimeDistributed, AveragePooling1D
+from tensorflow.keras.models import Model
+from tensorflow.keras.backend import backend
 import tensorflow_hub as hub
+from tensorflow.keras.datasets import imdb
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+import numpy as np
+import tensorflow_datasets as tfds
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # The TF Hub model expects input of shape (batch_size,) of dtype string
-        # using the URL for the "gnews-swivel-20dim" embedding
-        self.hub_layer = hub.KerasLayer(
-            "https://tfhub.dev/google/tf2-preview/gnews-swivel-20dim/1",
-            trainable=True)
+def cnn_classifier():
+    # Encode each timestep
+    # embedding = Embedding(10000, 300, trainable=True)(input)
 
-        # Following the original example, 3 Conv1D layers and flatten + final sigmoid output
-        # However, hub_layer output shape is (batch_size, embedding_dim) not sequence,
-        # so Conv1D doesn't apply directly. We adjust with a 1-step temporal dim to apply Conv1D.
+    embedding = "https://tfhub.dev/google/tf2-preview/gnews-swivel-20dim/1"
+    input = Input(shape=(None,), name="Input")
+    hub_layer = hub.KerasLayer(embedding, trainable=True)(input)
+    cnn = Conv1D(64,3, padding="same", activation="relu")(hub_layer)
+    cnn = Conv1D(32, 3, padding="same", activation="relu")(cnn)
+    cnn = Conv1D(16, 3, padding="same", activation="relu")(cnn)
+    cnn = Flatten()(cnn)
+    output = Dense(1, activation="sigmoid")(cnn)
 
-        # Add a dimension to match Conv1D input: (batch_size, sequence_length=1, channels=embedding_dim)
-        # Then Conv1D with kernel size 3 with padding "same" is possible.
-        self.expand_dims = tf.keras.layers.Lambda(lambda x: tf.expand_dims(x, axis=1))
+    model = Model(input, output)
+    model.compile(loss="binary_crossentropy",
+                  optimizer="adam",
+                  metrics=["accuracy"])
+    model.summary()
+    return model
 
-        self.conv1 = tf.keras.layers.Conv1D(64, 3, padding="same", activation="relu")
-        self.conv2 = tf.keras.layers.Conv1D(32, 3, padding="same", activation="relu")
-        self.conv3 = tf.keras.layers.Conv1D(16, 3, padding="same", activation="relu")
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense = tf.keras.layers.Dense(1, activation="sigmoid")
+model = cnn_classifier()
 
-    def call(self, inputs):
-        """
-        The inputs are expected to be a 1-D tensor of dtype string, shape (batch_size,)
-        representing raw text input strings (like sentences).
+train_validation_split = tfds.Split.TRAIN.subsplit([8, 2])
 
-        The hub layer maps each string to a fixed 20-dimensional embedding vector.
+(train_data, validation_data), test_data = tfds.load(
+    name="imdb_reviews",
+    split=(train_validation_split, tfds.Split.TEST),
+    as_supervised=True)
 
-        To apply Conv1D, we expand dims to (batch, 1, embedding_dim) and then apply Conv layers.
-        """
-        x = self.hub_layer(inputs)  # shape: (batch_size, 20)
-        x = self.expand_dims(x)     # shape: (batch_size, 1, 20)
-        x = self.conv1(x)           # (batch_size, 1, 64)
-        x = self.conv2(x)           # (batch_size, 1, 32)
-        x = self.conv3(x)           # (batch_size, 1, 16)
-        x = self.flatten(x)         # (batch_size, 16)
-        out = self.dense(x)         # (batch_size, 1) sigmoid output
-        return out
+#train_data = pad_sequences(train_data, maxlen=1100, dtype='int32', padding='post', truncating='post', value=0.0)
+#test_data = pad_sequences(test_data, maxlen=1100, dtype='int32', padding='post', truncating='post', value=0.0)
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    """
-    Returns a batch of string inputs compatible with MyModel.
-
-    Since the hub embedding expects string inputs (e.g., sentences),
-    the tensor returned must be a 1-D tf.string tensor.
-
-    Here we provide a batch of 4 sample simple English sentences.
-    """
-    sample_sentences = [
-        "This is a good movie.",
-        "I did not like the film.",
-        "It was an amazing experience.",
-        "The plot was boring and predictable."
-    ]
-    return tf.constant(sample_sentences)
-
+model.fit(train_data.shuffle(25000).batch(512),
+                    epochs=20,
+                    validation_data=validation_data.batch(512),
+                    verbose=10)

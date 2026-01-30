@@ -1,17 +1,13 @@
-# torch.rand(100, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
-
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+class Flatten(torch.nn.Module):
     def forward(self, x):
         return x.flatten()
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(100, dtype=torch.float32)
+x = torch.rand(100)
+torch.onnx.export(Flatten(), x, 'flatten.onnx', opset_version=13)
 
+print(Flatten()(x).shape)
+print(onnx.load("flatten.onnx").graph.output[0])

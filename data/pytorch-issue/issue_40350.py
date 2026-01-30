@@ -1,20 +1,15 @@
-# torch.rand(1, 3) ← Add a comment line at the top with the inferred input shape
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.identity = nn.Identity()
+import torch
 
-    def forward(self, x):
-        return self.identity(x)
+net = torch.nn.Identity()
+x = torch.tensor([1, 2, 3])
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+# these two lines create warnings in PyCharm (i.e. example_inputs=x and args=x are highlighted in yellow
+# and the code inspection lists the warnings "Expected type 'tuple',  got 'Tensor' instead")
+torch.jit.trace(func=net, example_inputs=x)
+torch.onnx.export(model=net, args=x, f="test.onnx")
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(1, 3)
-
+# these two don't
+torch.jit.trace(func=net, example_inputs=(x,))
+torch.onnx.export(model=net, args=(x,), f="test2.onnx")

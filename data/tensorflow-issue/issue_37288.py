@@ -1,26 +1,39 @@
-# tf.random.uniform((B, H, W, C), dtype=...) ← No specific input shape or dtype was given in the issue; 
-# the minimal model used was a keras.Sequential with an Embedding layer of (1000, 64) and input_length=10.
-# So the input is integer tensor of shape (batch_size, 10) with values in [0, 999].
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Replicating the minimal model from issue: Sequential with Embedding(1000, 64, input_length=10)
-        self.embedding = tf.keras.layers.Embedding(input_dim=1000, output_dim=64, input_length=10)
+from tensorflow import keras
+from tensorflow.keras import layers
+# noinspection PyUnresolvedReferences
+from tensorflow_core.python.framework.ops import EagerTensor
 
-    def call(self, inputs):
-        # inputs expected to be integer indices (batch_size, 10)
-        return self.embedding(inputs)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+def main():
+    model = keras.Sequential()
+    model.add(layers.Embedding(1000, 64, input_length=10))
 
-def GetInput():
-    # Return a random int32 tensor of shape (batch_size, 10) to match input_length=10 and vocab=1000
-    batch_size = 4  # arbitrarily chosen
-    input_length = 10
-    # Values between 0 and 999 inclusive
-    return tf.random.uniform(shape=(batch_size, input_length), minval=0, maxval=1000, dtype=tf.int32)
+if __name__ == '__main__':
+    main()
 
+from tensorflow_core.python.framework.ops import EagerTensor
+# ...
+def write_records(shard_filepath, records):
+    with tf.io.TFRecordWriter(shard_filepath) as writer:
+        for record in records:
+            if isinstance(record, EagerTensor):
+                record = record.numpy()
+            writer.write(record)
+
+from tensorflow import keras
+from tensorflow.keras import layers
+# noinspection PyUnresolvedReferences
+from tensorflow_core.python.framework.ops import EagerTensor
+
+
+def main():
+    model = keras.Sequential()
+    model.add(layers.Embedding(1000, 64, input_length=10))
+
+
+if __name__ == '__main__':
+    main()
+
+from tensorflow.python.framework.ops import EagerTensor

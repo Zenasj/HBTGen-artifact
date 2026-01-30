@@ -1,76 +1,167 @@
-# tf.random.uniform((B, None, 100), dtype=tf.float32) ← Inferred input shape: batch_size x sequence_length x input_dim=100, sequence length is variable (None)
-import tensorflow as tf
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+
 import numpy as np
+import tensorflow as tf
 
 
-class MyModel(tf.keras.Model):
+def build_autoencoder(input_dim, embed_dim=100): 
+    """Set up an auto-encoder model made of two BiLSTM layers.""" 
+    # Set up input tensors.
+    inputs = tf.keras.Input((None, input_dim), dtype=tf.float32) 
+    mask = tf.keras.Input((None,), dtype=tf.bool) 
+    # Set up encoder and decoder BiLSTM layers.
+    encoder = tf.keras.layers.Bidirectional( 
+        tf.keras.layers.LSTM(embed_dim, return_sequences=True),
+        merge_mode='sum' 
+    ) 
+    decoder = tf.keras.layers.Bidirectional( 
+        tf.keras.layers.LSTM(input_dim, return_sequences=True),
+        merge_mode='sum' 
+    ) 
+    # Build the outputs tensor.
+    outputs = decoder(encoder(inputs, mask=mask), mask=mask) 
+    # Set up, compile and return the model.
+    model = tf.keras.Model(inputs=[inputs, mask], outputs=outputs) 
+    model.compile('adam', tf.keras.losses.mse) 
+    return model
+
+
+def build_mock_data(dim, nsamples, maxlen, seed=0):
+    """Build some mock data for bug demonstration purposes.
+
+    Return an array of zero-padded sequences of random
+    actual length, and an associated boolean mask Tensor.
+    
+    Use a random seed for reproducibility.
     """
-    An autoencoder model composed of two Bidirectional LSTM layers (encoder and decoder),
-    supporting variable-length sequences via input lengths and sequence_mask.
+    np.random.seed(seed)
+    sizes = np.random.choice(maxlen, size=nsamples)
+    inputs = np.random.normal(size=(nsamples, max(sizes), dim))
+    for i, size in enumerate(sizes):
+        inputs[i, size:] = 0.
+    mask = tf.sequence_mask(sizes, dtype=tf.bool)
+    return inputs.astype(np.float32), mask
+
+
+if __name__ == '__main__':
+    # Generate the mock data. Instantiate the mdoel.
+    inputs, mask = build_mock_data(dim=100, nsamples=64, maxlen=500, seed=0)
+    model = build_autoencoder(input_dim=100, embed_dim=50)
+
+    # This works fine.
+    model.predict([inputs, mask])
+
+    # This also works.
+    model.evaluate([inputs, mask], inputs)
+
+    # This is where things go wrong.
+    model.fit([inputs, mask], inputs)
+
+import numpy as np
+import tensorflow as tf
+
+
+def build_autoencoder(input_dim, embed_dim=100): 
+    """Set up an auto-encoder model made of two BiLSTM layers.""" 
+    # Set up the input tensor.
+    inputs = tf.keras.Input((None, input_dim), dtype=tf.float32) 
+    # Set up encoder and decoder BiLSTM layers.
+    encoder = tf.keras.layers.Bidirectional( 
+        tf.keras.layers.LSTM(embed_dim, return_sequences=True),
+        merge_mode='sum', name='encoder'
+    ) 
+    decoder = tf.keras.layers.Bidirectional( 
+        tf.keras.layers.LSTM(input_dim, return_sequences=True),
+        merge_mode='sum', name='decoder'
+    ) 
+    # Build the outputs tensor.
+    outputs = decoder(encoder(inputs)) 
+    # Set up, compile and return the model.
+    model = tf.keras.Model(inputs=inputs, outputs=outputs) 
+    model.compile('adam', tf.keras.losses.mse) 
+    return model
+
+
+def build_mock_data(dim, nsamples, length, seed=0):
+    """Build some mock data for bug demonstration purposes.
+
+    Return an array of shape (nsamples, length, dim) filled
+    with random normally-distributed data.
+    
+    Use a random seed for reproducibility.
     """
-
-    def __init__(self, input_dim=100, embed_dim=50):
-        super(MyModel, self).__init__()
-        # Encoder: Bidirectional LSTM with sum merge mode
-        self.encoder = tf.keras.layers.Bidirectional(
-            tf.keras.layers.LSTM(embed_dim, return_sequences=True),
-            merge_mode='sum', name='encoder')
-        # Decoder: Bidirectional LSTM with sum merge mode
-        self.decoder = tf.keras.layers.Bidirectional(
-            tf.keras.layers.LSTM(input_dim, return_sequences=True),
-            merge_mode='sum', name='decoder')
-
-    def call(self, inputs):
-        """
-        Expected input: tuple/list of (inputs, sizes)
-          - inputs: float32 tensor [batch_size, max_seq_len, input_dim]
-          - sizes: int32 tensor [batch_size] representing actual sequence lengths
-
-        Applies masking internally using tf.sequence_mask.
-        """
-        if not (isinstance(inputs, (list, tuple)) and len(inputs) == 2):
-            raise ValueError("Input to MyModel must be a tuple/list: (inputs, sizes)")
-
-        sequences, sizes = inputs
-        mask = tf.sequence_mask(sizes, maxlen=tf.shape(sequences)[1])
-        x = self.encoder(sequences, mask=mask)
-        x = self.decoder(x, mask=mask)
-        return x
+    np.random.seed(seed)
+    return np.random.normal(size=(nsamples, length, dim))
 
 
-def my_model_function():
+if __name__ == '__main__':
+    # Generate the mock data. Instantiate the mdoel.
+    inputs = build_mock_data(dim=100, nsamples=64, length=500, seed=0)
+    model = build_autoencoder(input_dim=100, embed_dim=50)
+
+    # This works but prints the error warning.
+    model.predict(inputs)
+
+    # Same thing here.
+    model.evaluate(inputs, inputs)
+
+    # Same thing here.
+    model.fit(inputs, inputs)
+
+def build_autoencoder(input_dim, embed_dim=100): 
+    """Set up an auto-encoder model made of two BiLSTM layers.""" 
+    # Set up the input tensors.
+    inputs = tf.keras.Input((None, input_dim), dtype=tf.float32)
+    sizes = tf.keras.Input((), dtype=tf.int32)
+    # Set up encoder and decoder BiLSTM layers.
+    encoder = tf.keras.layers.Bidirectional( 
+        tf.keras.layers.LSTM(embed_dim, return_sequences=True),
+        merge_mode='sum', name='encoder'
+    ) 
+    decoder = tf.keras.layers.Bidirectional( 
+        tf.keras.layers.LSTM(input_dim, return_sequences=True),
+        merge_mode='sum', name='decoder'
+    ) 
+    # Build the outputs tensor.
+    mask = tf.sequence_mask(sizes, maxlen=tf.shape(inputs)[1])
+    outputs = decoder(encoder(inputs, mask=mask), mask=mask) 
+    # Set up, compile and return the model.
+    model = tf.keras.Model(inputs=[inputs, sizes], outputs=outputs) 
+    model.compile('adam', tf.keras.losses.mse) 
+    return model
+
+def build_mock_data(dim, nsamples, maxlen, seed=0):
+    """Build some mock data for bug demonstration purposes.
+
+    Return an array of zero-padded sequences of random
+    actual length, and an array containing those lengths.
+    
+    Use a random seed for reproducibility.
     """
-    Returns an instance of MyModel with default input_dim=100 and embed_dim=50.
-    """
-    return MyModel(input_dim=100, embed_dim=50)
+    np.random.seed(seed)
+    sizes = np.random.choice(maxlen, size=nsamples)
+    inputs = np.random.normal(size=(nsamples, max(sizes), dim))
+    for i, size in enumerate(sizes):
+        inputs[i, size:] = 0.
+    return inputs.astype(np.float32), sizes
 
+if __name__ == '__main__':
+    # Generate the mock data. Instantiate the mdoel.
+    inputs, sizes = build_mock_data(dim=100, nsamples=64, maxlen=500, seed=0)
+    model = build_autoencoder(input_dim=100, embed_dim=50)
 
-def GetInput():
-    """
-    Returns a valid random input tuple (inputs, sizes) matching MyModel's expected input:
-      - inputs: float32 tensor [batch_size, max_seq_len, input_dim=100]
-      - sizes: int32 vector [batch_size] with sequence lengths <= max_seq_len
+    # This works fine.
+    model.predict([inputs, sizes])
 
-    Here:
-      - batch_size = 64
-      - max_seq_len = 500
-      - input_dim = 100
-    """
-    batch_size = 64
-    max_seq_len = 500
-    input_dim = 100
+    # This also works.
+    model.evaluate([inputs, sizes], inputs)
 
-    # Randomly choose actual sequence lengths for each batch element
-    np.random.seed(0)
-    sizes_np = np.random.choice(max_seq_len, size=batch_size)
-    # Create zero-padded inputs of shape (batch_size, max_seq_len, input_dim)
-    inputs_np = np.random.normal(size=(batch_size, max_seq_len, input_dim)).astype(np.float32)
-    # Zero out padding positions beyond actual length
-    for i, length in enumerate(sizes_np):
-        if length < max_seq_len:
-            inputs_np[i, length:] = 0.0
+    # This prints out the error messages, but works.
+    model.fit([inputs, sizes], inputs)
 
-    inputs_tf = tf.convert_to_tensor(inputs_np, dtype=tf.float32)
-    sizes_tf = tf.convert_to_tensor(sizes_np, dtype=tf.int32)
-    return (inputs_tf, sizes_tf)
-
+    # Further calls no longer print errors, and the loss decreases.
+    model.fit([inputs, sizes], inputs)
+    model.fit([inputs, sizes], inputs)
+    model.fit([inputs, sizes], inputs)

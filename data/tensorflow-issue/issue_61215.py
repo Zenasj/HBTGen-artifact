@@ -1,32 +1,40 @@
-# tf.random.uniform((B, 1), dtype=tf.float32) ← Inferred input shape: batch size B, feature dimension 1
+from tensorflow.keras import layers
 
+import numpy as np
 import tensorflow as tf
+from tensorflow.python.keras.layers import Dense, Input
+from tensorflow.python.keras import Sequential
+from tensorflow.python.keras.activations import sigmoid
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # A single Dense layer with 1 neuron and sigmoid activation,
-        # initialized with weights and bias same as in the original example
-        self.dense = tf.keras.layers.Dense(
-            1,
-            activation='sigmoid',
-            name='L1',
-            kernel_initializer=tf.constant_initializer([[2.0]]),
-            bias_initializer=tf.constant_initializer([-4.5])
-        )
-        
-    def call(self, inputs):
-        # Forward pass through the logistic neuron layer
-        return self.dense(inputs)
+import logging
+logging.getLogger("tensorflow").setLevel(logging.ERROR)
+tf.autograph.set_verbosity(0)
 
-def my_model_function():
-    # Return an instance of MyModel. Weights are set via initializers above.
-    return MyModel()
+X_train = np.array([0., 1, 2, 3, 4, 5], dtype=np.float32).reshape(-1,1)
+Y_train = np.array([0,  0, 0, 1, 1, 1], dtype=np.float32).reshape(-1,1)
 
-def GetInput():
-    # Generate a random batch of inputs compatible with MyModel:
-    # shape: (batch_size, 1), dtype float32
-    # batch size chosen arbitrarily (e.g., 6 to match original example size)
-    batch_size = 6
-    return tf.random.uniform((batch_size, 1), dtype=tf.float32)
+model = Sequential([
+    Input(shape=(1,)),
+    Dense(1, activation=sigmoid, name = "L1")
+])
+model.summary()
 
+# Setting the weights and bias of the neuron
+logistic_layer = model.get_layer('L1')
+set_w = np.array([[2]])
+set_b = np.array([-4.5])
+logistic_layer.set_weights([set_w, set_b])
+
+# Performance test
+a1 = model.predict(X_train[0].reshape(1,1)) # this line caused the error
+print(a1)
+alog = sigmoid(np.dot(set_w,X_train[0].reshape(1,1)) + set_b)
+print(alog)
+
+def _is_distributed_dataset(ds):
+#   return isinstance(ds, input_lib.DistributedDatasetInterface)
+    return isinstance(ds, input_lib.DistributedDatasetSpec)
+
+from tensorflow.keras.layers import Dense, Input
+from tensorflow.keras import Sequential
+from tensorflow.keras.activations import sigmoid

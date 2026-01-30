@@ -1,67 +1,139 @@
-# tf.random.uniform((B, S), dtype=tf.int32) where B=batch_size, S=sequence_length
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self, vocab_size=1000):
-        super().__init__()
-        self.vocab_size = vocab_size
-        self.embed = tf.keras.layers.Embedding(vocab_size, 32)
-        self.dense = tf.keras.layers.Dense(vocab_size)
+resolver = tf.distribute.cluster_resolver.TPUClusterResolver()
+tf.config.experimental_connect_to_cluster(resolver)
+tf.tpu.experimental.initialize_tpu_system(resolver)
+strategy = tf.distribute.TPUStrategy(resolver)
 
-    def call(self, inputs, training=None):
-        """
-        Forward pass implementing a loop over the sequence length dimension,
-        applying a Dense layer to each token embedding separately,
-        and collecting outputs via a tf.TensorArray.
-        
-        This was the original pattern from the issue that caused TPU/XLA compilation issues
-        when using tf.range inside loops with TensorArray.
-        
-        The method stacks outputs for each token and returns a transposed output
-        tensor of shape (batch_size, sequence_length, vocab_size).
-        
-        Note: token_length is determined dynamically from input shape.
-        """
-        embedding = self.embed(inputs)
-        token_length = tf.shape(embedding)[1]  # dynamic shape to avoid static shape issues
-        
-        outputs = tf.TensorArray(tf.float32, size=token_length)
-        
-        # Use tf.while_loop for TPU/XLA compatibility instead of python range iteration
-        i = tf.constant(0)
-        
-        def cond(i, outputs):
-            return i < token_length
-        
-        def body(i, outputs):
-            # Process embedding for token at position i
-            output = self.dense(embedding[:, i, :])
-            outputs = outputs.write(i, output)
-            return i + 1, outputs
-        
-        _, outputs = tf.while_loop(cond, body, [i, outputs], maximum_iterations=token_length)
-        
-        # outputs.stack() returns shape (token_length, batch_size, vocab_size),
-        # so transpose to (batch_size, token_length, vocab_size)
-        return tf.transpose(outputs.stack(), perm=[1, 0, 2])
+class TestModel(tf.keras.Model):
+  def __init__(self):
+    super().__init__()
 
-def my_model_function():
-    # Instantiate MyModel with vocab_size 1000 as in the original issue
-    return MyModel(vocab_size=1000)
+    self.embed = tf.keras.layers.Embedding(vocab_size, 32)
+    self.dense = tf.keras.layers.Dense(vocab_size)
 
-def GetInput():
-    # Generate a random int32 tensor to simulate input token IDs as expected by embedding layer.
-    # Shape: (batch_size=32, sequence_length=32)
-    batch_size = 32
-    sequence_length = 32
-    vocab_size = 1000  # must match model's vocab_size
+  def call(self, input, training=None):
+    embedding = self.embed(input)
+    token_length = embedding.shape[1]
+    print("Token Length:", token_length)
+    outputs = tf.TensorArray(tf.float32, token_length)
+
+    for i in tf.range(token_length):
+    # for i in range(token_length):
+      output = self.dense(embedding[:, i, :])
+      outputs = outputs.write(i, output)
     
-    # Generate integer token IDs between 0 and vocab_size-1
-    return tf.random.uniform(
-        shape=(batch_size, sequence_length),
-        minval=0,
-        maxval=vocab_size,
-        dtype=tf.int32
-    )
+    return tf.transpose(outputs.stack(), [1,0,2])
 
+with strategy.scope():
+  vocab_size = 1000
+  batch_size = 32
+  sequence_length = 32
+
+  model = TestModel()
+  model.compile('adam', tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True))
+  model(tf.keras.Input([sequence_length - 1]))
+
+  dataset = tf.data.Dataset.from_tensor_slices(tf.random.uniform([10000, sequence_length], 0, vocab_size, dtype=tf.int32)).map(lambda x: (x[:-1], x[1:]))
+  dataset = dataset.batch(batch_size)
+
+  model.fit(dataset)
+
+class TestModel(tf.keras.Model):
+  def __init__(self):
+    super().__init__()
+
+    self.embed = tf.keras.layers.Embedding(vocab_size, 32)
+    self.dense = tf.keras.layers.Dense(vocab_size)
+    self.dense2 = tf.keras.layers.Dense(vocab_size)
+
+  def call(self, input, training=None):
+    embedding = self.embed(input)
+    token_length = embedding.shape[1]
+    print("Token Length:", token_length)
+
+    output = self.dense(tf.reduce_mean(embedding, axis=1))
+    for i in tf.range(token_length):
+      output = self.dense2(output)
+    
+    return tf.repeat(output[:, tf.newaxis, :], token_length, 1)
+
+class TestModel(tf.keras.Model):
+  def __init__(self):
+    super().__init__()
+
+    self.embed = tf.keras.layers.Embedding(vocab_size, 32)
+    self.dense = tf.keras.layers.Dense(vocab_size)
+
+  def call(self, input, training=None):
+    embedding = self.embed(input)
+    token_length = embedding.shape[1]
+    print("Token Length:", token_length)
+
+    def cond(i, outputs):
+      return i < token_length
+
+    def body(i, outputs):
+      output = self.dense(embedding[:, i, :])
+      outputs = outputs.write(i, output)
+      i += 1
+      return i, outputs
+
+    i = 0
+    outputs = tf.TensorArray(tf.float32, token_length)
+    i, outputs = tf.while_loop(cond, body, [i, outputs], maximum_iterations=token_length)
+    
+    return tf.transpose(outputs.stack(), [1,0,2])
+
+import tensorflow as tf
+
+resolver = tf.distribute.cluster_resolver.TPUClusterResolver()
+tf.config.experimental_connect_to_cluster(resolver)
+tf.tpu.experimental.initialize_tpu_system(resolver)
+strategy = tf.distribute.TPUStrategy(resolver)
+
+class TestModel(tf.keras.Model):
+  def __init__(self):
+    super().__init__()
+
+    self.embed = tf.keras.layers.Embedding(vocab_size, 32)
+    self.dense = tf.keras.layers.Dense(vocab_size)
+
+  @tf.function
+  def train_step(self, inputs):
+    input, target = inputs
+
+    token_length = input.shape[1]
+    print("Token Length:", token_length)
+
+    total_loss = 0.0
+    with tf.GradientTape() as tape:
+      embedding = self.embed(input)
+
+      for i in tf.range(token_length):
+        output = self.dense(embedding[:, i, :])
+        total_loss += self.compiled_loss(target[:, i], output)
+  
+    variables = self.trainable_variables 
+    gradients = tape.gradient(total_loss, variables)
+    self.optimizer.apply_gradients(zip(gradients, variables))
+
+    return {"loss":total_loss}
+    
+
+with strategy.scope():
+  vocab_size = 1000
+  batch_size = 32
+  sequence_length = 32
+
+  model = TestModel()
+  model.compile('adam', tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True))
+
+  dataset = tf.data.Dataset.from_tensor_slices(tf.random.uniform([10000, sequence_length], 0, vocab_size, dtype=tf.int32)).map(lambda x: (x[:-1], x[1:]))
+  dataset = dataset.batch(batch_size)
+
+  model.fit(dataset)

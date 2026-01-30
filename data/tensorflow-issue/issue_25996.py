@@ -1,26 +1,26 @@
-# tf.random.uniform((B, 20), dtype=tf.float32)  ← inferred input shape from original example (batch size B, feature vector of length 20)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
 import tensorflow as tf
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define a simple Dense network matching the example in the issue
-        self.dense = tf.keras.layers.Dense(2)
+input = tf.keras.layers.Input(shape=(20,))
+output = tf.keras.layers.Dense(2)(input)
+model = tf.keras.models.Model(inputs=input, outputs=output)
+model.compile(loss='mse', optimizer='sgd')
 
-    def call(self, inputs, training=False):
-        # Forward pass
-        x = self.dense(inputs)
-        return x
+model.fit(np.random.normal(0, 1, (200, 20)), np.random.normal(0, 1, (200, 2)))
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+# coding: utf-8
+import tensorflow as tf
+import os
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # Shape: (batch_size, feature_length) e.g. (32,20)
-    batch_size = 32  # arbitrary batch size
-    feature_length = 20
-    # Use float32 for compatibility with Dense layer weights
-    return tf.random.uniform((batch_size, feature_length), dtype=tf.float32)
+if type(tf.contrib) != type(tf): tf.contrib._warning = None
+tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
+# Only use CPU:
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"

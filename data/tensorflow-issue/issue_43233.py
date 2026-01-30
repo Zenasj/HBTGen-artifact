@@ -1,21 +1,65 @@
-# tf.random.uniform((3, 3), dtype=tf.float32) ← Input shape inferred from example: batch=3, feature=3
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
+
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        self.dense1 = tf.keras.layers.Dense(4, input_shape=(3,))
-        self.dense2 = tf.keras.layers.Dense(1)
+model = tf.keras.models.Sequential()
+model.add(tf.keras.layers.Dense(4, input_shape=(FEATURE_SIZE,)))
+model.add(tf.keras.layers.Dense(1))
+optim = tf.keras.optimizers.Adam()
+model.compile(loss='mean_squared_error', optimizer=optim, metrics=['mae'])
 
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        return self.dense2(x)
+x, y = load_features(train_files, scaler)
+model.fit(x, y, epochs=num_epochs, callbacks=callbacks)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+job_dir = '/path/to/job/'
+version = '00000123'
+export_path = os.path.join(job_dir, version)
 
-def GetInput():
-    # Batch size 3, feature size 3, matching the example input for the model.fit call
-    return tf.random.uniform((3, 3), dtype=tf.float32)
+tf.keras.models.save_model(
+                model,
+                export_path,
+                overwrite=True,
+                include_optimizer=True,
+                save_format=None,
+                options=None,
+            )
 
+updater = tf.compat.v1.saved_model.builder.MethodNameUpdater(export_path)
+updater.replace_method_name(signature_key="bar", method_name="classify", tags="serve")
+updater.save(export_path)
+
+import tensorflow as tf 
+import os 
+
+FEATURE_SIZE = 3
+model = tf.keras.models.Sequential()
+model.add(tf.keras.layers.Dense(4, input_shape=(FEATURE_SIZE,)))
+model.add(tf.keras.layers.Dense(1))
+optim = tf.keras.optimizers.Adam()
+model.compile(loss='mean_squared_error', optimizer=optim, metrics=['mae'])
+
+x = tf.ones((3, 3))
+y = tf.zeros(3)
+
+num_epochs = 3
+model.fit(x, y, epochs=num_epochs)
+
+job_dir = os.getcwd()
+version = '1'
+export_path = os.path.join(job_dir, version)
+
+tf.keras.models.save_model(
+                model,
+                export_path,
+                overwrite=True,
+                include_optimizer=True,
+                save_format=None,
+                options=None,
+            )
+
+updater = tf.compat.v1.saved_model.builder.MethodNameUpdater(export_path)
+updater.replace_method_name(signature_key="bar", method_name="classify", tags="serve")
+updater.save(export_path)

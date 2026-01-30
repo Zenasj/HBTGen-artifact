@@ -1,24 +1,28 @@
-# tf.random.uniform((100, 10), dtype=tf.float32) ← Input shape inferred from Dataset batch (batch_size=100, feature_dim=10)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
+
+import numpy as np
 import tensorflow as tf
+batch_size = 100
+ds = tf.data.Dataset.from_tensor_slices((np.random.normal(size=(10000,10)), np.zeros(10000))) \
+.batch(batch_size) \
+.prefetch(tf.data.experimental.AUTOTUNE)
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Rebuild the original sequential model structure
-        self.dense1 = tf.keras.layers.Dense(256)
-        self.dense2 = tf.keras.layers.Dense(1)
+model = tf.keras.Sequential([
+  tf.keras.layers.Dense(256),
+  tf.keras.layers.Dense(1)
+])
 
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        return x
 
-def my_model_function():
-    # Return an instance of MyModel; weights are uninitialized here
-    # For actual use, load weights accordingly or train first
-    return MyModel()
+optimizer = tf.keras.optimizers.Adam()
+model.compile(optimizer=optimizer,
+              loss=tf.keras.losses.BinaryCrossentropy(from_logits=False))
+model.fit(ds,
+          epochs=1)
 
-def GetInput():
-    # Return a random tensor matching the input shape expected by MyModel: batch_size=100, features=10, dtype float32
-    return tf.random.uniform((100, 10), dtype=tf.float32)
 
+model.save("test_model",save_format="tf")
+converter = tf.lite.TFLiteConverter.from_saved_model('test_model',signature_keys=['serving_default'])
+tflite_model = converter.convert()

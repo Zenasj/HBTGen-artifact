@@ -1,25 +1,36 @@
-# torch.rand(128, 64, 768, dtype=torch.float32, device='cuda:0')  # Inferred input shape
-
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+import torch
+import torch._dynamo
+from torch._dynamo.debug_utils import run_fwd_maybe_bwd
+
+args = [
+    torch.randn(128, 64, 768, device=torch.device("cuda:0"), requires_grad=True),
+]
+
+
+class Repro(torch.nn.Module):
+    """QKV + rotary + subsequent outer product leads to stride problems."""
+
     def __init__(self, hidden_per_head=64, base=10000, max_seq_length=128, seq_dim: int = 0):
         super().__init__()
         self.hidden_size = 768
-        self.query_key_value = nn.Linear(self.hidden_size, 3 * self.hidden_size, bias=False)
+        self.query_key_value = torch.nn.Linear(self.hidden_size, 3 * self.hidden_size, bias=False)
         self.seq_dim: int = seq_dim
         freqs_cis = self.precompute_freqs_cis(dim=hidden_per_head, end=max_seq_length * 2, theta=base)
         self.register_buffer("freqs_cis", freqs_cis)
 
     def forward(self, hidden_states):
+        # boilerplate
         mixed_x_layer = self.query_key_value(hidden_states)
         mixed_x_layer = mixed_x_layer.view(hidden_states.shape[0], hidden_states.shape[1], 12, 3 * 64)
 
         (query_layer, key_layer, value_layer) = torch.split(mixed_x_layer, [64] * 3, dim=3)
 
+        # Comment this line to fix the stride problem :
         query_layer, key_layer = self.apply_rotary_emb(query_layer, key_layer)
 
+        # Problems start from here:
         output_size = (query_layer.shape[1], query_layer.shape[2], query_layer.shape[0], key_layer.shape[0])
 
         query_layer = query_layer.view(output_size[2], output_size[0] * output_size[1], -1)
@@ -50,11 +61,10 @@ class MyModel(nn.Module):
         freqs_cis = torch.polar(torch.ones_like(freqs), freqs)  # complex64
         return freqs_cis
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(128, 64, 768, dtype=torch.float32, device='cuda:0', requires_grad=True)
+mod = Repro()
+mod.to(device=torch.device("cuda:0"))
+opt_mod = torch._dynamo.optimize("inductor")(mod)
 
+ref = run_fwd_maybe_bwd(mod, args)
+res = run_fwd_maybe_bwd(opt_mod, args)

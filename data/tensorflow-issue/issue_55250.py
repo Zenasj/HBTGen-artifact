@@ -1,30 +1,60 @@
-# tf.random.uniform((128, 28, 28), dtype=tf.float32) ← Assumed input shape and dtype based on MNIST batch size and preprocessing
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
+
 import tensorflow as tf
+import tensorflow_datasets as tfds
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Build a model matching the described MNIST CNN
-        self.reshape = tf.keras.layers.Reshape(target_shape=(28, 28, 1))
-        self.conv2d = tf.keras.layers.Conv2D(32, 3, activation='relu')
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(128, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(10)  # logits output
+print("tf version", tf.__version__)
 
-    def call(self, inputs, training=False):
-        x = self.reshape(inputs)
-        x = self.conv2d(x)
-        x = self.flatten(x)
-        x = self.dense1(x)
-        logits = self.dense2(x)
-        return logits
+strategy = tf.distribute.MultiWorkerMirroredStrategy()
 
-def my_model_function():
-    # Instantiate the model. No pretrained weights available from the issue; just create fresh instance.
-    return MyModel()
+(ds_train, ds_test), ds_info = tfds.load(
+    'mnist',
+    split=['train', 'test'],
+    shuffle_files=True,
+    as_supervised=True,
+    with_info=True,
+)
 
-def GetInput():
-    # Return a random input tensor matching (batch_size, height, width) as expected by the model
-    # Batch size 128 inferred from ds_train batch size.
-    return tf.random.uniform((128, 28, 28), dtype=tf.float32)
+def normalize_img(image, label):
+  """Normalizes images: `uint8` -> `float32`."""
+  return tf.cast(image, tf.float32) / 255., label
 
+ds_train = ds_train.map(
+    normalize_img, num_parallel_calls=tf.data.AUTOTUNE)
+ds_train = ds_train.cache()
+ds_train = ds_train.shuffle(ds_info.splits['train'].num_examples)
+ds_train = ds_train.batch(128)
+ds_train = ds_train.prefetch(tf.data.AUTOTUNE)
+
+
+ds_test = ds_test.map(
+    normalize_img, num_parallel_calls=tf.data.AUTOTUNE)
+ds_test = ds_test.batch(128)
+ds_test = ds_test.cache()
+ds_test = ds_test.prefetch(tf.data.AUTOTUNE)
+
+def build_cnn_model():
+    return tf.keras.Sequential([
+      tf.keras.Input(shape=(28, 28)),
+      tf.keras.layers.Reshape(target_shape=(28, 28, 1)),
+      tf.keras.layers.Conv2D(32, 3, activation='relu'),
+      tf.keras.layers.Flatten(),
+      tf.keras.layers.Dense(128, activation='relu'),
+      tf.keras.layers.Dense(10)
+    ])
+
+with strategy.scope():
+    model = build_cnn_model()
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(0.001),
+        loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+        metrics=[tf.keras.metrics.SparseCategoricalAccuracy()],
+    )
+
+model.fit(
+    ds_train,
+    epochs=2,
+    validation_data=ds_test,
+)

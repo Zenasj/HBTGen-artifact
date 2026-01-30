@@ -1,29 +1,14 @@
 import torch
-import torch.nn as nn
 
-# torch.rand(B, 3, 32, 32, dtype=torch.float32)
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(3, 6, 5)
-        self.pool = nn.MaxPool2d(2, 2)
-        self.conv2 = nn.Conv2d(6, 16, 5)
-        self.fc1 = nn.Linear(16 * 5 * 5, 120)
-        self.fc2 = nn.Linear(120, 84)
-        self.fc3 = nn.Linear(84, 10)
+targets = [single_targets, [x * 10 for x in single_targets]]
 
-    def forward(self, x):
-        x = self.pool(torch.relu(self.conv1(x)))
-        x = self.pool(torch.relu(self.conv2(x)))
-        x = x.view(-1, 16 * 5 * 5)
-        x = torch.relu(self.fc1(x))
-        x = torch.relu(self.fc2(x))
-        return self.fc3(x)
+from torch.testing._internal.common_utils import parametrize, instantiate_parametrized_tests
 
-def my_model_function():
-    return MyModel()
+@parametrize("T_mult", [1, 2, 4])
+def test_CosineAnnealingWarmRestarts_lr1(self, T_mult):
+    ...
 
-def GetInput():
-    B = 4  # Example batch size
-    return torch.rand(B, 3, 32, 32, dtype=torch.float32)
+...
 
+# At the bottom of the file before `if __name__ == '__main__':`
+instantiate_parametrized_tests(TestLRScheduler)

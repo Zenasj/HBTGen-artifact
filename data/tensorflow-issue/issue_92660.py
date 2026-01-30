@@ -1,150 +1,94 @@
-# tf.random.uniform((B, 128, 128, 128, 1), dtype=tf.float32)
-
 import tensorflow as tf
 from tensorflow.keras import layers, models
 import tensorflow_addons as tfa
+import os
+from tensorflow.python.framework.convert_to_constants import convert_variables_to_constants_v2
 
 class SpatialTransformer(layers.Layer):
-    """
-    3D Spatial Transformer that applies a dense warp to a 5D volume tensor [B,D,H,W,C]
-    using a flow field of shape [B,D,H,W,3].
-    Internally performs batched 2D dense image warp on flattened depth slices for efficiency.
-    """
+    """3D Spatial Transformer using batched 2D warps and static shape enforcement."""
     def call(self, inputs):
-        vol, flow = inputs  # vol: [B, D, H, W, C], flow: [B, D, H, W, 3]
+        vol, flow = inputs  # vol: [B,D,H,W,C], flow: [B,D,H,W,3]
 
-        # Enforce static known shapes (except batch) to satisfy constraints (e.g. for TOSA)
-        # Here we assume vol.shape and flow.shape have known rank and channel dimensions.
-        vol = tf.ensure_shape(vol, [None, vol.shape[1], vol.shape[2], vol.shape[3], vol.shape[4]])
-        flow = tf.ensure_shape(flow, [None, flow.shape[1], flow.shape[2], flow.shape[3], 3])
+        # 1. Enforce static (non-zero) shapes to satisfy TOSA requirements
+        #    (TOSA dialect expects all dims ≥ 1 and statically known) 
+        vol  = tf.ensure_shape(vol,  [None, vol.shape[1], vol.shape[2], vol.shape[3], vol.shape[4]])
+        flow = tf.ensure_shape(flow, [None, flow.shape[1], flow.shape[2], flow.shape[3], 3])          
 
-        # Flatten batch and depth dims to do a single 2D dense warp call for each depth slice in batch:
+        # 2. Flatten depth dimension into batch: [B,D,H,W,C] → [B*D,H,W,C]
         shape = tf.shape(vol)
-        B, D, H, W = shape[0], shape[1], shape[2], shape[3]
-        C = vol.shape[4]  # channel dimension is static
+        B, D, H, W, C = shape[0], shape[1], shape[2], shape[3], vol.shape[4]
+        vol_flat  = tf.reshape(vol,  tf.stack([B * D, H, W, C]))                                    
+        flow_flat = tf.reshape(flow, tf.stack([B * D, H, W, 3]))                                     
 
-        vol_flat = tf.reshape(vol, tf.stack([B * D, H, W, C]))
-        flow_flat = tf.reshape(flow, tf.stack([B * D, H, W, 3]))
-
-        # Use only first two flow channels (for 2D warp) - ignore Z displacement
+        # 3. Perform a single batched 2D warp via dense_image_warp,
+        #    avoiding tf.map_fn loops entirely :contentReference[oaicite:7]{index=7}
         moved_flat = tfa.image.dense_image_warp(vol_flat, flow_flat[..., :2])
 
-        # Reshape back to original 5D shape
-        moved = tf.reshape(moved_flat, tf.stack([B, D, H, W, C]))
+        # 4. Restore original shape: [B*D,H,W,C] → [B,D,H,W,C]
+        moved = tf.reshape(moved_flat, tf.stack([B, D, H, W, C]))                                     
         return moved
 
 def conv_block(x, filters, convs=2, kernel_size=3, activation='relu'):
-    """
-    Helper function: stack of convolutional layers with specified filters and activation.
-    """
     for _ in range(convs):
         x = layers.Conv3D(filters, kernel_size, padding='same',
                           kernel_initializer='he_normal')(x)
         x = layers.Activation(activation)(x)
     return x
 
-class MyModel(tf.keras.Model):
-    """
-    Voxelmorph-inspired 3D medical image registration model.
-    Takes two inputs: moving and fixed volumes of shape [B, 128, 128, 128, 1].
-    Outputs:
-      - moved volume (moving warped by predicted flow)
-      - flow field (3D displacement field)
-    """
-    def __init__(self,
-                 inshape=(128, 128, 128),
-                 enc_features=(16, 32, 32, 32),
-                 dec_features=(32, 32, 32, 32, 32, 16, 16),
-                 **kwargs):
-        super().__init__(**kwargs)
-        self.inshape = inshape
+def build_minimal_voxelmorph(inshape,
+                             enc_features=(16, 32, 32, 32),
+                             dec_features=(32, 32, 32, 32, 32, 16, 16)):
+    moving = layers.Input(shape=(*inshape, 1), name='moving')
+    fixed  = layers.Input(shape=(*inshape, 1), name='fixed')
+    x = layers.Concatenate(axis=-1)([moving, fixed])
 
-        # Inputs will be provided during call.
-        self.spatial_transformer = SpatialTransformer(name='moved')
+    skips = []
+    for f in enc_features:
+        x = conv_block(x, f)
+        skips.append(x)
+        x = layers.MaxPool3D(2)(x)
 
-        # Encoder conv blocks
-        self.enc_blocks = []
-        for f in enc_features:
-            block = tf.keras.Sequential([
-                layers.Conv3D(f, 3, padding='same', kernel_initializer='he_normal'),
-                layers.Activation('relu'),
-                layers.Conv3D(f, 3, padding='same', kernel_initializer='he_normal'),
-                layers.Activation('relu')
-            ])
-            self.enc_blocks.append(block)
-        self.pool = layers.MaxPool3D(2)
+    x = conv_block(x, enc_features[-1] * 2)
 
-        # Bottom conv block doubles last encoder filters
-        self.bottleneck_conv = tf.keras.Sequential([
-            layers.Conv3D(enc_features[-1] * 2, 3, padding='same', kernel_initializer='he_normal'),
-            layers.Activation('relu'),
-            layers.Conv3D(enc_features[-1] * 2, 3, padding='same', kernel_initializer='he_normal'),
-            layers.Activation('relu')
-        ])
+    for f, skip in zip(dec_features, reversed(skips)):
+        x = layers.UpSampling3D(2)(x)
+        x = layers.Concatenate(axis=-1)([x, skip])
+        x = conv_block(x, f)
 
-        # Decoder conv blocks
-        self.up = layers.UpSampling3D(2)
-        self.dec_blocks = []
-        for f in dec_features:
-            block = tf.keras.Sequential([
-                layers.Conv3D(f, 3, padding='same', kernel_initializer='he_normal'),
-                layers.Activation('relu'),
-                layers.Conv3D(f, 3, padding='same', kernel_initializer='he_normal'),
-                layers.Activation('relu')
-            ])
-            self.dec_blocks.append(block)
+    flow  = layers.Conv3D(3, 3, padding='same', name='flow')(x)
+    moved = SpatialTransformer(name='moved')([moving, flow])
 
-        # Final flow output conv layer (3 channels for displacement)
-        self.flow_conv = layers.Conv3D(3, 3, padding='same', name='flow')
+    return models.Model(inputs=[moving, fixed],
+                        outputs=[moved, flow],
+                        name='VoxelmorphMinimalFlatten')
 
-    def call(self, inputs, training=False):
-        # Unpack inputs: moving and fixed volumes
-        moving, fixed = inputs
+# Instantiate model for a 128³ volume                        
+model = build_minimal_voxelmorph((128, 128, 128))
+model.summary()
 
-        # Concatenate along channel axis: shape [B, H, W, D, 2]
-        x = tf.concat([moving, fixed], axis=-1)
+save_path = os.path.join(os.getcwd(), "model/simple/")
+tf.saved_model.save(model, save_path) 
 
-        skips = []
-        for enc_block in self.enc_blocks:
-            x = enc_block(x)
-            skips.append(x)
-            x = self.pool(x)
+@tf.function
+def infer(moving, fixed):
+    return model([moving, fixed])
 
-        x = self.bottleneck_conv(x)
+inp0, inp1 = model.inputs
 
-        # Decoder with skip connections
-        for dec_block, skip in zip(self.dec_blocks, reversed(skips)):
-            x = self.up(x)
-            # If needed, crop skip or x spatial dims to match before concat.
-            # Assume shapes compatible for simplicity.
-            x = tf.concat([x, skip], axis=-1)
-            x = dec_block(x)
+concrete_func = infer.get_concrete_function(
+    moving=tf.TensorSpec(shape=inp0.shape, dtype=inp0.dtype, name=inp0.name.split(':')[0]),
+    fixed =tf.TensorSpec(shape=inp1.shape, dtype=inp1.dtype, name=inp1.name.split(':')[0])
+)
 
-        flow = self.flow_conv(x)  # shape [B,D,H,W,3]
+frozen_func = convert_variables_to_constants_v2(concrete_func)
+tf.io.write_graph(
+    graph_or_graph_def=frozen_func.graph,
+    logdir=os.getcwd(),
+    name="output/frozen_graph.pbtxt",
+    as_text=True
+)
 
-        moved = self.spatial_transformer([moving, flow])
-
-        return moved, flow
-
-
-def my_model_function():
-    """
-    Instantiate and return the MyModel with default 128^3 input shape.
-    """
-    return MyModel()
-
-
-def GetInput():
-    """
-    Return a tuple of random float tensors matching the expected model inputs:
-    Two inputs ("moving" and "fixed") volumes of shape [B, 128, 128, 128, 1].
-    Use batch size 1 for simplicity.
-    """
-    B = 1
-    H, W, D = 128, 128, 128
-    # TensorFlow 3D conv layers expect inputs in shape: [B, H, W, D, C]
-    # Random uniform floats [0,1)
-    moving = tf.random.uniform((B, H, W, D, 1), dtype=tf.float32)
-    fixed = tf.random.uniform((B, H, W, D, 1), dtype=tf.float32)
-    return (moving, fixed)
-
+print("Frozen graph:")
+with tf.io.gfile.GFile("output/frozen_graph.pbtxt", "r") as f:
+    frozen_graph = f.read()
+    print(frozen_graph)

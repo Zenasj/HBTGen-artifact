@@ -1,14 +1,17 @@
-# torch.randint(-100, 100, (20, 20), dtype=torch.int16, device='cuda')
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return x.argmax(0)
+def fn(x):
+    return x.argmax(0)
 
-def my_model_function():
-    return MyModel()
+for i in range(100):
+    x = torch.randint(-100, 100, (20, 20), dtype=torch.int16)
 
-def GetInput():
-    return torch.randint(-100, 100, (20, 20), dtype=torch.int16, device='cuda')
+    cpu = fn(x)
+    gpu = fn(x.cuda()).cpu()
+    compiled = torch.compile(fn)
+    comp = compiled(x.cuda()).cpu()
 
+    print(i)
+
+    assert torch.allclose(cpu, gpu), '\n'.join(['', 'cpu', str(cpu), 'gpu', str(gpu)])
+    assert torch.allclose(cpu, comp), '\n'.join(['', 'cpu', str(cpu), 'comp', str(comp)]) # may fail sometimes

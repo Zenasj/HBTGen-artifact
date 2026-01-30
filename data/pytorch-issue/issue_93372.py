@@ -1,25 +1,28 @@
-# torch.rand(1, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
-
+import copy
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+class Model(nn.Module):
     def __init__(self):
         super().__init__()
         self.layer0 = torch.nn.Linear(in_features=1, out_features=2)
     
     def forward(self, x):
-        # Ensure the input has at least 2 dimensions
-        if x.dim() == 1:
-            x = x.unsqueeze(0)
         y = self.layer0(x)
         return y
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+with torch.no_grad():
+    model = Model()
+    i0 = torch.rand(1) # leads to ERROR 2
+    # i0 = torch.rand(2, 1) # NOTE: this shape works fine
+    model(i0)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(1, dtype=torch.float32)
+model_tmp = copy.deepcopy(model)
+compiled = torch.compile(model_tmp)
+compiled(i0)
+print(f'==== here ====')
 
+with torch.no_grad():
+    # model.eval() # NOTE: report ERROR 1 w/o this line
+    compiled = torch.compile(model)
+    compiled(i0)

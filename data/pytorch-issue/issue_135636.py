@@ -1,22 +1,27 @@
-# torch.randn(1, 3, 224, 224, dtype=torch.float32, device='cuda')
-import torch
-from torch import nn
+import torch.nn as nn
 
-class NewConv2d(nn.Conv2d):
+import torch
+
+class NewConv2d(torch.nn.Conv2d):
     def forward(self, x):
+        # This would be more complicated than this
         return super().forward(x)
 
-class MyModel(nn.Module):
+class Model(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.conv = NewConv2d(3, 16, kernel_size=1, stride=2)  # Matches the original model structure
-        
+        self.conv = NewConv2d(3, 16, 1, stride=2)
+
     def forward(self, x):
         return self.conv(x)
 
-def my_model_function():
-    return MyModel()  # Returns the model instance with default initialization
 
-def GetInput():
-    return torch.randn(1, 3, 224, 224, dtype=torch.float32, device='cuda')  # Matches the input shape and device
+inp = torch.randn(1, 3, 224, 224, device='cuda')
+model = Model()
 
+model.eval()
+model.cuda()
+compiled_model = torch.compile(model, fullgraph=True, dynamic=True)
+with torch.no_grad():
+    compiled_model(torch.randn(1, 3, 224, 224, device='cuda'))
+    compiled_model(torch.randn(1, 3, 224, 224, device='cuda'))

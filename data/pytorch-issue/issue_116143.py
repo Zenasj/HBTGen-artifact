@@ -1,17 +1,24 @@
-# torch.rand(10, 10, dtype=torch.float32, device='cuda:0')
+import gc
+import weakref
+
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-    
-    def forward(self, x):
-        return x
+def test_static_address_finalizer():
+    def inner(y):
+        y
 
-def my_model_function():
-    return MyModel()
+    inner = torch._dynamo.optimize("eager")(inner)
 
-def GetInput():
-    return torch.randn(10, 10, device='cuda:0')
+    p_ref = None
 
+    x = torch.randn((10, 10), device="cuda:0")
+    inner(x)
+
+    p_ref = weakref.ref(x)
+    assert p_ref() is not None
+    del x
+    gc.collect()
+    assert p_ref() is None
+    print("Success!")
+
+test_static_address_finalizer()

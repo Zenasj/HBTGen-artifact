@@ -1,52 +1,69 @@
-# tf.random.uniform((batch_size, None, 8), dtype=tf.float32)
-import tensorflow as tf
+import random
+
+import tensorflow as tf  # v2.4.0
+import numpy as np
+
+from tensorflow import keras
 from tensorflow.keras import layers
 
-class MyModel(tf.keras.Model):
-    """
-    This model replicates the example from the issue discussion:
-    An LSTM-based model processing sequences of variable length and feature dimension 8,
-    outputting a scalar regression value per sequence.
 
-    Assumptions:
-    - Input shape is (batch_size, sequence_length, 8), sequence_length is variable.
-    - This model encapsulates the LSTM + Dense layers from the minimal reproducible example.
-    - The purpose is to illustrate a model that can be used in a multi-GPU strategy context.
-    """
-    def __init__(self):
-        super().__init__()
-        self.lstm = layers.LSTM(16)
-        self.dense = layers.Dense(1)
+def sample_generator(nb_samples):
 
-    def call(self, inputs, training=False):
-        """
-        Forward pass:
-        inputs: tf.Tensor of shape (batch_size, seq_len, 8)
-        returns: tf.Tensor of shape (batch_size, 1)
-        """
-        x = self.lstm(inputs)
-        x = self.dense(x)
-        return x
+    for i in range(nb_samples):
+        l = np.random.randint(6, 20)
+        yield np.random.rand(l, 8), np.random.rand(1, 1)
+
+    # One example for bucket (1, 5)
+    yield np.random.rand(3, 8), np.random.rand(1, 1)
 
 
-def my_model_function():
-    """
-    Creates and returns an instance of MyModel.
-    """
-    return MyModel()
+def sample_len(sample, *_):
+    return tf.shape(sample)[0]
 
 
-def GetInput():
-    """
-    Returns a sample random tf.Tensor input matching the model input shape:
-    A batch of sequences of floats with variable length and feature dimension=8.
+nb_replica = max(1, len(tf.config.experimental.list_physical_devices('GPU')))
+assert nb_replica > 1, f'Number of GPUs must be >1 got {nb_replica}'
 
-    To enable tf.data pipelines with bucket_by_sequence_length etc., shape is (batch_size,seq_len,8).
-    Here, we fix batch_size=4 and seq_len=10 arbitrarily as a representative sample.
-    """
-    batch_size = 4
-    seq_len = 10  # fixed length for simplicity in this input generator
-    feature_dim = 8
-    # Create random uniform input data with float32 dtype
-    return tf.random.uniform((batch_size, seq_len, feature_dim), dtype=tf.float32)
+dataset = tf.data.Dataset.from_generator(
+    lambda: sample_generator(500),
+    output_types=(tf.float32, tf.float32),
+    output_shapes=((None, 8), (None, 1))
+)
+options = tf.data.Options()
+options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
+dataset = dataset.with_options(options)
 
+boundaries = [5, 10]
+batch_sizes = [i * nb_replica for i in range(len(boundaries) + 1)]
+
+bucketing = tf.data.experimental.bucket_by_sequence_length(
+    sample_len,
+    bucket_boundaries=boundaries,
+    bucket_batch_sizes=batch_sizes,
+    drop_remainder=True
+)
+
+dataset = dataset.apply(bucketing).repeat()
+
+strategy = tf.distribute.MirroredStrategy()
+
+with strategy.scope():
+    inputs = layers.Input(shape=(None, 8))
+    x = inputs
+    x = layers.LSTM(16)(x)
+    x = layers.Dense(1)(x)
+    model = keras.Model(inputs=inputs, outputs=x)
+    model.compile(loss='mse')
+
+model.fit(
+    dataset,
+    epochs=2,
+    steps_per_epoch=100,
+)
+
+layers.Embedding(
+    input_dim=SIZE_VOCAB,
+    output_dim=EMBED_DIM,
+    mask_zero=True,
+    input_length=MAX_SEQ_LEN,
+),

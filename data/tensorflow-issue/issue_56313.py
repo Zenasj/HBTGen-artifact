@@ -1,37 +1,48 @@
-# tf.random.uniform((batch_size, 88200), dtype=tf.float32)  # Assumed input shape and dtype based on representative dataset
-
-import tensorflow as tf
-import tensorflow_model_optimization as tfmot
 import numpy as np
+import random
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
-# Custom quantize config from issue for Dense layers with int8 QAT
+import tensorflow_model_optimization as tfmot
+
+LastValueQuantizer = tfmot.quantization.keras.quantizers.LastValueQuantizer
+MovingAverageQuantizer = tfmot.quantization.keras.quantizers.MovingAverageQuantizer
+
 class DefaultDenseQuantizeConfig(tfmot.quantization.keras.QuantizeConfig):
-    # Using LastValueQuantizer for weights (kernel)
+    # List all of your weights
     weights = {
-        "kernel": tfmot.quantization.keras.quantizers.LastValueQuantizer(
-            num_bits=8, symmetric=True, narrow_range=False, per_axis=False)
-    }
-    # Using MovingAverageQuantizer for activations
-    activations = {
-        "activation": tfmot.quantization.keras.quantizers.MovingAverageQuantizer(
-            num_bits=8, symmetric=False, narrow_range=False, per_axis=False)
+        "kernel": LastValueQuantizer(num_bits=8, symmetric=True, narrow_range=False, per_axis=False)
     }
 
+    # List of all your activations
+    activations = {
+        "activation": MovingAverageQuantizer(num_bits=8, symmetric=False, narrow_range=False, per_axis=False)
+    }
+
+    # Configure how to quantize weights.
     def get_weights_and_quantizers(self, layer):
         output = []
         for attribute, quantizer in self.weights.items():
             if hasattr(layer, attribute):
                 output.append((getattr(layer, attribute), quantizer))
+
         return output
 
+    # Configure how to quantize activations.
     def get_activations_and_quantizers(self, layer):
         output = []
         for attribute, quantizer in self.activations.items():
             if hasattr(layer, attribute):
                 output.append((getattr(layer, attribute), quantizer))
+
         return output
 
     def set_quantize_weights(self, layer, quantize_weights):
+        # Add this line for each item returned in `get_weights_and_quantizers`
+        # , in the same order
+
         count = 0
         for attribute in self.weights.keys():
             if hasattr(layer, attribute):
@@ -39,92 +50,81 @@ class DefaultDenseQuantizeConfig(tfmot.quantization.keras.QuantizeConfig):
                 count += 1
 
     def set_quantize_activations(self, layer, quantize_activations):
+        # Add this line for each item returned in `get_activations_and_quantizers`
+        # , in the same order.
         count = 0
         for attribute in self.activations.keys():
             if hasattr(layer, attribute):
                 setattr(layer, attribute, quantize_activations[count])
                 count += 1
 
+    # Configure how to quantize outputs (may be equivalent to activations).
     def get_output_quantizers(self, layer):
-        # No output quantizers by default
         return []
 
     def get_config(self):
         return {}
 
-# Placeholder CustomLayer referenced in quantize_scope (not defined in the issue)
-# We define a pass-through layer for compatibility
-class CustomLayer(tf.keras.layers.Layer):
-    def call(self, inputs):
-        return inputs
 
-# The MyModel class is constructed to encapsulate a simple example model combining:
-# - A spectrogram extraction layer (simulating YamNet's preprocessing)
-# - A dense classification head
-# This is a simplification to reflect the context of YamNet and quantization challenge from the issue.
+from quant import DefaultDenseQuantizeConfig
+from tensorflow_model_optimization.python.core.quantization.keras.quantize import quantize_scope, quantize_apply
+import tensorflow_model_optimization as tfmot
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Simulated spectrogram extraction: In YamNet, this would be an STFT or Mel-spectrogram layer.
-        # For example purposes, we use a fixed 1D Conv1D layer to represent preprocessing.
-        self.spectrogram = tf.keras.layers.Conv1D(
-            filters=64, kernel_size=3, strides=1, padding='same', activation='relu'
-        )
-        # Example dense classification head with quantization config applied
-        self.dense = tf.keras.layers.Dense(
-            units=521,  # YamNet predicts 521 audio event classes
-            activation='softmax'
-        )
-        # Annotate quantization for the dense layer using DefaultDenseQuantizeConfig
-        # Normally done via annotate_layer but here we define quantization in scope.
 
-    def call(self, inputs):
-        x = self.spectrogram(inputs)
-        # Flatten channel dimension for dense input
-        x = tf.keras.layers.GlobalAveragePooling1D()(x)
-        out = self.dense(x)
-        return out
-
-def my_model_function():
-    # Build an instance of the model and apply quantization annotation + quantize_apply for QAT
-    model = MyModel()
-
-    # Annotate dense layer for quantization
+with quantize_scope({
+    "DefaultDenseQuantizeConfig": DefaultDenseQuantizeConfig,
+    "CustomLayer": CustomLayer
+}):
     def apply_quantization_to_layer(layer):
-        if isinstance(layer, tf.keras.layers.Dense):
-            return tfmot.quantization.keras.quantize_annotate_layer(layer, DefaultDenseQuantizeConfig())
-        return layer
+        return tfmot.quantization.keras.quantize_annotate_layer(layer, DefaultDenseQuantizeConfig())
 
-    # Clone model to add annotations
     annotated_model = tf.keras.models.clone_model(
-        model,
+        tflite_model,
         clone_function=apply_quantization_to_layer,
     )
 
-    # Apply quantization transforms to annotated model for QAT
     qat_model = tfmot.quantization.keras.quantize_apply(annotated_model)
 
-    # Compile model (same as in issue)
     qat_model.compile(
         optimizer=tf.keras.optimizers.Adam(learning_rate=0.0001),
-        loss='categorical_crossentropy',
-        metrics=['accuracy'],
+        loss="categorical_crossentropy",
+        metrics=['accuracy']
     )
-    return qat_model
 
-def GetInput():
-    # From the issue context: YamNet input is audio waveform clips of length 88200 samples at 16 kHz (about 5.5 seconds)
-    # Inputs should be float32 tensors shaped (batch_size, 88200)
-    # We'll use batch_size=1 for simplicity
-    batch_size = 1
-    input_length = 88200  # as per representative dataset fixed size in issue
-    # Generate random float32 waveform between -1.0 and 1.0 (typical audio range normalized)
-    input_tensor = tf.random.uniform(
-        shape=(batch_size, input_length),
-        minval=-1.0,
-        maxval=1.0,
-        dtype=tf.float32
-    )
-    return input_tensor
+    qat_model.summary()
 
+def representative_dataset():
+    for _ in range(1000):
+        data = np.random.choice([-32768, 0, 1, 32767], size=(88200,))  #give it a  fixed size , Dynamic size is still an obstacle in some cases during TFLite conversion
+        yield [data.astype(np.uint8)] # uint8/int8 recommended while trying uint8 quantization
+
+
+converter = tf.lite.TFLiteConverter.from_keras_model(qat_model)
+converter.experimental_new_converter = True
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.representative_dataset = representative_dataset
+converter.target_spec.supported_ops = [
+  tf.lite.OpsSet.TFLITE_BUILTINS_INT8, # enable TensorFlow Lite ops.
+  tf.lite.OpsSet.SELECT_TF_OPS # enable TensorFlow ops.# resolves select ops issues
+]
+converter.inference_input_type = tf.int8
+converter.inference_output_type = tf.int8
+tflite_quant_model = converter.convert()
+
+def representative_dataset():
+    for _ in range(1000):
+        data = np.random.choice([-32768, 0, 1, 32767], size=(88200,))  #give it a  fixed size , Dynamic size is still an obstacle in some cases during TFLite conversion
+        yield [data.astype(np.float32)] # uint8/int8 recommended while trying uint8 quantization
+
+
+converter = tf.lite.TFLiteConverter.from_keras_model(qat_model)
+converter.experimental_new_converter = True
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.representative_dataset = representative_dataset
+converter.target_spec.supported_ops = [
+  tf.lite.OpsSet.TFLITE_BUILTINS, # enable TensorFlow Lite ops.
+  tf.lite.OpsSet.SELECT_TF_OPS # enable TensorFlow ops.# resolves select ops issues
+]
+converter.inference_input_type = tf.float32
+converter.inference_output_type = tf.float32
+tflite_quant_model = converter.convert()

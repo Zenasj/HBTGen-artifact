@@ -1,39 +1,180 @@
-# torch.rand(B, C, H, W, dtype=...)  # Add a comment line at the top with the inferred input shape
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1)
-        self.relu = nn.ReLU()
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
-        self.fc1 = nn.Linear(64 * 16 * 16, 128)  # Assuming input size is 3x32x32
-        self.fc2 = nn.Linear(128, 10)
+#filetypes = ('.cpp', '.cc', '.h', '.hpp')
+filetypes = ('.cpp', '.cc')
 
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.relu(x)
-        x = self.pool(x)
-        x = x.view(-1, 64 * 16 * 16)  # Flatten the tensor
-        x = self.fc1(x)
-        x = self.relu(x)
-        x = self.fc2(x)
-        return x
+#target_path = '..'
+target_path = '../aten'
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+excluded_files = ['../c10/util/ConstexprCrc.h',
+    '../aten/src/ATen/core/jit_type.h',
+    '../aten/src/ATen/native/Math.h',
+    '../c10/util/variant.h',
+    '../c10/util/flags_use_no_gflags.cpp',
+    '../caffe2/operators/cc_bmm_bg_op.h',
+    '../aten/src/ATen/core/tensor_type.cpp',
+    '../aten/src/ATen/native/Linear.cpp',
+    '../aten/src/ATen/native/ConvolutionTBC.cpp',
+    '../caffe2/share/fb/mask_rcnn/bbox_concat_batch_splits_op.h',
+    '../aten/src/ATen/native/BatchLinearAlgebra.cpp',
+    '../aten/src/ATen/native/quantized/cpu/kernels/QuantizedOpKernels.cpp',
+    '../aten/src/ATen/native/cuda/DistributionTemplates.h',
+    '../c10/util/sparse_bitset.h',
+    '../torch/csrc/distributed/c10d/TCPStore.cpp',
+    '../caffe2/fb/operators/calibration_op.h',
+    '../torch/csrc/jit/testing/file_check.cpp',
+    '../torch/csrc/jit/passes/concat_opt.cpp',
+    '../torch/csrc/jit/tensorexpr/operators/reduction.cpp',
+    '../torch/fb/operators/select_keys.cpp',
+    '../torch/fb/operators/calibration/bucketize_calibration.cpp',
+    '../fb/custom_ops/maskrcnn/int8/int8_aabb_roi_align.cpp',
+    '../fb/custom_ops/maskrcnn/aabb/aabb_roi_align.cpp',
+    '../caffe2/fb/tests/RecordIOHelper.cpp',
+    '../test/cpp/api/rnn.cpp',
+    '../torch/fb/training_toolkit/common/tdigest/tests/TestBufferedTDigest.cpp'
+    ]
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    B, C, H, W = 1, 3, 32, 32  # Batch size, Channels, Height, Width
-    return torch.rand(B, C, H, W, dtype=torch.float32)
+#!/usr/bin/env python3
+# (c) Facebook, Inc. and its affiliates. Confidential and proprietary.
 
-# The provided GitHub issue does not contain any PyTorch model, code, or specific model structure. It is primarily about a script to replace for-loops with `c10::irange` in the PyTorch C++ codebase. Since there is no model or relevant code to extract, I will generate a simple example of a PyTorch model and its input function as per the given requirements.
-# Here is the complete Python code file:
-# ### Explanation:
-# - **MyModel**: A simple convolutional neural network (CNN) with one convolutional layer, ReLU activation, max pooling, and two fully connected layers.
-# - **my_model_function**: Returns an instance of `MyModel`.
-# - **GetInput**: Generates a random tensor with the shape `(B, C, H, W)` where `B` is the batch size, `C` is the number of channels, and `H` and `W` are the height and width of the input image. The tensor is of type `torch.float32`.
-# This code can be used directly with `torch.compile(MyModel())(GetInput())` without any errors.
+import re
+import os
+
+irange_header = "#include <c10/util/irange.h>"
+
+# I recommend using https://regex101.com/ to understand this.
+for_loop_regex = re.compile(
+    r"for\s*\((?:int32_t|int64_t|uint32_t|int64_t|size_t|int|unsigned|auto|std::size_t|short|uint16_t|uint8_t) ([A-Za-z0-9_]+)\s*=\s*([^\s]+)\s*;\s*\1\s*<\s*([^\s]+)\s*;\s*(?:\+\+\1|\1\+\+)\s*\)\s*({?)")
+
+header_regex = re.compile(r'#include ["<][^>"]+(?:[">])')
+
+new_loop_zero = "for (const auto {loop_var} : c10::irange({upper_bound})){bracket}"
+new_loop_range = (
+    "for (const auto {loop_var} : c10::irange({lower_bound}, {upper_bound})){bracket}"
+)
+
+#header_insertion_points = (("c10", "alpha"), ("ATen/", "after"), ("torch/", "before"))
+
+def find_c10(data : str) -> int:
+    insert_at = -1
+    for m in header_regex.finditer(data):
+        if "c10/" in m.group(0):
+            if insert_at is None:
+                insert_at = m.span()[0]
+            if irange_header > m.group(0):
+                insert_at = m.span()[1]
+    return insert_at
+
+def find_ATen(data : str) -> int:
+    insert_at = -1
+    for m in header_regex.finditer(data):
+        if "ATen/" in m.group(0):
+            insert_at = m.span()[1]
+    return insert_at
+
+def find_torch(data : str) -> int:
+    for m in header_regex.finditer(data):
+        if "torch/" in m.group(0):
+            return m.span()[0]
+    return -1
+
+def find_header_insertion_point(data: str) -> (int, str):
+    """Look through headers to find an insertion point."""
+
+    m = find_c10(data)
+    if m != -1:
+        return m, "after"
+    else:
+        m = find_ATen(data)
+        if m != -1:
+            return m, "after"
+        else:
+            m = find_torch(data)
+            return m, "before"
+
+def process_one_file(a_file : str):
+    data = ''
+    with open(a_file) as f:
+        data = f.read()
+    has_for_loop = for_loop_regex.findall(data)
+    if not has_for_loop:
+        return
+    needs_header = has_for_loop and irange_header not in data
+
+    if needs_header:
+        pos, stype = find_header_insertion_point(data)
+        # we do no change the file if do not know where to insert the head file
+        # for now, since there are too many of them
+        if pos == -1:
+            return
+        if stype == "after":
+            data = data[0:pos] + "\n" + irange_header + data[pos:]
+        else:
+            data = data[0:pos] + irange_header + "\n" + data[pos:]
+
+    start = 0
+    new_data = ""
+    for match in for_loop_regex.finditer(data):
+        loop_text_begin, loop_text_end = match.span()
+        loop_var = match.group(1)
+        lower_bound = match.group(2)
+        upper_bound = match.group(3)
+        bracket = " {" if match.group(4) == "{" else ""
+        if lower_bound == "0":
+            replacement_loop = new_loop_zero.format(
+                loop_var=loop_var, upper_bound=upper_bound, bracket=bracket
+            )
+        else:
+            replacement_loop = new_loop_range.format(
+                loop_var=loop_var,
+                lower_bound=lower_bound,
+                upper_bound=upper_bound,
+                bracket=bracket,
+            )
+        old_loop = data[loop_text_begin : loop_text_end]
+        new_data += data[start : loop_text_begin] + replacement_loop
+        start = loop_text_end
+    new_data += data[start:]
+
+    with open(a_file, "w") as fout:
+        fout.write(new_data)
+
+#filetypes = ('.cpp', '.cc', '.h', '.hpp')
+filetypes = ('.cpp', '.cc')
+#target_path = '..'
+target_path = '../aten'
+
+excluded_files = ['../c10/util/ConstexprCrc.h',
+    '../aten/src/ATen/core/jit_type.h',
+    '../aten/src/ATen/native/Math.h',
+    '../c10/util/variant.h',
+    '../c10/util/flags_use_no_gflags.cpp',
+    '../caffe2/operators/cc_bmm_bg_op.h',
+    '../aten/src/ATen/core/tensor_type.cpp',
+    '../aten/src/ATen/native/Linear.cpp',
+    '../aten/src/ATen/native/ConvolutionTBC.cpp',
+    '../caffe2/share/fb/mask_rcnn/bbox_concat_batch_splits_op.h',
+    '../aten/src/ATen/native/BatchLinearAlgebra.cpp',
+    '../aten/src/ATen/native/quantized/cpu/kernels/QuantizedOpKernels.cpp',
+    '../aten/src/ATen/native/cuda/DistributionTemplates.h',
+    '../c10/util/sparse_bitset.h',
+    '../torch/csrc/distributed/c10d/TCPStore.cpp',
+    '../caffe2/fb/operators/calibration_op.h',
+    '../torch/csrc/jit/testing/file_check.cpp',
+    '../torch/csrc/jit/passes/concat_opt.cpp',
+    '../torch/csrc/jit/tensorexpr/operators/reduction.cpp',
+    '../torch/fb/operators/select_keys.cpp',
+    '../torch/fb/operators/calibration/bucketize_calibration.cpp',
+    '../fb/custom_ops/maskrcnn/int8/int8_aabb_roi_align.cpp',
+    '../fb/custom_ops/maskrcnn/aabb/aabb_roi_align.cpp',
+    '../caffe2/fb/tests/RecordIOHelper.cpp',
+    '../test/cpp/api/rnn.cpp',
+    '../torch/fb/training_toolkit/common/tdigest/tests/TestBufferedTDigest.cpp'
+    ]
+
+for current_folder, subfolders, files in os.walk(target_path):
+    for a_file in files:
+        if a_file.endswith(filetypes) and current_folder != '../caffe2/torch/jit':
+            full_path = os.path.join(current_folder, a_file)
+            if full_path not in excluded_files:
+                process_one_file(full_path)

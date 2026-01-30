@@ -1,50 +1,58 @@
-# tf.random.uniform((1, 50, 5), dtype=tf.float32)  ← Input shape inferred from test_seq: (1, 50, 5)
+import numpy as np
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
-import tensorflow as tf
+def to_sequence(data, timesteps=1):
+    n_features=data.shape[2]
+    seq = []
+    for i in range(len(data)-timesteps):
+        # takes a window of data of specified timesteps
+        temp = data[i:(i+timesteps)]
+        temp = temp.reshape(timesteps, n_features)
+        seq.append(temp)
+        
+    return np.array(seq)
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Encoder part
-        self.conv1 = tf.keras.layers.Conv1D(filters=32, kernel_size=15, padding='same',
-                                            data_format='channels_last', dilation_rate=1,
-                                            activation='linear')
-        # LSTM layer with unroll=True as suggested in the issue comments to speed up inference on short sequences
-        # Activation relu consistent with original model
-        self.lstm1 = tf.keras.layers.LSTM(units=50, activation='relu', return_sequences=False, unroll=True)
-        self.dropout1 = tf.keras.layers.Dropout(0.2)
-        self.repeat_vector = tf.keras.layers.RepeatVector(n=50)
 
-        # Decoder part
-        self.lstm2 = tf.keras.layers.LSTM(units=50, activation='relu', return_sequences=True, unroll=True)
-        self.conv2 = tf.keras.layers.Conv1D(filters=32, kernel_size=15, padding='same',
-                                            data_format='channels_last', dilation_rate=1,
-                                            activation='linear')
-        self.dropout2 = tf.keras.layers.Dropout(0.2)
+def LSTM_autoencoder(data):
+    
+    
+    n_timesteps = data.shape[1]
+    n_features = data.shape[2]
+    
+    keras.backend.clear_session()
+    
+    
+    model = keras.Sequential()
+    model.add(keras.layers.Input(shape=(n_timesteps, n_features)))
+    model.add(keras.layers.Conv1D(filters=32, kernel_size=15, padding='same', 
+                            data_format='channels_last',dilation_rate=1, activation="linear"))
+    model.add(keras.layers.LSTM(units=50, activation='relu', name='LSTM_1', return_sequences=False))
+    model.add(keras.layers.Dropout(0.2))
+    # to connect encoder with decoder RepeatVector repeats the provided 2D input multiple times to create 3D output
+    model.add(keras.layers.RepeatVector(n=n_timesteps))
+    # decoder expects the 3D input
+    model.add(keras.layers.LSTM(units=50, activation='relu', name='LSTM_2', return_sequences=True))
+    model.add(keras.layers.Conv1D(filters=32, kernel_size=15, padding='same', 
+                            data_format='channels_last',dilation_rate=1, activation="linear"))
+    model.add(keras.layers.Dropout(0.2))
+    # allows the same output layer to be reused for each element in sequence
+    model.add(keras.layers.TimeDistributed(keras.layers.Dense(units=n_features)))
 
-        # Final TimeDistributed Dense layer to output same number of features as input
-        self.time_dense = tf.keras.layers.TimeDistributed(tf.keras.layers.Dense(units=5))
+    model.compile(optimizer=keras.optimizers.Adam(learning_rate=0.001), loss="mse")
+    
+    return model
 
-    def call(self, inputs, training=False):
-        # inputs: shape (batch, timesteps, features), e.g. (1, 50, 5)
-        x = self.conv1(inputs)
-        x = self.lstm1(x)
-        x = self.dropout1(x, training=training)
-        x = self.repeat_vector(x)
-        x = self.lstm2(x)
-        x = self.conv2(x)
-        x = self.dropout2(x, training=training)
-        x = self.time_dense(x)
-        return x
+model = keras.models.load_model('Lstm3')
 
-def my_model_function():
-    # Return an instance of MyModel.
-    # Weights are not loaded here since the original model is loaded from disk in the issue,
-    # but we only reconstruct the model architecture.
-    return MyModel()
+test=np.ones(255).reshape(51,5) # (51,5)
+test_expanded = np.expand_dims(test,axis=1) # (51,1,5)
+test_seq = to_sequence(test_expanded , 50) # (1,50,5)
 
-def GetInput():
-    # Create a random tensor of shape (1, 50, 5) matching the input used in the example
-    # Batch size 1, timesteps 50, feature dim 5
-    return tf.random.uniform((1, 50, 5), dtype=tf.float32)
-
+t=0
+while t<100:
+  t_start = time.time()
+  model.predict(test_seq)
+  print(time.time()-t_start)
+  t+=1

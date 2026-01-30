@@ -1,70 +1,33 @@
-# tf.random.uniform((B, 512, 1), dtype=tf.float32) ← inferred input shape from issue descriptions and data arrays
+from tensorflow import keras
+from tensorflow.keras import layers
+
+train_dataset = tf.data.Dataset.from_tensor_slices(
+    (
+        {"input_1": atr},
+        {"ed": wtr, "sd": wbtr},
+    )
+)
+train_dataset = train_dataset.batch(100).repeat(3)
 
 import tensorflow as tf
 import tensorflow_addons as tfa
+from tensorflow.keras import Input, Model
+input1 = tf.keras.layers.Input(shape=(None,1),name="input_1")
+x = tf.keras.layers.Conv1D(filters=16, kernel_size=3, strides=1, padding="causal", activation="relu",input_shape=[None,1])(input1)
+x = tf.keras.layers.Bidirectional(tf.keras.layers.GRU(128, activation="tanh", return_sequences=True))(x)
+x = tf.keras.layers.Bidirectional(tf.keras.layers.GRU(256, activation="tanh", return_sequences=True))(x)
+x = tf.keras.layers.Dense(128, activation="tanh")(x)
+o1 = tf.keras.layers.Dense(1, activation="linear",name="ed")(x)
+o2 = tf.keras.layers.Dense(1, activation="sigmoid",name="sd")(x)
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # The model takes sequences of shape (None, 1) with length 512 inferred
-        # Based on original model architecture given:
-        # Conv1D -> BiGRU (128) -> BiGRU (256) -> Dense (128) -> two output heads
-        
-        # Layers defined similarly to the original model snippet:
-        self.conv1d = tf.keras.layers.Conv1D(
-            filters=16,
-            kernel_size=3,
-            strides=1,
-            padding="causal",
-            activation="relu",
-            input_shape=(None, 1)
-        )
-        
-        self.bigru1 = tf.keras.layers.Bidirectional(
-            tf.keras.layers.GRU(128, activation="tanh", return_sequences=True)
-        )
-        self.bigru2 = tf.keras.layers.Bidirectional(
-            tf.keras.layers.GRU(256, activation="tanh", return_sequences=True)
-        )
-        self.dense128 = tf.keras.layers.Dense(128, activation="tanh")
-        
-        # Output heads: ed (linear) and sd (sigmoid)
-        self.dense_ed = tf.keras.layers.Dense(1, activation="linear", name="ed")
-        self.dense_sd = tf.keras.layers.Dense(1, activation="sigmoid", name="sd")
-    
-    def call(self, inputs, training=False):
-        """
-        Forward pass inputs through the model, returning a dictionary of outputs.
-        Equivalent to Keras functional outputs: [o1, o2]
-        
-        inputs: Tensor of shape (batch, 512, 1)
-        returns: dict with keys 'ed' and 'sd' with shapes (batch, 512, 1)
-        """
-        x = self.conv1d(inputs)
-        x = self.bigru1(x)
-        x = self.bigru2(x)
-        x = self.dense128(x)
-        ed_output = self.dense_ed(x)
-        sd_output = self.dense_sd(x)
-        # Return in dictionary naming output to be compatible with original model
-        return {"ed": ed_output, "sd": sd_output}
+model = Model(inputs=[input1], outputs=[o1, o2])
 
-def my_model_function():
-    """
-    Returns an instance of MyModel matching the original model architecture,
-    ready to be compiled and trained.
-    """
-    return MyModel()
+model.compile(loss={'ed': 'mean_squared_error', 
+                    'sd': 'binary_crossentropy'},
+              loss_weights={'ed':0.4,
+                            'sd':0.6},
+              optimizer='adam',
+              metrics={'ed': tf.keras.metrics.MeanAbsoluteError(name="mean_absolute_error", dtype=None),
+                       'sd': tfa.metrics.F1Score(name="f1_score",num_classes=2, threshold=0.5)})
 
-def GetInput():
-    """
-    Returns a random input tensor matching the expected input shape.
-    
-    According to the issue, inputs have shape (batch_size, 512, 1).
-    Batch size is interpreted as a flexible dimension; choose an example batch of size 2.
-    """
-    batch_size = 2  # example batch size
-    sequence_length = 512  # fixed from dataset shape
-    channels = 1
-    return tf.random.uniform((batch_size, sequence_length, channels), dtype=tf.float32)
-
+history = model.fit(train_dataset,epochs=3,verbose=1,steps_per_epoch= 78)

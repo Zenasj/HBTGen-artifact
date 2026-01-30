@@ -1,24 +1,75 @@
-# torch.rand(1, 16, dtype=torch.float32).to_sparse_csr()  # Input shape and dtype
+import torch.nn as nn
+
+if batch_size is not None and batch_sampler is None:
+            # auto_collation without custom batch_sampler
+            batch_sampler = BatchSampler(sampler, batch_size, drop_last)
+
 import torch
-from torch import nn
+import os
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.fc1 = nn.Linear(16, 8)
-        self.fc2 = nn.Linear(8, 4)
+if __name__ == "__main__":
+    from torch.distributed import init_process_group, destroy_process_group
+    init_process_group(backend="nccl") # DDP Setup
 
-    def forward(self, x):
-        # Convert sparse CSR to dense before applying dense layers
-        x = x.to_dense()
-        x = self.fc1(x)
-        x = self.fc2(x)
-        return x
+    if not torch.cuda.is_available():
+        devices = "cpu"
+    else:
+        devices = [f"cuda:{i}" for i in range(torch.cuda.device_count())]
+    assert(devices is not None and devices == "cpu" or len(devices) > 0)
+    print(f"Main running with device(s): {devices}")
 
-def my_model_function():
-    return MyModel()
+    from torch.utils.data import IterableDataset
+    class SparseDataset(IterableDataset):
+        def __iter__(self):
+            for _ in range(32):
+                yield torch.rand(1, 256).to_sparse_csr()
 
-def GetInput():
-    # Returns a random sparse CSR tensor matching the expected input shape
-    return torch.rand(1, 16, dtype=torch.float32).to_sparse_csr()
+    from torch import nn
+    model = nn.Sequential(nn.Linear(256, 128), nn.Linear(128, 32))
 
+    optimizer = torch.optim.Adam(model.parameters()) # TODO: Use distributed optimizer
+
+    from torch.utils.data import DataLoader
+    loader = DataLoader(
+        SparseDataset(),
+        num_workers=2,
+        batch_size=None,
+        shuffle=False,
+        pin_memory=True, # pin_memory_device not set so default is cpu 
+        prefetch_factor=2,
+        persistent_workers=True,
+    )
+
+    local_rank = int(os.environ["LOCAL_RANK"])
+    from torch.nn.parallel import DistributedDataParallel
+    model = DistributedDataParallel(model.to(local_rank), device_ids=[local_rank])
+    for _ in range(2):
+        for source in loader:
+            source = source.to(local_rank)
+            optimizer.zero_grad()
+            output, mean, logvar = model(source)
+            recon_loss = torch.nn.CrossEntropyLoss()(output, source.to_dense())
+            kld = -0.5 * torch.sum(1 + logvar - mean.pow(2) - logvar.exp())
+            loss = recon_loss + kld
+            loss.backward()
+            optimizer.step()
+
+    destroy_process_group()
+    print("DONE")
+
+import torch
+from torch.utils.data import IterableDataset
+from torch.utils.data import DataLoader
+
+class SparseDataset(IterableDataset):
+    def __iter__(self):
+        yield torch.rand(1, 16).to_sparse_csr()
+
+loader = DataLoader(
+    SparseDataset(),
+    batch_size=None,
+    pin_memory=True
+)
+
+for source in loader:
+    source

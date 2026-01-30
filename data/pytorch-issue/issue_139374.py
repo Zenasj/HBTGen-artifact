@@ -1,30 +1,24 @@
+import torch.nn as nn
+
 import torch
-from torch import nn
+from triton.testing import do_bench
+from torch.nn.attention.flex_attention import create_block_mask, flex_attention, noop_mask, BlockMask
+import torch.nn.functional as F
+import functools
+
+torch.manual_seed(0)
+
+import torch
+torch.set_default_device('cuda')
 
 def sliding_window(b, h, q_idx, kv_idx, val):
     return (q_idx - kv_idx).abs() < val
 
-# torch.randint(0, 1024, (2, 1024), dtype=torch.long)  # Input is a 2x1024 tensor of indices
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.val = nn.Parameter(torch.randn(()))  # Parameter replacing partial's tensor
-        
-    def forward(self, indices):
-        q_idx, kv_idx = indices[0], indices[1]
-        # Define mask function using model's parameter
-        def mask_mod(b, h, q_i, kv_i):
-            return sliding_window(b, h, q_i, kv_i, self.val)
-        
-        # Simulate create_block_mask call with fixed sequence lengths
-        # The actual implementation depends on flex_attention's requirements
-        # Here we return a dummy mask for demonstration
-        return torch.ones(1024, 1024, dtype=torch.bool)  # Replace with actual mask creation
+sliding_window2 = functools.partial(sliding_window, val=torch.randn(()))
+torch.compile(create_block_mask, fullgraph=True)(sliding_window2, None, None, 1024, 1024)
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Generate indices tensor (q_idx, kv_idx) with shape (2, 1024)
-    return torch.randint(0, 1024, (2, 1024), dtype=torch.long, device='cuda')
-
+py
+def _get_mod_type(fn: Callable) -> _ModificationType:
+    num_defaults = 0 if fn.__defaults__ is None else len(fn.__defaults__)
+    num_positional_args = fn.__code__.co_argcount - num_defaults
+    ...

@@ -1,30 +1,39 @@
-# tf.random.uniform((B, 2), dtype=tf.float64) ← Input shape is (batch_size, 2) with float64 dtype
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
+import tensorflow.keras as keras
+import tensorflow.keras.layers as layers
+import tensorflow.keras.backend as K
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-    
+tf.keras.backend.set_floatx('float64')
+
+
+def grad(y, x):
+    V = layers.Lambda(lambda z: K.gradients(
+        z[0], z[1]), output_shape=[1])([y, x])
+    return V
+
+
+fixed_input = keras.Input(shape=(2,))
+a = fixed_input * fixed_input
+b = grad(a, fixed_input)
+
+model = keras.Model(inputs=[fixed_input], outputs=[b])
+
+# c = model(tf.constant(2.0, dtype=tf.float64))
+c = model.predict(tf.constant([[2.0, 1.0]], dtype=tf.float64))
+print(c)
+
+class Toy(tf.keras.Model):
     def call(self, x):
-        # Compute y = x^2
-        y = x * x
-        
-        # Use GradientTape to compute dy/dx per example in batch
-        with tf.GradientTape() as tape:
-            tape.watch(x)
-            y = x * x
-        grad = tape.gradient(y, x)
-        return grad
+        return x * x
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+toy = Toy()
 
-def GetInput():
-    # Generate a batch of random inputs with shape (batch_size=4, 2)
-    # Float64 dtype to match model expectations
-    batch_size = 4
-    input_shape = (batch_size, 2)
-    return tf.random.uniform(input_shape, dtype=tf.float64)
-
+x = tf.constant([2.0, 1.0], dtype=tf.float64)
+with tf.GradientTape() as tape:
+    # Remember to watch non-variable tensor
+    tape.watch(x)
+    y = toy(x)
+print(tape.gradient(y, x))

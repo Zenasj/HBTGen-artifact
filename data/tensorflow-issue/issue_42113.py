@@ -1,37 +1,76 @@
-# tf.random.uniform((B, 64, 2048), dtype=tf.float32) ← input shape inferred from encoder input shape and example code
-
+import math
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
-# Attention mechanism using Bahdanau style attention
+converter = tf.lite.TFLiteConverter.from_concrete_functions([train_step.get_concrete_function(tf.TensorSpec(shape=(64, 64, 2048),dtype=tf.dtypes.float32),tf.TensorSpec(shape=(64, 50),dtype=tf.dtypes.int32))])
+tflite_model = converter.convert()
+
+@tf.function
+def train_step(img_tensor, target):
+    loss = 0
+
+    #初始化每个批次的隐藏状态因为图像与图像的字幕之间没有关系
+    hidden = decoder.reset_states(batch_size=target.shape[0])
+
+    dec_input = tf.expand_dims([tokenizer.word_index['<start>']] * target.shape[0], 1)
+
+    with tf.GradientTape() as tape:
+        features = encoder(img_tensor)
+
+        for i in  range(1, target.shape[1]):
+            #通过解码器传递特征
+            predictions, hidden, _ = decoder(dec_input, features, hidden)
+
+            loss += loss_function(target[:, i], predictions)
+
+            # 使用 teacher forcing
+            dec_input = tf.expand_dims(target[:, i], 1)
+
+    total_loss = (loss / int(target.shape[1]))
+
+    trainable_variables = encoder.trainable_variables + decoder.trainable_variables
+
+    gradients = tape.gradient(loss, trainable_variables)
+
+    optimizer.apply_gradients(zip(gradients, trainable_variables))
+
+    return loss, total_loss
+
 class BahdanauAttention(tf.keras.Model):
-    def __init__(self, units):
+    def __init__(self, utils):
         super(BahdanauAttention, self).__init__()
-        self.W1 = tf.keras.layers.Dense(units)
-        self.W2 = tf.keras.layers.Dense(units)
+        self.W1 = tf.keras.layers.Dense(utils)
+        self.W2 = tf.keras.layers.Dense(utils)
         self.V = tf.keras.layers.Dense(1)
 
     def call(self, features, hidden):
-        # features shape: (batch_size, 64, embedding_dim)
-        # hidden shape: (batch_size, hidden_size)
-        hidden_with_time_axis = tf.expand_dims(hidden, 1)  # (batch_size, 1, hidden_size)
+        # features(CNN_encoder output) shape == (batch_size, 64, embedding_dim)
 
-        # Score calculation (batch_size, 64, hidden_size)
-        score = tf.nn.tanh(self.W1(features) + self.W2(hidden_with_time_axis))
+        # hidden shape == (batch_size, hidden_size)
+        # hidden_with_time_axis shape == (batch_size, 1, hidden_size)
+        hidden_with_time_axis_shape = tf.expand_dims(hidden, 1)
 
-        # Attention weights (batch_size, 64, 1)
+        # score shape == (batch_size, 64, hidden_size)
+        score = tf.nn.tanh(self.W1(features) + self.W2(hidden_with_time_axis_shape))
+
+        # attention_weights shape == (batch_size, 64, 1)
+        # you get 1 at the last axis because you are applying score to self.V
         attention_weights = tf.nn.softmax(self.V(score), axis=1)
 
-        # Context vector as weighted sum (batch_size, hidden_size)
+        # context_vector shape after sum == (batch_size, hidden_size)
         context_vector = attention_weights * features
         context_vector = tf.reduce_sum(context_vector, axis=1)
 
         return context_vector, attention_weights
 
-# Encoder to process extracted CNN features (pre-extracted from something like InceptionV3)
 class CNN_Encoder(tf.keras.Model):
-    def __init__(self, embedding_dim):
+    #由于您已经提取了特征并使用pickle进行了转储
+    #该编码器通过完全连接的层传递这些特征
+    def __init__(self, embedding):
         super(CNN_Encoder, self).__init__()
-        # Fully connected layer to transform features to embedding dim
+        # shape after fc == (batch_size, 64, embedding_dim)
         self.fc = tf.keras.layers.Dense(embedding_dim)
 
     def call(self, x):
@@ -39,7 +78,6 @@ class CNN_Encoder(tf.keras.Model):
         x = tf.nn.relu(x)
         return x
 
-# Decoder RNN with attention, outputs vocabulary logits
 class RNN_Decoder(tf.keras.Model):
     def __init__(self, embedding_dim, units, vocab_size):
         super(RNN_Decoder, self).__init__()
@@ -55,99 +93,70 @@ class RNN_Decoder(tf.keras.Model):
 
         self.attention = BahdanauAttention(self.units)
 
-    def call(self, x, features, hidden):
-        # Attention and context vector
+    def call(self, x , features, hidden):
+        #将注意力定义为一个单独的模型
         context_vector, attention_weights = self.attention(features, hidden)
 
-        # Embed input word (batch_size, 1, embedding_dim)
+        #x shape after passing through embedding == (batch_size, 1, embedding_dim)
         x = self.embedding(x)
 
-        # Concatenate context vector and embedding (batch_size, 1, embedding_dim + hidden_size)
+        #x shape after concatenation == (batch_size, 1, embedding_dim + hidden_size)
         x = tf.concat([tf.expand_dims(context_vector, 1), x], axis=-1)
 
-        # Pass through GRU
+        #将concated后的的向量传递给GRU
         output, state = self.gru(x)
 
-        # Fully connected layers
+        #shape == (batch_size, max_length, hidden_size)
         x = self.fc1(output)
-        x = tf.reshape(x, (-1, x.shape[2]))  # Flatten for final dense layer
 
-        x = self.fc2(x)  # Output logits (batch_size * seq_len, vocab_size)
+        #x shape == (batch_size, max_length, hidden_size)
+        x = tf.reshape(x, (-1, x.shape[2]))
+
+        # output shape == (batch_size * max_length, vocab)
+        x = self.fc2(x)
 
         return x, state, attention_weights
 
     def reset_states(self, batch_size):
         return tf.zeros((batch_size, self.units))
 
+encoder = CNN_Encoder(embedding_dim)
+decoder = RNN_Decoder(embedding_dim, units, vocab_size)
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # These must be defined with assumed hyperparameters:
-        # These parameters should align with the placeholders used in the training code snippet.
-        self.embedding_dim = 256
-        self.units = 512
+optimizer = tf.keras.optimizers.Adam()
+loss_object = tf.keras.losses.SparseCategoricalCrossentropy(
+    from_logits=True, reduction='none'
+)
+def loss_function(real, pred):
+    mask = tf.math.logical_not(tf.math.equal(real, 0))
+    loss_ = loss_object(real, pred)
 
-        # Note: vocab_size and top_k are not known, we choose a placeholder size.
-        # For example, vocab_size = 5000 (You can adjust as needed)
-        self.vocab_size = 5000 
+    mask = tf.cast(mask, dtype=loss_.dtype)
+    loss_ *= mask
 
-        self.encoder = CNN_Encoder(self.embedding_dim)
-        self.decoder = RNN_Decoder(self.embedding_dim, self.units, self.vocab_size)
+    return tf.reduce_mean(loss_)
 
-    @tf.function(jit_compile=True)
-    def call(self, inputs):
-        """
-        Expects inputs to be a tuple: (img_tensor, target)
-        img_tensor: (batch_size, 64, 2048)  extracted image features
-        target: (batch_size, max_seq_len)  integer word indices for target caption sequence
-        """
-        img_tensor, target = inputs
-        batch_size = tf.shape(target)[0]
+#CheckPoint
 
-        hidden = self.decoder.reset_states(batch_size=batch_size)
+checkpoint_path = './checkpoints/train'
+ckpt = tf.train.Checkpoint(encoder=encoder,
+                           decoder=decoder,
+                           optimizer = optimizer)
+ckpt_manage = tf.train.CheckpointManager(ckpt, checkpoint_path, max_to_keep=5)
 
-        dec_input = tf.expand_dims([1] * batch_size, 1)  # Assuming 1 is <start> token index
-
-        # Encode images
-        features = self.encoder(img_tensor)
-
-        outputs = []
-        for i in range(1, tf.shape(target)[1]):
-            # Forward pass through decoder for each time step
-            predictions, hidden, _ = self.decoder(dec_input, features, hidden)
-            outputs.append(predictions)
-            # Teacher forcing - use true target next word as next input
-            dec_input = tf.expand_dims(target[:, i], 1)
-
-        # Stack outputs for all time steps: list of (batch_size * 1, vocab_size) tensors
-        # We reshape to (batch_size, seq_len - 1, vocab_size)
-        stacked_outputs = tf.stack(outputs, axis=1)
-        output_shape = tf.concat([[batch_size], [tf.shape(target)[1] - 1], [self.vocab_size]], axis=0)
-        stacked_outputs = tf.reshape(stacked_outputs, output_shape)
-
-        return stacked_outputs
-
-
-def my_model_function():
-    # Create and return a fresh MyModel instance
-    return MyModel()
-
-
-def GetInput():
-    # Produce dummy input matching the model's expected input
-    # img_tensor shape: (batch_size, 64, 2048), dtype float32
-    # target shape: (batch_size, max_seq_len), dtype int32 (word indices)
-
-    batch_size = 2  # example batch size
-    seq_len = 10  # example caption length
-
-    img_tensor = tf.random.uniform((batch_size, 64, 2048), dtype=tf.float32)
-    target = tf.random.uniform((batch_size, seq_len), minval=2, maxval=4999, dtype=tf.int32)  
-    # minval=2 to avoid <start> token index=1, but random is fine as placeholder
-
-    # Forcing the first target token to <start> token with index 1 (matching training code)
-    target = tf.concat([tf.ones((batch_size, 1), dtype=tf.int32), target[:, 1:]], axis=1)
-
-    return (img_tensor, target)
-
+start_epoch = 0
+if ckpt_manage.latest_checkpoint:
+    start_epoch = int(ckpt_manage.latest_checkpoint.split('-')[-1])
+    print(start_epoch)
+    #恢复checkpoint_path中的最新检查点
+    ckpt.restore(ckpt_manage.latest_checkpoint)
+BATCH_SIZE = 128
+BUFFER_SIZE = 1000
+embedding_dim = 256
+units = 512
+vocab_size = top_k + 1
+num_steps = len(img_name_train) // BATCH_SIZE
+# 从InceptionV3提取的向量的形状为(64，2048)
+# 这两个变量表示矢量形状
+features_shape = 2048
+attention_features_shape = 64

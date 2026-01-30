@@ -1,12 +1,8 @@
-# torch.rand(3, dtype=torch.float32)  # Inferred input shape
+import torch.nn as nn
 
 import torch
 from torch import nn
 from torch.nn.utils.parametrize import register_parametrization
-
-class MyParametrization(nn.Module):
-    def forward(self, X):
-        return -X
 
 class MyModule(nn.Module):
     def __init__(self):
@@ -16,18 +12,16 @@ class MyModule(nn.Module):
     def forward(self, x):
         return self.weight + x
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.module = MyModule()
-        register_parametrization(self.module, 'weight', MyParametrization())
+class MyParametrization(nn.Module):
+    def forward(self, X):
+        return -X
 
-    def forward(self, x):
-        return self.module(x)
+@torch.compile(backend="eager")
+def f():
+    m = MyModule()
+    register_parametrization(m, 'weight', MyParametrization())
+    output = m(torch.randn(3))
+    return output
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.randn(3, dtype=torch.float32)
-
+output = f()
+print(output)

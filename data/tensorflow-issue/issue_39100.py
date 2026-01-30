@@ -1,26 +1,43 @@
-# tf.random.uniform((B, 2), dtype=tf.float32)  ← Input shape is (batch_size, 2) as per original model input
+from tensorflow import keras
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
+from tensorflow.keras import layers
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Reconstruct the model described: input=2 dims, Dense(8, tanh), Dense(4, sigmoid), Dense(1, sigmoid)
-        self.dense1 = tf.keras.layers.Dense(8, activation='tanh', name='layer1')
-        self.dense2 = tf.keras.layers.Dense(4, activation='sigmoid', name='layer2')
-        self.output_layer = tf.keras.layers.Dense(1, activation='sigmoid', name='outputlayer')
+model = tf.keras.Sequential()
 
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        return self.output_layer(x)
+model.add(layers.Input(2, name='INPUT'))
+# Adds a densely-connected layer with 64 units to the model:
+model.add(layers.Dense(8, name='layer1', input_shape=(2,), activation='tanh'))
+# Add another:
+model.add(layers.Dense(4, name='layer2', input_shape=(8,), activation='sigmoid'))
+# Add an output layer with 1 output unit:
+model.add(layers.Dense(1, name='outputlayer', input_shape=(4,), activation='sigmoid'))
 
-def my_model_function():
-    # Return a fresh instance of MyModel
-    return MyModel()
+model.compile(optimizer=tf.keras.optimizers.Adam(0.01),
+              loss=tf.keras.losses.BinaryCrossentropy(),
+              metrics=['accuracy'])
+model.summary()
 
-def GetInput():
-    # Return a random input tensor with shape (batch_size=1, 2) matching model input size.
-    # Using uniform distribution in range [0, 1)
-    return tf.random.uniform((1, 2), dtype=tf.float32)
+print(model.inputs[0].name)
+import numpy as np
 
+data = np.array([
+    [0, 0],
+    [1, 0],
+    [0, 1],
+    [1, 1]
+])
+labels = np.array([
+    [0],
+    [1],
+    [1],
+    [0]
+])
+
+model.fit(data, labels, epochs=500)
+tf.keras.models.save_model(model, 'model')
+
+for layer,layer_loaded in zip(model.layers,loaded_model.layers):
+  print('From Original Model: ', layer.name, ' From loaded_model: ',layer_loaded.name)

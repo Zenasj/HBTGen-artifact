@@ -1,55 +1,109 @@
-# tf.random.uniform((N/A)) ← This issue is about tf.data.Dataset from_generator interleaving, no fixed input shape inferred
+import tensorflow as tf
+
+N_DATASETS_TO_INTERLEAVE = 10
+
+@tf.autograph.experimental.do_not_convert
+def hello(idx):
+  for j in range(idx):
+    yield f"IDX: {idx}"
+    
+
+@tf.autograph.experimental.do_not_convert
+def interleave_fn(_):
+    print("[INFO] Calling Interleave Fn")         # THIS LINE SHOULD BE PRINTED `N_DATASETS_TO_INTERLEAVE` times. Only appears once.
+    return tf.data.Dataset.from_generator(
+        hello, args=(_,), output_types=tf.string
+    )
+
+
+ds = tf.data.Dataset.range(N_DATASETS_TO_INTERLEAVE).interleave(
+    interleave_fn
+)
+
+options = tf.data.Options()
+options.experimental_optimization.apply_default_optimizations = False
+ds = ds.with_options(options)
+
+
+@tf.autograph.experimental.do_not_convert
+def get_dataset(_ds):
+    for x in iter(_ds):
+        yield x
+
+
+for x in get_dataset(ds):
+  print(x)
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
+from tensorflow.python.data.ops import structured_function
+
+@tf.autograph.experimental.do_not_convert  # Not doing anything - Can be removed
+class HelloIter(object):
     def __init__(self):
-        super().__init__()
-        # No actual trainable model, this replicates the workaround to interleave generators correctly.
+         self._iter = None
+         self.reset()
+    
+    def reset(self):
+        print("\nResetting the iterator ...")
+        self._iter = iter([1, 2, 3])
+        print("Done ...\n")
+    
+    @tf.autograph.experimental.do_not_convert  # Not doing anything - Can be removed
+    def __call__(self):
+        print("Calling Mom ...")
+        return next(self._iter)
 
-    def call(self, inputs):
-        # inputs is expected to be ignored here, but kept for compatible call signature
-        # We'll create and interleave datasets similarly to the workaround pattern shared.
-        N_DATASETS_TO_INTERLEAVE = 10
+# The hello function is created as an objected to give it a `state` that can be resetted.
+#  Necessary because `structured_function.StructuredFunctionWrapper` actually calls the function
+hello = HelloIter() 
 
-        def hello(idx):
-            # Generator yielding `idx` times string values
-            for _ in range(idx):
-                yield f"IDX: {idx}"
+for _ in range(3):
+    print(hello())
 
-        def make_dataset(idx):
-            # Create a tf.data.Dataset from the hello generator for each index
-            return tf.data.Dataset.from_generator(
-                lambda: hello(idx),
-                output_signature=tf.TensorSpec(shape=(), dtype=tf.string),
-            )
+hello.reset()
 
-        # Create list of datasets ahead of time (to avoid autograph/graph-mode issues)
-        datasets = [make_dataset(i) for i in range(N_DATASETS_TO_INTERLEAVE)]
+for _ in range(3):
+    print(hello())
 
-        # Create a dataset from the dataset list and interleave them
-        ds = tf.data.Dataset.from_tensor_slices(datasets)
-        interleaved_ds = ds.interleave(lambda x: x, cycle_length=N_DATASETS_TO_INTERLEAVE)
+tf.data.experimental.enable_debug_mode()
 
-        # To get output tensors from dataset, we must iterate it eagerly.
-        # We'll gather results into a tf.TensorArray for returning.
-        # Since datasets yield strings of shape (), dtype string, 
-        # we'll gather and return a RaggedTensor of strings for all values.
+hello_obj = HelloIter()
 
-        output_strings = []
+wrapped_func = structured_function.StructuredFunctionWrapper(
+    hello_obj,
+    "reduce()",
+    input_structure=(),
+    # add_to_graph=False,
+    use_legacy_function=False
+)
 
-        for elem in interleaved_ds:
-            output_strings.append(elem)
+hello_obj.reset()  # Must re-initialize the `iter()` because `structured_function.StructuredFunctionWrapper` actually runs the func once
 
-        # Convert gathered strings list to a tf.RaggedTensor of shape (None,)
-        return tf.ragged.constant(output_strings, dtype=tf.string)
+for _ in range(3):
+    print(wrapped_func._function())
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+@tf.autograph.experimental.do_not_convert
+def outer_interleave_fn(_):
+  return tf.py_function(interleave_fn, [_], Tout=[tf.data.DatasetSpec(tf.TensorSpec(shape=(), dtype=tf.string))])[0]
 
-def GetInput():
-    # The model ignores input, but to respect signature we produce a dummy tensor input.
-    # No particular shape since inputs are unused, providing scalar zero.
-    return tf.constant(0)
+import tensorflow as tf
 
+N_DATASETS_TO_INTERLEAVE = 10
+
+def hello(idx):
+  for j in range(idx):
+    yield f"IDX: {idx}"
+
+def make_dataset(idx):
+    return tf.data.Dataset.from_generator(
+        lambda: hello(idx), output_types=tf.string
+    )
+
+datasets = [make_dataset(i) for i in range(N_DATASETS_TO_INTERLEAVE)]
+
+ds = tf.data.Dataset.from_tensor_slices(datasets)
+ds = ds.interleave(lambda x: x, cycle_length=N_DATASETS_TO_INTERLEAVE)
+
+for x in ds:
+  print(x)

@@ -1,21 +1,25 @@
-# torch.rand(1, 3, 224, 224, dtype=torch.float32)
-import torch
+py
 import torch.nn as nn
 
-class MyModel(nn.Module):
+class CustomModule(nn.Module):
     def __init__(self):
         super().__init__()
     
     @property
     def property_a(self):
-        return self.property_b  # property_b is intentionally undefined to trigger the error
-    
-    def forward(self, x):
-        return x  # Minimal forward pass to satisfy torch.compile requirements
+        return self.property_b
 
-def my_model_function():
-    return MyModel()
+m = CustomModule()
+print(m.property_a)
 
-def GetInput():
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
+py
+class CustomModule2:
+    def __init__(self):
+        pass
 
+    @property
+    def property_a(self):
+        return self.property_b
+
+m2 = CustomModule2()
+print(m2.property_a)

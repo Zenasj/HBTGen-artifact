@@ -1,27 +1,14 @@
-# torch.rand(B, 4, dtype=torch.float32, device='cuda:0')
 import torch
-from torch import nn
+sp_val = torch.rand(10).to('cuda:1')
+print(sp_val, sp_val.device)
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Create a sparse COO tensor with indices and values on the same device
-        indices = torch.tensor([[0, 1, 2], [0, 1, 3]], device='cuda:0', dtype=torch.long)
-        values = torch.rand(3, device='cuda:0')
-        shape = (4, 4)
-        self.sparse_param = torch.sparse_coo_tensor(indices, values, shape)
-        self.sparse_param = nn.Parameter(self.sparse_param)
+sp_ind = torch.tensor([[0,1,2,3,4,5,6,7,8,9], [0,1,2,3,4,5,6,7,8,9]], device='cuda:1')
+print(sp_ind)
 
-    def forward(self, x):
-        # Multiply input with sparse parameter (assuming x is (B,4))
-        # Transpose to (4, B) to match sparse matrix multiplication
-        return torch.sparse.mm(self.sparse_param, x.t()).t()
+x = torch.sparse_coo_tensor(sp_ind, sp_val, (10, 10))
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Generate input tensor matching the model's expectation
-    B = 2  # Arbitrary batch size
-    return torch.rand(B, 4, dtype=torch.float32, device='cuda:0')
-
+import torch
+i=torch.tensor(([0], [2]), device="cuda:0", dtype=torch.long)
+v=torch.tensor([1.], device="cuda:1")           
+t=torch.sparse_coo_tensor(i, v, dtype=torch.float64)    
+print(t.device) # CPU

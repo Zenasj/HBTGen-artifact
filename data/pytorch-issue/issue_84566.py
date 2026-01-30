@@ -1,22 +1,24 @@
-# torch.rand(13)  # Input tensor size based on the example's output_tensor shape
 import torch
-import torch.nn as nn
+import torch.distributed as dist
+import os
+import torch.multiprocessing as mp
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Placeholder model structure; the actual issue relates to distributed.scatter()
-        # This is a minimal model to satisfy the code structure requirements
-        self.identity = nn.Identity()  # Pass-through for input validation
+os.environ["MASTER_ADDR"] = "localhost"
+os.environ["MASTER_PORT"] = "29500"
+os.environ["TORCH_SHOW_CPP_STACKTRACES"] = "1"
 
-    def forward(self, x):
-        return self.identity(x)
+def work(rank, world_size):
+    dist.init_process_group("gloo", rank=rank, world_size=world_size)
+    print("finished creating process group")
+    t_13 = torch.zeros(13)
+    t_6 = torch.zeros(6)
+    output_tensor = torch.zeros(13)
+    if rank == 0:
+        dist.scatter(output_tensor, [t_13, t_6])
+    else:
+        dist.scatter(output_tensor)
+    print(f"rank {rank} - {output_tensor=}")
 
-def my_model_function():
-    # Returns a minimal model instance
-    return MyModel()
-
-def GetInput():
-    # Returns a tensor matching the expected input shape (13)
-    return torch.rand(13)
-
+if __name__ == "__main__":
+    world_size = 2
+    mp.spawn(work, nprocs=world_size, args=(world_size,))

@@ -1,18 +1,32 @@
-import torch
-from torch import nn
+def scatter_kwargs(inputs, kwargs, target_gpus, dim=0):
+    r"""Scatter with support for kwargs dictionary"""
+    inputs = scatter(inputs, target_gpus, dim) if inputs else []
+    kwargs = scatter(kwargs, target_gpus, dim) if kwargs else []
+    if len(inputs) < len(kwargs):
+        inputs.extend([() for _ in range(len(kwargs) - len(inputs))])
+    elif len(kwargs) < len(inputs):
+        kwargs.extend([{} for _ in range(len(inputs) - len(kwargs))])
+    inputs = tuple(inputs)
+    kwargs = tuple(kwargs)
+    return inputs, kwargs
 
-# torch.rand(1, 1, 1, 1, dtype=torch.float32)
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.conv = nn.Conv2d(1, 1, 1)
+def scatter_kwargs(inputs, kwargs, target_gpus, dim=0):
+    r"""Scatter with support for kwargs dictionary"""
+    inputs = scatter(inputs, target_gpus, dim) if inputs else []
+    kwargs = scatter(kwargs, target_gpus, dim) if kwargs else []
+    if len(inputs) < len(kwargs):
+        inputs.extend([() for _ in range(len(kwargs) - len(inputs))])
+    elif len(kwargs) < len(inputs):
+        kwargs.extend([{} for _ in range(len(inputs) - len(kwargs))])
 
-    def forward(self, im, **kwargs):
-        return self.conv(im)
+    # patch for cases where #inputs < len(target_gpus) and len(kwargs) > 0
+    is_empty = [len(p) == 0 for p in inputs]
+    num_empty = sum(is_empty)
+    num_full = len(inputs) - num_empty
+    if num_full > 0 and num_empty > 0:
+        kwargs = kwargs[0:num_full]
+        inputs = inputs[0:num_full]
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(1, 1, 1, 1)
-
+    inputs = tuple(inputs)
+    kwargs = tuple(kwargs)
+    return inputs, kwargs

@@ -1,37 +1,54 @@
-# tf.random.uniform((10, 1, 5, 10), dtype=tf.float32) ← Input shape inferred from the example usage in the issue
+import math
+import random
 
 import tensorflow as tf
+import traceback
 
-class MyModel(tf.keras.Model):
+def replace_special_values(tensor):
+    # Convert tensor to tf.float32 if it's not a supported dtype
+    supported_dtypes = [tf.float16, tf.float32, tf.float64, tf.bfloat16]
+    if tensor.dtype not in supported_dtypes:
+        original_dtype = tensor.dtype
+        tensor = tf.cast(tensor, tf.float32)
+    else :
+        original_dtype = None
+    
+    # Replace NaNs with zeros
+    tensor = tf.where(tf.math.is_nan(tensor), tf.zeros_like(tensor), tensor)
+    
+    # Replace positive infinities with a large number (e.g., 1e30)
+    tensor = tf.where(tf.math.is_inf(tensor), 100, tensor)
+    
+    # Replace negative infinities with a small number (e.g., -1e30)
+    tensor = tf.where(tf.math.is_inf(tensor) & tf.math.less(tensor, 0), -100, tensor)
+    
+    # Convert tensor back to its original dtype
+    if original_dtype is not None :
+        tensor = tf.cast(tensor, original_dtype)
+    return tensor
+
+class Network(tf.Module):
     def __init__(self):
         super().__init__()
 
     @tf.function(jit_compile=True)
-    def call(self, x):
-        # In the original issue, a random tensor was generated inside the call causing nondeterminism under jit_compile.
-        # To reflect the intended operation and allow stable behavior, we accept x as input and use a fixed "random_tensor"
-        # generated deterministically outside or from x's shape.
-        # However, since the original issue centers around tf.raw_ops.Zeta behavior, we'll replicate a similar structure here.
-        
-        # We'll create a deterministic tensor shaped similarly to the issue's "random_tensor" for consistency.
-        # Because the original problem showed inconsistency with random normal on jit_compile, 
-        # here, we create a fixed tensor of ones for stable output.
-        random_tensor = tf.ones([2, 1, 10], dtype=tf.float32)
-        
-        # Use tf.raw_ops.Zeta with q=x and x=random_tensor as in the original snippet.
-        # Note: input "x" shape is (10,1,5,10) but tf.raw_ops.Zeta expects q and x to be broadcastable.
-        # The original code used random_tensor shape (2, 1, 10) and x shape (10,1,5,10),
-        # which likely relies on broadcasting. We'll keep the same shapes as input.
-        result = tf.raw_ops.Zeta(q=x, x=random_tensor)
-        
-        return result
+    def __call__(self, x):
+      random_tensor = tf.random.normal([2, 1, 10], dtype=tf.float32)
+      x = tf.raw_ops.Zeta(q=x, x=random_tensor)             
+      return x
 
-def my_model_function():
-    # Returns an instance of MyModel with fixed behavior.
-    return MyModel()
+m = Network()
+random_tensor = tf.random.normal([10, 1, 5, 10], dtype=tf.float32)
+inp = {
+    "x": random_tensor,
+    }
 
-def GetInput():
-    # Return a random input tensor matching the expected input shape used in the issue:
-    # Shape: (10, 1, 5, 10), dtype float32
-    return tf.random.uniform((10, 1, 5, 10), dtype=tf.float32)
-
+with tf.device('/CPU:0'):
+    tf.config.run_functions_eagerly(True)
+    no_op_res = m(**inp)
+    tf.config.run_functions_eagerly(False)
+    with tf.device('/CPU:0'):
+        op_res = m(**inp)
+    no_op_res = replace_special_values(no_op_res)
+    op_res = replace_special_values(op_res)
+    tf.debugging.assert_near(tf.cast(no_op_res, tf.float64), tf.cast(op_res, tf.float64), atol=0.001, rtol=0.001)

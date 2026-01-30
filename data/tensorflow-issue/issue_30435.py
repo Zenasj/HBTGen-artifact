@@ -1,45 +1,82 @@
-# tf.random.uniform((B, H, W, C), dtype=...) ← Input shape is ambiguous from the issue, but the example works with a scalar int input iterating over a list of length 3
+import tensorflow as tf
+
+class A():
+    def __init__(self):
+        self.lst = [1, 2, 3]
+        self.sess = tf.Session()
+        self.total_length = tf.constant(len(self.lst))
+
+    def loop(self, i):
+        pr = tf.print(i)
+        current_value = self.lst[i.eval(session=self.sess)]
+        with tf.control_dependencies([pr]):
+            i = tf.add(i, 1)
+        return [i]
+
+    def cond(self, i):
+        return tf.less(i, self.total_length) 
+
+    def run(self):
+        i = tf.constant(0)
+        while_op = tf.while_loop(self.cond, self.loop, [i])
+        final_i = self.sess.run(while_op)
+
+
+if __name__ == "__main__":
+    obj = A()
+    obj.run()
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
+class A():
     def __init__(self):
-        super().__init__()
-        # Instead of python list, use a tf.constant for indexing within tf.while_loop
-        self.lst = tf.constant([1, 2, 3], dtype=tf.int32)
+        self.lst = tf.constant([1, 2, 3])
+        self.sess = tf.Session()
         self.total_length = tf.size(self.lst)
 
-    @tf.function(jit_compile=True)
-    def call(self, inputs):
-        # inputs expected: a scalar tf.int32 tensor, initial counter (usually 0)
-        i = inputs
+    def loop(self, i):
+        pr = tf.print(i)
+        current_value = self.lst[i]
+        with tf.control_dependencies([pr]):
+            i = tf.add(i, 1)
+        return [i]
 
-        # This list will accumulate printed values during the loop for demonstration
-        output = tf.TensorArray(dtype=tf.int32, size=0, dynamic_size=True)
+    def cond(self, i):
+        return tf.less(i, self.total_length) 
 
-        def cond(i, out):
-            return tf.less(i, self.total_length)
+    def run(self):
+        i = tf.constant(0)
+        while_op = tf.while_loop(self.cond, self.loop, [i])
+        final_i = self.sess.run(while_op)
 
-        def body(i, out):
-            # Print current counter (similar to tf.print in TF2)
-            tf.print("Loop counter i:", i)
-            current_value = self.lst[i]
-            tf.print("Current list value:", current_value)
 
-            # Write current_value to output array to observe the values iterated
-            out = out.write(i, current_value)
-            i = i + 1
-            return i, out
+if __name__ == "__main__":
+    obj = A()
+    obj.run()
 
-        i, output = tf.while_loop(cond, body, loop_vars=[i, output])
-        # Stack all outputs collected
-        result = output.stack()
-        return result
+class A():
+    def __init__(self):
+        self.lst = [1, 2, 3]
+        self.sess = tf.Session()
+        self.total_length = tf.size(self.lst)
 
-def my_model_function():
-    return MyModel()
+    def loop(self, i):
+        pr = tf.print(i)
+        current_value = i.eval()
+        pr_2 = tf.print(self.lst[current_value])
+        with tf.control_dependencies([pr, pr_2]):
+            i = tf.add(i, 1)
+        return [i]
 
-def GetInput():
-    # Return initial counter scalar tensor 0 for the loop starting index
-    return tf.constant(0, dtype=tf.int32)
+    def cond(self, i):
+        return tf.less(i, self.total_length) 
 
+    def run(self):
+        i = tf.constant(0)
+        while_op = tf.while_loop(self.cond, self.loop, [i])
+        final_i = self.sess.run(while_op)
+
+
+if __name__ == "__main__":
+    obj = A()
+    obj.run()

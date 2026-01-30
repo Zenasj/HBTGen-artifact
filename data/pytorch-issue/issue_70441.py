@@ -1,35 +1,32 @@
-# torch.rand(B, 10, dtype=torch.float32)
-import torch
+import torch.nn as nn
+
+3
 from torch import nn
 
-class MyModuleList(nn.ModuleList):
-    def __add__(self, other):
-        if not isinstance(other, MyModuleList):
-            raise TypeError(f"ModuleList concatenation should only be used with another MyModuleList instance, but got {type(other).__name__}")
-        concat = MyModuleList()
+a = [nn.Module()]
+b = [nn.Module()]
+c = a + b
+print(c)
+
+a = nn.ModuleList([nn.Module()])
+b = nn.ModuleList([nn.Module()])
+c = a + b # TypeError: unsupported operand type(s) for +: 'ModuleList' and 'ModuleList'
+print(c)
+
+class ModuleList(Module):
+    def __add__(self, other: 'ModuleList') -> 'ModuleList':
+        r"""Concat two ModuleList instances.
+        Args:
+            other (ModuleList): modulelist to add
+        """
+        if not isinstance(other, ModuleList):
+            raise TypeError("ModuleList concatenation should only be "
+                            "used with another ModuleList instance, but "
+                            " got " + type(other).__name__)
         offset = len(self)
+        concat = ModuleList()
         for i in range(len(self)):
-            concat.add_module(str(i), self[i])
-        for j in range(len(other)):
-            concat.add_module(str(offset + j), other[j])
+            concat.add_module(str(i), self[str(i)])
+        for i in range(len(other)):
+            concat.add_module(str(offset + i), other[str(i)])
         return concat
-
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Create two ModuleLists and concatenate them
-        a = MyModuleList([nn.Linear(10, 20)])
-        b = MyModuleList([nn.ReLU()])
-        self.layers = a + b  # Uses custom __add__ operator
-
-    def forward(self, x):
-        for layer in self.layers:
-            x = layer(x)
-        return x
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.randn(5, 10)  # Batch size 5, input features 10
-

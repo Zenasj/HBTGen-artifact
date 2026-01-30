@@ -1,56 +1,54 @@
-# tf.random.uniform((B, 6), dtype=tf.float32) ← Input shape inferred from data_X (100,6)
+import numpy as np
+import math
+import random
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
+from tensorflow.keras import regularizers
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Dropout
+from tensorflow.keras.initializers import he_normal
 import tensorflow_probability as tfp
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define the model layers based on the issue's architecture:
-        # Input: shape=(6,)
-        # Hidden Layer: Dense 5000 units with ReLU, He normal initializer, L1 regularizer
-        # Dropout 0.3
-        # Output: Dense 1 with sigmoid activation
-        
-        self.dense_input = tf.keras.layers.Dense(
-            6, activation='linear', name='input_layer'
-        )
-        self.hidden = tf.keras.layers.Dense(
-            5000,
-            activation='relu',
-            kernel_initializer='he_normal',
-            kernel_regularizer=tf.keras.regularizers.l1(1e-3),
-            name='hidden_layer'
-        )
-        self.dropout = tf.keras.layers.Dropout(0.3)
-        self.output_layer = tf.keras.layers.Dense(1, activation='sigmoid', name='output_layer')
+# Data
+np.random.seed(42)
+data_X = np.random.random_sample((100,6))
+data_Y = np.random.random_sample((100,1))
 
-    def call(self, inputs, training=False):
-        # Forward pass through layers
-        x = self.dense_input(inputs)
-        x = self.hidden(x)
-        x = self.dropout(x, training=training)
-        out = self.output_layer(x)
-        return out
+# Feed-forward NN
+model = Sequential()
 
-def my_model_function():
-    # Returns an instance of MyModel, weights uninitialized since no pretrained provided
-    return MyModel()
+# Input Layer
+model.add(Dense(6, activation='linear', input_shape=(6,)))
 
-def GetInput():
-    # Return a random input tensor matching the expected input shape (batch, 6 features)
-    # Batch size is arbitrary, choose 32 as in the issue's example
-    return tf.random.uniform((32, 6), dtype=tf.float32)
+# Hidden Layers: Arbitrarily wide
+model.add(Dense(5000, 
+                activation='relu', 
+                kernel_initializer=he_normal(), 
+                kernel_regularizer=regularizers.l1(10**-3)
+                ))
+model.add(Dropout(0.3))
 
-# Custom Pearson correlation as a loss must be implemented outside the model class
-# but here we only build the model and input generator as requested.
+# Output Layer; Regression
+model.add(Dense(1, activation='sigmoid'))
 
-# Notes/Assumptions:
-# - Input shape (batch, 6) inferred from data_X shape in the issue.
-# - Model closely follows the stated architecture in the issue code snippet.
-# - Dropout is set to training mode only during training.
-# - We do NOT implement the custom loss here since the instruction is to provide model + input.
-# - If needed, the Pearson correlation loss is defined in the issue but is external to the model.
-#
-# This model code is compatible with TF 2.20.0 XLA compilation requirements.
+# Custom Loss Function
+def MaxCorrelation(y_true,y_pred):
+    """
+    Goal is to maximize correlation between y_pred, y_true. Same as minimizing the negative.
+    """
+    return -tf.math.abs(tfp.stats.correlation(y_pred,y_true, sample_axis=None, event_axis=None))
 
+# Compilation
+model.compile(
+            optimizer='adam', 
+            loss= MaxCorrelation,
+)
+
+# Train the model
+history = model.fit(data_X, data_Y,
+          epochs=5,
+          batch_size = 32,
+          verbose=1,
+         )

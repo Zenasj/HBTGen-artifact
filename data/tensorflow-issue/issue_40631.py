@@ -1,144 +1,265 @@
-# tf.random.uniform((B, 30), dtype=tf.float32) ← input shape inferred to be (batch, lookBack=30)
+import math
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
 from tensorflow import keras
 import numpy as np
+import random
+import tqdm
+import yfinance as yf
 
 
-class MyModel(tf.keras.Model):
-    def __init__(self, lookBack=30, actionSize=3, gamma=0.95,
-                 epsilon=0.5, epsilonMin=0.01, epsilonDecay=0.8,
-                 learningRate=0.001, batchSize=32):
-        super().__init__()
+# tf.compat.v1.disable_eager_execution()
+ticker = "AAPL"
+df_full = yf.Ticker("{}".format(ticker)).history("max").reset_index()
+df = df_full.copy()["Close"]
+data = df.copy()
+
+
+class DQN:
+    def __init__(self, data, lookBack=30,
+                 gamma=0.95, epsilon=0.5,
+                 epsilonMin=0.01, epsilonDecay=0.8,
+                 learningRate=0.001, money=10000):
+        # NOT IMPORTANT
         self.lookBack = lookBack
-        self.actionSize = actionSize
+        self.initialMoney = money
+        self.actionSize = 3
+
+        self.data = data
         self.gamma = gamma
         self.epsilon = epsilon
         self.epsilonMin = epsilonMin
         self.epsilonDecay = epsilonDecay
         self.learningRate = learningRate
-        self.batchSize = batchSize
 
-        # Build the internal model
-        self.model = keras.models.Sequential([
-            keras.layers.Dense(256, activation='relu', input_shape=(self.lookBack,)),
-            keras.layers.Dense(self.actionSize)
-        ])
-        self.optimizer = keras.optimizers.RMSprop(learning_rate=self.learningRate,
-                                                  epsilon=0.1,
-                                                  rho=0.99)
-        self.lossFunc = tf.keras.losses.MeanSquaredError()
-
-        # Memory as a python list will not work with tf.function well.
-        # We'll keep it as a python list outside tf.function for simplicity.
-        # Note: for production use, consider using tf.Tensor or tf.data.Dataset.
         self.memory = []
 
-    @tf.function
-    def updateWeights(self, batchData):
-        """
-        Performs a training step on a batch of data:
-        batchData shape: tuple of (states, actions, rewards, nextStates)
-        - states: tf.float32 tensor shape (batch, lookBack)
-        - actions: tf.int32 tensor shape (batch,)
-        - rewards: tf.float32 tensor shape (batch,)
-        - nextStates: tf.float32 tensor shape (batch, lookBack)
-        """
-        states, actions, rewards, nextStates = batchData
+    def buildModel(self):
+        keras.backend.clear_session()
+        model = keras.models.Sequential()
+        model.add(keras.layers.Dense(256, input_shape=[self.lookBack],
+                                     activation="relu"))
+        model.add(keras.layers.Dense(self.actionSize))
 
-        with tf.GradientTape() as tape:
-            # Predict Q values for current states and next states
-            Q = self.model(states)                 # shape (batch, actionSize)
-            QNext = self.model(nextStates)         # shape (batch, actionSize)
-
-            # Create targets tensor to train on
-            # Because tensors are immutable, we use tensor_scatter_nd_update
-            batch_indices = tf.range(tf.shape(states)[0])
-
-            # Gather max Q for next states
-            maxQNext = tf.reduce_max(QNext, axis=1)
-
-            # Calculate new Q values for the taken actions
-            # target = reward + gamma * maxQNext
-            targetQ = rewards + self.gamma * maxQNext
-
-            # Current Q values for actions taken: shape (batch,)
-            indices = tf.stack([batch_indices, actions], axis=1)
-
-            # Scatter the updated Q values into Q to create target tensor
-            updatedQ = tf.tensor_scatter_nd_update(Q, indices, targetQ)
-
-            # Compute loss and gradients
-            loss = self.lossFunc(updatedQ, Q)
-        grads = tape.gradient(loss, self.model.trainable_variables)
-        self.optimizer.apply_gradients(zip(grads, self.model.trainable_variables))
-
-        # Decay epsilon after each update
-        if self.epsilon > self.epsilonMin:
-            self.epsilon = self.epsilon * self.epsilonDecay
-        return loss
+        self.optimizer = keras.optimizers.RMSprop(lr=self.learningRate,
+                                                  epsilon=0.1,
+                                                  rho=0.99)
+        self.lossFunc = keras.losses.mean_squared_error
+        model.compile(loss="mse", optimizer=self.optimizer)
+        self.model = model
 
     def getAction(self, state):
-        """
-        Epsilon-greedy action selection.
-        state: (1, lookBack) numpy array or tensor
-        Returns action as int.
-        """
-        if np.random.random() <= self.epsilon:
-            return np.random.randint(self.actionSize)
+        # NOT IMPORTANT
+        if random.random() <= self.epsilon:
+            return random.randrange(self.actionSize)
         else:
-            q_values = self.model(state)
-            return int(tf.argmax(q_values[0]).numpy())
+            return np.argmax(self.model.predict(state)[0])
 
-    def addMemory(self, experience):
-        """
-        Add experience tuple:
-        (state (np array), action (int), reward (float), nextState (np array))
-        """
-        self.memory.append(experience)
+    def createDataset(self):
+        # NOT IMPORTANT
+        tmp = self.data.copy()
+        tmp = tmp.diff(1).dropna().values
+        shape = tmp.shape[:-1] + (tmp.shape[-1] - self.lookBack + 1,
+                                  self.lookBack)
+        strides = tmp.strides + (tmp.strides[-1],)
+        self.dataset = np.lib.stride_tricks.as_strided(tmp, shape=shape,
+                                                       strides=strides)
 
-    def sampleBatch(self):
-        """
-        Samples a batch from memory and converts to tensors.
-        If not enough samples, returns None.
-        """
-        if len(self.memory) < self.batchSize:
-            return None
+    def getReward(self, action, currentPrice):
+        # NOT IMPORTANT
+        return 0
 
-        batchData = self.memory[-self.batchSize:]
-        states = np.array([item[0] for item in batchData], dtype=np.float32)
-        actions = np.array([item[1] for item in batchData], dtype=np.int32)
-        rewards = np.array([item[2] for item in batchData], dtype=np.float32)
-        nextStates = np.array([item[3] for item in batchData], dtype=np.float32)
-        return (tf.convert_to_tensor(states),
-                tf.convert_to_tensor(actions),
-                tf.convert_to_tensor(rewards),
-                tf.convert_to_tensor(nextStates))
+    # @tf.function
+    def updateWeights(self):
+        # IMPORTANT
+        tf.print(len(self.memory))
+        if len(self.memory) >= self.batchSize:
+            endIndex = len(self.memory)
+            startIndex = endIndex - self.batchSize
+            batchData = []
+            for i in range(startIndex, endIndex):
+                batchData.append(self.memory[i])
+            X = np.zeros((self.batchSize, self.lookBack))
+            Y = np.zeros((self.batchSize, self.actionSize))
+            states = np.array([item[0] for item in batchData])
+            newStates = np.array([item[3] for item in batchData])
+            Q = self.model(states)
+            QNext = self.model(newStates)
+            for i in range(len(batchData)):
+                state, action, reward, nextState = batchData[i]
+                target = Q[i]
+                target[action] = reward
+                target[action] += self.gamma * np.max(QNext[i])
 
-    def train_step(self, currentState, action, reward, nextState):
-        """
-        Add a single experience to memory and update weights if batch is ready.
-        """
-        self.addMemory((currentState, action, reward, nextState))
-        batch = self.sampleBatch()
-        if batch is not None:
-            loss = self.updateWeights(batch)
-            return loss
+                X[i] = state
+                Y[i] = target
+            self.model.train_on_batch(X, Y)
+            if self.epsilon > self.epsilonMin:
+                self.epsilon *= self.epsilonDecay
+
+    def train(self, epochs=200, logFreq=1):
+        # IMPORTANT
+        for epoch in range(epochs):
+            self.profit = 0
+            self.money = self.initialMoney
+            for timeStep in tqdm.tqdm(range(self.lookBack, len(self.data)-1)):
+                currentPrice = data[timeStep]
+                currentState = self.dataset[timeStep-self.lookBack]
+                nextState = self.dataset[timeStep-self.lookBack+1]
+
+                action = self.getAction(currentState.reshape(1, -1))
+
+                reward = self.getReward(action, currentPrice)
+
+                self.memory.append((currentState, action, reward, nextState))
+
+                self.updateWeights()
+
+
+test = DQN(data)
+test.createDataset()
+test.buildModel()
+test.train(100)
+
+import tensorflow as tf
+from tensorflow import keras
+import numpy as np
+import random
+import tqdm
+import yfinance as yf
+
+
+tf.compat.v1.disable_eager_execution()
+ticker = "AAPL"
+df_full = yf.Ticker("{}".format(ticker)).history("max").reset_index()
+df = df_full.copy()["Close"]
+data = df.copy()
+
+
+class DQN:
+    def __init__(self, data, lookBack=30,
+                 gamma=0.95, epsilon=0.5,
+                 epsilonMin=0.01, epsilonDecay=0.8,
+                 learningRate=0.001, money=10000):
+        # NOT IMPORTANT
+        self.lookBack = lookBack
+        self.initialMoney = money
+        self.actionSize = 3
+        self.batchSize = 32
+
+        self.data = data
+        self.gamma = gamma
+        self.epsilon = epsilon
+        self.epsilonMin = epsilonMin
+        self.epsilonDecay = epsilonDecay
+        self.learningRate = learningRate
+
+        self.memory = []
+
+    def buildModel(self):
+        keras.backend.clear_session()
+        model = keras.models.Sequential()
+        model.add(keras.layers.Dense(256, input_shape=[self.lookBack],
+                                     activation="relu"))
+        model.add(keras.layers.Dense(self.actionSize))
+
+        self.optimizer = keras.optimizers.RMSprop(lr=self.learningRate,
+                                                  epsilon=0.1,
+                                                  rho=0.99)
+        self.lossFunc = keras.losses.mean_squared_error
+        model.compile(loss="mse", optimizer=self.optimizer)
+        self.model = model
+
+    def getAction(self, state):
+        # NOT IMPORTANT
+        if random.random() <= self.epsilon:
+            return random.randrange(self.actionSize)
         else:
-            return None
+            return np.argmax(self.model.predict(state)[0])
+
+    def createDataset(self):
+        # NOT IMPORTANT
+        tmp = self.data.copy()
+        tmp = tmp.diff(1).dropna().values
+        shape = tmp.shape[:-1] + (tmp.shape[-1] - self.lookBack + 1,
+                                  self.lookBack)
+        strides = tmp.strides + (tmp.strides[-1],)
+        self.dataset = np.lib.stride_tricks.as_strided(tmp, shape=shape,
+                                                       strides=strides)
+
+    def getReward(self, action, currentPrice):
+        # NOT IMPORTANT
+        return 0
+
+    @tf.function
+    def updateWeights(self):
+        # IMPORTANT
+        tf.print(len(self.memory))
+        if len(self.memory) >= self.batchSize:
+            endIndex = len(self.memory)
+            startIndex = endIndex - self.batchSize
+            batchData = []
+            for i in range(startIndex, endIndex):
+                batchData.append(self.memory[i])
+            X = np.zeros((self.batchSize, self.lookBack))
+            Y = np.zeros((self.batchSize, self.actionSize))
+            states = np.array([item[0] for item in batchData])
+            newStates = np.array([item[3] for item in batchData])
+            Q = self.model(states)
+            QNext = self.model(newStates)
+            for i in range(len(batchData)):
+                state, action, reward, nextState = batchData[i]
+                target = Q[i]
+                target[action] = reward
+                target[action] += self.gamma * np.max(QNext[i])
+
+                X[i] = state
+                Y[i] = target
+            self.model.train_on_batch(X, Y)
+            if self.epsilon > self.epsilonMin:
+                self.epsilon *= self.epsilonDecay
+
+    def train(self, epochs=200, logFreq=1):
+        # IMPORTANT
+        for epoch in range(epochs):
+            self.profit = 0
+            self.money = self.initialMoney
+            for timeStep in tqdm.tqdm(range(self.lookBack, len(self.data)-1)):
+                currentPrice = data[timeStep]
+                currentState = self.dataset[timeStep-self.lookBack]
+                nextState = self.dataset[timeStep-self.lookBack+1]
+
+                action = self.getAction(currentState.reshape(1, -1))
+
+                reward = self.getReward(action, currentPrice)
+
+                self.memory.append((currentState, action, reward, nextState))
+
+                self.updateWeights()
 
 
-def my_model_function():
-    """
-    Returns a new instance of MyModel initialized with default parameters.
-    """
-    return MyModel()
+test = DQN(data)
+test.createDataset()
+test.buildModel()
+test.train(100)
 
-def GetInput():
-    """
-    Returns a random tensor input matching the expected input shape for MyModel.
-    Shape: (batch_size=1, lookBack=30)
-    dtype: tf.float32
-    """
-    return tf.random.uniform((1, 30), dtype=tf.float32)
+X = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=False)
+Y = tf.TensorArray(tf.float32, size=0, dynamic_size=True, clear_after_read=False)
+with tf.GradientTape() as tape:
+    Q = self.model(states)
+    QNext = self.model(newStates)
+    for i in range(len(states)):
+        state, action, reward, _ = states[i], actions[i], rewards[i], newStates[i]
+        target = tf.Variable(Q[i], name="temp")
+        nextQ = QNext[i][tf.math.argmax(QNext[i])]
+        newVal = reward + self.gamma * nextQ
+        target[action].assign(newVal)
 
+        X.write(i, state)
+        Y.write(i, target)
+    loss = self.lossFunc(self.model(X.stack()), Y.stack())
+    grads = tape.gradient(loss, self.model.trainable_weights)
+    self.optimizer.apply_gradients(zip(grads, self.model.trainable_weights))

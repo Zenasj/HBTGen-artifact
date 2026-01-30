@@ -1,29 +1,22 @@
-# tf.random.uniform((B, 2), dtype=tf.int32) ← Input is a batch of 2-element int32 vectors
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
+from tensorflow.keras.layers import Input, Lambda
 
-class TwoOutputsLayer(tf.keras.layers.Layer):
+class TwoOutputs(tf.keras.layers.Layer):
     def call(self, x):
-        # returns two tensors, each same shape as input
         return x + 1, x - 1
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        self.two_outputs_layer = TwoOutputsLayer()
-    
-    def call(self, inputs):
-        # Return tuple of outputs matching original model's multiple outputs
-        out1, out2 = self.two_outputs_layer(inputs)
-        return out1, out2
+inputs = Input([2], dtype=tf.int32)
+outputs = TwoOutputs()(inputs)  # subclass version is broken
+# outputs = Lambda(lambda x: (x + 1, x - 1))(inputs)  # functional version also broken
+model = tf.keras.Model(inputs, outputs)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+print(model(tf.constant([[0, 1], [2, 3]])))  # works fine
 
-def GetInput():
-    # Return random int32 tensor of shape (batch_size, 2), matching input shape used in example
-    # Use batch size 4 by default
-    batch_size = 4
-    return tf.random.uniform((batch_size, 2), minval=0, maxval=10, dtype=tf.int32)
-
+tf.saved_model.save(model, 'checkpoints/test')
+model = tf.saved_model.load('checkpoints/test')
+infer = model.signatures[tf.saved_model.DEFAULT_SERVING_SIGNATURE_DEF_KEY]
+print(infer.structured_outputs)  # wrong signatures
+print(infer(tf.constant([[0, 1], [2, 3]])))  # wrong output

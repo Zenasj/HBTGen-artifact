@@ -1,23 +1,21 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Input shape for the model
-
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.pixel_unshuffle = torch.nn.PixelUnshuffle(downscale_factor=1)
+import torch
+import numpy as np
+arg_1_tensor = torch.randint(-2048,32768,[1, 1, 1, 0], dtype=torch.int32)
+arg_1 = arg_1_tensor.clone()
+arg_2 = 1
+try:
+  res = torch.nn.functional.pixel_unshuffle(arg_1,downscale_factor=arg_2,)
+except Exception as e:
+  print("Error:"+str(e))
 
-    def forward(self, x):
-        return self.pixel_unshuffle(x)
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # The input shape is (1, 1, 1, 0) as per the issue, but this is not a valid shape.
-    # Assuming a valid shape (1, 1, 1, 1) for demonstration purposes.
-    return torch.randn(1, 1, 1, 1, dtype=torch.float32)
-
+import torch
+import numpy as np
+arg_1_tensor = torch.randint(-128,16,[1, 1, 1, 0], dtype=torch.int64)
+arg_1 = arg_1_tensor.clone()
+arg_2 = 1
+try:
+  res = torch.nn.functional.pixel_unshuffle(arg_1,downscale_factor=arg_2,)
+except Exception as e:
+  print("Error:"+str(e))

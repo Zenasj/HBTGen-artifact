@@ -1,62 +1,101 @@
-# tf.random.normal([1, 10000]) <- input shape
-
+import random
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Weights for pre_process_network: shape [10000, 10000]
-        self.pre_w1 = tf.Variable(tf.random.normal([10000, 10000]), trainable=True)
-        self.pre_w2 = tf.Variable(tf.random.normal([10000, 10000]), trainable=True)
-        self.pre_w3 = tf.Variable(tf.random.normal([10000, 10000]), trainable=True)
+import multiprocessing
+from functools import lru_cache
+import traceback
 
-        # Weights for mid_process_network_async: shapes [10000, 100], [100, 100], [100, 10000]
-        self.mid_w1 = tf.Variable(tf.random.normal([10000, 100]), trainable=True)
-        self.mid_w2 = tf.Variable(tf.random.normal([100, 100]), trainable=True)
-        self.mid_w3 = tf.Variable(tf.random.normal([100, 10000]), trainable=True)
 
-        # Weights for post_process_network: shape [10000, 10000]
-        self.post_w1 = tf.Variable(tf.random.normal([10000, 10000]), trainable=True)
-        self.post_w2 = tf.Variable(tf.random.normal([10000, 10000]), trainable=True)
-        self.post_w3 = tf.Variable(tf.random.normal([10000, 10000]), trainable=True)
+def pre_process_network(input_tensor):
+    """Pre-process the input tensor."""
+    w1 = tf.Variable(tf.random.normal([10000, 10000]))
+    w2 = tf.Variable(tf.random.normal([10000, 10000]))
+    w3 = tf.Variable(tf.random.normal([10000, 10000]))
+    x = tf.matmul(input_tensor, w1)
+    x = tf.matmul(x, w2)
+    x = tf.matmul(x, w3)
+    return x
 
-    def pre_process_network(self, input_tensor):
-        # 3 matmuls with pre-process weights
-        x = tf.matmul(input_tensor, self.pre_w1)
-        x = tf.matmul(x, self.pre_w2)
-        x = tf.matmul(x, self.pre_w3)
-        return x
 
-    def mid_process_network_async(self, input_tensor):
-        # Adds 100 to input_tensor as per description before matmuls
-        x = input_tensor + 100.0
-        # 3 matmuls with mid-process weights
-        x = tf.matmul(x, self.mid_w1)
-        x = tf.matmul(x, self.mid_w2)
-        x = tf.matmul(x, self.mid_w3)
-        return x
+def mid_process_network_async(input_tensor):
+    """Process the input tensor asynchronously."""
+    w1 = tf.Variable(tf.random.normal([10000, 100]))
+    w2 = tf.Variable(tf.random.normal([100, 100]))
+    w3 = tf.Variable(tf.random.normal([100, 10000]))
+    input_tensor = tf.compat.v1.convert_to_tensor(input_tensor)
+    x = tf.matmul(input_tensor, w1)
+    x = tf.matmul(x, w2)
+    x = tf.matmul(x, w3)
+    return x
 
-    def post_process_network(self, input_tensor):
-        # 3 matmuls with post-process weights
-        x = tf.matmul(input_tensor, self.post_w1)
-        x = tf.matmul(x, self.post_w2)
-        x = tf.matmul(x, self.post_w3)
-        return x
 
-    @tf.function(jit_compile=True)
-    def call(self, input_tensor):
-        # Run all three sub-networks sequentially:
-        x = self.pre_process_network(input_tensor)
-        x = self.mid_process_network_async(x)
-        x = self.post_process_network(x)
-        return x
+@lru_cache(maxsize=None)  # Cache all results
+async def cached_mid_process_network_async(input_tensor):
+    """Asynchronously process the input tensor and cache the result."""
+    return await mid_process_network_async(input_tensor)
 
-def my_model_function():
-    # Instantiate model with initialized variables
-    return MyModel()
 
-def GetInput():
-    # According to the original code inputs had shape [1, 10000]
-    # dtype float32 assumed default for tf.random.normal
-    return tf.random.normal((1, 10000))
+def post_process_network(input_tensor):
+    """Post-process the input tensor."""
+    w1 = tf.Variable(tf.random.normal([10000, 10000]))
+    w2 = tf.Variable(tf.random.normal([10000, 10000]))
+    w3 = tf.Variable(tf.random.normal([10000, 10000]))
+    x = tf.matmul(input_tensor, w1)
+    x = tf.matmul(x, w2)
+    x = tf.matmul(x, w3)
+    return x
 
+
+def process(input_tensor):
+    """Process a single input tensor."""
+    pre_output = pre_process_network(input_tensor)
+    try:
+        mid_output = cached_mid_process_network_async(pre_output)
+        post_output = post_process_network(mid_output)
+    except Exception:
+        print("An error occurred:")
+        print(traceback.format_exc())
+        return None
+
+    return post_output
+
+
+def main(number_of_networks, number_of_cpus):
+    """Main function."""
+    input_tensors = [tf.ones([1, 10000]) for _ in range(number_of_networks)]
+
+    pool = multiprocessing.Pool(processes=number_of_cpus)
+
+    results = pool.map(process, input_tensors)
+
+    pool.close()
+    pool.join()
+
+    for result in results:
+        if result is not None:
+            print(result)
+
+
+if __name__ == "__main__":
+    """Entry point."""
+    number_of_networks = int(input("Enter the number of asynchronous networks: "))
+    number_of_cpus = int(input("Enter the number of CPUs: "))
+    main(number_of_networks, number_of_cpus)
+
+import unittest
+
+
+import asy
+
+
+class TestAsync(unittest.TestCase):
+
+    def test_main(self):
+        number_of_networks = 10
+        number_of_cpus = 4
+        results = asy.main(number_of_networks, number_of_cpus)
+        self.assertEqual(len(results), number_of_networks)
+
+
+if __name__ == "__main__":
+    unittest.main()

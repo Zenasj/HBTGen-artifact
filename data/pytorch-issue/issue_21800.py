@@ -1,59 +1,60 @@
-import torch
 import torch.nn as nn
+import torchvision
+
+import torch
+from torch.nn import Parameter
+
+optimizer = torch.optim.SGD([Parameter(torch.randn(2, 2, requires_grad=True))], 0.1)
+scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 3, gamma=0.1)
+
+for i in range(10):
+  print(i, [group['lr'] for group in optimizer.param_groups])  
+  scheduler.step()
+
+for i in range(10):
+  print(i, scheduler.get_lr())  # Deprecation warning
+  scheduler.step()
+
+for i in range(10):
+  print(i, scheduler.step())
+
 import torch.optim as optim
+from torch import nn
 
-# torch.rand(B, C, H, W, dtype=...) ← Add a comment line at the top with the inferred input shape
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1)
-        self.relu = nn.ReLU()
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
-        self.fc = nn.Linear(64 * 16 * 16, 10)  # Assuming input size is 32x32
+conv = nn.Conv2d(3,3,3)
+optimizer = optim.Adam(conv.parameters()) 
+lr_scheduler = optim.lr_scheduler.StepLR(optimizer, 2)
 
-    def forward(self, x):
-        x = self.pool(self.relu(self.conv1(x)))
-        x = x.view(-1, 64 * 16 * 16)
-        x = self.fc(x)
-        return x
+for _ in range(10):
+    # NOTE Remove epoch parameter
+    lr_scheduler.step()
+    print(optimizer.param_groups[0]['lr'])
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+def compute_using_closed_form(epoch):
+    return 0.5**epoch
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(1, 3, 32, 32, dtype=torch.float32)
+for epoch in range(10):
+    # NOTE Invoke user-defined closed form
+    lr = compute_using_closed_form(epoch)
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = lr
+    print(optimizer.param_groups[0]['lr'])
 
-# Example usage of chained schedulers and get_computed_values
-def example_usage():
-    model = my_model_function()
-    optimizer = optim.SGD(model.parameters(), lr=0.1)
-    
-    # Define two schedulers
-    scheduler1 = optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.1)
-    scheduler2 = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[5, 8], gamma=0.1)
-    
-    # Chain the schedulers
-    for i in range(10):
-        # Step both schedulers
-        scheduler1.step()
-        scheduler2.step()
-        
-        # Print the last computed learning rate
-        print(f"Epoch {i}: {scheduler1.get_computed_values()}")
+lr_scheduler = LambdaLR(optimizer, lr_lambda=lambda epoch: 0.5**epoch)
 
-# This function is for demonstration purposes and should not be included in the final code
-# example_usage()
+for _ in range(10):
+    lr_scheduler.step()
+    print(lr_scheduler.get_computed_values())
 
-# The provided GitHub issue discusses changes and improvements to the learning rate scheduler in PyTorch. The main points include:
-# 1. **Chaining Schedulers**: Allowing users to chain multiple schedulers together.
-# 2. **Deprecating the `epoch` Parameter**: Removing the `epoch` parameter from the `step` method and using a closed form for specific use cases.
-# 3. **Consistent Way to Get Learning Rate**: Introducing `get_computed_values` to get the last computed learning rate.
-# Given these points, we need to create a model that demonstrates the chaining of schedulers and the use of the `get_computed_values` method. However, the issue does not provide a specific model structure or input shape. Therefore, I will create a simple model and demonstrate the chaining of schedulers with the new `get_computed_values` method.
-# ### Explanation:
-# 1. **MyModel**: A simple CNN model with one convolutional layer, ReLU activation, max pooling, and a fully connected layer.
-# 2. **my_model_function**: Returns an instance of `MyModel`.
-# 3. **GetInput**: Generates a random tensor of shape `(1, 3, 32, 32)` to match the input expected by `MyModel`.
-# 4. **example_usage**: Demonstrates how to chain two schedulers (`StepLR` and `MultiStepLR`) and use the `get_computed_values` method to get the last computed learning rate.
-# This code can be used to demonstrate the chaining of schedulers and the new `get_computed_values` method as discussed in the GitHub issue.
+import torch
+from torchvision.models import resnet18
+
+net = resnet18()
+optimizer = torch.optim.SGD(net.parameters(), 0.1)
+lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[3, 6, 9], gamma=0.1)
+lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 3, gamma=0.1)
+
+for i in range(10):
+    # NOTE Invoke new interface to get values
+    print(i, lr_scheduler.get_computed_values())
+    lr_scheduler.step()

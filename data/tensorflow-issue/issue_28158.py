@@ -1,23 +1,26 @@
-# tf.random.uniform((B, 1), dtype=tf.float32) ← assuming input is a batch of vectors with shape (batch_size, 1) as in the provided example
+import os
 
 import tensorflow as tf
+from tensorflow.keras import layers, models, optimizers
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Simple Dense layer with 1 output unit and ReLU activation as per original example
-        self.dense = tf.keras.layers.Dense(1, activation='relu')
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
-    def call(self, inputs):
-        # Directly call the Dense layer, which will lazily build on first call
-        return self.dense(inputs)
+model = models.Sequential([layers.Dense(1, activation='relu')])
+optimizer = optimizers.SGD()
 
-def my_model_function():
-    # Instantiate and return the model
-    return MyModel()
+# Is this line needed in graph mode?
+# model.build((None, 1))
 
-def GetInput():
-    # Generate a batch of input data shaped (batch_size, 1)
-    # Here we choose batch size = 1 to mirror original example
-    return tf.random.uniform((1, 1), dtype=tf.float32)
 
+@tf.function
+def update(batch):
+    with tf.GradientTape() as tape:
+        output = model(batch)
+    grads = tape.gradient(output, model.trainable_variables)
+    optimizer.apply_gradients(zip(grads, model.trainable_variables))
+
+
+if __name__ == "__main__":
+
+    batch = tf.zeros((1, 1), dtype=tf.float32)
+    update(batch)

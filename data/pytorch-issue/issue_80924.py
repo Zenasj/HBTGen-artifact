@@ -1,19 +1,18 @@
-# torch.rand(2, 3, dtype=torch.complex128)
+py
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        return torch.sgn(x)
+def fn(input):
+    fn_res = torch.sgn(input, )
+    return fn_res
 
-def my_model_function():
-    return MyModel()
+input_tensor = torch.tensor(-3.8766-1.1128j, dtype=torch.complex128)
 
-def GetInput():
-    input = torch.randn(2, 3, dtype=torch.complex128)
-    input.requires_grad_(True)
-    return input
+input = input_tensor.clone().requires_grad_()
+torch.autograd.gradcheck(fn, (input), atol=0.01, rtol=0.01, check_forward_ad=False, check_backward_ad=True)
+print('rev success')
 
+try:
+    input = input_tensor.clone().requires_grad_()
+    torch.autograd.gradcheck(fn, (input), atol=0.01, rtol=0.01, check_forward_ad=True, check_backward_ad=False)
+except Exception as e:
+    print(e)

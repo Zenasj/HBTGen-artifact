@@ -1,85 +1,118 @@
-# tf.random.uniform((B, 224, 224, 3), dtype=tf.float32) ← Input shape inferred from autoencoder model's Conv2D input_shape
-
 import tensorflow as tf
-import numpy as np
-import json
+import random
 import os
+import json
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
+class Generator:
+    def __init__(self, mode, batch_size=100):
+        self._i = 0
+        self._mode = mode
+        self._batch_size = batch_size
 
-        # Encoder layers
-        self.n_hidden_1 = 16
-        self.n_hidden_2 = 12
-        self.n_hidden_3 = 10
-        self.n_hidden_4 = 8
-        self.convkernel = (3, 3)
-        self.poolkernel = (2, 2)
+    def _get_random(self):
+        return random.uniform(0, 100)
 
-        # Activation factory mimic — leaky or linear assumed similar
-        # We'll use LeakyReLU with alpha=0.01 as default
-        self.activation = tf.keras.layers.LeakyReLU(0.01)
+    def next_batch(self):
+        self._i += 1
+        if self._mode != tf.estimator.ModeKeys.TRAIN and self._i > 200:
+            raise StopIteration
+        features = {'a': [], 'b': []}
+        labels = []
+        for _ in xrange(self._batch_size):
+            label = 0.0
+            for key in features:
+                r = self._get_random()
+                features[key].append(r)
+                label += r
+            labels.append(label)
+        return features, labels
 
-        # Encoder
-        self.conv1 = tf.keras.layers.Conv2D(
-            self.n_hidden_1, self.convkernel, activation='relu', input_shape=(224, 224, 3))
-        self.pool1 = tf.keras.layers.MaxPooling2D(self.poolkernel, padding='same')
-        self.conv2 = tf.keras.layers.Conv2D(self.n_hidden_2, self.convkernel, padding='same')
-        self.conv3 = tf.keras.layers.Conv2D(self.n_hidden_3, self.convkernel, padding='same')
-        self.pool2 = tf.keras.layers.MaxPooling2D(self.poolkernel, padding='same')
-        self.conv4 = tf.keras.layers.Conv2D(self.n_hidden_4, self.convkernel, activation='relu', padding='same')
-        self.pool3 = tf.keras.layers.MaxPooling2D(self.poolkernel, padding='same', name='bottleneck')
+    def output_types(self):
+        return ({'a': tf.float32, 'b': tf.float32}, tf.float32)
 
-        # Decoder
-        self.deconv1 = tf.keras.layers.Conv2D(self.n_hidden_4, self.convkernel, activation='relu', padding='same')
-        self.up1 = tf.keras.layers.UpSampling2D(self.poolkernel)
-        self.deconv2 = tf.keras.layers.Conv2D(self.n_hidden_3, self.convkernel, padding='same')
-        self.deconv3 = tf.keras.layers.Conv2D(self.n_hidden_2, self.convkernel, padding='same')
-        self.up2 = tf.keras.layers.UpSampling2D(self.poolkernel)
-        self.deconv4 = tf.keras.layers.Conv2D(32, (1, 1))
-        self.up3 = tf.keras.layers.UpSampling2D(self.poolkernel)
-        self.output_conv = tf.keras.layers.Conv2D(3, self.convkernel, activation='sigmoid', padding='same')
+    def output_shapes(self):
+        return ({'a': [None], 'b': [None]}, [None])
 
-    def call(self, inputs, training=False):
-        # Forward pass through encoder
-        x = self.conv1(inputs)
-        x = self.pool1(x)
-        x = self.conv2(x)
-        x = self.activation(x)
-        x = self.conv3(x)
-        x = self.activation(x)
-        x = self.pool2(x)
-        x = self.conv4(x)
-        x = self.pool3(x)
+def _dataset(mode):
+    generator = Generator(mode)
 
-        # Save bottleneck representation (can be used for comparison if needed)
-        bottleneck = x
+    def generate_data():
+        while True:
+            yield generator.next_batch()
 
-        # Decoder pass
-        x = self.deconv1(x)
-        x = self.up1(x)
-        x = self.deconv2(x)
-        x = self.activation(x)
-        x = self.deconv3(x)
-        x = self.activation(x)
-        x = self.up2(x)
-        x = self.deconv4(x)
-        x = self.activation(x)
-        x = self.up3(x)
-        reconstructed = self.output_conv(x)
+    return tf.data.Dataset.from_generator(
+            generator=generate_data,
+            output_types=generator.output_types(),
+            output_shapes=generator.output_shapes(),
+            args=[])
 
-        return reconstructed
+def _my_model_fn(features, labels, mode, params):
+    learning_rate = params['learning_rate']
+    keep_prob = params['keep_prob']
+    feature_columns = [tf.feature_column.numeric_column('a'),
+            tf.feature_column.numeric_column('b')]
+    dense_tensor = tf.feature_column.input_layer(features, feature_columns)
+    dense_tensor = tf.nn.dropout(dense_tensor, keep_prob=keep_prob)
+    for units in [64, 32]:
+        dense_tensor = tf.layers.dense(dense_tensor, units, tf.nn.relu)
+    predictions = tf.layers.dense(dense_tensor, 1)
+    predictions = tf.squeeze(predictions, [1])
+    loss = tf.losses.absolute_difference(labels=labels, predictions=predictions)
+    if mode == tf.estimator.ModeKeys.EVAL:
+        accuracy_op = tf.metrics.accuracy(
+                labels=labels,
+                predictions=predictions,
+                name='accuracy_op')
+        eval_metric_ops = {'accuracy': accuracy_op}
+        spec = tf.estimator.EstimatorSpec(tf.estimator.ModeKeys.EVAL,
+                loss=loss,
+                eval_metric_ops=eval_metric_ops)
+    else:
+        optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
+        train_op = optimizer.minimize(loss, global_step=tf.train.get_global_step())
+        spec = tf.estimator.EstimatorSpec(tf.estimator.ModeKeys.TRAIN,
+                loss=loss,
+                train_op=train_op)
+    return spec
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+def _cluster():
+    return {'worker': ['localhost:2222', 'localhost:2223', 'localhost:2224']}
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # Based on autoencoder model: input shape (B, 224, 224, 3), float32 in [0,1]
-    batch_size = 4  # Reasonable batch size for example
-    input_tensor = tf.random.uniform(
-        (batch_size, 224, 224, 3), minval=0.0, maxval=1.0, dtype=tf.float32)
-    return input_tensor
+def _set_tf_config(index):
+    tf_config = {
+            'cluster': _cluster(),
+            'task': {'type': 'worker', 'index': index}}
+    os.environ['TF_CONFIG'] = json.dumps(tf_config)
 
+def main(argv):
+    distribution = tf.contrib.distribute.CollectiveAllReduceStrategy()
+    config = tf.estimator.RunConfig(
+            save_checkpoints_steps=2000,
+            keep_checkpoint_max=1,
+            train_distribute=distribution,
+            eval_distribute=distribution)
+    model_dir = './model'
+    learning_rate = 1e-6
+    keep_prob = 0.75
+    estimator = tf.estimator.Estimator(
+            model_fn=_my_model_fn,
+            model_dir=model_dir,
+            config=config,
+            params={
+                'learning_rate': learning_rate,
+                'keep_prob': keep_prob
+            })
+    train_spec = tf.estimator.TrainSpec(
+            input_fn=lambda : _dataset(tf.estimator.ModeKeys.TRAIN),
+            max_steps=4000)
+    eval_spec = tf.estimator.EvalSpec(
+            input_fn=lambda : _dataset(tf.estimator.ModeKeys.EVAL))
+    tf.estimator.train_and_evaluate(estimator, train_spec, eval_spec)
+
+if __name__ == '__main__':
+    FLAGS = tf.app.flags.FLAGS
+    tf.app.flags.DEFINE_integer(
+        'index', 0, 'input task index')
+    _set_tf_config(FLAGS.index)
+    tf.logging.set_verbosity(tf.logging.INFO)
+    tf.app.run()

@@ -1,9 +1,8 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Inferred input shape
-
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+import torch
+
+class Model(torch.nn.Module):
     def __init__(self):
         super().__init__()
 
@@ -11,11 +10,15 @@ class MyModel(nn.Module):
         B, C, H, W = x.shape
         return x.view(B, C, H * W)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+model = Model()
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand((2, 64, 128, 128), dtype=torch.float32)
-
+input_tensor = torch.rand((2, 64, 128, 128))
+torch.onnx.export(
+    model,
+    (input_tensor,),
+    "model.onnx",
+    input_names = ["input"],
+    output_names = ["output"],
+    dynamo = True,
+    dynamic_axes = { "input": {0: "batch", 2: "height", 3: "width"} }
+)

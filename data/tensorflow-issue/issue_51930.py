@@ -1,98 +1,75 @@
-# tf.random.uniform((B, H, W, C), dtype=tf.uint8) ← input shape is inferred from DetectionModel input shape pattern (e.g., typically (1, height, width, 3))
+import numpy as np
 
-import tensorflow as tf
+# relevant import
+import tflite_runtime.interpreter as tflite
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # This is a combined/fused version of the SSDMobileNetV2 detection model and two simple classification models,
-        # all originally TFLite interpreters with quantized models.
-        # Here we simulate both kinds of models as simple tf.keras submodules since TFLite interpreters 
-        # cannot be embedded inside tf.keras.Model directly.
-        # We use placeholders: a small ConvNet for detection, and two small classifiers.
-        # Outputs are compared as described, assuming Boolean outputs if comparing or numeric otherwise.
+class DetectionModel(object):
+	def __init__(self, path):
+		self.interpreter = tflite.Interpreter(model_path=path)
+		self.interpreter.allocate_tensors()
+		self.input_details = self.interpreter.get_input_details()
+		self.output_details = self.interpreter.get_output_details()
+		self.input_shape = self.input_details[0]['shape']
 
-        # Assumptions:
-        # - Detection model outputs bounding boxes, classes, scores.
-        # - Classification models output logits or probabilities.
-        # - For demonstration, outputs are normalized and combined into a single tensor.
-        # - Input shape is (None, H, W, 3) with uint8 values [0,255].
+	def predict(self, input_img):
+		R, C, _ = input_img.shape
+		img = cv2.resize(input_img, (self.input_shape[2], self.input_shape[1]))	
+		if not self.input_details[0]['dtype'] == np.uint8:
+			img = img.astype(np.float32)
+			img = (img-128.0)/128.0
+		img = np.expand_dims(img, 0)
+		self.interpreter.set_tensor(self.input_details[0]['index'], img)			
+		self.interpreter.invoke()			
+		boxes = self.interpreter.get_tensor(self.output_details[0]['index'])
+		classes = self.interpreter.get_tensor(self.output_details[1]['index'])
+		scores = self.interpreter.get_tensor(self.output_details[2]['index'])
 
-        # Example input shape for detection model (e.g., SSDMobileNetV2) typically 300x300 RGB
-        self.input_height = 300
-        self.input_width = 300
-        self.input_channels = 3
+		return boxes, classes, scores
+		
+def initialize_classification_interpreter(path):
+	interpreter = tflite.Interpreter(model_path=path)
+	interpreter.allocate_tensors()
+	input_details = interpreter.get_input_details()
+	output_details = interpreter.get_output_details()
 
-        # Detection model simulation:
-        self.detector = tf.keras.Sequential([
-            tf.keras.layers.Resizing(self.input_height, self.input_width),  # Ensure consistent input size
-            tf.keras.layers.Conv2D(16, 3, activation='relu', padding='same'),
-            tf.keras.layers.MaxPool2D(),
-            tf.keras.layers.Conv2D(32, 3, activation='relu', padding='same'),
-            tf.keras.layers.GlobalAveragePooling2D(),
-            tf.keras.layers.Dense(10, activation=None)  # Simulate flattened detection output (e.g., boxes+classes+scores)
-        ])
+	input_shape = input_details[0]['shape']
 
-        # Classification model 1 simulation:
-        self.classifier1 = tf.keras.Sequential([
-            tf.keras.layers.Resizing(self.input_height, self.input_width),
-            tf.keras.layers.Conv2D(8, 3, activation='relu', padding='same'),
-            tf.keras.layers.GlobalAveragePooling2D(),
-            tf.keras.layers.Dense(5, activation=None)  # Simulate classification logits for model 1
-        ])
 
-        # Classification model 2 simulation:
-        self.classifier2 = tf.keras.Sequential([
-            tf.keras.layers.Resizing(self.input_height, self.input_width),
-            tf.keras.layers.Conv2D(8, 3, activation='relu', padding='same'),
-            tf.keras.layers.GlobalAveragePooling2D(),
-            tf.keras.layers.Dense(5, activation=None)  # Simulate classification logits for model 2
-        ])
+	return interpreter, input_details, output_details
 
-    def call(self, x):
-        # Assume input x is uint8 images batch
+def classify(interpreter, input_details, output_details, img):
+	
+	input_shape = input_details[0]['shape']		
 
-        # Normalize as done in detect and classify functions from the issue:
-        # Detection model's input: if dtype != uint8, normalize to float32 - here assume uint8 input
-        # Classification models normalize by dividing by 255.0 to float32.
-        x_float = tf.cast(x, tf.float32)
-        x_classify = x_float / 255.0
+	img = (img/255.0).astype(np.float32)
 
-        # Detection model forward:
-        detection_out = self.detector(x_float)  # shape (B, 10)
+	img = np.expand_dims(img, 0)
+	interpreter.set_tensor(input_details[0]['index'], img)				
+	interpreter.invoke()			
+	output = interpreter.get_tensor(output_details[0]['index'])
+	output = np.squeeze(output)
 
-        # Classification model 1 forward:
-        classify_out1 = self.classifier1(x_classify)  # shape (B, 5)
+	return output
 
-        # Classification model 2 forward:
-        classify_out2 = self.classifier2(x_classify)  # shape (B, 5)
+detection_model = DetectionModel(detection_path)
+interpreter1, input_details1, output_details1 = initialize_classification_interpreter(classification_path_1)
+interpreter2, input_details2, output_details2 = initialize_classification_interpreter(classification_path_2)
 
-        # Now, fuse the outputs in a manner analogous to the original code that invoked models separately.
-        # Since the original models processed separately with different interpreters, 
-        # here we return a dictionary of outputs to distinguish them
+# warmup: this causes the issue
+img = cv2.imread('test_img.jpg')
+detection_model.predict(img)
+classify(interpreter1, input_details1, output_details1, img)
 
-        # Optionally, compute a difference or boolean comparison between two classification outputs:
-        # For example, check if classifications differ by a tolerance threshold
-        diff = tf.abs(classify_out1 - classify_out2)
-        diff_bool = tf.reduce_all(diff < 1e-3, axis=-1, keepdims=True)  # batchwise boolean "close enough"
+cap = cv2.VideoCapture(0)
 
-        # Return a dictionary of results (as a TensorFlow nested structure):
-        # Detection output, classification outputs, and the boolean diff comparison
-        return {
-            'detection': detection_out,
-            'classification1': classify_out1,
-            'classification2': classify_out2,
-            'classifications_close': diff_bool
-        }
+while cap.isOpened():
+    ret, img = cap.read()
+    # different conditions require different inferences
+    if condition_1:
+        result = detection_model.predict(img)
+    if condition_2:
+        result = classify(interpreter1, input_details1, output_details1, img)
+    if condition_3:
+        result = classify(interpreter2, input_details2, output_details2, img)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Generate a batch of random uint8 images matching detection model input shape
-    batch_size = 1  # assume batch size of 1
-    H, W, C = 300, 300, 3  # inferred from typical SSDMobileNetV2 input in original code
-    # Random uint8 images, simulating RGB
-    return tf.random.uniform((batch_size, H, W, C), minval=0, maxval=256, dtype=tf.uint8)
-
+    # other operations...

@@ -1,23 +1,25 @@
-# torch.rand(32, dtype=torch.float, device='cuda'), torch.rand(32, dtype=torch.float, device='cuda')
 import torch
-from torch import nn
+import torch._dynamo
 
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        x, y = inputs  # Unpack the input tuple
-        if x.size(0) < 128:
-            x = x * 2
-        else:
-            x = x * 3
-        r = x + y
-        r = r * y
-        return r
+def f(x, y):
+    return x + y
 
-def my_model_function():
-    return MyModel()
+def forward(x, y):
+    return forward2(x, y)
 
-def GetInput():
-    x = torch.rand(32, dtype=torch.float, device='cuda')
-    y = torch.rand(32, dtype=torch.float, device='cuda')
-    return (x, y)  # Return tuple of two tensors
+def forward2(x, y):
+    if x.size(0) < 128:
+        x = x * 2
+    else:
+        x = x * 3
+    r = f(x, y)
+    r = r * y
+    return r
 
+def woof():
+    fn_compiled = torch.compile(forward, dynamic=True)
+    x = torch.randn(32, device='cuda')
+    y = torch.randn(32, device='cuda')
+    print(fn_compiled(x, y))
+
+woof()

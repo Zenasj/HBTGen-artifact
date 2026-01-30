@@ -1,14 +1,17 @@
-# torch.rand(B, 8, 2, dtype=torch.float16)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return x.min(1).values
+def fn(x):
+    o = x.min(1).values
+    return o
 
-def my_model_function():
-    return MyModel()
+x = torch.rand((2, 8, 2), dtype=torch.float16) # AssertionError
+# x = torch.rand((2, 7, 2), dtype=torch.float16) # works fine
+fn(x)
+print('==== CPU Eager mode OK! ====')
 
-def GetInput():
-    return torch.rand(2, 8, 2, dtype=torch.float16)
+compiled = torch.compile(fn)
+compiled(x)
+print('==== CPU compiled mode OK! ====')
 
+compiled(x.cuda())
+print('==== GPU compiled mode OK! ====')

@@ -1,20 +1,39 @@
-# torch.randn(B, 3, dtype=torch.float32), torch.complex64 tensor of shape (B, 3)
+import random
+
+g_x = (grad.conj() * y * pow(x, y - 1)).conj()
+g_y =  (grad.conj() * pow(x, y) * log(x)).conj()
+
+g_x = (grad.conj() * y * pow(x, y - 1)).conj()
+g_y =  (grad.conj() * pow(x, y) * log(x.astype(y.dtype))).conj()
+
+import jax
+import numpy as np
 import torch
-from torch import nn
+np.random.seed(42)
 
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        x, y = inputs
-        return torch.pow(x, y)
 
-def my_model_function():
-    return MyModel()
+x = np.random.randn(3)
+y = np.random.randn(3) + 1j * np.random.randn(3)
+g = np.random.randn(3) + 1j * np.random.randn(3)
 
-def GetInput():
-    B = 1  # Batch size, matches the issue's example
-    x = torch.randn(B, 3, dtype=torch.float32)  # Real input (may include negatives)
-    y_real = torch.randn(B, 3, dtype=torch.float32)
-    y_imag = torch.randn(B, 3, dtype=torch.float32)
-    y = torch.complex(y_real, y_imag)  # Complex input (dtype=torch.complex64)
-    return (x, y)
+print("x: ", x)
+print("y: ", y)
+print("============================")
 
+device = torch.device("cpu:0")
+x1 = torch.tensor(x, device=device, requires_grad=True)
+y1 = torch.tensor(y, device=device, requires_grad=True)
+g1 = torch.tensor(g, device=device)
+o1 = torch.pow(x1, y1)
+o1.backward(g1)
+print("o1: \n", o1.detach().cpu().numpy())
+print("x1g: \n", x1.grad.detach().cpu().numpy())
+print("y1g: \n", y1.grad.detach().cpu().numpy())
+
+
+print("============================")
+o2, f_vjp = jax.vjp(jax.numpy.power, x, y)
+x2g, y2g = f_vjp(g.conj()) # note that Jax use a different convention for complex gradient
+print("o2: \n", np.asarray(o2))
+print("x2g: \n", np.asarray(x2g))
+print("y2g: \n", np.asarray(y2g))

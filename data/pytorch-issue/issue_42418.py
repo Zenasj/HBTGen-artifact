@@ -1,21 +1,19 @@
-# torch.rand(2, 3, dtype=torch.float, device='cuda')
 import torch
-from torch import nn
+print('torch.__version__', torch.__version__)
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        # Reproduce the as_strided operation from the issue's example
-        c = torch.as_strided(x, size=(2, 2, 2), stride=(3, 1, 1))
-        # Perform the problematic einsum operation
-        return torch.einsum('...ab,...bc->...ac', c, c)
+x = torch.tensor([[1., 2, 3], [4., 5, 6]]).to(0)
 
-def my_model_function():
-    return MyModel()
+# Do segment_axis
+# https://github.com/fgnt/nara_wpe/blob/ae0fd6444a6bb03aa6e29ea2b698e6b73d596253/nara_wpe/wpe.py#L14
+# This is a view on the input data, but with a segmentation that is used for example in the stft.
+# This view can save large memory.
+stride = list(x.stride())
+stride.insert(1, 1)
+shape = list(x.size())
+shape.insert(1, 2)
+shape[-1] -= 1
+c = torch.as_strided(x, size=shape, stride=stride)
 
-def GetInput():
-    # Generate input matching the original example's shape and device
-    return torch.rand(2, 3, dtype=torch.float, device='cuda')
+print(c.stride(), c.shape)
 
+torch.einsum('...ab,...bc->...ac', c, c)

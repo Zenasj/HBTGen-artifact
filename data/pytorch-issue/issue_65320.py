@@ -1,4 +1,4 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
+import torch.nn as nn
 
 import torch
 from torch import nn
@@ -6,23 +6,28 @@ import torch.nn.functional as F
 from torch.quantization import get_default_qconfig
 from torch.quantization.quantize_fx import prepare_fx, convert_fx
 
-class MyModel(nn.Module):
+class M(nn.Module):
     def __init__(self):
         super().__init__()
         self.conv = nn.Conv2d(3, 16, kernel_size=3)
 
     def forward(self, x):
         x = self.conv(x)
-        # Use adaptive_avg_pool2d to avoid the issue with dynamic kernel size
-        x = F.adaptive_avg_pool2d(x, (1, 1))
+        x = F.avg_pool2d(x, kernel_size=(x.size(2), x.size(3)))
         return x
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+float_model = M()
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    B, C, H, W = 1, 3, 224, 224  # Example input shape
-    return torch.rand(B, C, H, W, dtype=torch.float32)
+float_model.eval()
+qconfig = get_default_qconfig("fbgemm")
+qconfig_dict = {"": qconfig}
 
+def calibrate(model, data_loader):
+    model.eval()
+    with torch.no_grad():
+        for image, target in data_loader:
+            model(image)
+
+prepared_model = prepare_fx(float_model, qconfig_dict)  # fuse modules and insert observers
+#calibrate(prepared_model, data_loader_test)  # run calibration on sample data
+quantized_model = convert_fx(prepared_model)  # convert the calibrated model to a quantized model

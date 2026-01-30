@@ -1,48 +1,37 @@
-# tf.random.uniform((B,)) where B is batch size, input features are scalar float32 per key: "age", "income"
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
+
 import tensorflow as tf
 import numpy as np
+from tensorflow.keras.layers import DenseFeatures, Dense, Input
 
-class MyModel(tf.keras.Model):
-    def __init__(self, features=("age", "income")):
-        super().__init__()
-        # Assuming features are scalar numeric columns as per the issue example
-        self.feature_columns = [tf.feature_column.numeric_column(key) for key in features]
-        # Create input placeholders for each feature key
-        self.input_layers = {key: tf.keras.layers.Input(shape=(), name=key, dtype=tf.float32) for key in features}
-        # DenseFeatures layer to integrate feature columns
-        self.dense_features = tf.keras.layers.DenseFeatures(self.feature_columns)
-        # Hidden Dense layer with 16 units (linear activation by default)
-        self.dense_hidden = tf.keras.layers.Dense(16)
-        # Output dense layer with 1 unit for binary classification (no activation)
-        self.output_layer = tf.keras.layers.Dense(1)
-    
-    def call(self, inputs):
-        # inputs is expected to be a dict of tensors keyed by feature names
-        x = self.dense_features(inputs)
-        x = self.dense_hidden(x)
-        output = self.output_layer(x)
-        return output
+def make_model(features):
+    feature_columns = [tf.feature_column.numeric_column(key) for key in features]
+    nn_input = {key: Input(name=key, shape=(), dtype=tf.float32) for key in features}
 
-def my_model_function():
-    # Instantiate MyModel with default features: "age", "income"
-    model = MyModel()
-    # Compile with Adam optimizer, binary crossentropy loss (from_logits=False),
-    # no metrics (metrics were removed due to error in original issue with AUC on uniform labels)
+    feat = DenseFeatures(feature_columns)(nn_input)
+    dense = Dense(16)(feat)
+    output = Dense(1)(dense)
+    model = tf.keras.Model(inputs=nn_input, outputs=output)
     model.compile(
         optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
         loss=tf.keras.losses.BinaryCrossentropy(from_logits=False),
-        metrics=[],
+        metrics=[tf.keras.metrics.AUC()],
     )
     return model
 
-def GetInput():
-    # Create batch size of 4 for testing
-    batch_size = 4
-    # Features: "age" and "income" both scalar float32
-    # Provide a dictionary of tensors with shape (batch_size,) for each feature
-    inputs = {
-        "age": tf.random.uniform((batch_size,), dtype=tf.float32),
-        "income": tf.random.uniform((batch_size,), dtype=tf.float32),
-    }
-    return inputs
+features = ["age", "income"]
+label = "is_male"
 
+input_dataset = tf.data.Dataset.from_tensor_slices(
+    {key: np.ones((1000, 1), dtype=np.float) for key in features}
+)
+target_dataset = tf.data.Dataset.from_tensor_slices(
+    {label: np.ones((1000, 1), dtype=np.int)}
+)
+complete_dataset = tf.data.Dataset.zip((input_dataset, target_dataset)).shuffle(10000)
+
+model = make_model(features)
+model.summary()
+model.fit(complete_dataset)

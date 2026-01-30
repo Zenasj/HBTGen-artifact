@@ -1,103 +1,143 @@
-# tf.random.uniform((1, 128), dtype=tf.int32) ← Input is token ids for sequence length 128, batch size 1
+converter = tf.lite.TFLiteConverter.from_keras_model(tf_model)
+# For normal conversion:
+#converter.experimental_new_converter = True
+#converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.target_spec.supported_ops = [tf.lite.OpsSet.SELECT_TF_OPS]
+tflite_model = converter.convert()
 
-import tensorflow as tf
-import numpy as np
+array([[[ 0.19460055, -0.07871183,  0.348869  , ...,  0.56901807,
+          0.40855035, -0.36336952],
+        [ 0.111944  , -0.10565656,  0.47841206, ...,  0.7020322 ,
+          0.1973463 , -0.56403255],
+        [ 0.2462692 , -0.04639575,  0.47352695, ...,  0.6418205 ,
+          0.26107264, -0.72952   ],
+        ...,
+        [ 0.2746247 , -0.06043699,  0.4579026 , ...,  0.7356582 ,
+          0.4970783 , -0.6069904 ],
+        [ 0.2640199 , -0.05569951,  0.4638841 , ...,  0.734777  ,
+          0.48725146, -0.60665435],
+        [ 0.25305653, -0.04610543,  0.44723004, ...,  0.7529757 ,
+          0.47617406, -0.6056732 ]]], dtype=float32)
+
 from transformers import TFDistilBertModel, DistilBertTokenizer, DistilBertConfig
+import tensorflow as tf
 from typing import Dict
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    """
-    A fused model encapsulating:
-    - The original HuggingFace TFDistilBertModel (with return_dict=True)
-    - Simulated converted output logic
-
-    The call() method returns a dictionary with keys:
-    'original_output': Tensor output from TFDistilBertModel's last_hidden_state
-    'converted_output': Simulated converted model output (for demonstration)
-    'difference': Absolute difference between original and converted outputs
-
-    This reflects the reported accuracy mismatch issue on conversion.
-    """
-
-    def __init__(self):
-        super().__init__()
-        # Load pre-trained DistilBert model (multilingual)
-        self.distilbert = TFDistilBertModel.from_pretrained('distilbert-base-multilingual-cased', return_dict=True)
-        # Initialize tokenizer to generate input optionally if needed
-        self.tokenizer = DistilBertTokenizer.from_pretrained('distilbert-base-multilingual-cased')
-
+class myTFDistilBertModel(TFDistilBertModel):
+    # DUMMY_INPUTS = [[7, 6, 0, 0, 1], [1, 2, 3, 0, 0], [0, 0, 0, 4, 5]]
+    # tf.constant(np.zeros(shape=(1, 100), dtype=int).tolist())
+    # For details refer https://github.com/huggingface/transformers/blob/7cbf0f722d23440f3342aafc27697b50ead5996b/src/transformers/modeling_tf_utils.py#L218
+    def __init__(self, config, *inputs, **kwargs):
+        super().__init__(config, *inputs, **kwargs)
+    
     @property
     def dummy_inputs(self) -> Dict[str, tf.Tensor]:
         """
-        Provide dummy inputs required to build the model.
-        Here, input_ids tensor shape: (1, 128) of ints.
-        """
-        return {"input_ids": tf.zeros([1, 128], dtype=tf.int32)}
-
-    def call(self, inputs, training=False):
-        """
-        Forward pass.
-        Args:
-            inputs: dict with 'input_ids' Tensor of shape (batch_size, 128)
+        Dummy inputs to build the network.
         Returns:
-            dict with
-            - 'original_output': last_hidden_state from TFDistilBertModel (shape (1,128,768))
-            - 'converted_output': simulated converted model output to reflect the reported output mismatch
-            - 'difference': abs(original_output - converted_output)
+            :obj:`Dict[str, tf.Tensor]`: The dummy inputs.
         """
-        # Get original model output
-        outputs = self.distilbert(inputs, training=training)
-        original_last_hidden = outputs.last_hidden_state  # shape: (1,128,768), float32
+        return {"input_ids": tf.constant(np.zeros(shape=(1, 128), dtype=int).tolist())}
 
-        # Simulate converted output described in the issue:
-        # The converted output was numerically different, with higher values, so for demonstration,
-        # create a tensor that differs by adding a constant or scaled noise
-        # Since we do not have the actual converted TFLite model inference here,
-        # we'll simulate "converted output" by adding a positive bias + some noise
+tf_model = myTFDistilBertModel.from_pretrained('distilbert-base-multilingual-cased', return_dict=True)
+tf_tokenizer = DistilBertTokenizer.from_pretrained('distilbert-base-multilingual-cased', return_tensors='tf')
 
-        # Create a random but consistent tensor similar shape to original with an offset
-        # Using a fixed seed to keep reproducibility
-        tf.random.set_seed(42)
-        noise = tf.random.uniform(tf.shape(original_last_hidden), minval=0.1, maxval=0.4, dtype=tf.float32)
-        offset = 0.1
-        converted_simulated = original_last_hidden + noise + offset
+inputs = tf_tokenizer("le droit d'accès", padding='max_length', max_length=128, return_tensors='tf')
+outputs  = tf_model(inputs)
 
-        # Compute absolute difference
-        difference = tf.abs(original_last_hidden - converted_simulated)
+input_spec = tf.TensorSpec([1, 128], tf.int32)
+tf_model._set_inputs(input_spec, training=False)
 
-        return {
-            'original_output': original_last_hidden,
-            'converted_output': converted_simulated,
-            'difference': difference
-        }
+converter = tf.lite.TFLiteConverter.from_keras_model(tf_model)
+# For normal conversion:
+#converter.experimental_new_converter = True
+#converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.target_spec.supported_ops = [tf.lite.OpsSet.SELECT_TF_OPS]
+tflite_model = converter.convert()
 
+# Run the model with TensorFlow Lite
+interpreter = tf.lite.Interpreter(model_content=tflite_model)
+# Allocate tensors.
+interpreter.allocate_tensors()
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+# Get input and output tensors.
+input_details = interpreter.get_input_details()
+output_details = interpreter.get_output_details()
 
+input = tf_tokenizer("le droit d'accès", padding='max_length', max_length=128, return_tensors='tf')
+interpreter.set_tensor(0, input['input_ids'])
+interpreter.invoke()
+interpreter_output = interpreter.get_tensor(output_details[0]["index"])
 
-def GetInput():
-    """
-    Returns a dummy input tensor dictionary that matches the input expected by MyModel.
-    Specifically, a dict with 'input_ids': tf.Tensor of shape (1, 128) integers.
+from transformers import TFDistilBertModel, DistilBertTokenizer, DistilBertConfig
+import tensorflow as tf
+from typing import Dict
+import numpy as np
 
-    To keep consistent with the tokenizer used in the original code,
-    we generate a random token id array tensor with typical vocab indices.
-    """
-    # Assuming the DistilBert vocab size of multilingual-cased is ~ 119547 (Huggingface DistilBert vocab):
-    # For safe side, use max token id as 119546
-    batch_size = 1
-    seq_length = 128
-    max_token_id = 119546
+class myTFDistilBertModel(TFDistilBertModel):
+    # DUMMY_INPUTS = [[7, 6, 0, 0, 1], [1, 2, 3, 0, 0], [0, 0, 0, 4, 5]]
+    # tf.constant(np.zeros(shape=(1, 100), dtype=int).tolist())
+    # For details refer https://github.com/huggingface/transformers/blob/7cbf0f722d23440f3342aafc27697b50ead5996b/src/transformers/modeling_tf_utils.py#L218
+    def __init__(self, config, *inputs, **kwargs):
+        super().__init__(config, *inputs, **kwargs)
+    
+    @property
+    def dummy_inputs(self) -> Dict[str, tf.Tensor]:
+        """
+        Dummy inputs to build the network.
+        Returns:
+            :obj:`Dict[str, tf.Tensor]`: The dummy inputs.
+        """
+        return {"input_ids": tf.constant(np.zeros(shape=(1, 128), dtype=int).tolist())}
 
-    # Generate random input token ids between 0 and max_token_id
-    input_ids = tf.random.uniform(
-        shape=(batch_size, seq_length),
-        minval=0,
-        maxval=max_token_id,
-        dtype=tf.int32
-    )
+tf_model = myTFDistilBertModel.from_pretrained('distilbert-base-multilingual-cased', return_dict=True)
+tf_tokenizer = DistilBertTokenizer.from_pretrained('distilbert-base-multilingual-cased', return_tensors='tf')
 
-    return {"input_ids": input_ids}
+inputs = tf_tokenizer("le droit d'accès", padding='max_length', max_length=128, return_tensors='tf')
+outputs  = tf_model(inputs)
 
+input_spec = tf.TensorSpec([1, 128], tf.int32)
+tf_model._set_inputs(input_spec, training=False)
+
+converter = tf.lite.TFLiteConverter.from_keras_model(tf_model)
+# For normal conversion:
+#converter.experimental_new_converter = True
+#converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.target_spec.supported_ops = [tf.lite.OpsSet.SELECT_TF_OPS]
+tflite_model = converter.convert()
+
+# Run the model with TensorFlow Lite
+interpreter = tf.lite.Interpreter(model_content=tflite_model)
+# Allocate tensors.
+interpreter.allocate_tensors()
+
+# Get input and output tensors.
+input_details = interpreter.get_input_details()
+output_details = interpreter.get_output_details()
+
+input = tf_tokenizer("le droit d'accès", padding='max_length', max_length=128, return_tensors='tf')
+interpreter.set_tensor(0, input['input_ids'])
+interpreter.invoke()
+interpreter_output = interpreter.get_tensor(output_details[0]["index"])
+
+interpreter_output
+
+array([[[ 0.1946005 , -0.07871191,  0.34886912, ...,  0.56901795,
+          0.4085501 , -0.36336952],
+        [ 0.11194398, -0.1056565 ,  0.47841233, ...,  0.70203197,
+          0.19734594, -0.56403244],
+        [ 0.24626903, -0.0463957 ,  0.4735275 , ...,  0.64182055,
+          0.2610727 , -0.72952026],
+        ...,
+        [ 0.2746247 , -0.06043694,  0.45790255, ...,  0.73565805,
+          0.4970783 , -0.6069902 ],
+        [ 0.26401982, -0.05569961,  0.4638846 , ...,  0.7347771 ,
+          0.48725143, -0.60665435],
+        [ 0.25305668, -0.0461056 ,  0.44722998, ...,  0.7529754 ,
+          0.47617412, -0.6056729 ]]], dtype=float32)
+
+outputs
+
+#input_spec = tf.TensorSpec([1, 128], tf.int32)
+#tf_model._set_inputs(input_spec, training=False)

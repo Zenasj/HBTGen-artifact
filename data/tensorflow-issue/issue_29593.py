@@ -1,46 +1,53 @@
-# tf.random.uniform((8, 299, 299, 3), dtype=tf.float32) ← This matches the batch_size and input image shape used in the input_fn
+from tensorflow import keras
+from tensorflow.keras import layers
 
+tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.INFO)
+
+from tensorflow.keras.applications.xception import Xception
+from tensorflow.keras.layers import Dense, GlobalAveragePooling2D
+import tensorflow_datasets as tfds
 import tensorflow as tf
+import numpy as np
+print('Tensorflow version', tf.__version__)
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Base Xception model without the top layer, pretrained on ImageNet
-        self.base_model = tf.keras.applications.Xception(
-            input_shape=(299, 299, 3),
-            include_top=False,
-            weights='imagenet')
-        # Global average pooling layer
-        self.global_avg_pool = tf.keras.layers.GlobalAveragePooling2D()
-        # Final dense output layer with linear activation and he_normal initializer
-        self.output_layer = tf.keras.layers.Dense(
-            units=1,
-            activation='linear',
-            kernel_initializer='he_normal')
-        # Freeze the base model initially
-        self.base_model.trainable = False
-
-    @tf.function(jit_compile=True)
-    def call(self, inputs, training=False):
-        x = self.base_model(inputs, training=training)
-        x = self.global_avg_pool(x)
-        x = self.output_layer(x)
-        return x
-
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Generate a batch of random images with shape (8, 299, 299, 3)
-    # Matching batch_size=8 and input image size 299x299 RGB float32 inputs
-    # Values normalized to [-1, 1] since original preprocess divides by 127.5 and subtracts 1
+def input_fn(training=False):
     batch_size = 8
-    height, width, channels = 299, 299, 3
-    # uniform random floats in [0, 1), scale to [-1, 1]
-    x = tf.random.uniform(
-        shape=(batch_size, height, width, channels),
-        minval=0, maxval=1, dtype=tf.float32)
-    x = (x * 2.0) - 1.0  # Normalize to [-1,1]
-    return x
+    def preprocess_map_func(image, label):
+        image = tf.image.resize(image, size=[299, 299])
+        image.set_shape([None, None, 3])
+        image /=  127.5
+        image -= 1
+        return image, label
+    
+    def input_():
+        if training:
+            dataset = tfds.load(name='cats_vs_dogs', as_supervised=True, split=["train"])[0]
+            train_dataset = dataset.skip(3000)
+            train_dataset = train_dataset.map(preprocess_map_func, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+            train_dataset = train_dataset.shuffle(1024).batch(batch_size).repeat().prefetch(tf.data.experimental.AUTOTUNE)
+            return train_dataset
+        else:
+            dataset = tfds.load(name='cats_vs_dogs', as_supervised=True, split=["train"])[0]
+            test_dataset = dataset.take(3000)
+            test_dataset = test_dataset.map(preprocess_map_func, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+            test_dataset = test_dataset.shuffle(1024).batch(batch_size).repeat().prefetch(tf.data.experimental.AUTOTUNE)
+            return test_dataset
+    return input_
 
+epochs = 10
+samples = 23000
+batch_size = 8
+
+base_model = Xception(input_shape=(299, 299, 3), include_top=False, weights='imagenet')
+y = GlobalAveragePooling2D()(base_model.output)
+y = Dense(units=1, activation='linear', kernel_initializer='he_normal')(y)
+base_model.trainable = False
+model = tf.keras.Model(base_model.input, y)
+model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
+
+estimator = tf.keras.estimator.model_to_estimator(model)
+train_spec = tf.estimator.TrainSpec(input_fn(training=True), max_steps=epochs * samples//batch_size)
+eval_spec = tf.estimator.EvalSpec(input_fn(training=False), steps=3000//batch_size)
+tf.estimator.train_and_evaluate(estimator, 
+                                train_spec=train_spec, 
+                                eval_spec=eval_spec)

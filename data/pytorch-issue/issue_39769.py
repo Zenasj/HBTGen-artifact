@@ -1,18 +1,12 @@
-# torch.rand(3, 5, dtype=torch.float32)
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.log_softmax = nn.LogSoftmax(dim=1)
-    
-    def forward(self, x):
-        return self.log_softmax(x)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.randn(3, 5, requires_grad=True, dtype=torch.float32)
-
+m = nn.LogSoftmax(dim=1)
+loss = nn.NLLLoss()
+# input is of size N x C = 3 x 5
+input = torch.randn(3, 5, requires_grad=True)
+# each element in target has to have 0 <= value < C
+# target = torch.tensor([1, 0, 4])
+target = torch.tensor([1, 0, 5])
+output = loss(m(input), target)
+output.backward()

@@ -1,31 +1,20 @@
-# torch.rand(10000, dtype=torch.float32)  # Input shape inferred from issue's test cases
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        
-    def forward(self, x):
-        # Convert input to 32-bit and 64-bit tensors
-        float_input = x.float()
-        double_input = x.double()
-        
-        # Apply sigmoid to both
-        sigmoid_float = torch.sigmoid(float_input)
-        sigmoid_double = torch.sigmoid(double_input)
-        
-        # Compute proportion of NaNs in each output
-        nan_float = torch.isnan(sigmoid_float).float().mean()
-        nan_double = torch.isnan(sigmoid_double).float().mean()
-        
-        # Return True if proportions differ by more than 1e-5 (captures discrepancies like 0.002 vs 1.0)
-        return torch.abs(nan_float - nan_double) > 1e-5
+Ns = [10, 100, 1000, 10000]
 
-def my_model_function():
-    return MyModel()
+for N in Ns:
 
-def GetInput():
-    # Generate a tensor of 10000 NaNs (matches issue's largest test case)
-    return torch.zeros(10000) / 0  # Division by zero creates NaNs
+    nans_32_bit = (torch.zeros(N) / 0)
+    nans_64_bit = (nans_32_bit.type(torch.DoubleTensor))
 
+    print('Input: tensor of size N={} containing only NaN'.format(N))
+
+    post_sigmoid_32_bit = torch.sigmoid(nans_32_bit)
+    post_sigmoid_64_bit = torch.sigmoid(nans_64_bit)
+
+    proportion_nan_32_bit = torch.mean(torch.isnan(post_sigmoid_32_bit).type(torch.FloatTensor))
+    proportion_nan_64_bit = torch.mean(torch.isnan(post_sigmoid_64_bit).type(torch.FloatTensor))
+
+    print('After sigmoid:')
+    print('Proportion NaN in result with 32 bit input: {:.3f}'.format(proportion_nan_32_bit))
+    print('Proportion NaN in result with 64 bit input: {:.3f}\n'.format(proportion_nan_64_bit))

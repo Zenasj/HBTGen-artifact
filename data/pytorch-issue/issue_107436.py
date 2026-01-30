@@ -1,29 +1,24 @@
-# torch.rand(B, 768, dtype=torch.float32)  # Assuming input is a 1D embedding vector
-import torch
-import torch.nn as nn
+def save(self, output_dir=None, metrics=None):
+        """Save policy, optimizer, and scheduler state to disk, gathering from all processes and saving only on the rank 0 process."""
+        save_policy = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)
+        with FSDP.state_dict_type(self.policy, StateDictType.FULL_STATE_DICT, state_dict_config=save_policy):
+            policy_state_dict = self.policy.state_dict()
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.policy_head = nn.Sequential(
-            nn.Linear(768, 512),
-            nn.ReLU(),
-            nn.Linear(512, 256),
-            nn.ReLU(),
-            nn.Linear(256, 2)  # Binary preference output
-        )
-        # Placeholder for potential problematic submodule (if optimizer references external parameters)
-        self.unmanaged_param = nn.Parameter(torch.zeros(768))  # Example of a parameter not part of FSDP hierarchy
+        if self.rank == 0:
+            self.write_state_dict(self.example_counter, policy_state_dict, metrics, 'policy.pt', output_dir)
+        del policy_state_dict
+        dist.barrier()
 
-    def forward(self, x):
-        return self.policy_head(x)
+        save_policy = FullOptimStateDictConfig(offload_to_cpu=True, rank0_only=True)
+        with FSDP.state_dict_type(self.policy, StateDictType.FULL_STATE_DICT, optim_state_dict_config=save_policy):
+            optimizer_state_dict = FSDP.optim_state_dict(self.policy, self.optimizer)
 
-def my_model_function():
-    # FSDP wrapping would occur externally in user's code, but model structure remains
-    model = MyModel()
-    return model
+        if self.rank == 0:
+            self.write_state_dict(self.example_counter, optimizer_state_dict, metrics, 'optimizer.pt', output_dir)
+        del optimizer_state_dict
+        dist.barrier()
 
-def GetInput():
-    # Random input matching model's expected embedding dimension
-    return torch.rand(2, 768, dtype=torch.float32)  # Batch size 2, 768-dimensional embeddings
-
+        if self.rank == 0:
+            scheduler_state_dict = self.scheduler.state_dict()
+            self.write_state_dict(self.example_counter, scheduler_state_dict, metrics, 'scheduler.pt', output_dir)
+        dist.barrier()

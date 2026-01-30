@@ -1,41 +1,68 @@
-# tf.random.uniform((1, 28, 28), dtype=tf.float32) ← The input to the model is a batch of grayscale 28x28 images like MNIST
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
+import pathlib
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Flatten (28,28) -> (784,)
-        self.flatten = tf.keras.layers.Flatten(input_shape=(28, 28))
-        # Dense layer with 128 units and ReLU activation
-        self.dense1 = tf.keras.layers.Dense(128, activation='relu')
-        # Final Dense layer with 10 classes + softmax
-        self.dense2 = tf.keras.layers.Dense(10, activation='softmax')
 
-    def call(self, inputs):
-        x = self.flatten(inputs)
-        x = self.dense1(x)
-        x = self.dense2(x)
-        return x
+mnist = tf.keras.datasets.mnist
 
-def my_model_function():
-    # Return a fresh instance of MyModel
-    return MyModel()
+(x_train, y_train), (x_test, y_test) = mnist.load_data()
+x_train, x_test = x_train / 255.0, x_test / 255.0
 
-def GetInput():
-    # Return a random input tensor matching the input shape expected by MyModel
-    # Batch size 1, 28x28 grayscale image with float32 values between 0-1
-    return tf.random.uniform((1, 28, 28), minval=0, maxval=1, dtype=tf.float32)
+model = tf.keras.models.Sequential([
+  tf.keras.layers.Flatten(input_shape=(28, 28)),
+  tf.keras.layers.Dense(128, activation='relu'),
+  # tf.keras.layers.Dropout(0.2),
+  tf.keras.layers.Dense(10, activation='softmax')
+])
 
-# ---
-# ### Explanation:
-# - The original model was a simple MNIST classifier: input shape (28,28), flattened, Dense(128, relu), Dropout (commented out), Dense(10, softmax).
-# - The input shape is (None, 28, 28), so the single input for the `GetInput()` is `(1, 28, 28)`.
-# - The model uses float inputs normalized between 0 and 1.
-# - The conversion error reported comes from TF 1.15 TFLite converter incompatibility involving the IdentityN op, which may not arise in the pure Keras model definition.
-# - Since the snippet is focused on the model definition reusable with TensorFlow 2.x (as recommended in comments), I structured a single `MyModel` class reflecting the original linear model.
-# - No dropout layer is included since it was commented out in the original code.
-# - The output is a softmax over 10 classes to match the final classification.
-# - The `GetInput()` produces a randomized proper tensor for inference or testing.
-# - This model is compatible with TF 2.20.0 and can be jit-compiled with XLA as needed.
-# If you later want to use the model for quantization or edge TPU compatibility, this base model definition is what is used before conversion. The issues in TensorFlow 1.15 TFLite conversion relate more to tooling availability rather than model architecture here.
+model.compile(optimizer='adam',
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
+
+model.fit(x_train, y_train, epochs=5)
+
+model.evaluate(x_test,  y_test, verbose=2)
+
+
+# Save the model into SaveModel format
+
+saved_model_dir = pathlib.Path("./saved_model/")
+tf.saved_model.save(model, str(saved_model_dir))
+
+import pathlib
+
+import tensorflow as tf
+
+
+mnist = tf.keras.datasets.mnist
+x_train = mnist.load_data()[0][0] / 255.0
+
+saved_model_dir = pathlib.Path("./saved_model/")
+
+
+# Convert the model from saved model
+
+images = tf.cast(x_train, tf.float32)
+mnist_ds = tf.data.Dataset.from_tensor_slices(images).batch(1)
+
+
+def representative_dataset_gen():
+    for input_value in mnist_ds.take(100):
+        yield [input_value]
+
+
+converter = tf.lite.TFLiteConverter.from_saved_model(str(saved_model_dir))
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
+converter.inference_input_type = tf.uint8
+converter.inference_output_type = tf.uint8
+converter.representative_dataset = representative_dataset_gen
+
+tflite_quant_model = converter.convert()
+
+tflite_quant_model_file = saved_model_dir/"mnist_post_quant_model_io.tflite"
+tflite_quant_model_file.write_bytes(tflite_quant_model)

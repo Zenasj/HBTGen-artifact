@@ -1,147 +1,291 @@
-# tf.random.uniform((B, 28, 28, 1), dtype=tf.float32)
-import tensorflow as tf
-from tensorflow.keras import Model, Input
-from tensorflow.keras.layers import Conv2D, ReLU, BatchNormalization, Flatten, Dense, Reshape, Conv2DTranspose, Activation, Lambda
-from tensorflow.keras import backend as K
-import numpy as np
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
-class MyModel(tf.keras.Model):
+import os
+import pickle
+
+from tensorflow.keras import Model
+from tensorflow.keras.layers import Input, Conv2D, ReLU, BatchNormalization, \
+    Flatten, Dense, Reshape, Conv2DTranspose, Activation, Lambda
+from tensorflow.keras import backend as K
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.losses import MeanSquaredError
+import numpy as np
+import tensorflow as tf
+
+
+tf.compat.v1.disable_eager_execution()
+
+
+class VAE:
     """
-    Fused Variational Autoencoder model adapted from the given code.
-    - Encoder and decoder are encapsulated as submodels.
-    - Forward pass runs encoder -> decoder.
-    - Custom losses (reconstruction + KL divergence) are implemented separately,
-      but not integrated into model.call to keep compatibility with TF 2.20.0 XLA compilation.
+    VAE represents a Deep Convolutional variational autoencoder architecture
+    with mirrored encoder and decoder components.
     """
 
     def __init__(self,
-                 input_shape=(28, 28, 1),
-                 conv_filters=(32, 64, 64, 64),
-                 conv_kernels=(3, 3, 3, 3),
-                 conv_strides=(1, 2, 2, 1),
-                 latent_space_dim=2,
-                 reconstruction_loss_weight=1000):
-        super().__init__()
-        self.input_shape_ = input_shape
-        self.conv_filters = conv_filters
-        self.conv_kernels = conv_kernels
-        self.conv_strides = conv_strides
-        self.latent_space_dim = latent_space_dim
-        self.reconstruction_loss_weight = reconstruction_loss_weight
+                 input_shape,
+                 conv_filters,
+                 conv_kernels,
+                 conv_strides,
+                 latent_space_dim):
+        self.input_shape = input_shape # [28, 28, 1]
+        self.conv_filters = conv_filters # [2, 4, 8]
+        self.conv_kernels = conv_kernels # [3, 5, 3]
+        self.conv_strides = conv_strides # [1, 2, 2]
+        self.latent_space_dim = latent_space_dim # 2
+        self.reconstruction_loss_weight = 1000
+
+        self.encoder = None
+        self.decoder = None
+        self.model = None
 
         self._num_conv_layers = len(conv_filters)
         self._shape_before_bottleneck = None
+        self._model_input = None
 
-        # Build encoder and decoder submodels
-        self.encoder = self._build_encoder()
-        self.decoder = self._build_decoder()
+        self._build()
 
-    def call(self, inputs, training=False):
-        """
-        Forward pass: encoder -> decoder
-        Returns reconstructed output.
-        """
-        latent = self.encoder(inputs, training=training)
-        reconstructed = self.decoder(latent, training=training)
-        return reconstructed
+    def summary(self):
+        self.encoder.summary()
+        self.decoder.summary()
+        self.model.summary()
 
-    def _build_encoder(self):
-        encoder_input = Input(shape=self.input_shape_, name="encoder_input")
-        x = encoder_input
-        # Convolutional blocks
-        for i in range(self._num_conv_layers):
-            x = Conv2D(
-                filters=self.conv_filters[i],
-                kernel_size=self.conv_kernels[i],
-                strides=self.conv_strides[i],
-                padding="same",
-                name=f"encoder_conv_layer_{i+1}"
-            )(x)
-            x = ReLU(name=f"encoder_relu_{i+1}")(x)
-            x = BatchNormalization(name=f"encoder_bn_{i+1}")(x)
+    def compile(self, learning_rate=0.0001):
+        optimizer = Adam(learning_rate=learning_rate)
+        self.model.compile(optimizer=optimizer,
+                           loss=self._calculate_combined_loss,
+                           metrics=[self._calculate_reconstruction_loss,
+                                    self._calculate_kl_loss])
 
-        self._shape_before_bottleneck = K.int_shape(x)[1:]  # e.g. (H, W, C)
-        x = Flatten(name="encoder_flatten")(x)
+    def train(self, x_train, batch_size, num_epochs):
+        self.model.fit(x_train,
+                       x_train,
+                       batch_size=batch_size,
+                       epochs=num_epochs,
+                       shuffle=True)
 
-        # Dense layers for mean and log variance
-        self.mu = Dense(self.latent_space_dim, name="mu")(x)
-        self.log_variance = Dense(self.latent_space_dim, name="log_variance")(x)
+    def save(self, save_folder="."):
+        self._create_folder_if_it_doesnt_exist(save_folder)
+        self._save_parameters(save_folder)
+        self._save_weights(save_folder)
 
-        # Sampling via reparameterization trick
-        def sample_point_from_normal_distribution(args):
-            mu, log_variance = args
-            epsilon = K.random_normal(shape=K.shape(mu), mean=0., stddev=1.)
-            z = mu + K.exp(log_variance / 2) * epsilon
-            return z
+    def load_weights(self, weights_path):
+        self.model.load_weights(weights_path)
 
-        encoder_output = Lambda(sample_point_from_normal_distribution, name="encoder_output")([self.mu, self.log_variance])
-        return Model(encoder_input, encoder_output, name="encoder")
+    def reconstruct(self, images):
+        latent_representations = self.encoder.predict(images)
+        reconstructed_images = self.decoder.predict(latent_representations)
+        return reconstructed_images, latent_representations
+
+    @classmethod
+    def load(cls, save_folder="."):
+        parameters_path = os.path.join(save_folder, "parameters.pkl")
+        with open(parameters_path, "rb") as f:
+            parameters = pickle.load(f)
+        autoencoder = VAE(*parameters)
+        weights_path = os.path.join(save_folder, "weights.h5")
+        autoencoder.load_weights(weights_path)
+        return autoencoder
+
+    def _calculate_combined_loss(self, y_target, y_predicted):
+        reconstruction_loss = self._calculate_reconstruction_loss(y_target, y_predicted)
+        kl_loss = self._calculate_kl_loss(y_target, y_predicted)
+        combined_loss = self.reconstruction_loss_weight * reconstruction_loss\
+                                                         + kl_loss
+        return combined_loss
+
+    def _calculate_reconstruction_loss(self, y_target, y_predicted):
+        error = y_target - y_predicted
+        reconstruction_loss = K.mean(K.square(error), axis=[1, 2, 3])
+        return reconstruction_loss
+
+    def _calculate_kl_loss(self, y_target, y_predicted):
+        kl_loss = -0.5 * K.sum(1 + self.log_variance - K.square(self.mu) -
+                               K.exp(self.log_variance), axis=1)
+        return kl_loss
+
+    def _create_folder_if_it_doesnt_exist(self, folder):
+        if not os.path.exists(folder):
+            os.makedirs(folder)
+
+    def _save_parameters(self, save_folder):
+        parameters = [
+            self.input_shape,
+            self.conv_filters,
+            self.conv_kernels,
+            self.conv_strides,
+            self.latent_space_dim
+        ]
+        save_path = os.path.join(save_folder, "parameters.pkl")
+        with open(save_path, "wb") as f:
+            pickle.dump(parameters, f)
+
+    def _save_weights(self, save_folder):
+        save_path = os.path.join(save_folder, "weights.h5")
+        self.model.save_weights(save_path)
+
+    def _build(self):
+        self._build_encoder()
+        self._build_decoder()
+        self._build_autoencoder()
+
+    def _build_autoencoder(self):
+        model_input = self._model_input
+        model_output = self.decoder(self.encoder(model_input))
+        self.model = Model(model_input, model_output, name="autoencoder")
 
     def _build_decoder(self):
-        decoder_input = Input(shape=(self.latent_space_dim,), name="decoder_input")
-        # Dense layer, reshape to shape before bottleneck
-        num_neurons = np.prod(self._shape_before_bottleneck)
-        x = Dense(num_neurons, name="decoder_dense")(decoder_input)
-        x = Reshape(self._shape_before_bottleneck, name="decoder_reshape")(x)
+        decoder_input = self._add_decoder_input()
+        dense_layer = self._add_dense_layer(decoder_input)
+        reshape_layer = self._add_reshape_layer(dense_layer)
+        conv_transpose_layers = self._add_conv_transpose_layers(reshape_layer)
+        decoder_output = self._add_decoder_output(conv_transpose_layers)
+        self.decoder = Model(decoder_input, decoder_output, name="decoder")
 
-        # Conv2DTranspose layers in reverse order of encoder conv layers (except first)
-        for idx in reversed(range(1, self._num_conv_layers)):
-            x = Conv2DTranspose(
-                filters=self.conv_filters[idx],
-                kernel_size=self.conv_kernels[idx],
-                strides=self.conv_strides[idx],
-                padding="same",
-                name=f"decoder_conv_transpose_layer_{self._num_conv_layers - idx}"
-            )(x)
-            x = ReLU(name=f"decoder_relu_{self._num_conv_layers - idx}")(x)
-            x = BatchNormalization(name=f"decoder_bn_{self._num_conv_layers - idx}")(x)
+    def _add_decoder_input(self):
+        return Input(shape=self.latent_space_dim, name="decoder_input")
 
-        # Final Conv2DTranspose layer to reconstruct the image
-        x = Conv2DTranspose(
+    def _add_dense_layer(self, decoder_input):
+        num_neurons = np.prod(self._shape_before_bottleneck) # [1, 2, 4] -> 8
+        dense_layer = Dense(num_neurons, name="decoder_dense")(decoder_input)
+        return dense_layer
+
+    def _add_reshape_layer(self, dense_layer):
+        return Reshape(self._shape_before_bottleneck)(dense_layer)
+
+    def _add_conv_transpose_layers(self, x):
+        """Add conv transpose blocks."""
+        # loop through all the conv layers in reverse order and stop at the
+        # first layer
+        for layer_index in reversed(range(1, self._num_conv_layers)):
+            x = self._add_conv_transpose_layer(layer_index, x)
+        return x
+
+    def _add_conv_transpose_layer(self, layer_index, x):
+        layer_num = self._num_conv_layers - layer_index
+        conv_transpose_layer = Conv2DTranspose(
+            filters=self.conv_filters[layer_index],
+            kernel_size=self.conv_kernels[layer_index],
+            strides=self.conv_strides[layer_index],
+            padding="same",
+            name=f"decoder_conv_transpose_layer_{layer_num}"
+        )
+        x = conv_transpose_layer(x)
+        x = ReLU(name=f"decoder_relu_{layer_num}")(x)
+        x = BatchNormalization(name=f"decoder_bn_{layer_num}")(x)
+        return x
+
+    def _add_decoder_output(self, x):
+        conv_transpose_layer = Conv2DTranspose(
             filters=1,
             kernel_size=self.conv_kernels[0],
             strides=self.conv_strides[0],
             padding="same",
             name=f"decoder_conv_transpose_layer_{self._num_conv_layers}"
-        )(x)
-        decoder_output = Activation("sigmoid", name="sigmoid_output")(x)
+        )
+        x = conv_transpose_layer(x)
+        output_layer = Activation("sigmoid", name="sigmoid_layer")(x)
+        return output_layer
 
-        return Model(decoder_input, decoder_output, name="decoder")
+    def _build_encoder(self):
+        encoder_input = self._add_encoder_input()
+        conv_layers = self._add_conv_layers(encoder_input)
+        bottleneck = self._add_bottleneck(conv_layers)
+        self._model_input = encoder_input
+        self.encoder = Model(encoder_input, bottleneck, name="encoder")
 
-    def compute_loss(self, y_true, y_pred):
+    def _add_encoder_input(self):
+        return Input(shape=self.input_shape, name="encoder_input")
+
+    def _add_conv_layers(self, encoder_input):
+        """Create all convolutional blocks in encoder."""
+        x = encoder_input
+        for layer_index in range(self._num_conv_layers):
+            x = self._add_conv_layer(layer_index, x)
+        return x
+
+    def _add_conv_layer(self, layer_index, x):
+        """Add a convolutional block to a graph of layers, consisting of
+        conv 2d + ReLU + batch normalization.
         """
-        Compute the combined VAE loss: weighted reconstruction loss + KL divergence
-        y_true: ground truth images
-        y_pred: reconstructed images
-        Returns: scalar loss tensor (mean over batch)
-        """
-        # Reconstruction loss: mean squared error per batch element
-        reconstruction_loss = tf.reduce_mean(tf.square(y_true - y_pred), axis=[1, 2, 3])
-        # KL divergence term referencing encoder layers mu and log_variance
-        kl_loss = -0.5 * tf.reduce_sum(1 + self.log_variance - tf.square(self.mu) - tf.exp(self.log_variance), axis=1)
-        combined_loss = self.reconstruction_loss_weight * reconstruction_loss + kl_loss
-        # Mean over batch
-        return tf.reduce_mean(combined_loss)
+        layer_number = layer_index + 1
+        conv_layer = Conv2D(
+            filters=self.conv_filters[layer_index],
+            kernel_size=self.conv_kernels[layer_index],
+            strides=self.conv_strides[layer_index],
+            padding="same",
+            name=f"encoder_conv_layer_{layer_number}"
+        )
+        x = conv_layer(x)
+        x = ReLU(name=f"encoder_relu_{layer_number}")(x)
+        x = BatchNormalization(name=f"encoder_bn_{layer_number}")(x)
+        return x
 
-def my_model_function():
-    """
-    Create and return an instance of MyModel with default recommended parameters.
-    """
-    model = MyModel(
+    def _add_bottleneck(self, x):
+        """Flatten data and add bottleneck with Guassian sampling (Dense
+        layer).
+        """
+        self._shape_before_bottleneck = K.int_shape(x)[1:]
+        x = Flatten()(x)
+        self.mu = Dense(self.latent_space_dim, name="mu")(x)
+        self.log_variance = Dense(self.latent_space_dim,
+                                  name="log_variance")(x)
+
+        def sample_point_from_normal_distribution(args):
+            mu, log_variance = args
+            epsilon = K.random_normal(shape=K.shape(self.mu), mean=0.,
+                                      stddev=1.)
+            sampled_point = mu + K.exp(log_variance / 2) * epsilon
+            return sampled_point
+
+        x = Lambda(sample_point_from_normal_distribution,
+                   name="encoder_output")([self.mu, self.log_variance])
+        return x
+
+
+if __name__ == "__main__":
+    autoencoder = VAE(
         input_shape=(28, 28, 1),
         conv_filters=(32, 64, 64, 64),
         conv_kernels=(3, 3, 3, 3),
         conv_strides=(1, 2, 2, 1),
-        latent_space_dim=2,
-        reconstruction_loss_weight=1000,
+        latent_space_dim=2
     )
-    return model
+    autoencoder.summary()
 
-def GetInput():
-    """
-    Return a random tensor simulating a batch of grayscale 28x28 images with 1 channel.
-    Shape: (batch_size=4, height=28, width=28, channels=1)
-    Values uniformly sampled in [0,1).
-    """
-    return tf.random.uniform((4, 28, 28, 1), dtype=tf.float32)
 
+LEARNING_RATE = 0.0005
+BATCH_SIZE = 32
+EPOCHS = 100
+
+
+def load_mnist():
+    (x_train, y_train), (x_test, y_test) = mnist.load_data()
+
+    x_train = x_train.astype("float32") / 255
+    x_train = x_train.reshape(x_train.shape + (1,))
+    x_test = x_test.astype("float32") / 255
+    x_test = x_test.reshape(x_test.shape + (1,))
+
+    return x_train, y_train, x_test, y_test
+
+
+def train(x_train, learning_rate, batch_size, epochs):
+    autoencoder = VAE(
+        input_shape=(28, 28, 1),
+        conv_filters=(32, 64, 64, 64),
+        conv_kernels=(3, 3, 3, 3),
+        conv_strides=(1, 2, 2, 1),
+        latent_space_dim=2
+    )
+    autoencoder.summary()
+    autoencoder.compile(learning_rate)
+    autoencoder.train(x_train, batch_size, epochs)
+    return autoencoder
+
+
+if __name__ == "__main__":
+    x_train, _, _, _ = load_mnist()
+    autoencoder = train(x_train[:10000], LEARNING_RATE, BATCH_SIZE, EPOCHS)
+    autoencoder.save("model")

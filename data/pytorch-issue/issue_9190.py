@@ -1,41 +1,29 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
-
 import torch
-import torch.nn as nn
+import numpy as np
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.linear = nn.Linear(10, 1)  # Example linear layer for demonstration
+a = torch.Tensor([1, 2, 3])
 
-    def forward(self, x):
-        # Example forward pass
-        x = self.linear(x)
-        condition = (x > 0).squeeze()
-        result = torch.where(condition, 1.0, -1.0)  # Using torch.where with Python scalar
-        return result
+# works, correctly produces tensor([-1.,  2.,  3.])
+b = torch.where(a == 1, torch.Tensor([-1]), a)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+# fails: TypeError: where(): argument 'input' (position 2) must be Tensor, not int
+c = torch.where(a == 1, -1, a)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(1, 10)  # Example input shape (batch_size, input_features)
+# works in numpy
+np.where(a.numpy() == 1, -1, a.numpy())
 
-# Example usage
-# model = my_model_function()
-# input_data = GetInput()
-# output = model(input_data)
+# both fail: RuntimeError: expected scalar type Long but found Float
+d = torch.where(a == 1, torch.tensor(-1), a)
+d = torch.where(a == 1, torch.tensor([-1]), a)
 
-# The provided GitHub issue is about the `torch.where` function and its behavior with Python scalars and type promotion. The issue does not describe a PyTorch model or provide any model code. Instead, it discusses the expected and actual behavior of `torch.where` with different types of inputs.
-# Since there is no model or model-related code in the issue, I will create a simple example that demonstrates the use of `torch.where` with type promotion and Python scalars. This example will include a simple model class `MyModel` and a function to generate input data.
-# ### Explanation:
-# 1. **MyModel Class**:
-#    - A simple model with a single linear layer.
-#    - The `forward` method applies the linear layer and then uses `torch.where` to create a tensor where elements are `1.0` if the condition is true and `-1.0` otherwise.
-# 2. **my_model_function**:
-#    - Returns an instance of `MyModel`.
-# 3. **GetInput Function**:
-#    - Generates a random tensor of shape `(1, 10)` to be used as input to the model.
-# This example demonstrates the use of `torch.where` with Python scalars and type promotion, as discussed in the GitHub issue. The model and input generation are kept simple for clarity.
+torch.where(torch.tensor([False, True]).cuda(), torch.rand(2).cuda(), 0)
+# problem with python scalar
+
+torch.where(torch.tensor([False, True]).cuda(), torch.rand(2).cuda(), torch.tensor(0.))
+# problem with device
+
+torch.where(torch.tensor([False, True]).cuda(), torch.rand(2).cuda(), torch.tensor(0).cuda())
+# problem with dtype
+
+torch.where(torch.tensor([False, True]).cuda(), torch.rand(2).cuda(), torch.tensor(0))
+# problem with dtype and device

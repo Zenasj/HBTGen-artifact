@@ -1,28 +1,34 @@
-# torch.rand(1, 3, H, W, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
-
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+import json
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.relu = nn.ReLU()
-        self.conv = nn.Conv2d(3, 5, kernel_size=(49, 2), stride=(11, 11), padding=(1, 1))
-        self.bn = nn.BatchNorm2d(5)
+checkpoint = torch.jit.load('./model.pt')
+for name, param in checkpoint.named_parameters():
+    print(f"Layer: {name}")
+    print(f"Weight:\n{param.data}")
+    print(f"Bias:\n{param.data}")
+    print("\n")
 
-    def forward(self, x):
-        x = self.relu(x)
-        x = self.conv(x)
-        x = self.bn(x)
-        return x
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+input_file = "./torch_origin_model.input.0.json"
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # Assuming a reasonable input size for demonstration purposes
-    H, W = 50, 50
-    return torch.rand(1, 3, H, W, dtype=torch.float32)
+with open(input_file, 'r') as file:
+    data = json.load(file)
 
+
+input_list = []
+for key, value in data.items():
+    input_list.append(value)
+
+
+tensor_data = torch.tensor(input_list[0], dtype=torch.float32)
+
+checkpoint.eval()
+
+with torch.no_grad():
+    output = checkpoint(tensor_data)
+
+print('---------')
+
+print(output)

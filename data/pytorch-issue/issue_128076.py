@@ -1,10 +1,15 @@
-# torch.rand(B, C, H, W, dtype=...)  # Inferred input shape: (batch_size, sequence_length)
+for name, param in chain(model.named_parameters(), model.named_buffers()):
+           print(name)
+
+for name, _ in _iterate_valid_model_state(model):
+      print(name)
+
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+class TiedEmbeddingModel(nn.Module):
     def __init__(self, vocab_size, embedding_dim):
-        super(MyModel, self).__init__()
+        super(TiedEmbeddingModel, self).__init__()
         self.embedding = nn.Embedding(vocab_size, embedding_dim)
         self.decoder = nn.Linear(embedding_dim, vocab_size)
         self.decoder.weight = self.embedding.weight  # Tying weights
@@ -14,18 +19,14 @@ class MyModel(nn.Module):
         output = self.decoder(embedded)
         return output
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    vocab_size = 10000
-    embedding_dim = 300
-    model = MyModel(vocab_size, embedding_dim)
-    return model
+# Example usage
+vocab_size = 10000
+embedding_dim = 300
+model = TiedEmbeddingModel(vocab_size, embedding_dim)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    batch_size = 8
-    sequence_length = 10
-    vocab_size = 10000
-    input_tensor = torch.randint(0, vocab_size, (batch_size, sequence_length))
-    return input_tensor
+# Save model state_dict
+torch.save(model.state_dict(), 'tied_embedding_model.pth')
 
+# Load model state_dict
+loaded_model = TiedEmbeddingModel(vocab_size, embedding_dim)
+loaded_model.load_state_dict(torch.load('tied_embedding_model.pth'))

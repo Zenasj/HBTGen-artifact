@@ -1,54 +1,125 @@
-# tf.random.uniform((32, 3), dtype=tf.float32)
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
 
-class MyModel(tf.keras.Model):
-    """
-    A demonstration model encapsulating the differing layer build/call behaviors regarding variable naming scopes.
-    This MyModel internally creates three Dense layers to illustrate the variable naming inconsistencies described:
+layer = tf.keras.layers.Dense(2, name="dense")
+model = tf.keras.Sequential([layer], name="model")
+print(model.built)
+with tf.name_scope("parent"):
+    with tf.name_scope(model.name):
+        model.build((None, 3))
+print([v.name for v in model.variables])
+
+layer = tf.keras.layers.Dense(2, name="dense")
+model = tf.keras.Sequential([layer], name="model")
+print(model.built)
+with tf.name_scope("parent"):
+    model(tf.zeros((32, 3)))
+print([v.name for v in model.variables])
+
+layer = tf.keras.layers.Dense(2, name="dense")
+model = tf.keras.Sequential([layer], name="model")
+print(model.built)
+with tf.name_scope("parent"):
+    model(tf.keras.Input((2,)))
+print([v.name for v in model.variables])
+
+layer_built = tf.keras.layers.Dense(2, name="built")
+layer_tensor_called = tf.keras.layers.Dense(2, name="tensor_called")
+layer_input_called = tf.keras.layers.Dense(2, name="input_called")
+
+inputs = tf.keras.Input((3,))
+
+with tf.name_scope("parent"):
     
-    - layer_built: explicitly built via build() call inside a name_scope
-    - layer_tensor_called: called directly on a zero tensor inside a name_scope
-    - layer_input_called: called directly on a Keras Input tensor inside a name_scope
+    with tf.name_scope(layer_built.name):
+        layer_built.build((None, 3))
     
-    Forward outputs a tuple of the outputs of all three layers on the input.
+    layer_tensor_called(tf.zeros((32, 3)))
+    
+    layer_input_called(inputs)
+
+print([v.name for v in layer_built.variables])
+print([v.name for v in layer_tensor_called.variables])
+print([v.name for v in layer_input_called.variables])
+
+def Conv2D_BN(
+    filters,
+    kernel_size,
+    strides=1,
+    padding="same",
+    activation="relu",
+    use_bias=False,
+    name=None,
+    **kwargs,
+):
+    """Utility class to apply conv + BN.
+
+    # Arguments
+        x: input tensor.
+        filters:
+        kernel_size:
+        strides:
+        padding:
+        activation:
+        use_bias:
+
+    Attributes
+    ----------
+    activation
+        activation in `Conv2D`.
+    filters
+        filters in `Conv2D`.
+    kernel_size
+        kernel size as in `Conv2D`.
+    padding
+        padding mode in `Conv2D`.
+    strides
+        strides in `Conv2D`.
+    use_bias
+        whether to use a bias in `Conv2D`.
+    name
+        name of the ops; will become `name + '/Act'` for the activation
+        and `name + '/BatchNorm'` for the batch norm layer.
     """
+    if name is None:
+        raise ValueError("name cannot be None!")
 
-    def __init__(self):
-        super().__init__()
-        # Create three dense layers with distinct names
-        self.layer_built = tf.keras.layers.Dense(2, name="built")
-        self.layer_tensor_called = tf.keras.layers.Dense(2, name="tensor_called")
-        self.layer_input_called = tf.keras.layers.Dense(2, name="input_called")
+    layers = [
+        Conv2D(
+            filters,
+            kernel_size,
+            strides=strides,
+            padding=padding,
+            use_bias=use_bias,
+            name=f"{name}/Conv2D",
+        )
+    ]
 
-        # We build layer_built explicitly with the appropriate name scopes to reflect the behavior observed
-        with tf.name_scope("parent"):
-            with tf.name_scope(self.layer_built.name):
-                self.layer_built.build((None, 3))  # Input shape fixed as 3 per examples
+    if not use_bias:
+        bn_axis = 1 if K.image_data_format() == "channels_first" else 3
+        layers += [BatchNormalization(axis=bn_axis, scale=False, name=f"{name}/BatchNorm")]
 
-    def call(self, inputs, training=None):
-        # Simulate the usages inside a "parent" name scope to observe variable naming effects
+    if activation is not None:
+        layers += [Activation(activation, name=f"{name}/Act")]
 
-        # The layer_tensor_called is called on a tensor inside a name scope "parent" to mimic experiment context
-        with tf.name_scope("parent"):
-            out_tensor_called = self.layer_tensor_called(tf.zeros_like(inputs))
+    return tf.keras.Sequential(layers, name=name, **kwargs)
 
-        # The layer_input_called is called directly on the Keras Input tensor inside the same parent scope
-        # According to the issue, this call ignores the parent scope for variable naming
-        with tf.name_scope("parent"):
-            out_input_called = self.layer_input_called(inputs)
+layer_built = tf.keras.layers.Dense(2, name="built")
+layer_tensor_called = tf.keras.layers.Dense(2, name="tensor_called")
+layer_input_called = tf.keras.layers.Dense(2, name="input_called")
 
-        # layer_built is already built; call it directly on inputs (no name scope applied here for call)
-        out_built = self.layer_built(inputs)
+inputs = tf.keras.Input((3,))
 
-        # Return all outputs to verify and compare
-        return out_built, out_tensor_called, out_input_called
+with tf.name_scope("parent"):
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+    with tf.name_scope(layer_built.name):
+        layer_built.build((None, 3))
 
-def GetInput():
-    # Return a random tensor input of shape (32, 3) matching expected input dimension
-    # Using uniform random values, dtype float32 as typical for Keras Dense layers
-    return tf.random.uniform((32, 3), dtype=tf.float32)
+    layer_tensor_called(tf.zeros((32, 3)))
 
+    layer_input_called(inputs)
+
+print([v.name for v in layer_built.variables])
+print([v.name for v in layer_tensor_called.variables])
+print([v.name for v in layer_input_called.variables])

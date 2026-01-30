@@ -1,37 +1,16 @@
-# torch.rand(B, C, H, W, dtype=...)  # The input shape is not directly relevant to the model, but it's assumed that the input will be a tensor of shape (batch_size, num_features) for the distributions.
 import torch
-from torch import nn
 from torch.distributions import Normal, Independent, kl
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Define two independent normal distributions
-        self.dist1 = Independent(Normal(torch.zeros(3), torch.ones(3)), 1)
-        self.dist2 = Independent(Normal(torch.zeros(3), 5 * torch.ones(3)), 1)
+# Normals with batch_shape=(3,) and event_shape=()
+dist1 = Normal(torch.zeros(3), torch.ones(3))
+dist2 = Normal(torch.zeros(3), 5*torch.ones(3))
 
-    def forward(self, x):
-        # Compute the KL divergence between the two independent distributions
-        kl_divergence_indep = kl.kl_divergence(self.dist1, self.dist2)
-        return kl_divergence_indep
+# Normals with batch_shape=() and event_shape=(3,)
+dist1_indep = Independent(dist1, 1)
+dist2_indep = Independent(dist2, 1)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+# Works fine, returns KL with shape (3,), one for each Normal
+kl_divergence = kl.kl_divergence(dist1, dist2) 
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # In this case, the input is not used in the model, so we can return a dummy tensor
-    return torch.rand(1, 3)  # Dummy input with shape (batch_size, num_features)
-
-# Register the KL divergence function for Independent distributions
-@kl.register_kl(Independent, Independent)
-def _kl_independent_independent(p, q):
-    if p.reinterpreted_batch_ndims != q.reinterpreted_batch_ndims:
-        raise NotImplementedError
-    result = kl.kl_divergence(p.base_dist, q.base_dist)
-    return _sum_rightmost(result, p.reinterpreted_batch_ndims)
-
-def _sum_rightmost(tensor, ndims):
-    return tensor.sum(dim=list(range(-ndims, 0))) if ndims > 0 else tensor
-
+# Raises NotImplementedError, should return KL with shape (), the sum of the KL for each Normal
+kl_divergence_indep = kl.kl_divergence(dist1_indep, dist2_indep)

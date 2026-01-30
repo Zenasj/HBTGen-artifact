@@ -1,37 +1,11 @@
-# tf.random.uniform((B, 1), maxval=40000000, dtype=tf.int64) ← assumed input shape and dtype
-
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
-class MyModel(tf.keras.Model):
-    def __init__(self, vocab_size=40000000, embedding_dim=10):
-        super().__init__()
-        # Use int64 input dtype to avoid collisions as per issue discussion.
-        self.embedding = tf.keras.layers.Embedding(
-            input_dim=vocab_size,
-            output_dim=embedding_dim,
-            dtype=tf.float32,  # embeddings are float32
-            embeddings_initializer='uniform',
-            input_length=1
-        )
-    
-    def call(self, inputs):
-        # inputs expected as (batch_size, 1) int64 tensor of indices
-        return self.embedding(inputs)
+user_model = tf.keras.Sequential([
+    tf.keras.Input((1,), dtype='int64'),
+    tf.keras.layers.Embedding(20000000, 10)
+])
 
-def my_model_function():
-    # Instantiate model with large vocabulary size and embedding dim 10
-    return MyModel()
-
-def GetInput():
-    # Generate random batch of integer indices within vocab size (up to 40 million)
-    # Batch size chosen arbitrarily as 4 for demonstration (can be changed)
-    batch_size = 4
-    vocab_size = 40000000
-    # Input shape is (batch_size, 1) to match embedding input requirement
-    return tf.random.uniform(
-        shape=(batch_size, 1),
-        minval=0,
-        maxval=vocab_size,
-        dtype=tf.int64
-    )
-
+user_model.compile(optimizer=tf.keras.optimizers.Adagrad(learning_rate=0.2),loss='mse')

@@ -1,26 +1,21 @@
-# torch.rand(B, C, H, W, dtype=...)  # Inferred input shape: (0, 0, 1)
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+class CustomModel(nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
+        super(CustomModel, self).__init__()
         self.layer1 = nn.ConstantPad2d(padding=0, value=1)
         
     def forward(self, inputs):
         return self.layer1(inputs)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+ip_size = [0, 0, 1]
+input_tensor = torch.randn(ip_size)
+cuda_inputs = input_tensor.clone().to('cuda')
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    ip_size = [0, 0, 1]
-    return torch.randn(ip_size)
+mymodel = CustomModel()
+no_op_info = mymodel(input_tensor)
+mymodel.to('cuda')
+op_info = torch.compile(mymodel.forward, mode='max-autotune')(cuda_inputs)
 
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
-
+import torch._inductor.config
+torch._inductor.config.triton.cudagraph_trees = False

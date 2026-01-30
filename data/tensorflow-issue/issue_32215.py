@@ -1,79 +1,57 @@
-# tf.random.uniform((20, 100), dtype=tf.float32) ← inferred input shape from example usage ex_x shape=(20, 100)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
 import numpy as np
 
+#Without this line the script works in v1.14.
+#comment out this line for v2.0-rc0
+tf.enable_eager_execution()
+
+
 def matmul_dense_sparse(a, b):
-    # Perform matmul with sparse second matrix 'b' and dense 'a'
-    # Equivalent to a @ b but with b as sparse tensor.
     ta = tf.transpose(a)
     tb = tf.sparse.transpose(b)
     return tf.transpose(tf.sparse.sparse_dense_matmul(tb, ta))
 
 
 class SparseLayer(tf.keras.layers.Layer):
-    """
-    Keras Layer with trainable weights representing the values of a SparseTensor matrix.
-
-    This layer stores sparse indices and shape,
-    and trainable weight vector corresponds to the values at those indices.
-
-    The sparse matrix is formed by self.indices, self.w, self.shape,
-    reordered once when weights change.
-
-    Note: In eager execution, gradients are not properly propagated to SparseTensor values
-    by default (as reported in the issue). This model implements the layer as in given example.
-    """
-
     def __init__(self, indices, shape):
         super().__init__()
-        # Store indices and sparse shape (fixed)
-        # indices is array-like shape (num_nonzero, 2) for a 2D sparse matrix
-        self.indices = tf.constant(indices, dtype=tf.int64)
-        self.shape = tf.constant(shape, dtype=tf.int64)
+        self.indices = indices
+        self.shape = shape
 
     def build(self, input_shape):
-        # Create a 1D trainable weight vector with length = number of nonzero elements
-        self.w = self.add_weight(
-            name='w',
-            shape=(self.indices.shape[0],),
-            initializer='random_normal',
-            trainable=True,
-            dtype=tf.float32
-        )
+        self.w = self.add_weight(name='w',
+                        shape=(self.indices.shape[0],),
+                        trainable=True)
+        self.sparse_mat = tf.sparse.reorder(tf.sparse.SparseTensor(self.indices, self.w, self.shape))
         super().build(input_shape)
 
     def call(self, inputs):
-        # Re-create sparse tensor with current weights as values
-        sparse_mat = tf.sparse.reorder(tf.sparse.SparseTensor(self.indices, self.w, self.shape))
-        # Compute matrix multiplication: inputs @ sparse matrix
-        return matmul_dense_sparse(inputs, sparse_mat)
+        return matmul_dense_sparse(inputs, self.sparse_mat)
 
 
-class MyModel(tf.keras.Model):
-    """
-    Model that uses the SparseLayer for linear transform with sparse weights.
-    The input shape is (batch_size, 100) to match the sparse weight matrix shape (100, 5).
-    """
-
-    def __init__(self):
+class SparseModel(tf.keras.Model):
+    def __init__(self, indices, shape):
         super().__init__()
-        # Sparse indices and shape defined as per the example in the issue
-        indices = np.array([[1, 2], [30, 1], [30, 3], [45, 2], [56, 2], [32, 4]], dtype=np.int64)
-        shape = (100, 5)
-        self.sparse_layer = SparseLayer(indices, shape)
+        self.l1 = SparseLayer(indices, shape)
 
     def call(self, inputs):
-        return self.sparse_layer(inputs)
+        return self.l1(inputs)
 
+indices = np.array([[1, 2], [30, 1], [30, 3], [45, 2], [56, 2], [32, 4]])
 
-def my_model_function():
-    # Return an instance of MyModel with default initialization
-    return MyModel()
+ex_x = np.random.rand(20, 100)
+ex_y = np.random.rand(20, 5)
 
+model = SparseModel(indices, (100, 5))
 
-def GetInput():
-    # Return a random float32 input tensor shaped (20, 100) to match model input
-    # Batch size 20 and feature size 100 matches example in the issue
-    return tf.random.uniform((20, 100), dtype=tf.float32)
+#compile for v1.14
+model.compile(tf.keras.optimizers.SGD(), tf.losses.mean_squared_error)
+#compile for v2.0-rc0
+#model.compile(tf.keras.optimizers.SGD(), tf.losses.MeanSquaredError())
 
+model.fit(ex_x, ex_y)

@@ -1,14 +1,25 @@
-# torch.rand(1, 2, 2, 3, dtype=torch.float32)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return x.permute(0, 3, 1, 2)  # Reproduces the permute operation causing discrepancies
+cpu = torch.device("cpu")
+gpu = torch.device("mps")
 
-def my_model_function():
-    return MyModel()
+data = torch.rand((1, 2, 2, 3))
 
-def GetInput():
-    return torch.rand(1, 2, 2, 3, dtype=torch.float32)
+def run_test(device):
+    global data
+    with torch.no_grad():
+        data = data.to(device)
+        data = data.permute(0, 3, 1, 2)
+        return data
 
+cr = run_test(cpu)
+gr = run_test(gpu)
+
+print(cr)
+print(gr)
+
+print(cr.shape)
+print(gr.shape)
+
+print(cr.numpy())
+print(gr.cpu().numpy())

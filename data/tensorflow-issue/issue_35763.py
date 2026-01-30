@@ -1,138 +1,99 @@
-# tf.random.uniform((1, 32, 64, 64, 1), dtype=tf.float32) ← Assuming a 5D input typical for 3D conv 
+import numpy as np
+import math
+from tensorflow import keras
+from tensorflow.keras import optimizers
+
+class SoftDiceLoss(tf.keras.losses.Loss):
+    '''
+    SoftDiceLoss calculates multi-class soft dice loss
+    loss = avg_batch(1-(sum(W_k*sum(yPred.*yTrue)))/(sum(W_ksum(yPred^2+yTrue^2))))
+    where W_k = 1/(number of voxels in class k)^wPow
+    Class number of segmented regions includes background
+    Args:
+        yPred/yTrue: prediced and desired outputs shaped as [mbSize, classNum, tensor dimensions]. Also, both must be float-point
+    	wPow, power of weiight. A higher one favours classes with a smaller number of voxels
+    Return:
+        loss: a scalar tensor
+    '''
+    def __init__(self, wPow=2.0, name='SoftDiceLoss'):
+        super().__init__(name=name)
+        self.epsilon = 1e-16 
+        self.wPow = wPow
+
+    def call(self, yPred, yTrue):
+        yTrue =tf.dtypes.cast(yTrue, dtype=yPred.dtype)
+		# Dot product yPred and yTrue and sum them up for each datum and class
+        crossProd=tf.multiply(yPred, yTrue)
+		# As a symbolic tensor, dimensions and shapes etc. cannot be extracted from data, nor can it be used in subroutines.
+        crossProdSum=tf.math.reduce_sum(crossProd, axis=np.arange(2, 5)) #tf.rank(yTrue)))
+		# Calculate weight for each datum and class 
+        weight = tf.math.reduce_sum(yTrue, axis=np.arange(2, 5))#tf.rank(yTrue)))
+		#weight = tf.math.divide(1, tf.math.square(weight)+self.epsilon)
+        weight = tf.math.divide(1, tf.math.pow(weight, self.wPow)+self.epsilon)
+		# Weighted sum over classes
+        numerator = 2*tf.math.reduce_sum(tf.multiply(crossProdSum, weight), axis=1)
+		# Saquared summation 
+        yySum = tf.math.reduce_sum(tf.math.square(yPred) + tf.math.square(yTrue), axis=np.arange(2, 5))#tf.rank(yTrue)))
+		# Weighted sum over classes
+        denominator = tf.math.reduce_sum(tf.multiply(weight, yySum), axis=1)
+		# Get individual loss and average over minibatch
+        loss = tf.math.reduce_mean(1 - tf.math.divide(numerator, denominator+self.epsilon))
+			
+        return loss
+    
+    def get_config(self):
+        config = super(SoftDiceLoss, self).get_config()
+        return config
+
+curOpt = tf.keras.optimizers.Adam(learning_rate=1e-4)	
+lossFunc=SoftDiceLoss(2.0)
+ckpt = tf.train.Checkpoint(model=myModel(...), optimizer=curOpt, lossFunc=lossFunc, accFunc=accFunc)
+
 import tensorflow as tf
-from tensorflow.keras import layers
+from tensorflow.keras import layers, activations
 
 class C3BR(tf.keras.Model):
     def __init__(self, filterNum, kSize, strSize, padMode, dFormat='channels_first'):
         super(C3BR, self).__init__()
         if dFormat == 'channels_first':
             self.conAx = 1
-            self.data_format = 'channels_first'
         else:
             self.conAx = -1
-            self.data_format = 'channels_last'
         self.kSize = (kSize, kSize, kSize)
-        # 3D conv layer with specified filters, kernel size, strides, padding, data format
-        self.conv = layers.Conv3D(filters=filterNum, kernel_size=self.kSize, strides=strSize,
-                                  padding=padMode, data_format=self.data_format)
+        self.conv = layers.Conv3D(filters=filterNum, kernel_size=self.kSize, strides=strSize, padding=padMode, data_format=dFormat)
         self.BN = layers.BatchNormalization(axis=self.conAx)
         self.Relu = layers.ReLU()
-
-    def call(self, inputs, training=False):
+    
+    def call(self, inputs, ifTrain=False):
         x = self.conv(inputs)
-        x = self.BN(x, training=training)
+        x= self.BN(x, training=ifTrain)
         outputs = self.Relu(x)
         return outputs
 
     def build_model(self, input_shape):
-        '''
-        Helper method to build the model by running a dummy forward pass.
-        input_shape: tuple, shape including batch dim e.g. (batch_size, depth, height, width, channels)
-        '''
+        ''' A work-around to define dimensions of signals through the NN'''
         self.build(input_shape)
         inputs = tf.keras.Input(shape=input_shape[1:])
-        _ = self.call(inputs, training=True)
+        _ = self.call(inputs, True) 
 
 
 class lossExample(tf.keras.losses.Loss):
-    '''
-    A minimal custom loss subclass example.
-    This subclass does not have any variables, so
-    it does not introduce additional checkpoint-tracked state.
-    '''
+
     def __init__(self, name='lossExample'):
         super().__init__(name=name)
-
-    def call(self, y_pred, y_true):
-        # Example loss simply mean difference (not meaningful loss, just placeholder)
-        return tf.reduce_mean(y_pred - y_true)
-
-
-class SoftDiceLoss(tf.keras.losses.Loss):
-    '''
-    SoftDiceLoss calculates multi-class soft dice loss for 5-D tensors.
-    Inputs yTrue and yPred shaped like [mbSize, classNum, dim1, dim2, dim3].
-    This class currently has no tracked variables, so it cannot be checkpointed.
-    '''
-    def __init__(self, wPow=2.0, name='SoftDiceLoss'):
-        super().__init__(name=name)
-        self.epsilon = 1e-16
-        self.wPow = wPow
-
-    def call(self, y_pred, y_true):
-        y_true = tf.cast(y_true, dtype=y_pred.dtype)
-        # Elementwise multiplication and sum over spatial dims (assumed dims 2,3,4)
-        crossProd = y_pred * y_true
-        crossProdSum = tf.reduce_sum(crossProd, axis=[2, 3, 4])
-        weight = tf.reduce_sum(y_true, axis=[2, 3, 4])
-        weight = 1 / (tf.pow(weight, self.wPow) + self.epsilon)
-        numerator = 2 * tf.reduce_sum(crossProdSum * weight, axis=1)
-        yySum = tf.reduce_sum(y_pred**2 + y_true**2, axis=[2, 3, 4])
-        denominator = tf.reduce_sum(weight * yySum, axis=1)
-        loss = tf.reduce_mean(1 - numerator / (denominator + self.epsilon))
-        return loss
-
-    def get_config(self):
-        config = super().get_config()
-        config.update({'wPow': self.wPow})
-        return config
-
-
-class MyModel(tf.keras.Model):
-    '''
-    Fused model that contains:
-    - A 3D Conv + BN + ReLU submodel (C3BR)
-    - And exposes two loss functions: SoftDiceLoss and lossExample
+		
+    def call(self, yPred, yTrue):
+			
+        return tf.reduce_mean(yPred - yTrue)
     
-    Demonstrates how a composite model might encapsulate
-    the original model and custom loss objects.
 
-    Forward pass returns a dictionary with:
-    - "features": output tensor of C3BR
-    - "dice_loss": soft dice loss computed between features and a dummy target (for demo)
-    - "example_loss": example loss computed similarly
+curOpt = tf.keras.optimizers.Adam(learning_rate=1e-4)	
+lossFunc=lossExample()
+ckpt = tf.train.Checkpoint(model=C3BR(32, 3, 1, 'valid'), optimizer=curOpt, lossFunc=lossFunc)
 
-    For real use, losses should be computed during training with true labels.
-    Here, we illustrate structural fusion per the issue context.
-    '''
+@tf.function
+def lossExample(yPred, yTrue):
+    return tf.reduce_mean(yPred-yTrue)
 
-    def __init__(self):
-        super().__init__()
-        # Instantiate the 3D convolutional block with sample parameters
-        # Using 'channels_first' to match axis usage in loss as per original
-        self.submodel = C3BR(filterNum=32, kSize=3, strSize=1, padMode='valid', dFormat='channels_first')
-        self.soft_dice_loss = SoftDiceLoss(wPow=2.0)
-        self.example_loss = lossExample()
-
-    @tf.function  # ensure tf function and compatible with XLA jit_compile
-    def call(self, inputs, labels=None, training=False):
-        ''' Forward pass:
-            inputs: tensor expected shape e.g. (batch, channels, depth, height, width)
-            labels: dummy labels to compute losses if provided (same shape as outputs)
-        '''
-        features = self.submodel(inputs, training=training)
-        outputs = {'features': features}
-        if labels is not None:
-            # Compute losses if labels provided
-            dice_loss_value = self.soft_dice_loss(features, labels)
-            example_loss_value = self.example_loss(features, labels)
-            outputs['dice_loss'] = dice_loss_value
-            outputs['example_loss'] = example_loss_value
-        return outputs
-
-
-def my_model_function():
-    # Return an instance of MyModel with all submodules initialized
-    model = MyModel()
-    # For proper shape inference and build, provide a dummy input shape
-    # Assuming input shape: (batch=1, channels=1, depth=64, height=64, width=64)
-    # to conform with channels_first format used in C3BR
-    model.submodel.build_model(input_shape=(1, 1, 64, 64, 64))
-    return model
-
-
-def GetInput():
-    # Return random input tensor that matches MyModel input in channels_first format
-    # shape: (batch_size=1, channels=1, 64, 64, 64)
-    return tf.random.uniform((1, 1, 64, 64, 64), dtype=tf.float32)
-
+curOpt = tf.keras.optimizers.Adam(learning_rate=1e-4)	
+ckpt = tf.train.Checkpoint(model=C3BR(32, 3, 1, 'valid'), optimizer=curOpt, lossFunc=lossExample)

@@ -1,26 +1,29 @@
-# tf.random.uniform((10,), dtype=tf.float32)
+#-*- coding: utf-8 -*-
+#File:
+
+
+import numpy as np
 import tensorflow as tf
+from tensorflow.python import debug as tf_debug
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # The original code was TF1 style graph session code with placeholder input shape [10].
-        # For TF2, we just accept input tensors of shape [10].
-        # The model replicates: b = a + 1, c = b * 2.
-    
-    @tf.function(jit_compile=True)
-    def call(self, inputs):
-        # inputs: a tensor with shape (10,)
-        b = inputs + 1
-        c = b * 2
-        # To keep behavior aligned to original code, return c as final output
-        return c
+a = tf.placeholder(tf.float32, [10])
+b = a + 1
+c = b * 2
 
-def my_model_function():
-    # Return an instance of MyModel; no custom initialization required
-    return MyModel()
+class Hook(tf.train.SessionRunHook):
+    def before_run(self, _):
+        return tf.train.SessionRunArgs(fetches=c)
 
-def GetInput():
-    # Generate a random tensor with shape (10,) and dtype float32, matching 'a'
-    return tf.random.uniform((10,), dtype=tf.float32)
+class Hook2(tf.train.SessionRunHook):
+    def before_run(self, _):
+        return tf.train.SessionRunArgs(fetches=b)
 
+sess = tf.Session()
+sess = tf_debug.LocalCLIDebugWrapperSession(sess)
+
+class SessionCreator():
+    def create_session(self):
+        return sess
+final_sess = tf.train.MonitoredSession(session_creator=SessionCreator(), hooks=[Hook(), Hook2()])
+
+final_sess.run(b, feed_dict={a:np.arange(10)})

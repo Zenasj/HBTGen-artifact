@@ -1,14 +1,19 @@
-# torch.rand(3, 3, dtype=torch.float32)  # Inferred input shape from dummy_input in the issue
+import torch.nn as nn
+
+reproduce.py
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
+
+class MyModel(torch.nn.Module):
     def forward(self, x):
-        return torch.randn(*x.size())
+        # return torch.randn(3, 3)  # OK
+        return torch.randn(*x.size())   # NG
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    return torch.randn(3, 3)
+model = MyModel()
 
+dummy_input = torch.randn(3, 3)
+torch.onnx.export(model, dummy_input, "mymodel.onnx")
+
+expected.py
+# Nothing to show. mymodel.onnx is successfully generated.

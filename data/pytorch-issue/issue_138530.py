@@ -1,20 +1,36 @@
-# torch.rand(5, 4, 4, dtype=torch.float32, device='cuda:0')
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Compute eigenvalues using batched computation
-        batch_eigen = torch.linalg.eigvalsh(x)
-        # Compute eigenvalues using per-matrix loop
-        loop_eigen = torch.stack([torch.linalg.eigvalsh(m) for m in x])
-        # Return absolute difference between results
-        return torch.abs(batch_eigen - loop_eigen)
+matrix= torch.tensor([[[ 3.7512e+06,  1.0061e-04, -3.5907e-12,  1.3341e-04],
+        [ 1.0061e-04,  3.7512e+06, -2.6875e-12,  1.0027e-04],
+        [-3.5907e-12, -2.6875e-12,  1.0296e-02, -3.6492e-12],
+        [ 1.3341e-04,  1.0027e-04, -3.6492e-12,  3.7512e+06]], 
+[[ 2.0915e+07, -8.1593e-03,  1.0950e-10,  1.4794e-03],
+        [-8.1593e-03,  2.0915e+07, -6.6676e-11, -9.0084e-04],
+        [ 1.0950e-10, -6.6676e-11,  1.0296e-02,  1.2090e-11],
+        [ 1.4794e-03, -9.0084e-04,  1.2090e-11,  2.0915e+07]], 
+[[1.0982e+06, 2.3752e-03, 2.4215e-12, 2.9948e-03],
+        [2.3752e-03, 1.0982e+06, 1.3246e-12, 1.6382e-03],
+        [2.4215e-12, 1.3246e-12, 1.0296e-02, 1.6701e-12],
+        [2.9948e-03, 1.6382e-03, 1.6701e-12, 1.0982e+06]], 
+[[3.0140e+06, 3.8594e-04, 3.6724e-13, 2.2926e-06],
+        [3.8594e-04, 3.0140e+06, 3.6602e-14, 3.7123e-06],
+        [3.6724e-13, 3.6602e-14, 1.0296e-02, 2.4357e-14],
+        [2.2926e-06, 3.7123e-06, 2.4357e-14, 3.0140e+06]],
+        [[2.5352e+07, 2.8674e-05, 4.8317e-13, 1.3469e-04],
+        [2.8674e-05, 2.5352e+07, 1.5177e-12, 4.3508e-04],
+        [4.8317e-13, 1.5177e-12, 1.0296e-02, 7.2073e-12],
+        [1.3469e-04, 4.3508e-04, 7.2073e-12, 2.5352e+07]]], device='cuda:0')
 
-def my_model_function():
-    return MyModel()
+torch.linalg.eigvalsh(a)
 
-def GetInput():
-    # Match input shape and device from original issue's example
-    return torch.rand(5, 4, 4, dtype=torch.float32, device='cuda:0')
+tensor([[1.0296e-02, 3.7512e+06, 3.7512e+06, 3.7512e+06],
+        [1.0296e-02, 2.0915e+07, 2.0915e+07, 2.0915e+07],
+        [1.0296e-02, 1.0982e+06, 1.0982e+06, 1.0982e+06],
+        [1.0296e-02, 3.0140e+06, 3.0140e+06, 3.0140e+06],
+        [1.0296e-02, 2.5352e+07, 2.5352e+07, 2.5352e+07]], device='cuda:0')
 
+tensor([-4.4718e-01,  3.7512e+06,  3.7512e+06,  3.7512e+06], device='cuda:0')
+tensor([3.8957e-02, 2.0915e+07, 2.0915e+07, 2.0915e+07], device='cuda:0')
+tensor([-7.1594e-03,  1.0982e+06,  1.0982e+06,  1.0982e+06], device='cuda:0')
+tensor([1.1228e-02, 3.0140e+06, 3.0140e+06, 3.0140e+06], device='cuda:0')
+tensor([-4.9288e-01,  2.5352e+07,  2.5352e+07,  2.5352e+07], device='cuda:0')

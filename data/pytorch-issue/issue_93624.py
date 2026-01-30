@@ -1,21 +1,68 @@
-# torch.rand(B, 3, dtype=torch.float32)
 import torch
-import torch.nn as nn
+import pennylane as qml
+import torchdynamo
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Simulate quantum circuit's expectation value using PyTorch operations
-        phi = x[:, :2]  # First two elements for phi
-        theta = x[:, 2]  # Third element for theta
-        # Dummy expectation value calculation (replaces PennyLane's circuit4)
-        exp_val = torch.cos(phi[:,0] + theta) * torch.sin(phi[:,1])
-        cost = torch.abs(exp_val - 0.5)**2
-        return cost
+dev = qml.device('default.qubit', wires=2)
 
-def my_model_function():
-    return MyModel()
+@qml.qnode(dev, interface='torch')
+def circuit4(phi, theta):
+    qml.RX(phi[0], wires=0)
+    qml.RZ(phi[1], wires=1)
+    qml.CNOT(wires=[0, 1])
+    qml.RX(theta, wires=0)
+    return qml.expval(qml.PauliZ(0))
 
-def GetInput():
-    # Input combines phi (size 2) and theta (size 1) into a single tensor
-    return torch.rand(1, 3, dtype=torch.float32, requires_grad=True)
+def cost(phi, theta):
+    return torch.abs(circuit4(phi, theta) - 0.5)**2
 
+phi = torch.tensor([0.011, 0.012], requires_grad=True)
+theta = torch.tensor(0.05, requires_grad=True)
+
+opt = torch.optim.Adam([phi, theta], lr = 0.1)
+
+steps = 200
+
+def closure():
+    opt.zero_grad()
+    loss = cost(phi, theta)
+    loss.backward()
+    return loss
+
+with torchdynamo.optimize("eager"):
+  for i in range(steps):
+        opt.step(closure)
+
+import torch
+import pennylane as qml
+
+dev = qml.device('default.qubit', wires=2)
+
+@qml.qnode(dev, interface='torch')
+def circuit4(phi, theta):
+    qml.RX(phi[0], wires=0)
+    qml.RZ(phi[1], wires=1)
+    qml.CNOT(wires=[0, 1])
+    qml.RX(theta, wires=0)
+    return qml.expval(qml.PauliZ(0))
+
+def cost(phi, theta):
+    return torch.abs(circuit4(phi, theta) - 0.5)**2
+
+phi = torch.tensor([0.011, 0.012], requires_grad=True)
+theta = torch.tensor(0.05, requires_grad=True)
+
+opt = torch.optim.Adam([phi, theta], lr = 0.1)
+
+steps = 200
+
+def closure():
+    opt.zero_grad()
+    loss = cost(phi, theta)
+    loss.backward()
+    return loss
+
+def f():
+  for i in range(steps):
+        opt.step(closure)
+
+torch.compile(f, backend="eager")()

@@ -1,43 +1,35 @@
-# tf.random.uniform((B, 28, 28), dtype=tf.float32) ← Input shape corresponds to MNIST images as used in the example
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
 import tensorflow_probability as tfp
 from tensorflow_probability import distributions as tfd
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Assumptions:
-        # - Input shape per sample: (28, 28) grayscale image (MNIST)
-        # - Using DenseFlipout from tfp for Bayesian dense layer with kl_divergence regularization
-        # - Output 10 classes with softmax activation
-        
-        # Flatten layer to convert 28x28 image to flat vector of length 784
-        self.flatten = tf.keras.layers.Flatten()
-        
-        # KL divergence function normalized by the training set size (60000 as in MNIST)
-        self.kl_divergence_function = lambda q, p, _: tfd.kl_divergence(q, p) / 60000.0
-        
-        # Bayesian dense layer (flipout variational inference)
-        self.dense_flipout = tfp.layers.DenseFlipout(
-            10,
-            kernel_divergence_fn=self.kl_divergence_function,
-            activation='softmax'
-        )
-    
-    def call(self, inputs, training=False):
-        x = self.flatten(inputs)
-        output = self.dense_flipout(x, training=training)
-        return output
+(x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+x_train = x_train.astype('float32')/255.
+x_test = x_test.astype('float32')/255.
 
-def GetInput():
-    # Return a random batch of MNIST-like images for testing
-    # Batch size chosen arbitrarily as 32
-    # dtype float32 normalized [0, 1]
-    batch_size = 32
-    return tf.random.uniform((batch_size, 28, 28), minval=0, maxval=1, dtype=tf.float32)
+kl_divergence_function = (lambda q, p, _: tfd.kl_divergence(q, p) /
+                          tf.cast(x_train.shape[0], dtype=tf.float32))
 
+model = tf.keras.Sequential([
+    tf.keras.layers.Flatten(),
+    tfp.layers.DenseFlipout(
+        10, kernel_divergence_fn=kl_divergence_function,
+        activation=tf.nn.softmax
+    ),
+])
+
+optimizer = tf.keras.optimizers.Adam(lr=0.001)
+model.compile(optimizer, loss='sparse_categorical_crossentropy')
+model.fit(x_train, y_train, validation_data=(x_test, y_test), epochs=3)
+
+tflite_converter = tf.lite.TFLiteConverter.from_keras_model(model)
+tflite_converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS,
+                                              tf.lite.OpsSet.SELECT_TF_OPS]
+tflite_model = tflite_converter.convert()
+
+tflite_interpreter = tf.lite.Interpreter(model_content=tflite_model)
+tflite_interpreter.allocate_tensors()

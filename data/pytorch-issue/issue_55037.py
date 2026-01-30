@@ -1,26 +1,116 @@
-# torch.rand(B, 3, 128, 128, dtype=torch.float32)
 import torch
-from torch import nn
+import psutil
+import random
+from time import time
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Basic CNN structure matching input shape (3 channels, 128x128 images)
-        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1)
-        self.relu = nn.ReLU()
-        self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
-        
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.relu(x)
-        x = self.conv2(x)
-        return x
+bs = 32
+data = [torch.randn(3, 128, 128) for _ in range(1000)] # Replay buffer
 
-def my_model_function():
-    # Returns initialized model instance
-    return MyModel()
+N = 10
+total_time = 0
+total_usage = 0.
+for _ in range(N):
+    s = random.sample(data, bs)
+    t0 = time()
+    x = torch.stack(s)
+    total_time += time() - t0
+    total_usage += psutil.cpu_percent(0.1)
+    ... # Other things: Forward + Backward + Step
 
-def GetInput():
-    # Returns random tensor matching input requirements
-    return torch.rand(32, 3, 128, 128, dtype=torch.float32)
+print('Time per call:', 1000 * total_time / N, 'ms')
+print('Average usage:', total_usage / N, '%')
 
+import torch
+import psutil
+import random
+from time import time
+
+torch.set_num_threads(1)
+
+bs = 32
+data = [torch.randn(3, 128, 128) for _ in range(1000)] # Replay buffer
+
+N = 10
+total_time = 0
+total_usage = 0.
+for _ in range(N):
+    s = random.sample(data, bs)
+    t0 = time()
+    x = torch.stack(s)
+    total_time += time() - t0
+    total_usage += psutil.cpu_percent(0.1)
+    ... # Other things: Forward + Backward + Step
+
+print('Time per call:', 1000 * total_time / N, 'ms')
+print('Average usage:', total_usage / N, '%')
+
+import torch
+import psutil
+import random
+from time import time
+from torch.utils.data import DataLoader
+
+bs = 32
+data = [torch.randn(3, 128, 128) for _ in range(1000)] # Replay buffer
+
+dl = iter(DataLoader(data, bs, True))
+
+N = 10
+total_time = 0
+total_usage = 0.
+for _ in range(N):
+    s = random.sample(data, bs)
+    t0 = time()
+    x = next(dl)
+    total_time += time() - t0
+    total_usage += psutil.cpu_percent(0.1)
+    ... # Other things: Forward + Backward + Step
+
+print('Time per call:', 1000 * total_time / N, 'ms')
+print('Average usage:', total_usage / N, '%')
+
+if __name__ == "__main__":
+    import torch
+    import psutil
+    import random
+    from time import time
+    from torch.utils.data import DataLoader
+
+    bs = 32
+    data = [torch.randn(3, 128, 128) for _ in range(1000)] # Replay buffer
+
+    dl = iter(DataLoader(data, bs, True, num_workers=1))
+
+    N = 10
+    total_time = 0
+    total_usage = 0.
+    for _ in range(N):
+        s = random.sample(data, bs)
+        t0 = time()
+        x = next(dl)
+        total_time += time() - t0
+        total_usage += psutil.cpu_percent(0.1)
+        ... # Other things: Forward + Backward + Step
+
+    print('Time per call:', 1000 * total_time / N, 'ms')
+    print('Average usage:', total_usage / N, '%')
+
+import multiprocessing as mp
+mp.set_start_method('spawn')
+
+import torch
+import random
+from time import time
+
+bs = 32
+data = [torch.randn(3, 128, 128) for _ in range(1000)]
+
+N = 10000
+total_time = 0
+for _ in range(N):
+    s = random.sample(data, bs)
+    t0 = time()
+    x = torch.stack(s)
+    total_time += time() - t0
+
+print('Total Time:', total_time, 'sec')

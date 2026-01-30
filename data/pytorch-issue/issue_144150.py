@@ -1,19 +1,13 @@
-# torch.rand(5, 6, 7, dtype=torch.complex64)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Perform FFT using the internal _fft_c2c function
-        out = torch._fft_c2c(x, [0], 2, False)
-        # Expected stride for CUDA/MKL (from issue description)
-        expected_stride = (1, 35, 5)
-        # Compare actual stride against expected
-        return torch.tensor(out.stride()) == torch.tensor(expected_stride)
+a = torch.zeros((5, 6, 7), dtype=torch.complex64, device='cpu')
+print(a.shape)
+print(a.stride())
+b = torch._fft_c2c(a, [0], 2, False)
+print(b.shape)
+print(b.stride())
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(5, 6, 7, dtype=torch.complex64)
-
+torch.Size([5, 6, 7])
+(42, 7, 1)
+torch.Size([5, 6, 7])
+(1, 35, 5)

@@ -1,58 +1,75 @@
-# tf.random.uniform((B, 1200), dtype=tf.int32)
-
+import random
 import tensorflow as tf
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Embedding layer: input_dim=10, output_dim=4, input_length=1200
-        # This matches the original example where input shape is (batch, 1200)
-        self.embedding = tf.keras.layers.Embedding(
-            input_dim=10,
-            output_dim=4,
-            input_length=1200,
-            name='embedding',
-            trainable=True
-        )
-        # Dense layer with linear activation
-        self.dense1 = tf.keras.layers.Dense(1, activation='linear')
-        # Lambda layer to squeeze last dimension
-        self.squeeze = tf.keras.layers.Lambda(lambda x: tf.squeeze(x, axis=-1))
-        # Output dense layer, no activation
-        self.output_dense = tf.keras.layers.Dense(1, name='output')
+from tensorflow.keras.layers import Embedding, Input, Dense, Lambda
+from tensorflow.keras import backend as K
+from tensorflow.keras import Model
+import numpy as np
+from tensorflow import keras
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
-    def call(self, inputs, training=False):
-        """
-        Forward pass:
-        inputs: tf.Tensor or dict of inputs with key 'a_input' shape (batch, 1200)
-        Output shape: (batch, 1)
-        """
-        # Inputs could be dict (due to original code) or Tensor, accept both
-        if isinstance(inputs, dict):
-            x = inputs['a_input']
-        else:
-            x = inputs
 
-        x = self.embedding(x)          # (B, 1200, 4)
-        x = self.dense1(x)             # (B, 1200, 1)
-        x = self.squeeze(x)            # (B, 1200)
-        x = self.output_dense(x)       # (B, 1)
+def get_more():
+    while(True):
+        yield ({'a_input': np.random.randint(0, 10, (32, 1200))},
+               np.random.rand(32, 1))
 
-        return x
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+def build():
 
-def GetInput():
-    # Return a dict as expected by MyModel: {'a_input': Tensor[int32](B,1200)}
-    # Batch size 32 is arbitrary; values between 0 and 9 (input_dim=10)
-    batch_size = 32
-    input_tensor = tf.random.uniform(
-        shape=(batch_size, 1200),
-        minval=0,
-        maxval=10,
-        dtype=tf.int32
-    )
-    return {'a_input': input_tensor}
+    input = Input(shape=(1200,), name='a_input', dtype='int32')
+    x = Embedding(input_dim=10,
+                  output_dim=4,
+                  input_length=1200,
+                  trainable=True, name='embedding')(input)
+    x = Dense(1, activation='linear')(x)
+    x = Lambda(lambda x: K.squeeze(x, axis=-1))(x)
+    x = Dense(1, name='output')(x)
+    this_model = Model(input, x)
 
+    return this_model
+
+
+####### FAIL
+# Situation 1 (+METRICS +MOMENTUM)
+#######
+K.clear_session()
+this_model = build()
+optimizer = keras.optimizers.SGD(lr=0.05, momentum=0.9)
+this_model.compile(loss='mse', optimizer=optimizer, metrics=['mse'])
+this_model.fit_generator(iter(get_more()), steps_per_epoch=10)
+
+####### PASS
+# Situation 2 (+METRICS -MOMENTUM)
+#######
+K.clear_session()
+this_model = build()
+optimizer = keras.optimizers.SGD(lr=0.05)
+this_model.compile(loss='mse', optimizer=optimizer, metrics=['mse'])
+this_model.fit_generator(iter(get_more()), steps_per_epoch=10)
+
+####### PASS
+# Situation 3 (-METRICS +MOMENTUM)
+#######
+K.clear_session()
+this_model = build()
+optimizer = keras.optimizers.SGD(lr=0.05, momentum=0.9)
+this_model.compile(loss='mse', optimizer=optimizer)
+this_model.fit_generator(iter(get_more()), steps_per_epoch=10)
+
+####### PASS
+# Situation 4 (+METRICS +MOMENTUM)  (fit instead of fit_generator)
+#######
+K.clear_session()
+this_model = build()
+optimizer = keras.optimizers.SGD(lr=0.05, momentum=0.9)
+this_model.compile(loss='mse', optimizer=optimizer, metrics=['mse'])
+x_in = {'a_input': np.random.randint(0,10,(500,1200))}
+y_out = np.random.rand(500,1)
+this_model.fit(x_in, y_out)
+
+with tf.device('/cpu:0'):
+  this_model.fit_generator(iter(get_more()), steps_per_epoch=10)

@@ -1,19 +1,19 @@
-# torch.randint(0, 5, (1, 2), dtype=torch.long)
+import torch.nn as nn
+
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.embedding = nn.Embedding(5, 1, padding_idx=0, sparse=True)
-    
-    def forward(self, x):
-        return self.embedding(x)
+net = torch.nn.Embedding(5, 1, padding_idx=0, sparse=True)
 
-def my_model_function():
-    return MyModel()
+# Simulate a batch that only indexes the embedding at padding_idx
+x = torch.tensor([[0, 0]]).int()
+y = torch.tensor([[3.0, 4.0]])
 
-def GetInput():
-    # Returns a tensor of zeros (padding indices) to trigger the SparseAdam bug
-    return torch.zeros((1, 2), dtype=torch.long)
+adam = torch.optim.SparseAdam(net.parameters())
 
+loss_fn = torch.nn.MSELoss()
+
+loss = loss_fn(net.forward(x), y)
+
+loss.backward()
+
+adam.step()  # RuntimeError: values has incorrect size, expected [0, 1], got [0, 0]

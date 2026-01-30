@@ -1,39 +1,30 @@
-# tf.random.uniform((1, 1, 3, 2), dtype=tf.float64) ← Input shape inferred from the issue's example code
-
 import tensorflow as tf
-from tensorflow.keras import layers
+from keras import layers
 
-class MyModel(tf.keras.Model):
+class MyModule(tf.Module):
     def __init__(self):
         super().__init__()
-        # Conv2D layer with 2 output filters, kernel size 1x1, no padding, float64 dtype, autocast disabled
-        self.conv = layers.Conv2D(
-            filters=2,
-            kernel_size=1,
-            padding='valid',
-            dtype=tf.float64,
-            autocast=False
-        )
-    
-    @tf.function(jit_compile=True)
-    def call(self, inputs):
-        # Mimic the original pipeline:
-        # 1. floor input
-        # 2. apply conv on floored input
-        # 3. add conv output and floored input
-        x = tf.floor(inputs)
-        conv_out = self.conv(x)
-        out = tf.add(conv_out, x)
-        return out
+        self.conv = layers.Conv2D(2, 1, padding='valid', dtype=tf.float64, autocast=False)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+    @tf.function(jit_compile=True) # without jit_compile=True works fine
+    def __call__(self, i0):
+        o0 = tf.floor(i0)
+        o1 = self.conv(o0)
+        o2 = tf.add(o1, o0)
+        return o2
 
-def GetInput():
-    # Return a random tensor matching (1, 1, 3, 2) shape with dtype float64
-    # This matches the example input in the issue:
-    # tf.constant(3.14, shape=[1,1,3,2], dtype=tf.float64)
-    # Using uniform random input for generality
-    return tf.random.uniform(shape=(1, 1, 3, 2), dtype=tf.float64, minval=0.0, maxval=10.0)
+def simple():
+    inp = {
+        "i0": tf.constant(
+            3.14, shape=[1,1,3,2], dtype=tf.float64
+        ),
+    }
+    m = MyModule()
 
+    out = m(**inp) # Error!
+
+    print(out)
+    print(out.shape)
+
+if __name__ == "__main__":
+    simple()

@@ -1,42 +1,19 @@
-# torch.rand(B, C, H, W, dtype=...)  # Add a comment line at the top with the inferred input shape
-import torch
-import torch.nn as nn
-import torch.distributed as dist
+dist.reduce_scatter_tensor(buffer, data, group=local_pg)
+dist.all_reduce(buffer, group=cross_pg)
+dist.all_gather_into_tensor(data, buffer, group=local_pg)
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1)
-        self.relu = nn.ReLU()
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
-        self.fc = nn.Linear(64 * 16 * 16, 10)
+dist.reduce_scatter_tensor(buffer, data, group=local_pg, async_op=True)
+dist.all_reduce(buffer, group=cross_pg, async_op=True)
+dist.all_gather_into_tensor(data, buffer, group=local_pg, async_op=True)
 
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.relu(x)
-        x = self.pool(x)
-        x = x.view(-1, 64 * 16 * 16)
-        x = self.fc(x)
-        return x
+nccl_options = dist.ProcessGroupNCCL.Options(stream=user_stream)
+pg = dist.new_group(backend="nccl", pg_options=nccl_options)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+pg1.set_stream(user_stream)
+pg2.set_stream(user_stream)
+dist.reduce_scatter_tensor(buffer, data, group=pg1, async_op=True)
+dist.all_reduce(buffer, group=pg2, async_op=True)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    B, C, H, W = 4, 3, 32, 32  # Batch size, Channels, Height, Width
-    return torch.rand(B, C, H, W, dtype=torch.float32)
-
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
-
-# The provided GitHub issue is a feature request for stream management in PyTorch's NCCL (NVIDIA Collective Communications Library) and does not contain a complete PyTorch model or code that can be directly extracted into a single Python file. However, I can infer a minimal example based on the context of the issue, which involves distributed communication using NCCL.
-# Given the context, I will create a minimal example that demonstrates the use of `torch.distributed` with NCCL and includes a simple model and input generation. This example will not include the full complexity of the issue but will provide a basic structure to get started.
-# ### Explanation:
-# 1. **MyModel**: A simple convolutional neural network (CNN) with one convolutional layer, ReLU activation, max pooling, and a fully connected layer.
-# 2. **my_model_function**: Returns an instance of `MyModel`.
-# 3. **GetInput**: Generates a random tensor with the shape `(B, C, H, W)` where `B` is the batch size, `C` is the number of channels, and `H` and `W` are the height and width of the input images.
-# This example provides a basic structure and can be extended to include more complex models and distributed communication logic as needed.
+dist.reduce_scatter_tensor(buffer, data, group=local_pg)
+dist.all_reduce(buffer, group=cross_pg)
+dist.all_gather_into_tensor(data, buffer, group=local_pg)

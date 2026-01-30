@@ -1,18 +1,13 @@
-# torch.rand(2048, dtype=torch.float32, device='cuda')
 import torch
-from torch import nn
+from torch._inductor.compile_fx import compile_fx_inner
+from torch._subclasses import FakeTensorMode
+from torch.fx.experimental.proxy_tensor import make_fx
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-    
-    def forward(self, x):
-        isinf = torch.isinf(x)
-        return [isinf]
+def f(x):
+    isinf = torch.isinf(x)
+    return [isinf]
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(2048, dtype=torch.float32, device='cuda')
-
+with FakeTensorMode():
+    inp = torch.ones(2048, device='cuda')
+    fx_g = make_fx(f)(inp)
+    fx_inner = compile_fx_inner(fx_g, [inp])

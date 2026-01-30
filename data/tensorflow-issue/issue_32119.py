@@ -1,36 +1,98 @@
-# tf.random.uniform((B, 1), dtype=tf.float32) ← Input shape inferred as single scalar per batch element for inputs, labels, and sample_weight
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras.layers import Input, Dense
+from tensorflow.keras.models import Model
+from tensorflow.keras.optimizers import Adam
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Simple Dense layer to transform the input "inputs"
-        self.dense = tf.keras.layers.Dense(1, use_bias=True, activation=None)
+inputs = Input(shape = [1], dtype = tf.float32)
+labels = Input(shape = [1], dtype = tf.float32)
+outputs = Dense(1, use_bias = True, activation = None)(inputs)
 
-    def call(self, inputs):
-        # Unpack inputs tensor tuple: (inputs, labels, sample_weights)
-        # Each has shape (batch_size, 1)
-        inputs_tensor, labels_tensor, sample_weights_tensor = inputs
-        outputs = self.dense(inputs_tensor)
-        # Custom loss weighted by sample_weights, mean over batch dimension
-        loss = tf.reduce_mean(0.5 * tf.square(labels_tensor - outputs) * sample_weights_tensor)
-        self.add_loss(loss)
-        return outputs
+model = Model([inputs, labels], outputs)
+loss = tf.square(labels - outputs)
+model.add_loss(loss)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+model.compile(Adam(0.1))
 
-def GetInput():
-    # Generate dummy input tuple (inputs, labels, sample_weights)
-    # Each is shape (batch_size=16, 1)
-    batch_size = 16
-    # inputs sampled as float32 random uniform scalars in range [-100, 100]
-    inputs_tensor = tf.random.uniform((batch_size, 1), minval=-100.0, maxval=100.0, dtype=tf.float32)
-    # labels generated as inputs tensor (identity) for demonstration
-    labels_tensor = inputs_tensor
-    # sample_weights all ones (equally weighted)
-    sample_weights_tensor = tf.ones((batch_size, 1), dtype=tf.float32)
-    return (inputs_tensor, labels_tensor, sample_weights_tensor)
+rg = tf.data.Dataset.range(128)
+rg = rg.map(lambda x: tf.cast(x, tf.float32))
 
+'''
+# This snippet works fine
+ds2 = rg.map(lambda x: ((x, 2*x+1), 0))
+ds2 = ds2.batch(16)
+model.fit(ds2, epochs = 50)
+print(model.predict(([-32], [0])))
+'''
+
+# This snippet causes exception
+ds3 = rg.map(lambda x: ((x, 2*x+1), 0, 1))
+ds3 = ds3.batch(16)
+model.fit(ds3, epochs = 50)
+
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras.layers import Input, Dense
+from tensorflow.keras.models import Model
+from tensorflow.keras.optimizers import Adam
+
+inputs = Input(shape = [1], dtype = tf.float32)
+labels = Input(shape = [1], dtype = tf.float32)
+outputs = Dense(1, use_bias = True, activation = None)(inputs)
+
+model = Model([inputs, labels], outputs)
+loss = tf.square(labels - outputs)
+model.add_loss(loss)
+
+model.compile(Adam(0.1))
+
+rise = tf.data.Dataset.range(60)
+rise = rise.map(lambda x: tf.cast(x, tf.float32))
+rise = rise.map(lambda x: ((x, x), [0, 1]))
+
+fall = tf.data.Dataset.range(4)
+fall = fall.map(lambda x: tf.cast(x, tf.float32))
+fall = fall.map(lambda x: ((x, -x), [0, 9999999]))
+
+ds = rise.concatenate(fall)
+ds = ds.batch(16)
+
+model.fit(ds, epochs = 50)
+p = model.predict(([-100], [0]))
+print(p) # p is around [[-100]], which means that y=x is acturally learned.
+
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras.layers import Input, Dense
+from tensorflow.keras.models import Model
+from tensorflow.keras.optimizers import Adam
+
+inputs = Input(shape = [1], dtype = tf.float32)
+labels = Input(shape = [1], dtype = tf.float32)
+sample_weights = Input(shape = [1], dtype = tf.float32)
+outputs = Dense(1, use_bias = True, activation = None)(inputs)
+
+model = Model([inputs, labels, sample_weights], outputs)
+loss = tf.reduce_mean(tf.square(labels - outputs) / 2 * sample_weights)
+model.add_loss(loss)
+
+model.compile(Adam(0.1))
+
+rise = tf.data.Dataset.range(60)
+rise = rise.map(lambda x: tf.cast(x, tf.float32))
+rise = rise.map(lambda x: ((x, x, 1), 0))
+
+fall = tf.data.Dataset.range(4)
+fall = fall.map(lambda x: tf.cast(x, tf.float32))
+fall = fall.map(lambda x: ((x, -x, 9999999), 0))
+
+ds = rise.concatenate(fall)
+ds = ds.batch(16)
+
+model.fit(ds, epochs = 50)
+p = model.predict(([-100], [0], [1]))
+print(p) # p is around [[100]]

@@ -1,21 +1,4 @@
-# torch.rand(8, 48, 24, 16, dtype=torch.float32)  # Inferred input shape based on the provided tensor sizes
-
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv = nn.Conv2d(48, 192, kernel_size=1, stride=1, padding=0)
-
-    def forward(self, x):
-        return self.conv(x)
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(8, 48, 24, 16, dtype=torch.float32)
-
+#buf1193.size()=torch.Size([8, 48, 24, 16]) buf1196.size()=torch.Size([192, 48, 1, 1]) buf1193.stride()=(18432, 384, 16, 1) buf1196.stride()=(48, 1, 1, 1)
+buf1197 = aten.convolution(buf1193, buf1196, None, (1, 1), (0, 0), (1, 1), False, (0, 0), 1)

@@ -1,22 +1,12 @@
-# torch.nested.nested_tensor([torch.rand(1, 3), torch.rand(2, 2)], dtype=torch.float32)
 import torch
-from torch import nn
+ts = [torch.tensor([[1, 2, 3]]), torch.tensor([[1, 2], [3, 4]])]
+nested = torch.nested.nested_tensor(ts)
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Extract first two elements of the nested tensor for identity comparison
-        a = x[0]
-        b = x[1]
-        return (a, b)  # Return both tensors to enable external ID checks
+print(ts[0] is ts[1])  # False
+print(id(ts[0]) == id(ts[1]))  # False
 
-def my_model_function():
-    return MyModel()
+print(nested[0] is nested)  # False
+print(id(nested[0]) == id(nested))  # False
 
-def GetInput():
-    # Create nested tensor with example tensors from the issue
-    ts = [
-        torch.tensor([[1.0, 2.0, 3.0]]),  # First tensor (shape 1x3)
-        torch.tensor([[1.0, 2.0], [3.0, 4.0]])  # Second tensor (shape 2x2)
-    ]
-    return torch.nested.nested_tensor(ts)  # Matches nested tensor input structure
-
+print(nested[0] is nested[1])  # False
+print(id(nested[0]) == id(nested[1]))  # True! What??

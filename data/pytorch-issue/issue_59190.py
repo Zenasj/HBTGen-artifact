@@ -1,22 +1,15 @@
-# torch.rand(B, 3, 513, 513, dtype=torch.float32)  # DeeplabV3 expects 3-channel images
 import torch
-import torch.nn as nn
-import torchvision.models as models
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.model = models.segmentation.deeplabv3_resnet50(pretrained=True)
-        self.model.eval()  # Ensure eval mode as in the issue example
+model = torch.hub.load('pytorch/vision:v0.7.0', 'deeplabv3_resnet50', pretrained=True)
+model.eval()
 
-    def forward(self, x):
-        return self.model(x)["out"]  # Output the main prediction from DeeplabV3
+scripted_module = torch.jit.script(model)
+# Export full jit version model (not compatible lite interpreter), leave it here for comparison
+scripted_module.save("deeplabv3_scripted.pt")
+# Export lite interpreter version model (compatible with lite interpreter)
+scripted_module._save_for_lite_interpreter("deeplabv3_scripted.ptl")
 
-def my_model_function():
-    # Returns the DeeplabV3 model instance in eval mode
-    return MyModel()
-
-def GetInput():
-    # Generate a random input tensor matching DeeplabV3's expected input shape
-    return torch.rand(1, 3, 513, 513, dtype=torch.float32)
-
+import org.pytorch.LiteModuleLoader
+...
+mModule = LiteModuleLoader.load(MainActivity.assetFilePath(getApplicationContext(), "deeplabv3_scripted.ptl"));
+...

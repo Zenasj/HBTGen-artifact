@@ -1,24 +1,24 @@
-# torch.rand(5, dtype=torch.float32)
 import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
-    __constants__ = ['sub']  # Required for TorchScript to recognize 'sub' even when None
+class MyModule(torch.nn.Module):
+    # __constants__ = ['sub'] # adding just this line works
     def __init__(self, sub):
-        super(MyModel, self).__init__()
-        self.sub = sub  # Can be None or a submodule
-        
+        super(MyModule, self).__init__()
+        # either of the following lines fails
+        self.add_module('sub', sub)
+        # or
+        self.sub = sub
+    
     def forward(self, x):
         x = x.relu()
         if self.sub is not None:
             x = self.sub(x)
-        return x + 1
+        return x+1
 
-def my_model_function():
-    # Returns an instance with a ReLU submodule (as in the original issue's m1)
-    return MyModel(nn.ReLU())
-
-def GetInput():
-    # Returns a random tensor of shape (5,) matching the input used in the issue's example
-    return torch.rand(5, dtype=torch.float32)
-
+m1 = MyModule(torch.nn.ReLU())
+m2 = MyModule(None)
+print(m1(torch.rand(5)))
+print(m2(torch.rand(5)))
+print(torch.jit.script(m1).code) # succeeds
+print(torch.jit.script(m2).code) # fails

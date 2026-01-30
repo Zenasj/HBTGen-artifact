@@ -1,60 +1,85 @@
-# torch.rand(B, 3, 224, 224, dtype=torch.float)  # Input shape inferred as standard image dimensions
-import math
 import torch
 import torch.nn as nn
+import math
 
 class RandomLayer(nn.Module):
+
     def __init__(self, input_dim_list=[], output_dim=1024):
-        super().__init__()
-        self.input_num = len(input_dim_list)
+        super(RandomLayer, self).__init__()
+        self.input_num = len(input_dim_list)# 2
         self.output_dim = output_dim
-        # Register random matrices as buffers to ensure they move with the module
-        for i in range(self.input_num):
-            matrix = torch.rand(input_dim_list[i], output_dim)
-            self.register_buffer(f'random_matrix_{i}', matrix)
+        self.random_matrix = [torch.rand(input_dim_list[i], output_dim) for i in range(self.input_num)]
 
     def forward(self, input_list):
-        return_list = []
-        for i in range(self.input_num):
-            matrix = getattr(self, f'random_matrix_{i}')
-            return_list.append(torch.mm(input_list[i], matrix))
+        return_list = [torch.mm(input_list[i], self.random_matrix[i]) for i in range(self.input_num)]
         return_tensor = return_list[0] / math.pow(float(self.output_dim), 1.0 / len(return_list))
         for single in return_list[1:]:
             return_tensor = torch.mul(return_tensor, single)
         return return_tensor
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Simulated branches to produce inputs for RandomLayer (4096 and 384 dimensions)
-        self.branch1 = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2),
-            nn.AdaptiveAvgPool2d((7, 7)),
-            nn.Flatten(),
-            nn.Linear(64 * 7 * 7, 4096)
-        )
-        self.branch2 = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2),
-            nn.AdaptiveAvgPool2d((4, 4)),
-            nn.Flatten(),
-            nn.Linear(64 * 4 * 4, 384)
-        )
-        # Use corrected RandomLayer with registered buffers
-        self.random_layer = RandomLayer([4096, 384], 2048)
+    def cuda(self):
+        super(RandomLayer, self).cuda()
+        self.random_matrix = [val.cuda() for val in self.random_matrix]
 
-    def forward(self, x):
-        feat1 = self.branch1(x)
-        feat2 = self.branch2(x)
-        return self.random_layer([feat1, feat2])
+class vgg16(_fasterRCNN):
 
-def my_model_function():
-    return MyModel()
+  def __init__(self, classes, pretrained=False, class_agnostic=False,lc=False,gc=False, la_attention = False, mid_attention = False):
+    self.model_path = cfg.VGG_PATH
+    self.dout_base_model = 512
+    self.pretrained = pretrained
+    self.class_agnostic = class_agnostic
+    self.lc = lc
+    self.gc = gc
 
-def GetInput():
-    # Random input tensor matching the expected shape (B, C, H, W)
-    return torch.rand(2, 3, 224, 224, dtype=torch.float)
+    _fasterRCNN.__init__(self, classes, class_agnostic,lc,gc, la_attention, mid_attention)
 
+  def _init_modules(self):
+    vgg = models.vgg16()
+    if self.pretrained:
+        print("Loading pretrained weights from %s" %(self.model_path))
+        state_dict = torch.load(self.model_path)
+        vgg.load_state_dict({k:v for k,v in state_dict.items() if k in vgg.state_dict()})
+
+    vgg.classifier = nn.Sequential(*list(vgg.classifier._modules.values())[:-1])
+
+    # not using the last maxpool layer
+    #print(vgg.features)
+    self.RCNN_base1 = nn.Sequential(*list(vgg.features._modules.values())[:14])
+    self.RCNN_base2 = nn.Sequential(*list(vgg.features._modules.values())[14:21])
+    self.RCNN_base3 = nn.Sequential(*list(vgg.features._modules.values())[21:-1])
+    #print(self.RCNN_base1)
+    #print(self.RCNN_base2)
+    self.netD = netD(context=self.gc)
+    self.netD_pixel = netD_pixel(context=self.lc)
+    self.netD_mid = netD_mid(context=self.gc)
+    feat_d = 4096
+    feat_d2 = 384
+    feat_d3 = 2048
+
+    self.RandomLayer = RandomLayer([feat_d, feat_d2], feat_d3)
+    self.RandomLayer.cuda()
+    # Fix the layers before conv3:
+    self.netD_da = netD_da(feat_d3)
+
+    for layer in range(10):
+      for p in self.RCNN_base1[layer].parameters(): p.requires_grad = False
+
+    # self.RCNN_base = _RCNN_base(vgg.features, self.classes, self.dout_base_model)
+
+    self.RCNN_top = vgg.classifier
+
+    self.RCNN_cls_score = nn.Linear(feat_d+feat_d2, self.n_classes)
+    if self.class_agnostic:
+        self.RCNN_bbox_pred = nn.Linear(feat_d+feat_d2, 4)
+    else:
+        self.RCNN_bbox_pred = nn.Linear(feat_d+feat_d2, 4 * self.n_classes)
+
+
+  def _head_to_tail(self, pool5):
+    
+    pool5_flat = pool5.view(pool5.size(0), -1)
+    fc7 = self.RCNN_top(pool5_flat)
+
+    return fc7
+
+return_list = [torch.mm(input_list[i], self.random_matrix[i]) for i in range(self.input_num)]

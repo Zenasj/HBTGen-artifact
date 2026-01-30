@@ -1,19 +1,38 @@
-# tf.random.uniform((batch_size, 1), dtype=tf.float32) ← Input is a batch of scalar floats shaped (B, 1)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
+import numpy as np
 import tensorflow as tf
+from tensorflow.keras import Model
+from tensorflow.keras.layers import Dense
+from tensorflow.keras.optimizers import SGD
 
-class MyModel(tf.keras.Model):
+num_classes = 500
+num_epochs = 3
+num_samples = 10000
+batch_size = 10
+learning_rate = 0.001
+
+y = np.random.randint(0, num_classes, num_samples, dtype=np.int64)
+x = np.expand_dims(y.astype(np.float32), -1)
+
+x_test = x[:10]
+y_test = y[:10]
+
+
+class MyModel(Model):
+
     def __init__(self, num_classes, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.dense1 = tf.keras.layers.Dense(10)
-        self.dense2 = tf.keras.layers.Dense(num_classes)
-        self.first_step = True  # Control flow in call, per original code
+        self.dense1 = Dense(10)
+        self.dense2 = Dense(num_classes)
+        self.first_step = True
 
     def call(self, inputs, training=None, mask=None):
         hidden = self.dense1(inputs)
         if training and not self.first_step:
-            # According to original code, on training and after first step,
-            # it returns hidden for loss computation only, no logits
             return None, hidden
         else:
             logits = self.dense2(hidden)
@@ -23,48 +42,78 @@ class MyModel(tf.keras.Model):
 class SampledSoftmaxCrossEntropyLoss(tf.keras.losses.Loss):
     def __init__(self, decoder_obj=None, num_classes=0):
         super().__init__()
-        self.decoder_obj = decoder_obj  # The final Dense layer to get weights/biases from
+        self.decoder_obj = decoder_obj
         self.num_classes = num_classes
-        self.num_sampled = 5  # Number of negative samples
 
     def call(self, labels, hidden):
-        labels = tf.cast(tf.expand_dims(labels, -1), tf.int64)  # Shape (batch_size, 1)
-        # Get layer weights and biases from Dense layer (kernel and bias)
-        weights = tf.transpose(self.decoder_obj.get_weights()[0])  # Shape (num_classes, units)
-        biases = self.decoder_obj.get_weights()[1]  # Shape (num_classes,)
+        labels = tf.cast(tf.expand_dims(labels, -1), tf.int64)
 
-        # Sampled softmax requires sampled values for true and sampled classes
+        weights = tf.transpose(self.decoder_obj.get_weights()[0])
+        biases = self.decoder_obj.get_weights()[1]
+
         sampled_values = tf.random.uniform_candidate_sampler(
             true_classes=labels,
             num_true=1,
-            num_sampled=self.num_sampled,
-            unique=False,
+            num_sampled=5,
             range_max=self.num_classes,
+            unique=False
         )
 
-        # Compute sampled softmax loss
         loss_val = tf.nn.sampled_softmax_loss(
             weights=weights,
             biases=biases,
             labels=labels,
             inputs=hidden,
-            num_sampled=self.num_sampled,
+            num_sampled=5,
             num_classes=self.num_classes,
-            sampled_values=sampled_values
-        )
-        return tf.reduce_mean(loss_val)  # Return mean scalar loss
+            sampled_values=sampled_values)
+
+        return loss_val
 
 
-def my_model_function():
-    # Create the MyModel instance with fixed number of classes
-    num_classes = 500
-    return MyModel(num_classes=num_classes)
+my_model = MyModel(num_classes)
+optimizer = SGD(learning_rate=learning_rate)
+sampled_loss = SampledSoftmaxCrossEntropyLoss(
+    decoder_obj=my_model.dense2, num_classes=num_classes)
 
 
-def GetInput():
-    # Create random input tensor shaped (batch_size, 1) with float32 dtype,
-    # matching the original input format (x was expanded dims of integers in float32).
-    batch_size = 10  # consistent with original test batch size
-    # Per original code, x was np.expand_dims(y.astype(np.float32), -1), so input floats scalar
-    return tf.random.uniform((batch_size, 1), minval=0, maxval=500, dtype=tf.float32)
+def train_step(model, loss, optimizer, inputs, targets):
+    with tf.GradientTape() as tape:
+        logits, hidden = model(inputs, training=True)
+        loss_val = loss(targets, hidden)
+    grads = tape.gradient(loss_val, model.trainable_weights)
+    optimizer.apply_gradients(zip(grads, model.trainable_weights))
+    return loss_val
 
+
+def oredict(model, inputs):
+    logits, _ = model(inputs, training=True)
+    predictions = tf.argmax(logits, -1)
+    return predictions
+
+
+x_batches = np.split(x, 100)
+y_batches = np.split(y, 100)
+
+print(x_test)
+print(oredict(my_model, x_test))
+
+first_batch = True
+for i in range(num_epochs):
+    for x_batch, y_batch in zip(x_batches, y_batches):
+        if first_batch:
+            print("Weights and biases after first batch")
+            print(my_model.dense2.get_weights()[0])
+            print(my_model.dense2.get_weights()[1])
+            first_batch = False
+
+        loss_val = train_step(my_model, sampled_loss, optimizer, x_batch,
+                              y_batch)
+        print(loss_val)
+
+print(x_test)
+print(oredict(my_model, x_test))
+
+print("Weights and biases after training")
+print(my_model.dense2.get_weights()[0])
+print(my_model.dense2.get_weights()[1])

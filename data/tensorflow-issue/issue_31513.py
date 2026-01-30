@@ -1,43 +1,40 @@
-# tf.random.uniform((10, 215, 215, 1), dtype=tf.float32) ← inferred input shape matching training data
+import random
+from tensorflow import keras
+
+tf.keras.metrics.TruePositives()
+tf.keras.metrics.TrueNegatives() 
+tf.keras.metrics.FalsePositives() 
+tf.keras.metrics.FalseNegatives()
 
 import tensorflow as tf
+from tensorflow.keras import models, layers
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Following the original model architecture from the issue
-        self.conv1 = tf.keras.layers.Conv2D(filters=32, kernel_size=(5, 5), strides=(2, 2))
-        self.conv2 = tf.keras.layers.Conv2D(filters=64, kernel_size=(5, 5), strides=(2, 2))
-        self.conv3 = tf.keras.layers.Conv2D(filters=128, kernel_size=(5, 5), strides=(2, 2))
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(units=128)
-        self.batchnorm = tf.keras.layers.BatchNormalization()
-        self.relu = tf.keras.layers.ReLU()
-        # Adjust output layer to one unit with sigmoid activation following issue comments for correct metric behavior
-        self.output_layer = tf.keras.layers.Dense(units=1, activation='sigmoid')
 
-    def call(self, inputs, training=False):
-        x = self.conv1(inputs)
-        x = self.conv2(x)
-        x = self.conv3(x)
-        x = self.flatten(x)
-        x = self.dense1(x)
-        x = self.batchnorm(x, training=training)
-        x = self.relu(x)
-        output = self.output_layer(x)
-        return output
+# Generate Data
+train_data = np.random.randint(0, 100, size=(10, 215, 215, 1))
+train_labels = np.eye(2)[np.random.randint(0, 2, size=(10, 1)).reshape(-1)]
 
-def my_model_function():
-    """
-    Returns an instance of MyModel.
-    """
-    return MyModel()
 
-def GetInput():
-    """
-    Returns a random tensor input matching the expected input of MyModel:
-    shape (10, 215, 215, 1) with dtype float32, values in typical range.
-    """
-    # Using uniform distribution 0-1 as typical image float input
-    return tf.random.uniform(shape=(10, 215, 215, 1), dtype=tf.float32)
+# Set up metrics
+metrics = ['accuracy',
+           tf.keras.metrics.TruePositives(),
+           tf.keras.metrics.TrueNegatives(),
+           tf.keras.metrics.FalseNegatives(),
+           tf.keras.metrics.FalsePositives()]
 
+# Set up model type
+model = models.Sequential(name='CNN')
+
+# Add layers
+model.add(layers.Conv2D(filters=32, kernel_size=(5, 5), strides=(2, 2), input_shape=train_data[0].shape))
+model.add(layers.Conv2D(filters=64, kernel_size=(5, 5), strides=(2, 2)))
+model.add(layers.Conv2D(filters=128, kernel_size=(5, 5), strides=(2, 2)))
+model.add(layers.Flatten())
+model.add(layers.Dense(units=128))
+model.add(layers.BatchNormalization())
+model.add(layers.ReLU())
+model.add(layers.Dense(units=2, activation='sigmoid'))
+model.compile('sgd', 'binary_crossentropy', metrics)
+
+history = model.fit(train_data, train_labels, batch_size=1, epochs=30)

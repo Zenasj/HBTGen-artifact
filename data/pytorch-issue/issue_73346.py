@@ -1,18 +1,15 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Assuming input shape (B=2, C=3, H=4, W=5)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # The test focuses on mean operation consistency between eager/JIT
-        return x.mean()
+def getExportImportCopy(self, m, also_test_file=True, map_location=None):
+        buffer = io.BytesIO()
+        torch.jit.save(m, buffer)
+        buffer.seek(0)
+        imported = torch.jit.load(buffer, map_location=map_location)
 
-def my_model_function():
-    # Returns a model that computes mean, as per the failed test's focus
-    return MyModel()
+        if not also_test_file:
+            return imported
 
-def GetInput():
-    # Generate input matching expected dimensions for mean test
-    B, C, H, W = 2, 3, 4, 5  # Example input dimensions from common test patterns
-    return torch.rand(B, C, H, W, dtype=torch.float32)
-
+        with TemporaryFileName() as fname:
+            torch.jit.save(imported, fname)
+            return torch.jit.load(fname, map_location=map_location)
+            #      ^ fails here

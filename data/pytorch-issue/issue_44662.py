@@ -1,23 +1,17 @@
-# torch.rand(B, C, H, W, dtype=torch.float32, requires_grad=True)
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        output_size = (1, 2)
-        self.avg_pool = nn.AdaptiveAvgPool2d(output_size)
-        self.max_pool = nn.AdaptiveMaxPool2d(output_size)
-    
-    def forward(self, x):
-        # Returns outputs of both adaptive pooling functions for comparison
-        avg_out = self.avg_pool(x)
-        max_out = self.max_pool(x)[0]  # [0] to ignore indices in max_pool output
-        return avg_out, max_out  # Return tuple for joint gradcheck analysis
+x = torch.tensor([
+    [[[1., 0., -1., 0.],
+      [2., 1., 1., -2.],
+      [-1., -2., -3., -4.]],
+     [[3., 1., 1., 7.],
+      [6., 5., 21., 3.],
+      [1., 2., 3., 4.]]]
+], requires_grad=True)
 
-def my_model_function():
-    return MyModel()
+def f(x):
+    output_size = (1, 2)
+    return torch.nn.functional.adaptive_avg_pool2d(x, output_size).sum()
 
-def GetInput():
-    return torch.rand(1, 2, 3, 4, dtype=torch.float32, requires_grad=True)
-
+torch.autograd.gradcheck(f, x)

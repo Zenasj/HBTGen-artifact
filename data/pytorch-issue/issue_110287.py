@@ -1,17 +1,11 @@
-# torch.rand(2, 3, dtype=torch.float32)
 import torch
+
 import itertools
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Reproduces the itertools.accumulate scenario that caused Dynamo error
-        accumulated = itertools.accumulate([x, x])  # Triggers sum() on tensors
-        return x * 2  # The actual output, but accumulation is part of the computation path
+@torch.compile(backend='eager', fullgraph=True, dynamic=True)
+def f(x):
+    r = itertools.accumulate([x, x])
+    return x * 2
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.randn(2, 3)
-
+f(torch.randn(2, 3)) 
+# torch._dynamo.exc.Unsupported: call_function BuiltinVariable(sum) [TensorVariable(), TensorVariable()] {}

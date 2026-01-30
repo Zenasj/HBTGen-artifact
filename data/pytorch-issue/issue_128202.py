@@ -1,16 +1,48 @@
-# torch.rand(2, 3, dtype=torch.bfloat16)
 import torch
-from torch import nn
+import habana_frameworks.torch.core as htcore
 
-class MyModel(nn.Module):
-    def forward(self, a):
-        b = a.t()
-        b.mul_(1.0)
-        return b
+def fn(a):
+ b = a.t()
+ b.mul_(1.0)
+ return b   
 
-def my_model_function():
-    return MyModel()
+x = torch.arange(6).reshape([2, 3]).to('hpu')
 
-def GetInput():
-    return torch.rand(2, 3, dtype=torch.bfloat16)
+print("x ", x.cpu())
 
+compiled_fn = torch.compile(fn, backend="hpu_backend")        
+y = compiled_fn(x)
+
+print("y ", y.cpu())
+
+import torch
+
+def fn(a):
+ b = a.t()
+ b.mul_(1.0)
+ return b
+
+x = torch.arange(6).reshape([2, 3]).to('cpu')
+
+print("x ", x.cpu())
+
+compiled_fn = torch.compile(fn)
+y = compiled_fn(x)
+
+print("y ", y.cpu())
+
+import torch
+
+def fn(a):
+ b = a.t()
+ b.mul_(1.0)
+ return b
+
+x = torch.arange(6).reshape([2, 3]).bfloat16()
+
+print("x ", x.cpu())
+
+compiled_fn = torch.compile(fn)
+y = compiled_fn(x)
+
+print("y ", y.cpu())

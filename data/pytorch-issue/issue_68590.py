@@ -1,45 +1,79 @@
-# Input is a tuple of two sparse COO tensors of shape (2, 2), dtype=torch.float32
+def serialize(coo):
+    return coo._indices(), coo._values()
+
+self.assertEqual(serialize(actual), serialize(expected))
+
 import torch
-from torch import nn
+from torch.testing._internal.common_utils import TestCase
 
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        actual, expected = inputs
+assertEqual = TestCase().assertEqual
 
-        # Old strategy: coalesce both and compare indices and values
-        a_old = actual.coalesce()
-        e_old = expected.coalesce()
-        old_ok = a_old.indices().equal(e_old.indices()) and a_old.values().equal(e_old.values())
+indices = (
+    (0, 1),
+    (1, 0),
+)
+values = (1, 2)
+actual = torch.sparse_coo_tensor(indices, values, size=(2, 2))
+expected = actual.clone()
 
-        # New strategy: check coalesced status first, then coalesce if needed, then check nnz, indices, values
-        # Assuming check_is_coalesced is True (default)
-        if actual.is_coalesced() != expected.is_coalesced():
-            new_ok = False
-        else:
-            # If not coalesced, coalesce both
-            if not actual.is_coalesced() or not expected.is_coalesced():
-                a_new = actual.coalesce()
-                e_new = expected.coalesce()
-            else:
-                a_new, e_new = actual, expected
-            # Check nnz, indices, values
-            new_ok = (a_new._nnz() == e_new._nnz()) and a_new.indices().equal(e_new.indices()) and a_new.values().equal(e_new.values())
+assertEqual(actual, expected)
 
-        # Return whether the two strategies differ
-        return torch.tensor(old_ok != new_ok, dtype=torch.bool)
 
-def my_model_function():
-    return MyModel()
+def serialize(sparse_coo_tensor):
+    return sparse_coo_tensor._indices(), sparse_coo_tensor._values()
 
-def GetInput():
-    # Create actual and expected tensors as in the example
-    actual_indices = torch.tensor([[0, 1, 1], [1, 0, 0]], dtype=torch.int64)
-    actual_values = torch.tensor([1., 1., 1.], dtype=torch.float32)
-    actual = torch.sparse_coo_tensor(actual_indices, actual_values, size=(2, 2), dtype=torch.float32)
 
-    expected_indices = torch.tensor([[0, 1], [1, 0]], dtype=torch.int64)
-    expected_values = torch.tensor([1., 2.], dtype=torch.float32)
-    expected = torch.sparse_coo_tensor(expected_indices, expected_values, size=(2, 2), dtype=torch.float32)
+assertEqual(serialize(actual), serialize(expected))
 
-    return (actual, expected)
+indices = (
+    (0, 1),
+    (1, 0),
+)
+actual_values = (1, 2)
+actual = torch.sparse_coo_tensor(indices, actual_values, size=(2, 2))
 
+expected_values = (1, 3)
+expected = torch.sparse_coo_tensor(indices, expected_values, size=(2, 2))
+
+try:
+    assertEqual(actual, expected)
+except AssertionError as error:
+    print(error)
+
+try:
+    assertEqual(serialize(actual), serialize(expected))
+except AssertionError as error:
+    print(error)
+
+import torch
+from torch.testing._internal.common_utils import TestCase
+
+assertEqual = TestCase().assertEqual
+
+actual_indices = (
+    (0, 1, 1),
+    (1, 0, 0),
+)
+actual_values = (1, 1, 1)
+actual = torch.sparse_coo_tensor(actual_indices, actual_values, size=(2, 2))
+
+expected_indices = (
+    (0, 1),
+    (1, 0),
+)
+expected_values = (1, 2)
+expected = torch.sparse_coo_tensor(expected_indices, expected_values, size=(2, 2))
+
+assertEqual(actual, expected)
+
+assertEqual(actual.coalesce(), expected.coalesce())
+
+x._indices().shape == (x.sparse_dim(), x._nnz())
+x._values().shape == (x._nnz(), x.dense_dim())
+len(x.shape) == x.sparse_dim() + x.dense_dim()
+
+x.shape == y.shape
+x.sparse_dim() == y.sparse_dim()
+x._nnz() == y._nnz()
+x._indices() == y._indices()
+x._values() == y._values()

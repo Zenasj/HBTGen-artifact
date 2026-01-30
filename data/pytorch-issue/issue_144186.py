@@ -1,8 +1,16 @@
-# torch.rand(8, 8, 2, dtype=torch.float32)
-import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
+import torch
+
+torch.manual_seed(0)
+torch.set_grad_enabled(False)
+from torch._inductor import config
+
+config.fallback_random = True
+
+
+class Model(torch.nn.Module):
+
     def __init__(self):
         super().__init__()
         self.softmax = torch.nn.Softmax(dim=-1)
@@ -12,9 +20,23 @@ class MyModel(nn.Module):
         x = self.softmax(x)
         return x
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    return torch.randn(8, 8, 2, dtype=torch.float32)
+model = Model()
 
+x = torch.randn(8, 8, 2)
+
+inputs = [x]
+
+try:
+    output = model(*inputs)
+    print("succeed on eager")
+except Exception as e:
+    print(e)
+
+try:
+    c_model = torch.compile(model)
+    c_output = c_model(*inputs)
+    print("succeed on inductor")
+
+except Exception as e:
+    print(e)

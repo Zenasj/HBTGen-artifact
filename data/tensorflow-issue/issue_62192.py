@@ -1,32 +1,28 @@
-# tf.random.uniform((B, ), dtype=tf.float32) for inputs a: (None, 3), b: (None, 4), c: (None, 5)
+from tensorflow import keras
+from tensorflow.keras import layers
+
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
+@tf.keras.saving.register_keras_serializable(package="MyPackage")
+class DummyModel(tf.keras.Model):
     def __init__(self, name=None):
         super().__init__(name=name)
-        # Single Dense layer as in original example
         self.sublayer = tf.keras.layers.Dense(16)
-
-    def call(self, x, **kwargs):
-        # Based on the Keras 3 recommendation, inputs are expected at same level, not nested.
-        # x is a dict with keys: 'a', 'b', 'c'
+    def call(self, x, **kw):
         a = x["a"]
         b = x["b"]
         c = x["c"]
-        # Concatenate along last dimension
-        concat_tensors = tf.concat([a, b, c], axis=-1)
-        return self.sublayer(concat_tensors)
+        return self.sublayer(tf.concat([a,b,c], axis=-1))
 
-def my_model_function():
-    # Instantiate and return the model
-    return MyModel()
+model = DummyModel()
+out = model(dict(
+    a = tf.keras.Input(3,dtype=tf.float32),
+    b = tf.keras.Input(4,dtype=tf.float32),
+    c = tf.keras.Input(5,dtype=tf.float32),
+    )
+)
+model.summary()
 
-def GetInput():
-    # Generate a dictionary of inputs matching expected shapes and dtype
-    # batch size is chosen arbitrarily as 2 for demonstration
-    batch_size = 2
-    a = tf.random.uniform((batch_size, 3), dtype=tf.float32)
-    b = tf.random.uniform((batch_size, 4), dtype=tf.float32)
-    c = tf.random.uniform((batch_size, 5), dtype=tf.float32)
-    return {"a": a, "b": b, "c": c}
+model.save("temp.keras")
 
+tf.keras.saving.load_model("temp.keras")

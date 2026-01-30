@@ -1,30 +1,126 @@
-# tf.random.uniform((B, 224, 224, 3), dtype=tf.float32) ← input shape inferred from model input_shape=(224, 224, 3)
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
+import math
 import tensorflow as tf
+from tensorflow import keras
+import tensorflow_datasets as tfds
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # The original model was a Sequential with:
-        # GlobalMaxPool2D(input_shape=(224,224,3)) followed by Dense(1000, activation='softmax')
-        self.pool = tf.keras.layers.GlobalMaxPool2D()
-        self.classifier = tf.keras.layers.Dense(1000, activation="softmax")
-    
-    def call(self, inputs, training=False):
-        # Forward pass as in original model
-        x = self.pool(inputs)
-        x = self.classifier(x)
-        return x
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+batch_size = 1024
 
-def GetInput():
-    # Return a random tensor matching the input expected by MyModel
-    # Batch size B chosen as 1024 in original issue, but for compatibility here we pick a reasonable batch size
-    # Note: The original dataset batch size was 1024, so we choose B=32 here for example input
-    B = 32
-    H, W, C = 224, 224, 3
-    # Use float32 as model input is cast to float32 during preprocessing
-    return tf.random.uniform(shape=(B, H, W, C), dtype=tf.float32)
+dataset, info = tfds.load(
+    "imagenet2012:5.0.*",
+    decoders={"image": tfds.decode.SkipDecoding()},
+    split="train",
+    with_info=True,
+)
 
+val_dataset = tfds.load(
+    "imagenet2012:5.0.*",
+    decoders={"image": tfds.decode.SkipDecoding()},
+    split="validation",
+)
+
+steps_per_epoch = math.ceil(info.splits["train"].num_examples / batch_size)
+val_steps = math.ceil(info.splits["validation"].num_examples / batch_size)
+
+
+def _decode_and_center_crop(image_bytes):
+    """Crops to center of image with padding then scales image_size."""
+    shape = tf.image.extract_jpeg_shape(image_bytes)
+    image_height = shape[0]
+    image_width = shape[1]
+    image_size = 224
+
+    padded_center_crop_size = tf.cast(
+        (
+            (image_size / (image_size + 32))
+            * tf.cast(tf.minimum(image_height, image_width), tf.float32)
+        ),
+        tf.int32,
+    )
+
+    offset_height = ((image_height - padded_center_crop_size) + 1) // 2
+    offset_width = ((image_width - padded_center_crop_size) + 1) // 2
+    crop_window = tf.stack(
+        [offset_height, offset_width, padded_center_crop_size, padded_center_crop_size]
+    )
+    image = tf.image.decode_and_crop_jpeg(image_bytes, crop_window, channels=3)
+    image = tf.compat.v1.image.resize_bicubic([image], [image_size, image_size])[0]
+    return image
+
+
+def preprocessing(data):
+    return tf.cast(_decode_and_center_crop(data["image"]), tf.float32), data["label"]
+
+
+dataset = (
+    dataset.cache()
+    .shuffle(10 * batch_size)
+    .repeat()
+    .map(preprocessing, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    .batch(batch_size)
+    .prefetch(1)
+)
+
+val_dataset = (
+    val_dataset.cache()
+    .repeat()
+    .map(preprocessing, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    .batch(batch_size)
+    .prefetch(1)
+)
+
+model = keras.models.Sequential(
+    [
+        keras.layers.GlobalMaxPool2D(input_shape=(224, 224, 3)),
+        keras.layers.Dense(1000, activation="softmax",),
+    ]
+)
+
+model.compile(
+    optimizer="adam",
+    loss="sparse_categorical_crossentropy",
+    metrics=["accuracy", "sparse_top_k_categorical_accuracy"],
+)
+
+model.fit(
+    dataset,
+    epochs=5,
+    steps_per_epoch=steps_per_epoch,
+    validation_data=val_dataset,
+    validation_steps=val_steps,
+)
+
+model.fit(dataset, epochs=5, steps_per_epoch=steps_per_epoch)
+
+dataset = (
+    dataset.cache()
+    .shuffle(10 * batch_size)
+    .map(preprocessing, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    .batch(batch_size)
+    .prefetch(1)
+)
+
+val_dataset = (
+    val_dataset.cache()
+    .map(preprocessing, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    .batch(batch_size)
+    .prefetch(1)
+)
+
+model = keras.models.Sequential(
+    [
+        keras.layers.GlobalMaxPool2D(input_shape=(224, 224, 3)),
+        keras.layers.Dense(1000, activation="softmax",),
+    ]
+)
+
+model.compile(
+    optimizer="adam",
+    loss="sparse_categorical_crossentropy",
+    metrics=["accuracy", "sparse_top_k_categorical_accuracy"],
+)
+
+model.fit(dataset, epochs=5, validation_data=val_dataset)

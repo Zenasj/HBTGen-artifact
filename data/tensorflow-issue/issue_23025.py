@@ -1,32 +1,45 @@
-# tf.random.uniform((B, 4), dtype=tf.float32) ← Input shape inferred from model.input_dim=4 in Dense layer
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
+import time
+
+import numpy as np
 import tensorflow as tf
+from tensorflow.keras.layers import Dense
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.optimizers import SGD
+from tensorflow.python.saved_model import tag_constants
+from tensorflow.python.saved_model.signature_def_utils_impl import predict_signature_def
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # According to the issue code, the model is a Sequential with:
-        # Dense(64, relu, input_dim=4) followed by Dense(4, linear)
-        # We'll recreate this architecture using functional style inside the subclass.
+if __name__ == '__main__':
 
-        self.dense1 = tf.keras.layers.Dense(units=64, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(units=4, activation='linear')
+    sess = tf.keras.backend.get_session()
 
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        return self.dense2(x)
+    model = Sequential()
 
+    model.add(Dense(units=64, activation='relu', input_dim=4))
+    model.add(Dense(units=4, activation='linear'))
 
-def my_model_function():
-    # Return an instance of MyModel, as per instructions.
-    return MyModel()
+    opt = SGD(lr=0.01)
+    model.compile(loss='mse', optimizer=opt)
 
+    graph = tf.get_default_graph()
 
-def GetInput():
-    # Return a random tensor with shape (B, 4), compatible with the model input
-    # We'll choose batch size 2 as in example prediction calls in the issue
-    batch_size = 2
-    input_dim = 4
-    # Use uniform distribution as a reasonable default matching dtype float32
-    return tf.random.uniform(shape=(batch_size, input_dim), dtype=tf.float32)
+    model.predict(np.array([[1, 1, 1, 1], [1, 1, 1, 1]]))
 
+    for _ in range(100):
+        with graph.as_default():
+            time.sleep(1)
+            model.fit(np.array([[1, 1, 1, 1], [1, 1, 1, 1]]), np.array([[1, 1, 1, 1], [1, 1, 1, 1]]))
+            temp_export_path = '/tmp/models/' + str(time.time()).split(".")[0]
+
+            # Saving
+            builder = tf.saved_model.builder.SavedModelBuilder(temp_export_path)
+            signature = predict_signature_def(inputs={'state': model.input},
+                                              outputs={t.name: t for t in model.outputs})
+            builder.add_meta_graph_and_variables(sess, [tag_constants.SERVING],
+                                                 signature_def_map={
+                                                     tf.saved_model.signature_constants.DEFAULT_SERVING_SIGNATURE_DEF_KEY: signature})
+            builder.save()

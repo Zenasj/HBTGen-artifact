@@ -1,18 +1,17 @@
-# torch.rand(3, 4, 4, dtype=torch.float32).cuda()  # Inferred input shape
 import torch
-import torch.nn as nn
+torch.use_deterministic_algorithms(True)
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Reproduce the indexing operation that triggers the bug in deterministic mode
-        indices = torch.arange(2, device=x.device)  # Ensure indices match input device
-        x[indices] = 1.0  # Fails in deterministic mode with specific shape/stride combinations
-        return x
+x = torch.zeros((3,4,4)).float().cuda()
 
-def my_model_function():
-    return MyModel()
+# Each one of these fail
+x[torch.arange(2)] = 1.
+# or x[torch.arange(2), 0] = 1.
+# or x[range(2), 0] = 1.
 
-def GetInput():
-    # Create input matching the failing scenario (3x4x4 float32 CUDA tensor)
-    return torch.rand(3, 4, 4, dtype=torch.float32).cuda()
 
+""" Output:
+RuntimeError: linearIndex.numel()*sliceSize*nElemBefore == value.numel()INTERNAL 
+ASSERT FAILED at "C:\\cb\\pytorch_1000000000000\\work\\aten\\src\\ATen\\native\\cuda\\Indexing.cu":250,
+please report a bug to PyTorch.
+number of flattened indices did not match number of elements in the value tensor21
+"""

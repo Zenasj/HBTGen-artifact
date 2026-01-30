@@ -1,24 +1,9 @@
 import torch
 import numpy as np
-from torch import nn
+import random
 
-# torch.rand(1, 1, 128, 128, dtype=torch.float32)
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        
-    def forward(self, x):
-        # Dummy model to demonstrate input compatibility
-        return x
+temp = torch.tensor(np.ones((128,128,1)).astype(np.uint16).astype(np.int16), dtype=torch.float32, device="cpu")
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Create input with uint16 -> int16 conversion as workaround
-    arr = np.ones((128, 128, 1), dtype=np.uint16)
-    arr_int16 = arr.astype(np.int16)
-    tensor = torch.tensor(arr_int16, dtype=torch.float32)
-    # Reshape to (B, C, H, W) format
-    return tensor.unsqueeze(0).permute(0, 3, 1, 2)
-
+a = np.random.randint(2**15, 2**16, dtype=np.uint16)    # A random uint16 number
+t_int16 = torch.from_numpy(a.astype(np.int16)).cuda()   # Notice that only 16 bits are transferred
+t_uint16 = t_int16.to(torch.int32) & (2**16 - 1)        # Extract required bits to match value store in "a"

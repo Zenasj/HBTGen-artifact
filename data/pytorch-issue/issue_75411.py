@@ -1,18 +1,46 @@
-# torch.rand(12, 1, dtype=torch.float32)
 import torch
-from torch import nn
+from torch import tensor as tensor
+t = tensor([[11.1250],
+         [25.5000],
+         [21.3125],
+         [11.6875],
+         [35.8750],
+         [44.8125],
+         [46.3125],
+         [36.1875],
+         [38.8125],
+         [43.6875],
+         [43.8750],
+         [36.1875]])
+print(torch.tanh(t))
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        out_float = torch.tanh(x)
-        out_double = torch.tanh(x.double()).float()
-        # Return 1.0 if outputs match within tolerance, 0.0 otherwise
-        return torch.tensor(torch.allclose(out_float, out_double, atol=1e-4), dtype=torch.float32)
+import torch
+from torch import tensor as tensor
 
-def my_model_function():
-    return MyModel()
+torch.set_default_tensor_type(torch.DoubleTensor)
+t = tensor([[11.1250],
+         [25.5000],
+         [21.3125],
+         [11.6875],
+         [35.8750],
+         [44.8125],
+         [46.3125],
+         [36.1875],
+         [38.8125],
+         [43.6875],
+         [43.8750],
+         [36.1875]])
+print(torch.tanh(t))
 
-def GetInput():
-    # Generate input matching the original issue's value range (10-50)
-    return torch.rand(12, 1, dtype=torch.float32) * 40 + 10
-
+tensor([[1.],
+        [1.],
+        [1.],
+        [1.],
+        [1.],
+        [1.],
+        [1.],
+        [1.],
+        [1.],
+        [1.],
+        [1.],
+        [1.]])

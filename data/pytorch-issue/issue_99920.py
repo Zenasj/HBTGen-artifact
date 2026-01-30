@@ -1,32 +1,23 @@
-# torch.rand(1, 1, 1028, 1028, dtype=torch.float32)
-import torch
-from torch import nn
-
-class OldArgMin(nn.Module):
-    def forward(self, x, dim):
-        reversed_x = torch.flip(x, (dim,))
-        reversed_indices = reversed_x.argmin(dim=dim)
-        original_indices = x.size(dim) - 1 - reversed_indices
-        return original_indices
-
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.old = OldArgMin()
-        self.dim = 1  # Fixed dimension as per example
-
-    def forward(self, x):
-        new_res = torch.argmin(x, dim=self.dim)
-        old_res = self.old(x, self.dim)
-        return (new_res == old_res).all().float()
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Create a 2D tensor with shape (1028, 1028) where some rows have duplicate minima
-    x = torch.rand(1028, 1028)
-    x[:, 0] = 0.0  # Ensure duplicates in min values along dim=1
-    x[:, -1] = 0.0
-    return x
-
+def triton_(in_ptr0, out_ptr0, xnumel, rnumel, XBLOCK : tl.constexpr, RBLOCK : tl.constexpr):
+    xnumel = 1028 # dynamic_shapes=False
+    rnumel = 1028 # dynamic_shapes=False
+    xoffset = tl.program_id(0) * XBLOCK
+    xindex = xoffset + tl.arange(0, XBLOCK)[:, None]
+    xmask = xindex < xnumel
+    rbase = tl.arange(0, RBLOCK)[None, :]
+    x0 = xindex
+    _tmp1 = tl.full([XBLOCK, RBLOCK], float("inf"), tl.float32)
+    _tmp1_index = tl.full([XBLOCK, RBLOCK], 9223372036854775807, tl.int64)
+    for roffset in range(0, rnumel, RBLOCK):
+        rindex = roffset + rbase
+        rmask = rindex < rnumel
+        r1 = rindex
+        tmp0 = tl.load(in_ptr0 + (r1 + (1028*x0)), rmask & xmask, eviction_policy='evict_last', other=0)
+        _tmp1_next, _tmp1_index_next = triton_helpers.minimum_with_index(
+            _tmp1, _tmp1_index, tmp0, rindex
+        )
+        _tmp1 = tl.where(rmask & xmask, _tmp1_next, _tmp1)
+        _tmp1_index = tl.where(rmask & xmask, _tmp1_index_next, _tmp1_index)
+    _, tmp1_tmp = triton_helpers.min_with_index(_tmp1, _tmp1_index, 1)
+    tmp1 = tmp1_tmp[:, None]
+    tl.store(out_ptr0 + x0, tmp1, xmask)

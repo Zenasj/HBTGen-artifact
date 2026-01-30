@@ -1,21 +1,23 @@
-# torch.rand(256, 100000, dtype=torch.float32)
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        
-    def forward(self, x):
-        # Run multinomial on both CPU and CUDA, compare outputs
-        cpu_out = torch.multinomial(x.to('cpu'), 1)  # CPU path
-        cuda_out = torch.multinomial(x.to('cuda'), 1)  # CUDA path
-        # Compare results and return difference indicator (1 if differ, 0 otherwise)
-        return (cpu_out != cuda_out.to('cpu')).any().float()
+torch.manual_seed(1234)
+torch.cuda.manual_seed(1234)
 
-def my_model_function():
-    return MyModel()
+t = torch.rand(256, 100000)
+s1 = torch.get_rng_state()
+_ = torch.multinomial(t, 1)
+s2 = torch.get_rng_state()
 
-def GetInput():
-    return torch.rand(256, 100000, dtype=torch.float32)
+sum(s2-s1)
 
+import torch
+
+torch.manual_seed(1234)
+torch.cuda.manual_seed(1234)
+
+t = torch.rand(256, 100000).to("cuda")
+s1 = torch.cuda.get_rng_state()
+_ = torch.multinomial(t, 1)
+s2 = torch.cuda.get_rng_state()
+
+sum(s2-s1)

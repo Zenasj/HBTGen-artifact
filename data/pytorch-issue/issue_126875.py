@@ -1,13 +1,21 @@
-# torch.rand(B, 10)
-import torch
-from torch import nn
+import torch.nn as nn
 import torch.nn.functional as F
 
-class MyModel(nn.Module):
+def __getattr__(self, name):
+    try:
+        super().__getattr__(name)
+    except AttributeError:
+        bla
+
+import torch
+from torch.nn import functional as F
+from torch import nn
+
+class MyModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.cst = nn.Parameter(torch.zeros(()))
-        self.linear = nn.Linear(10, 10)
+        self.linear = torch.nn.Linear(10, 10)
 
     def __getattr__(self, name):
         try:
@@ -16,15 +24,14 @@ class MyModel(nn.Module):
             try:
                 return getattr(self.__dict__["_modules"]["linear"], name)
             except KeyError:
-                raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+                raise AttributeError
 
     def forward(self, input):
-        # Working path using direct access to linear's attributes
-        return F.linear(input, self.linear.weight, self.linear.bias) + self.cst
+        return F.linear(input, self.linear.weight, self.linear.bias) + self.cst # Works 
+        # return F.linear(input, self.weight, self.bias) + self.cst  # Fails
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(10)  # Matches the input shape expected by MyModel's forward
-
+module = MyModule()
+x = torch.randn(10)
+module(x)
+module_c = torch.compile(module, fullgraph=True)
+module_c(x)

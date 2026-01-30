@@ -1,28 +1,17 @@
-# torch.rand(B, 3, 224, 224, dtype=torch.float32)
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1)
-        self.pool = nn.MaxPool2d(2, 2)
-        self.fc1 = nn.Linear(16 * 112 * 112, 100)
-        self.fc2 = nn.Linear(100, 10)
-        
-    def forward(self, x):
-        x = self.pool(F.relu(self.conv1(x)))
-        x = x.view(-1, 16 * 112 * 112)
-        x = F.relu(self.fc1(x))
-        x = self.fc2(x)
-        return x
+if len(self.gpu_ids) > 0:
+    os.environ['CUDA_VISIBLE_DEVICES'] = ','.join([str(x) for x in self.gpu_ids])
+    device = torch.device(('cuda:{}').format(self.gpu_ids[0]) if self.gpu_ids else 'cpu')
 
-def my_model_function():
-    # Returns a model initialized on CPU to allow proper DataParallel handling
-    return MyModel()
+if torch.cuda.device_count() > 1:
+    net = torch.nn.DataParallel(net)
 
-def GetInput():
-    B = 4  # Example batch size
-    return torch.rand(B, 3, 224, 224, dtype=torch.float32)
+net.to(device)
+image = input['image'].to(device)
+label = input['label'].to(device)
+pred = net(image)
 
+if len(gpu_ids) > 0:
+    os.environ['CUDA_VISIBLE_DEVICES'] = ','.join([str(x) for x in gpu_ids])

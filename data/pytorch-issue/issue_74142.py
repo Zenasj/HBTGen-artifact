@@ -1,27 +1,21 @@
-# torch.rand(N, dtype=...)  # Add a comment line at the top with the inferred input shape
-
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+import torch
+
+N = 1 # can be anything else
+
+class Net(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
     
     def forward(self, x):
         return x.flatten()
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+net = Net().eval()
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    N = 1  # Can be any positive integer
-    return torch.rand(N, dtype=torch.float)
+o = net(torch.zeros((N), dtype=torch.float))
+print(o.shape)
 
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
-# print(output.shape)
-
+with torch.no_grad():
+  torch.onnx.export(net, (
+      torch.ones((N), dtype=torch.float)), "output.onnx", verbose=True, opset_version=14)

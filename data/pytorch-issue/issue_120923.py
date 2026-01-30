@@ -1,18 +1,18 @@
+import torch.nn as nn
+
 import torch
 import transformers
-from transformers import file_utils
+from transformers import file_utils  # Crucial, otherwise dynamo fails.
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
-# torch.rand(B=1, C=1, H=1, W=1, dtype=torch.float32)
-class MyModel(torch.nn.Module):
+class Model(torch.nn.Module):
     def forward(self, x):
         x = x + 1
-        output = CausalLMOutputWithPast(loss=None, logits=x)
-        return output[0]
+        return CausalLMOutputWithPast(loss=None, logits=x)[0]
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(1, 1, 1, 1, dtype=torch.float32)
-
+model = Model()
+x = torch.randn(1, 1, 1, 1)
+eo = torch._dynamo.export(Model(), aten_graph=True)(x)
+eo.graph_module.print_readable()
+print("dynamo output: ", eo.graph_module(x))
+print("eager output: ", model(x))

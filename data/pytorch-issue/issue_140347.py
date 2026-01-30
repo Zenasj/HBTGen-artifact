@@ -1,18 +1,17 @@
-# torch.rand((), dtype=torch.float32)
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Compare CPU vs CUDA conversion of NaN to int32
-        cpu_val = x.cpu().to(torch.int32)
-        cuda_val = x.cuda().to(torch.int32).cpu()  # Bring back to CPU for comparison
-        return (cpu_val != cuda_val).to(torch.int32)  # Return 1 if different, 0 otherwise
+a = torch.tensor(float('nan'))
+b = a.cpu().type(torch.int32)
+c = a.cuda().type(torch.int32)
+print(b)  # tensor(-2147483648, dtype=torch.int32)
+print(c)  # tensor(0, device='cuda:0', dtype=torch.int32)
 
-def my_model_function():
-    return MyModel()
+import torch
 
-def GetInput():
-    # Create a NaN tensor as input
-    return torch.tensor(float('nan'))
+a = torch.tensor(float('nan'))
 
+b = a.cpu().type(torch.int64)
+c = a.cuda().type(torch.int64)
+
+print(b)  # tensor(-9223372036854775808)
+print(c)  # tensor(-9223372036854775808, device='cuda:0')

@@ -1,27 +1,37 @@
-# tf.random.uniform((B, 4), dtype=tf.float32) ← Input shape inferred as [batch_size, 4] from the example with the Keras Dense layer
+import math
 
 import tensorflow as tf
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # A simple Dense layer with output dimension 5, as in the example
-        self.final_projection = tf.keras.layers.Dense(5, name="final_projection")
+print('tf-version:', tf.__version__)
 
-    @tf.function(input_signature=[tf.TensorSpec(shape=[None, 4], dtype=tf.float32)])
-    def call(self, sample_input):
-        # Apply the Dense layer
-        x = self.final_projection(sample_input)
-        # Compute mean and std over all elements of x
-        mean = tf.math.reduce_mean(x)
-        std = tf.math.reduce_std(x)
-        return {"mean": mean, "std": std}
+class Test(tf.Module):
+    @tf.function(input_signature=[tf.TensorSpec(shape=[None], dtype=tf.float32)])
+    def stats(self, sample_input):
+        return {
+            'mean': tf.math.reduce_mean(sample_input, axis=0),
+            'std': tf.math.reduce_std(sample_input, axis=0)
+        }
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+model = Test()
 
-def GetInput():
-    # Generate a random input tensor of shape [batch_size, 4], batch_size=3 chosen arbitrarily
-    return tf.random.uniform(shape=(3, 4), dtype=tf.float32)
+# Convert the SavedModel using TFLiteConverter
+SAVED_MODEL_PATH = 'content/saved_models/coding'
+tf.saved_model.save(
+    model, SAVED_MODEL_PATH,
+    signatures={
+      'stats': model.stats.get_concrete_function()
+    })
+converter = tf.lite.TFLiteConverter.from_saved_model(SAVED_MODEL_PATH)
+tflite_model = converter.convert()
+interpreter = tf.lite.Interpreter(model_content=tflite_model)
+signatures = interpreter.get_signature_list()
+print("[SavedModel] signatures: ", signatures)
 
+# Convert the concrete functions using TFLiteConverter
+converter = tf.lite.TFLiteConverter.from_concrete_functions(
+    [model.stats.get_concrete_function()], model)
+tflite_model = converter.convert()
+interpreter = tf.lite.Interpreter(model_content=tflite_model)
+signatures = interpreter.get_signature_list()
+print("[Interpreter] signatures: ", signatures)

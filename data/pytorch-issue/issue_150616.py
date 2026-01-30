@@ -1,23 +1,23 @@
-# torch.randint(5, 20, (1,), dtype=torch.int)  # Inferred input shape for window length
 import torch
-from torch import nn
+window_length = 10
+window1 = torch.bartlett_window(window_length, requires_grad=True)
+window2 = window1.type(torch.long)
+print(window1)
+print(window2)
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        window_length = x.item()  # Extract scalar value from tensor input
-        window = torch.bartlett_window(window_length, requires_grad=True)
-        
-        # Compare type conversions using two methods
-        converted1 = window.type(torch.long)               # Valid dtype conversion
-        converted2 = window.type(torch.LongTensor)         # TensorType conversion
-        
-        # Return comparison result (they should be identical)
-        return torch.all(converted1 == converted2).unsqueeze(0).float()  # Return as tensor
+import torch
+window_length = 10
+window1 = torch.bartlett_window(window_length, requires_grad=True)
+window2 = window1.type(torch.LongTensor)
+print(window1)
+print(window2)
 
-def my_model_function():
-    return MyModel()
+import torch
+window_length = 10
+window1 = torch.bartlett_window(window_length, dtype=torch.float, requires_grad=True)
+print(window1)
 
-def GetInput():
-    # Return random window length (1-20) as scalar tensor
-    return torch.randint(5, 20, (1,), dtype=torch.int)
-
+import torch
+window_length = 10
+window1 = torch.bartlett_window(window_length, dtype=torch.long, requires_grad=True)
+print(window1)

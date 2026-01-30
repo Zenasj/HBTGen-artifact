@@ -1,18 +1,21 @@
-# torch.rand(2, 5, 3, 4, dtype=torch.float32)
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.unfold = nn.Unfold(kernel_size=(3, 3))  # Preserves original configuration
-        
-    def forward(self, x):
-        return self.unfold(x)
+import torch
+from torch.autograd import Variable
 
-def my_model_function():
-    return MyModel()  # Direct initialization without extra parameters
+class UnfoldTestModule(torch.nn.Module):
+	def __init__(self):
+		super(UnfoldTestModule, self).__init__()
+		self.unfold = torch.nn.Unfold(kernel_size=(3,3))
 
-def GetInput():
-    return torch.randn(2, 5, 3, 4)  # Matches (batch, channels, height, width) from original example
+	def forward(self, input):
+		output = self.unfold(input)
+		return output
 
+
+if __name__ == '__main__':
+	my_module = UnfoldTestModule()
+	example_input = torch.randn(2, 5, 3, 4)
+
+	traced_script_module = torch.jit.trace(my_module, example_input)
+	traced_script_module.save("model.pt")

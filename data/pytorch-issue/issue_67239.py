@@ -1,37 +1,18 @@
-# torch.rand(B, C, H, W, dtype=...)  # Input shape: (batch_size, channels, height, width)
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1)
-        self.bn1 = nn.BatchNorm2d(64)
-        self.relu = nn.ReLU()
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
-        self.adaptive_pool = nn.AdaptiveMaxPool2d((1, 1))
-        self.fc = nn.Linear(64, 10)
+import torch
+from torch.testing._core import _compare_tensors_internal
 
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.relu(x)
-        x = self.pool(x)
-        x = self.adaptive_pool(x)
-        x = x.view(x.size(0), -1)
-        x = self.fc(x)
-        return x
+x = torch.randn(2, 3, 6, 6, device='cuda', dtype=torch.float)\
+        .to(memory_format=torch.channels_last)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+x_cpu = x.cpu()
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    batch_size = 32
-    channels = 3
-    height = 32
-    width = 32
-    input_tensor = torch.rand(batch_size, channels, height, width, dtype=torch.float32, device='cuda')
-    return input_tensor
+out = torch.nn.functional.adaptive_max_pool2d(x, (2, 2))
+out_cpu = torch.nn.functional.adaptive_max_pool2d(x_cpu, (2, 2))
 
+_a, _b = _compare_tensors_internal(out.cpu(), out_cpu, rtol=1e-5, atol=1e-5, equal_nan=False)
+if _a:
+    print('good')
+else:
+    raise RuntimeError(_b)

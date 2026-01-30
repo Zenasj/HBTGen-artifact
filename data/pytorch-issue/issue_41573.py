@@ -1,19 +1,13 @@
-# torch.rand(B, C, H, W, dtype=torch.float32, device="cuda")
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        return x  # Identity model to trigger stride profiling
+torch._C._jit_set_profiling_mode(True)
+torch._C._jit_set_num_profiled_runs(2)
 
-def my_model_function():
-    return MyModel()
+#...
 
-def GetInput():
-    # Returns a tensor matching the input shape expected by MyModel
-    # Example shape (B=4, C=1, H=8, W=8) as per first input in the issue
-    return torch.randn(4, 1, 8, 8, dtype=torch.float32, device="cuda")
+x1 = torch.randn(4, 8, 8, dtype=torch.float32, device="cuda")
+jit_model(x1)
+x2 = torch.randn(4, 16, 8, dtype=torch.float32, device="cuda")
+jit_model(x2)
 
+#...

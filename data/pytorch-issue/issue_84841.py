@@ -1,32 +1,22 @@
-# torch.rand(B, 3, 32, 32, dtype=torch.float)  # Assumed input shape based on common image data dimensions
-import torch
-import torch.nn as nn
-
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Basic CNN architecture as a placeholder (since no explicit model was described in the issue)
-        self.layers = nn.Sequential(
-            nn.Conv2d(3, 16, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2, 2),
-            nn.Conv2d(16, 32, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2, 2),
-            nn.Flatten(),
-            nn.Linear(32 * 8 * 8, 100),
-            nn.ReLU(),
-            nn.Linear(100, 10)
-        )
-    
-    def forward(self, x):
-        return self.layers(x)
-
-def my_model_function():
-    # Return a simple CNN model instance
-    return MyModel()
-
-def GetInput():
-    # Generate random input tensor matching the assumed shape
-    return torch.rand(2, 3, 32, 32, dtype=torch.float)  # Batch size 2 as a placeholder
-
+"Build TorchAudio M1 conda packages (3.10)","https://github.com/pytorch/audio/actions/runs/3044683784/jobs/4905348936","pytorch/audio/8304438905",
+"Build TorchAudio M1 conda packages (3.8)","https://github.com/pytorch/audio/actions/runs/3044683784/jobs/4905348733","pytorch/audio/8304438636",
+"Build TorchAudio M1 conda packages (3.9)","https://github.com/pytorch/audio/actions/runs/3044683784/jobs/4905348850","pytorch/audio/8304438762",
+"Build TorchAudio M1 wheels (3.10)","https://github.com/pytorch/audio/actions/runs/3044683784/jobs/4905348567","pytorch/audio/8304439430",
+"Build TorchAudio M1 wheels (3.8)","https://github.com/pytorch/audio/actions/runs/3044683784/jobs/4905348354","pytorch/audio/8304439103",
+"Build TorchAudio M1 wheels (3.9)","https://github.com/pytorch/audio/actions/runs/3044683784/jobs/4905348426","pytorch/audio/8304439239",
+"Build TorchText M1 conda packages (3.10)","https://github.com/pytorch/text/actions/runs/3044682591/jobs/4905346013","pytorch/text/8304442120",
+"Build TorchText M1 conda packages (3.8)","https://github.com/pytorch/text/actions/runs/3044682591/jobs/4905345803","pytorch/text/8304441814",
+"Build TorchText M1 conda packages (3.9)","https://github.com/pytorch/text/actions/runs/3044682591/jobs/4905345904","pytorch/text/8304441961",
+"Build TorchText M1 wheels (3.10)","https://github.com/pytorch/text/actions/runs/3044682591/jobs/4905346413","pytorch/text/8304441675",
+"Build TorchText M1 wheels (3.8)","https://github.com/pytorch/text/actions/runs/3044682591/jobs/4905346169","pytorch/text/8304441378",
+"Build TorchText M1 wheels (3.9)","https://github.com/pytorch/text/actions/runs/3044682591/jobs/4905346292","pytorch/text/8304441505",
+"Build TorchVision M1 conda packages (3.10)","https://github.com/pytorch/vision/actions/runs/3039142685/jobs/4893732092","pytorch/vision/8301909344",
+"Build TorchVision M1 conda packages (3.8)","https://github.com/pytorch/vision/actions/runs/3039142685/jobs/4893731859","pytorch/vision/8301909047",
+"Build TorchVision M1 conda packages (3.9)","https://github.com/pytorch/vision/actions/runs/3039142685/jobs/4893731958","pytorch/vision/8301909180",
+"Build TorchVision M1 wheels (3.10)","https://github.com/pytorch/vision/actions/runs/3039142685/jobs/4893731707","pytorch/vision/8301909775",
+"Build TorchVision M1 wheels (3.8)","https://github.com/pytorch/vision/actions/runs/3039142685/jobs/4893731448","pytorch/vision/8301909536",
+"Build TorchVision M1 wheels (3.9)","https://github.com/pytorch/vision/actions/runs/3039142685/jobs/4893731573","pytorch/vision/8301909664",
+"Unit-tests on M1 (3.8)","https://github.com/pytorch/vision/actions/runs/3038720577/jobs/4892784507","pytorch/vision/8301094820",
+"macos-12-py3-arm64 / test (default, 1, 2, macos-m1-12)","https://github.com/pytorch/pytorch/actions/runs/3038499656/jobs/4892646443","pytorch/pytorch/8298705152",
+"macos-12-py3-arm64 / test (default, 2, 2, macos-m1-12)","https://github.com/pytorch/pytorch/actions/runs/3038499656/jobs/4892646560","pytorch/pytorch/8298705220",
+"macos-12-py3-arm64-mps / Run MPS tests","https://github.com/pytorch/pytorch/actions/runs/3038499656/jobs/4892646766","pytorch/pytorch/8298705294",

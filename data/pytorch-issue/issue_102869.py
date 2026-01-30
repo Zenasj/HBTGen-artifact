@@ -1,19 +1,12 @@
-# torch.rand(1, 1, 1, 10, dtype=torch.float32)
 import torch
-import torch.nn as nn
+import torch._dynamo
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-    
-    def forward(self, x):
-        x = x + 1
-        x = x + 1
-        return x
+def fn(x):
+    x = x + 1
+    print("BREAK")
+    x = x + 1
+    return x
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    return torch.rand(1, 1, 1, 10, dtype=torch.float32)
-
+out = torch._dynamo.explain(fn, torch.randn(10))
+print(out)

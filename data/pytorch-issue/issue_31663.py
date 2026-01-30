@@ -1,25 +1,16 @@
-# torch.rand(3000, 200), torch.randn((),).expand(200)  # matrix and vector inputs
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        matrix, vector = inputs
-        out_tensor = torch.full((vector.size(0),), 0., device=matrix.device)
-        r0 = torch.mv(matrix, vector)
-        r1 = torch.mv(matrix, vector, out=out_tensor)
-        mask = torch.logical_or(torch.isnan(r0), torch.isnan(r1))
-        r0_masked = r0.masked_fill(mask, 0.)
-        r1_masked = r1.masked_fill(mask, 0.)
-        return torch.all(r0_masked == r1_masked)
+n = 3000
+m = 200
 
-def my_model_function():
-    return MyModel()
+# torch.mv
+nm = torch.randn((m, n), device=device).t()
+_m = torch.randn((), device=device).expand(m)
+_m_out = torch.full((m,), 0., device=device)
 
-def GetInput():
-    n = 3000
-    m = 200
-    matrix = torch.randn(n, m)
-    vector = torch.randn((),).expand(m)
-    return (matrix, vector)
-
+r0 = torch.mv(nm, _m)
+r1 = torch.mv(nm, _m, out=_m_out)
+# only NaNs differ
+self.assertEqual(r0[torch.logical_or(r0 != r0, r1 != r1)].fill_(0),
+                                 r1[torch.logical_or(r0 != r0, r1 != r1)].fill_(0))
+self.assertEqual(torch.mv(nm, _m), torch.mv(nm, _m, out=_m_out))

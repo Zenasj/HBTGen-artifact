@@ -1,125 +1,190 @@
-# tf.random.uniform((None, 540, 540, 3), dtype=tf.float32)  # Input shape inferred from create_model Input layer
-
+import math
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
-# Custom loss is referenced but undefined in the issue.
-# Define a simple placeholder custom_loss that does a mean squared error.
-def custom_loss(y_true, y_pred):
-    return tf.reduce_mean(tf.square(y_true - y_pred))
+def conv(input, kernel, filt, stride, dilation, pad='same'):
+    x = layers.Conv2D(filters=filt, kernel_size=kernel, strides=stride, dilation_rate=dilation, padding=pad, kernel_regularizer=tf.keras.regularizers.l2(l=0.01))(input)
+    return x
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
+def conv_down(input, filters):
+    x = conv(input, 3, filters, 2 ,1)
+    x = layers.BatchNormalization(axis=-1, fused=True)(x)
+    x = layers.LeakyReLU(alpha=0.1)(x) 
+    return x
 
-        # Initial conv layer
-        self.conv_init = layers.Conv2D(filters=64, kernel_size=3, strides=1, dilation_rate=2,
-                                       padding='same', kernel_regularizer=tf.keras.regularizers.l2(l=0.01))
+def conv_block(input, filters, stride=1, dilation=2, pad='same', bottleneck=True):
+    x = layers.BatchNormalization(axis=-1, fused=True)(input)
+    x = layers.LeakyReLU(alpha=0.1)(x) 
+    if bottleneck:
+        x = conv(x, kernel=1, filt=(filters*4), dilation=dilation, stride=1, pad=pad)
+        x = layers.BatchNormalization(axis=-1, fused=True)(x)
+        x = layers.LeakyReLU(alpha=0.1)(x) 
+    x = conv(x, kernel=3, filt=filters, stride=stride, dilation=dilation, pad=pad)
+    return x
 
-        # Define 8 stages of dense_block + transition_block
-        self.dense_blocks1 = []
-        self.transition_blocks = []
-        for _ in range(8):
-            self.dense_blocks1.append(self._make_dense_block(filters=128, layers_=3, bottleneck=True))
-            self.transition_blocks.append(self._make_transition_block(filters=128, att=True))
+def dense_block(x, filters, layers, bottleneck=True):
+    x_list = [x]
+    for i in range(layers):
+        cb = conv_block(x, filters, dilation=2, bottleneck=True)
+        x_list.append(cb)
+        x = tf.keras.layers.concatenate([x, cb], axis=-1)
+        x = attention(x)
+    return x
 
-        # Final dense block of 4 layers
-        self.dense_block_final = self._make_dense_block(filters=128, layers_=4, bottleneck=True)
+def transition_block(input, filters, att=True):
+    x = layers.BatchNormalization(axis=-1, fused=True)(input)
+    x = layers.LeakyReLU(alpha=0.1)(x) 
+    x = conv(x, kernel=1, filt=filters, stride=1, dilation=2, pad='same')
+    x = layers.AveragePooling2D((2,2), strides=(2,2))(x)
+    if att:
+        x = attention(x)
+    return x
+    
+def attention(input):
+    x = channel_att(input)
+    x = spatial_att(x)
+    return x
+    
+def channel_att(input, ratio=8):
+    channel = input.get_shape()[-1]
+    ####
+    avg_pool = tf.keras.layers.GlobalAveragePooling2D()(input)
+    avg_pool = tf.keras.layers.Reshape((1,1,channel))(avg_pool)
+    max_pool = tf.keras.layers.GlobalMaxPooling2D()(input)
+    max_pool = tf.keras.layers.Reshape((1,1,channel))(max_pool)
+    ####
+    mlp_0 = layers.Dense(units=channel//ratio, activation=layers.ReLU())
+    mlp_1 = layers.Dense(units=channel, activation=layers.ReLU())
+    avg_ = mlp_1(mlp_0(avg_pool))
+    max_ = mlp_1(mlp_0(max_pool))
+    scale = keras.activations.sigmoid(avg_+max_)
+    return input*scale
 
-        # Final BatchNorm and conv 1x1 to output 45 filters
-        self.batchnorm_final = layers.BatchNormalization(axis=-1, fused=True)
-        self.conv_final = layers.Conv2D(filters=45, kernel_size=1, strides=1, dilation_rate=1,
-                                        padding='same', kernel_regularizer=tf.keras.regularizers.l2(l=0.01))
-
-        # Layers for attention are defined dynamically in attention function
-
-    def call(self, inputs, training=False):
-        x = self.conv_init(inputs)
-        for dense_block_layer, trans_block in zip(self.dense_blocks1, self.transition_blocks):
-            x = dense_block_layer(x, training=training)
-            x = trans_block(x, training=training)
-        x = self.dense_block_final(x, training=training)
-        x = self.batchnorm_final(x, training=training)
-        x = self.conv_final(x)
-        return x
-
-    def _make_dense_block(self, filters, layers_, bottleneck=True):
-        # Returns a function implementing the dense_block logic as a keras layer / callable
-        def dense_block_function(x, training=False):
-            for _ in range(layers_):
-                cb_out = self._conv_block(x, filters, dilation=2, bottleneck=bottleneck, training=training)
-                x = tf.keras.layers.concatenate([x, cb_out], axis=-1)
-                x = self._attention(x, training=training)
-            return x
-        return dense_block_function
-
-    def _conv_block(self, x, filters, stride=1, dilation=2, pad='same', bottleneck=True, training=False):
-        x_out = layers.BatchNormalization(axis=-1, fused=True)(x, training=training)
-        x_out = layers.LeakyReLU(alpha=0.1)(x_out)
-        if bottleneck:
-            x_out = layers.Conv2D(filters=filters * 4, kernel_size=1, strides=1, dilation_rate=dilation,
-                                  padding=pad,
-                                  kernel_regularizer=tf.keras.regularizers.l2(l=0.01))(x_out)
-            x_out = layers.BatchNormalization(axis=-1, fused=True)(x_out, training=training)
-            x_out = layers.LeakyReLU(alpha=0.1)(x_out)
-        x_out = layers.Conv2D(filters=filters, kernel_size=3, strides=stride, dilation_rate=dilation,
-                              padding=pad,
-                              kernel_regularizer=tf.keras.regularizers.l2(l=0.01))(x_out)
-        return x_out
-
-    def _make_transition_block(self, filters, att=True):
-        def transition_block_function(x, training=False):
-            x = layers.BatchNormalization(axis=-1, fused=True)(x, training=training)
-            x = layers.LeakyReLU(alpha=0.1)(x)
-            x = layers.Conv2D(filters=filters, kernel_size=1, strides=1, dilation_rate=2,
-                              padding='same',
-                              kernel_regularizer=tf.keras.regularizers.l2(l=0.01))(x)
-            x = layers.AveragePooling2D((2, 2), strides=(2, 2))(x)
-            if att:
-                x = self._attention(x, training=training)
-            return x
-        return transition_block_function
-
-    def _attention(self, inputs, training=False):
-        x = self._channel_att(inputs, training=training)
-        x = self._spatial_att(x, training=training)
-        return x
-
-    def _channel_att(self, inputs, ratio=8, training=False):
-        channel = inputs.shape[-1]
-        avg_pool = tf.keras.layers.GlobalAveragePooling2D()(inputs)
-        avg_pool = tf.reshape(avg_pool, (-1, 1, 1, channel))
-        max_pool = tf.keras.layers.GlobalMaxPooling2D()(inputs)
-        max_pool = tf.reshape(max_pool, (-1, 1, 1, channel))
-
-        dense_1 = layers.Dense(channel // ratio, activation='relu')
-        dense_2 = layers.Dense(channel, activation='relu')
-        avg_out = dense_2(dense_1(avg_pool))
-        max_out = dense_2(dense_1(max_pool))
-        scale = tf.keras.activations.sigmoid(avg_out + max_out)
-        return inputs * scale
-
-    def _spatial_att(self, inputs, kernel=7, training=False):
-        avg_pool = tf.reduce_mean(inputs, axis=3, keepdims=True)
-        max_pool = tf.reduce_max(inputs, axis=3, keepdims=True)
-        concat = tf.concat([avg_pool, max_pool], axis=3)
-        conv_layer = layers.Conv2D(filters=1, kernel_size=kernel, padding='same', use_bias=False)
-        concat = conv_layer(concat)
-        scale = tf.keras.activations.sigmoid(concat)
-        return inputs * scale
+def spatial_att(input, kernel=7):
+    avg_pool = tf.math.reduce_mean(input, axis=[3], keepdims=True)
+    max_pool = tf.math.reduce_max(input, axis=[3], keepdims=True)
+    concat = tf.concat([avg_pool, max_pool], axis=3)
+    concat = layers.Conv2D(filters=1, kernel_size=kernel, padding='same',use_bias=False)(concat)
+    concat = keras.activations.sigmoid(concat)
+    return input*concat
 
 
-def my_model_function():
-    # Return an instance of MyModel
-    model = MyModel()
-    # Compile model to mimic original (SGD optimizer, custom loss)
+def create_model():
+    Input = layers.Input(shape=(540, 540, 3))
+    x = conv(Input, kernel=3, filt=64, stride=1, dilation=2)
+    for i in range(8):
+        x = dense_block(x, filters=128, layers=3, bottleneck=True)
+        x = transition_block(x, filters=128, att=True)
+    x = dense_block(x, filters=128, layers=4, bottleneck=True)
+    x = layers.BatchNormalization(axis=-1, fused=True)(x)
+    x = conv(x, kernel=1, filt=45, stride=1, dilation=1)
+    model = tf.keras.Model(inputs=Input, outputs=x)
+    model.compile(optimizer=keras.optimizers.SGD(), loss=custom_loss)
+    return model
+
+with tpu_strategy.scope():
+    model=create_model()
+
+model.fit(get_training_dataset(), validation_data=get_validation_dataset(),  initial_epoch=0, steps_per_epoch=steps_per_epoch ,validation_steps=val_steps, epochs=EPOCHS, verbose=1, callbacks=clbk)
+
+tpu=' '
+resolver = tf.distribute.cluster_resolver.TPUClusterResolver(tpu=tpu)
+tf.config.experimental_connect_to_host(resolver.master())
+tf.tpu.experimental.initialize_tpu_system(resolver)
+tpu_strategy = tf.distribute.experimental.TPUStrategy(resolver)
+EPOCHS=250
+
+
+def conv(input, kernel, filt, stride, dilation, pad='same'):
+    x = layers.Conv2D(filters=filt, kernel_size=kernel, strides=stride, dilation_rate=dilation, padding=pad, kernel_regularizer=tf.keras.regularizers.l2(l=0.01))(input)
+    return x
+
+def conv_down(input, filters):
+    x = conv(input, 3, filters, 2 ,1)
+    x = layers.BatchNormalization(axis=-1, fused=True)(x)
+    x = layers.LeakyReLU(alpha=0.1)(x) 
+    return x
+
+def conv_block(input, filters, stride=1, dilation=2, pad='same', bottleneck=True):
+    x = layers.BatchNormalization(axis=-1, fused=True)(input)
+    x = layers.LeakyReLU(alpha=0.1)(x) 
+    if bottleneck:
+        x = conv(x, kernel=1, filt=(filters*4), dilation=dilation, stride=1, pad=pad)
+        x = layers.BatchNormalization(axis=-1, fused=True)(x)
+        x = layers.LeakyReLU(alpha=0.1)(x) 
+    x = conv(x, kernel=3, filt=filters, stride=stride, dilation=dilation, pad=pad)
+    return x
+
+def dense_block(x, filters, layers, bottleneck=True):
+    x_list = [x]
+    for i in range(layers):
+        cb = conv_block(x, filters, dilation=2, bottleneck=True)
+        x_list.append(cb)
+        x = tf.keras.layers.concatenate([x, cb], axis=-1)
+        x = attention(x)
+    return x
+
+def transition_block(input, filters, att=True):
+    x = layers.BatchNormalization(axis=-1, fused=True)(input)
+    x = layers.LeakyReLU(alpha=0.1)(x) 
+    x = conv(x, kernel=1, filt=filters, stride=1, dilation=2, pad='same')
+    x = layers.AveragePooling2D((2,2), strides=(2,2))(x)
+    if att:
+        x = attention(x)
+    return x
+    
+def attention(input):
+    x = channel_att(input)
+    x = spatial_att(x)
+    return x
+    
+def channel_att(input, ratio=8):
+    channel = input.get_shape()[-1]
+    ####
+    avg_pool = tf.keras.layers.GlobalAveragePooling2D()(input)
+    avg_pool = tf.keras.layers.Reshape((-1,1,1,channel))(avg_pool)
+    max_pool = tf.keras.layers.GlobalMaxPooling2D()(input)
+    max_pool = tf.keras.layers.Reshape((-1,1,1,channel))(max_pool)
+    ####
+    mlp_0 = layers.Dense(units=channel//ratio, activation=layers.ReLU())
+    mlp_1 = layers.Dense(units=channel, activation=layers.ReLU())
+    avg_ = mlp_1(mlp_0(avg_pool))
+    max_ = mlp_1(mlp_0(max_pool))
+    scale = keras.activations.sigmoid(avg_+max_)
+    return input*scale
+
+def spatial_att(input, kernel=7):
+    avg_pool = tf.math.reduce_mean(input, axis=[3], keepdims=True)
+    max_pool = tf.math.reduce_max(input, axis=[3], keepdims=True)
+    concat = tf.concat([avg_pool, max_pool], axis=3)
+    concat = layers.Conv2D(filters=1, kernel_size=kernel, padding='same',use_bias=False)(concat)
+    concat = keras.activations.sigmoid(concat)
+    return input*concat
+
+
+def create_model():
+    Input = layers.Input(shape=(540, 540, 3))
+    x = conv(Input, kernel=3, filt=64, stride=1, dilation=2)
+    for i in range(8):
+        x = dense_block(x, filters=128, layers=3, bottleneck=True)
+        x = transition_block(x, filters=128, att=True)
+    x = dense_block(x, filters=128, layers=4, bottleneck=True)
+    x = layers.BatchNormalization(axis=-1, fused=True)(x)
+    x = conv(x, kernel=1, filt=45, stride=1, dilation=1)
+    model = tf.keras.Model(inputs=Input, outputs=x)
     model.compile(optimizer=keras.optimizers.SGD(), loss=custom_loss)
     return model
 
 
-def GetInput():
-    # Return a random tensor input matching expected input shape (batch size None, 540x540x3)
-    # Use batch size 1 for simplicity
-    return tf.random.uniform(shape=(1, 540, 540, 3), dtype=tf.float32)
+with tpu_strategy.scope():
+    model=create_model()
 
+
+model.fit(get_training_dataset(), validation_data=get_validation_dataset(),  initial_epoch=0, steps_per_epoch=steps_per_epoch ,validation_steps=val_steps, epochs=EPOCHS, verbose=1, callbacks=clbk)
+
+resolver = tf.distribute.cluster_resolver.TPUClusterResolver()
+tf.config.experimental_connect_to_host(resolver.master())
+tf.tpu.experimental.initialize_tpu_system(resolver)
+tpu_strategy = tf.distribute.experimental.TPUStrategy(resolver)

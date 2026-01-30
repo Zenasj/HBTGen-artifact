@@ -1,33 +1,68 @@
-# tf.random.uniform((B, 1, 5, 12), dtype=tf.float32) ← Inferred input shape from the issue (batch_size, 1, 5, 12)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
 import numpy as np
+import pathlib
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # The original model applies a Dense layer on a rank-4 input (batch,1,5,12)
-        # Dense layer expects last dimension as input_dim=12, output_dim=3
-        # So the Dense layer will be applied to the last dimension of shape 12.
-        # Keras Dense layer can broadcast over the previous dims (1,5).
-        self.dense = tf.keras.layers.Dense(3)
+def tflite_convert(model,data):
+    def representative_data_gen():
+            for input_value in data:
+                input_value = input_value[np.newaxis, ...]
+                yield [input_value] # shape should be (1, <data point size))
+    converter = tf.lite.TFLiteConverter.from_keras_model(model)
+    converter.optimizations = [tf.lite.Optimize.DEFAULT]
+    converter.representative_dataset = representative_data_gen
+    # Ensure that if any ops can't be quantized, the converter throws an error
+    converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
 
-    def call(self, inputs):
-        # inputs shape: (batch_size, 1, 5, 12)
-        # Apply dense layer to the last dimension.
-        # The Dense layer from Keras applies on the last axis,
-        # preserving the other axes: output shape (batch,1,5,3).
-        return self.dense(inputs)
+    converter.inference_input_type = tf.int8
+    converter.inference_output_type = tf.int8
+    
+    tflite_model = converter.convert()
+    tflite_models_dir = pathlib.Path("./output/tflite_models/")
+    tflite_models_dir.mkdir(exist_ok=True, parents=True)
+    tflite_model_file = tflite_models_dir/"model_{0}.tflite".format(model.name)
+    tflite_model_file.write_bytes(tflite_model)
 
-def my_model_function():
-    return MyModel()
+def tflite_explore(path):
+    tflite_interpreter = tf.lite.Interpreter(model_path=path)
+    tflite_interpreter.allocate_tensors()
+    
+    '''
+    Check input/output details
+    '''
+    input_details = tflite_interpreter.get_input_details()
+    output_details = tflite_interpreter.get_output_details()
 
-def GetInput():
-    # Create a random float tensor with the appropriate shape and dtype
-    # According to the issue, batch size is dynamic, let's set batch_size=2 for example
-    batch_size = 2
-    shape = (batch_size, 1, 5, 12)
-    # Use uniform float in [0,1) to simulate normalized input (like noise/255)
-    # dtype float32 to match Keras default
-    return tf.random.uniform(shape, dtype=tf.float32)
+    print("== Input details ==")
+    print("name:", input_details[0]['name'])
+    print("shape:", input_details[0]['shape'])
+    print("type:", input_details[0]['dtype'])
+    print("\n== Output details ==")
+    print("name:", output_details[0]['name'])
+    print("shape:", output_details[0]['shape'])
+    print("type:", output_details[0]['dtype'])
 
+
+def make_dense_model():
+    input_layer = tf.keras.Input(shape=(1,5,12))
+    dense_layer=tf.keras.layers.Dense(3)(input_layer)
+    model=tf.keras.Model(input_layer,dense_layer)
+    return model
+
+def generate_Noise_Data(shape,batch_size):
+    if None in shape:
+        shape=list(shape)
+        shape[0]=batch_size  
+    noise=np.array(np.random.randint(0,255,shape).astype(np.float32))
+    return noise/255
+
+model=make_dense_model()
+print(model.summary())
+in_value=generate_Noise_Data(model.layers[0].input_shape[0],2)
+print(model(in_value))
+model.save("./output/dense1layer.h5")
+tflite_convert(model,in_value)
+tflite_explore("./output/tflite_models/model_{0}.tflite".format(model.name))

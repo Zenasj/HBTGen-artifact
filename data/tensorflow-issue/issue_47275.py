@@ -1,48 +1,70 @@
-# tf.random.uniform((B, 1), dtype=tf.float32) ← inferred input shape is (batch_size, 1)
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
+from tensorflow import keras
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Replicating the simple sequential model described:
-        # - Dense(10 units) with input shape [1]
-        # - Dense(1 unit, sigmoid activation)
-        self.dense1 = tf.keras.layers.Dense(10, input_shape=(1,))
-        self.dense2 = tf.keras.layers.Dense(1, activation='sigmoid')
-
-    def call(self, inputs):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        return x
-
-def my_model_function():
-    # Returns a compiled instance of MyModel.
-    model = MyModel()
-    model.compile(optimizer='sgd', loss='mean_squared_error')
+import numpy as np
+import concurrent.futures 
+import time
+import os
+# gpus = tf.config.experimental.list_physical_devices('GPU')
+# if len(gpus) > 0:
+#     print(f'GPUs {gpus}')
+#     try: tf.config.experimental.set_memory_growth(gpus[0], True)
+#     except RuntimeError: pass
+def simple_model():
+    model = keras.models.Sequential([
+        keras.layers.Dense(units = 10, input_shape = [1]),
+        keras.layers.Dense(units = 1, activation = 'sigmoid')
+    ])
+    model.compile(optimizer = 'sgd', loss = 'mean_squared_error')
     return model
 
-def GetInput():
-    # Returns a tf.float32 tensor matching the input expected by MyModel.
-    # The original code used np.arange reshaped as (num_of_seq, 10)
-    # but model input shape is (None, 1), so providing (B,1) continuous inputs.
-    # Using batch size 4 here as a simple example, can be any batch size.
-    batch_size = 4
-    # For simplicity, generate random continuous values
-    return tf.random.uniform((batch_size, 1), minval=0, maxval=10, dtype=tf.float32)
+def clone_model(model):
+    model_clone = tf.keras.models.clone_model(model)
+    model_clone.set_weights(model.get_weights())
+    return model_clone
 
-# ---
-# **Explanation and assumptions:**
-# - The original issue code defines a simple Keras Sequential model:
-#   - `Dense(units=10, input_shape=[1])`
-#   - followed by `Dense(units=1, activation='sigmoid')`
-# - So, the input shape to the model is `[batch_size, 1]`.
-# - The direct translation to the subclassing API is implementing `MyModel(tf.keras.Model)` with those layers.
-# - The `GetInput()` should produce valid random input matching this shape and dtype.
-# - The original code uses numpy arrays of shape `(num_of_seq, 10)` for sequences in workers, but the model expects `(batch_size, 1)`. This may be because the workers reshape differently for batch calls. For simplicity and to precisely match the model’s expected input shape, I use `(batch_size, 1)` here.
-# - The code includes compilation in `my_model_function()` to conform to original example.
-# - The original issue is about problems saving/loading model with multiprocessing and h5 files. Since this doesn't affect the internal model definition or forward call, this isolated model definition is sufficient and runnable.
-# - This model is compatible with XLA compilation under TensorFlow 2.20.0.
-# - The code avoids directly replicating multiprocessing or file IO from the issue since the request was to produce a single code file defining the model and input generation.
-# - No extraneous test code or `__main__` block is included.
-# This final code reflects the core model logic and input shape from the original example, adapted to meet the task instructions rigidly and cleanly.
+def work(model_path, seq):
+    t0 = time.perf_counter()
+    model = tf.keras.models.load_model(model_path)
+    # model = tf.saved_model.load(model_path)
+    t1 = time.perf_counter()
+    print("Time taken to load the model", t1-t0)
+    return model.predict(seq)
+
+def workers(model, num_of_seq = 4):
+    seqences = np.arange(0,num_of_seq*10).reshape(num_of_seq, -1)
+    # model_savepath = './testing/simple_model.h5'
+    model_savepath = './testing'
+    try:
+        os.mkdir(model_savepath)
+    except:
+        pass
+    model.save(model_savepath)
+    path_list = [model_savepath for _ in range(num_of_seq)]
+
+    with concurrent.futures.ProcessPoolExecutor(max_workers=None) as executor:        
+        t0 = time.perf_counter()
+        # model_list = [clone_model(model) for _ in range(num_of_seq)]
+        index_list = np.arange(1, num_of_seq)
+        # [clone_model(model) for _ in range(num_of_seq)]
+        # print(model_list)
+        future_to_samples = {executor.submit(work, path, seq): seq for path, seq in zip(path_list,seqences)}
+    Seq_out = []
+    for future in concurrent.futures.as_completed(future_to_samples):
+        out = future.result()
+        Seq_out.append(out)
+    t1 = time.perf_counter()
+    print(t1-t0)
+    return np.reshape(Seq_out, (-1, )), t1-t0
+
+
+
+if __name__ == '__main__':
+    model = simple_model()
+    num_of_seq = 400
+    # model_list = [clone_model(model) for _ in range(4)]
+    out = workers(model, num_of_seq=num_of_seq)
+    print(out)

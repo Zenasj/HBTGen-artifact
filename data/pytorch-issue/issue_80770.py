@@ -1,30 +1,52 @@
-# torch.rand(B, C, H, W, dtype=...)  # This line is a placeholder and not used in this specific issue
+py
+import torch
+
+def fn(input):
+    fn_res = input.xlogy(2)
+    return fn_res
+
+input = torch.tensor([[0., 0., 0., 0.]], dtype=torch.float64, requires_grad=True)
+torch.autograd.gradcheck(fn, (input))
+
+[
+[0.3010, 0.0000, 0.0000, 0.0000],
+[0.0000, 0.3010, 0.0000, 0.0000],
+[0.0000, 0.0000, 0.3010, 0.0000],
+[0.0000, 0.0000, 0.0000, 0.3010]
+]
 
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Define the model structure here if needed
-        # For this specific issue, no additional layers are required
+def fn(input):
+    t = torch.tensor([[3., 6., 0, 3.]], dtype=torch.float64, requires_grad=True)
+    fn_res = input.xlogy(t)
+    return fn_res
 
-    def forward(self, x):
-        # The forward pass uses the xlogy function
-        return x.xlogy(2)
+input = torch.tensor([[2., 0., 4., 0.]], dtype=torch.float64, requires_grad=True)
+torch.autograd.gradcheck(fn, (input))
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+import torch
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # The input shape is (1, 4) as per the issue description
-    return torch.tensor([[0., 0., 0., 0.]], dtype=torch.float64, requires_grad=True)
+x = torch.tensor([[0., 0., 0., 0.]], dtype=torch.float64, requires_grad=True)
+y = torch.tensor([[0., 1., -1., -6.]], dtype=torch.float64, requires_grad=True)
+z = torch.special.xlogy(x, 1. + y)
+z.sum().backward()
+print('xlogy(x, 1 + y):', x.grad)
 
-# Example usage:
-# model = my_model_function()
-# input = GetInput()
-# output = model(input)
-# torch.autograd.gradcheck(model, (input))
+x = torch.tensor([[0., 0., 0., 0.]], dtype=torch.float64, requires_grad=True)
+y = torch.tensor([[0., 1., -1., -6.]], dtype=torch.float64, requires_grad=True)
+z = x * torch.log(1. + y)
+z.sum().backward()
+print('x * log(1 + y): ', x.grad)
 
+x = torch.tensor([[0., 0., 0., 0.]], dtype=torch.float64, requires_grad=True)
+y = torch.tensor([[0., 1., -1., -6.]], dtype=torch.float64, requires_grad=True)
+z = torch.special.xlog1py(x, y)
+z.sum().backward()
+print('xlog1py(x, y):  ', x.grad)
+
+x = torch.tensor([[0., 0., 0., 0.]], dtype=torch.float64, requires_grad=True)
+y = torch.tensor([[0., 1., -1., -6.]], dtype=torch.float64, requires_grad=True)
+z = x * torch.log1p(y)
+z.sum().backward()
+print('x * log1p(y):   ', x.grad)

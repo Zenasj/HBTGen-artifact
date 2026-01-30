@@ -1,29 +1,22 @@
-# torch.rand(B, 10, dtype=torch.float32)  # Inferred input shape based on common transformer-like models
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Simplified architecture to represent both Bert and speech_transformer elements
-        self.embedding = nn.Linear(10, 32)  # Example embedding layer
-        self.transformer = nn.TransformerEncoder(
-            nn.TransformerEncoderLayer(d_model=32, nhead=4),
-            num_layers=2
+def save_fx(gm, example_inputs):
+    from functorch.compile import aot_module, aot_module_simplified
+
+    def graph_saver_forward(gm, _):
+        gm.to_folder(...)
+        return gm
+
+    def graph_saver_backward(gm, _):
+        gm.to_folder(...)
+        return gm
+
+    return aot_module(gm, fw_compiler=graph_saver_forward, bw_compiler=graph_saver_backward) 
+
+optimize_ctx = torchdynamo.optimize(    
+            save_fx, # aot_module(gm, fw_compiler=graph_saver_forward, bw_compiler=graph_saver_backward)
+            nopython=args.nopython,
         )
-        self.fc = nn.Linear(32, 5)  # Output layer
 
-    def forward(self, x):
-        x = self.embedding(x)
-        x = self.transformer(x.unsqueeze(1))  # Add sequence dimension if needed
-        return self.fc(x.mean(dim=1))  # Global average pooling for output
-
-def my_model_function():
-    # Returns a fused model instance combining Bert-like and speech transformer elements
-    return MyModel()
-
-def GetInput():
-    # Returns a random input tensor matching the expected input shape
-    B = 2  # Batch size (arbitrary choice)
-    return torch.rand(B, 10, dtype=torch.float32)  # Matches the input shape comment
-
+with optimize_ctx:
+           model_iter_fn(model, example_inputs, collect_outputs=False)

@@ -1,32 +1,23 @@
-# torch.rand(B, C, H, W, dtype=...)  # In this case, the input is a 2D tensor of shape (rows, cols) with dtype=torch.float16 and device="cuda"
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, probs):
-        # Use num_samples=2 to avoid the issue with num_samples=1
-        samples = torch.multinomial(probs, num_samples=2, replacement=True)
-        # Return the first sample
-        return samples[:, 0]
-
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput(rows=10000, cols=1000):
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(rows, cols, dtype=torch.float16, device="cuda")
-
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
-
-# ### Explanation:
-# - **MyModel**: This class defines a simple model that uses `torch.multinomial` with `num_samples=2` and `replacement=True` to avoid the issues described in the GitHub issue. It returns the first sample.
-# - **my_model_function**: This function returns an instance of `MyModel`.
-# - **GetInput**: This function generates a random tensor of the specified shape and data type, which is suitable for use with `MyModel`.
-# This code should be ready to use with `torch.compile(MyModel())(GetInput())` and avoids the issues with `torch.multinomial` on float16 GPU tensors.
+import torch
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
+seed = 5
+rows = 10000
+cols = 1000
+trails = 10
+num_samples = 1
+for i in range(trails):
+    torch.manual_seed(seed)
+    probs = torch.rand(rows, cols, dtype=torch.float16, device="cuda")
+    fake_token1 = torch.multinomial(probs, num_samples=num_samples, replacement=True)
+    torch.manual_seed(seed)
+    probs = torch.rand(rows, cols, dtype=torch.float16, device="cuda")
+    fake_token2 = torch.multinomial(probs, num_samples=num_samples, replacement=True)
+    diff_ratio = (fake_token1 != fake_token2).sum().item() / probs.shape[0] / num_samples
+    print('trail {} inconsistency ratio = {}'.format(i, diff_ratio))
+    if diff_ratio > 0:
+        print(torch.nonzero(fake_token1 != fake_token2, as_tuple=False))
+        print(fake_token1[fake_token1 != fake_token2])
+        print(fake_token2[fake_token1 != fake_token2])

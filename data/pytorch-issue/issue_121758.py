@@ -1,29 +1,33 @@
-# torch.rand(4, 6, dtype=torch.float), torch.tensor([0, 2, 4], dtype=torch.int64)
+import torch.nn as nn
+
 import torch
-from torch import nn
 from torch.nested._internal.nested_tensor import ViewNestedFromBuffer, buffer_from_jagged
 
-class MyModel(nn.Module):
-    def __init__(self, use_nt=True):
-        super().__init__()
-        self.l = nn.Linear(6, 8)
-        self.use_nt = use_nt
+# set this to "False" and the test will stop failing
+use_nt = True
 
-    def forward(self, inputs):
-        values, offsets = inputs
-        if self.use_nt:
-            nt = ViewNestedFromBuffer.apply(values, offsets)
-            output_nt = self.l(nt)
-            return buffer_from_jagged(output_nt)
-        else:
-            return self.l(values)
+with torch.profiler.profile() as prof:
+    values = torch.randn(4, 6, requires_grad=True)
+    offsets = torch.tensor([0,2,4])
+    values = values * 2
+    l = torch.nn.Linear(6,8)
+    if use_nt:
+        nt = ViewNestedFromBuffer.apply(values, offsets)
+    else:
+        nt = values
 
-def my_model_function():
-    # Returns the model using NestedTensor (as in the original repro's failing case)
-    return MyModel(use_nt=True)
+    nt = l(nt)
+    if use_nt:
+        val = buffer_from_jagged(nt)
+    else:
+        val = nt
 
-def GetInput():
-    values = torch.rand(4, 6, dtype=torch.float, requires_grad=True)
-    offsets = torch.tensor([0, 2, 4], dtype=torch.int64)
-    return (values, offsets)
+    loss = val.sum()
+    loss.backward()
 
+found_seq_nr = False
+for evt in prof.events():
+    if "linear" in evt.name and "backward" not in evt.name:
+        found_seq_nr = found_seq_nr or evt.sequence_nr != -1
+
+assert found_seq_nr

@@ -1,42 +1,32 @@
-# tf.random.uniform((112, 32, 32, 3), dtype=tf.float32) <- Inferred from CIFAR-10 dataset shape and batch_size
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
-import tensorflow as tf
+batch_size = 112
+epochs = 119
+num_classes = 10
+import os
+save_dir = 'model'
+model_name = 'test971_trained_model.h5'
+import tensorflow.keras as keras
+(x_train, y_train), (x_test, y_test) = keras.datasets.cifar10.load_data()
+print('x_train shape:', x_train.shape)
+print(x_train.shape[0], 'train samples')
+print(x_test.shape[0], 'test samples')
+img_rows, img_cols = x_train.shape[1], x_train.shape[2]
+y_train = keras.utils.to_categorical(y_train, num_classes)
+y_test = keras.utils.to_categorical(y_test, num_classes)
+model = keras.models.Sequential()
+model.add(keras.layers.BatchNormalization(momentum = 0.4639004933194679,epsilon=0.6515653837017596))
+model.add(keras.layers.PReLU(alpha_initializer='Zeros'))
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Using BatchNormalization with momentum and epsilon as per the reported values
-        self.bn = tf.keras.layers.BatchNormalization(momentum=0.4639004933194679, epsilon=0.6515653837017596)
-        # PReLU activation with alpha initialized to zeros
-        self.prelu = tf.keras.layers.PReLU(alpha_initializer='zeros')
-        # Flatten layer to flatten spatial dimensions to vector
-        self.flatten = tf.keras.layers.Flatten()
-        # Dense layer outputting the logits for num_classes=10
-        self.dense = tf.keras.layers.Dense(10)
-
-    def call(self, inputs, training=False):
-        # Follow the architecture from the issue report
-        x = self.bn(inputs, training=training)
-        x = self.prelu(x)
-        x = self.flatten(x)
-        x = self.dense(x)
-        return x
-
-def my_model_function():
-    # Instantiate and return the model
-    return MyModel()
-
-def GetInput():
-    # Generate random input tensor mimicking CIFAR-10 batch:
-    # batch_size=112, height=32, width=32, channels=3
-    # Using uniform float32 input scaled between 0 and 1, matching original preprocessing
-    batch_size = 112
-    height = 32
-    width = 32
-    channels = 3
-    input_tensor = tf.random.uniform(
-        shape=(batch_size, height, width, channels), 
-        minval=0.0, maxval=1.0, dtype=tf.float32
-    )
-    return input_tensor
-
+model.add(keras.layers.Flatten())
+model.add(keras.layers.Dense(num_classes))
+x_train = x_train.astype('float32')
+x_test = x_test.astype('float32')
+x_train /= 255
+x_test /= 255
+model.compile(loss=keras.losses.categorical_crossentropy,optimizer=keras.optimizers.Adadelta(), metrics=['accuracy'])
+model.fit(x_train, y_train, batch_size=batch_size, epochs=epochs, verbose=1, validation_data=(x_test, y_test))
+model_path = os.path.join(save_dir, model_name)
+model.save(model_path)

@@ -1,46 +1,41 @@
-# tf.random.uniform((1, 10), dtype=tf.float32)  # inferred input shape from the reproduction example: single batch, 10 features
+from tensorflow.keras import layers
 
+optimizer = tf.train.SomeOptimizer(learning_rate)
+session.run(tf.variables_initializer(optimizer.variables()))
+
+import os
+import psutil
+from tensorflow import keras
+model = keras.Sequential()
+model.add(keras.layers.Dense(1, input_shape=(1,)))
+process = psutil.Process(os.getpid())
+for count in range(1000):
+    model.compile(optimizer='sgd', loss='mse')
+    if count % 100 == 0:
+        print('#{} : mem = {} Byte'.format(count, process.memory_info().rss))
+
+#0 : mem = 284536832 Byte
+#100 : mem = 419696640 Byte
+#200 : mem = 554618880 Byte
+#300 : mem = 690429952 Byte
+#400 : mem = 826294272 Byte
+#500 : mem = 962461696 Byte
+#600 : mem = 1097363456 Byte
+#700 : mem = 1234108416 Byte
+#800 : mem = 1369239552 Byte
+#900 : mem = 1504563200 Byte
+
+import os
+import psutil
+import objgraph
+from tensorflow import keras
 import tensorflow as tf
-
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Initialize layers with specified weight initializers and biases as in the original Sequential model:
-        self.dense1 = tf.keras.layers.Dense(
-            25, input_dim=10,
-            kernel_initializer=tf.keras.initializers.TruncatedNormal(mean=0.0, stddev=0.05, seed=1),
-            bias_initializer='zeros',
-            activation='relu'
-        )
-        self.dense2 = tf.keras.layers.Dense(
-            25,
-            kernel_initializer=tf.keras.initializers.TruncatedNormal(mean=0.0, stddev=0.05, seed=2),
-            bias_initializer='zeros',
-            activation='relu'
-        )
-        self.dense3 = tf.keras.layers.Dense(
-            10,
-            kernel_initializer=tf.keras.initializers.TruncatedNormal(mean=0.0, stddev=0.05, seed=3),
-            bias_initializer='zeros',
-            activation='softmax'
-        )
-
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        x = self.dense3(x)
-        return x
-
-def my_model_function():
-    # Return an instance of MyModel with a default SGD optimizer (lr=0.1) and categorical_crossentropy loss compiled.
-    model = MyModel()
-    sgd = tf.keras.optimizers.SGD(learning_rate=0.1, momentum=0.0, decay=0.0, nesterov=False)
-    model.compile(loss='categorical_crossentropy', optimizer=sgd, metrics=['accuracy'])
-    return model
-
-def GetInput():
-    # Return input tensor matching the input shape expected by the model
-    # The original example input was numpy array shape (1, 10) with dtype float.
-    # Use uniform random float tensor with same shape and dtype float32.
-    return tf.random.uniform((1, 10), dtype=tf.float32)
-
+print('Tensorflow: ',tf.__version__)
+model = keras.Sequential()
+model.add(keras.layers.Dense(1, input_shape=(1,)))
+process = psutil.Process(os.getpid())
+for count in range(1000):
+    model.compile(optimizer='sgd', loss='mse')
+    if count % 100 == 0:
+        print('#{} : mem = {} Byte'.format(count, process.memory_info().rss))
+        objgraph.show_growth(limit=3)

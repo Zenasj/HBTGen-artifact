@@ -1,26 +1,57 @@
-# tf.random.uniform((B, 1), dtype=tf.float32) ← Input shape inferred from Input(shape=(1,)) in the example
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
-import tensorflow as tf
+from tensorflow.keras.layers import Dense, Input
+from tensorflow.keras.models import Model
 import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Simple Dense layer to mimic the example model
-        self.dense = tf.keras.layers.Dense(1)
+train_epoch_size = 10
+test_epoch_size = 20
 
-    def call(self, inputs, training=False):
-        return self.dense(inputs)
+class KerasBatchGenerator(object):
+    def generate(self, phase='train'):
+        while True:
+            if phase == 'train':
+                for i in range(train_epoch_size):
+                    yield [np.array([0])],[np.array([0])]
+            else:
+                for i in range(test_epoch_size):
+                    print('   i',i)
+                    yield [np.array([0])],[np.array([0])]
 
-def my_model_function():
-    model = MyModel()
-    # Compile with SGD optimizer and MSE loss as per the example
-    model.compile(optimizer='SGD', loss='mean_squared_error')
-    return model
+keras_gen_train = KerasBatchGenerator()
 
-def GetInput():
-    # The example input shape is (batch_size, 1)
-    # Using batch size 4 as a reasonable example for testing
-    batch_size = 4
-    return tf.random.uniform((batch_size, 1), dtype=tf.float32)
+inputs = Input(shape=(1,))
+x = Dense(1)(inputs)
 
+model = Model(inputs=inputs, outputs=x)
+
+model.compile(loss='mean_squared_error', optimizer='SGD')
+print(model.summary())
+
+model.fit_generator(keras_gen_train.generate(), train_epoch_size, 2,
+                           validation_data=keras_gen_train.generate('test'), validation_steps=test_epoch_size)#, workers = 0)
+
+def _make_enqueued_generator(generator,
+                             workers=1,
+                             use_multiprocessing=False,
+                             max_queue_size=10,
+                             shuffle=False):
+  """Create a buffered queue of next elements of the generator."""
+  is_sequence = isinstance(generator, data_utils.Sequence)
+  enqueuer = None
+  if workers > 0:
+    if is_sequence:
+      enqueuer = data_utils.OrderedEnqueuer(
+          generator, use_multiprocessing=use_multiprocessing, shuffle=shuffle)
+    else:
+      enqueuer = data_utils.GeneratorEnqueuer(
+          generator, use_multiprocessing=use_multiprocessing)
+    enqueuer.start(workers=workers, max_queue_size=max_queue_size) #here the additional calls happen!
+    output_generator = enqueuer.get()
+  else:
+    if is_sequence:
+      output_generator = data_utils.iter_sequence_infinite(generator)
+    else:
+      output_generator = generator
+  return output_generator, enqueuer

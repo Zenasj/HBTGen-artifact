@@ -1,21 +1,22 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Inferred input shape (B=1, C=1, H=1, W=1)
-import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
+import torch
+import torch.utils.mobile_optimizer
+from torch.jit._recursive import wrap_cpp_module
+
+class MyMod(torch.nn.Module):
     def forward(self, arg):
-        return arg  # Replicates the original model's forward behavior
-    
+        return arg
     @torch.jit.export
     def version(self):
-        return 1  # Preserves the exported method causing the issue
+        return 1
 
-def my_model_function():
-    return MyModel()  # Returns the model instance with preserved methods
-
-def GetInput():
-    return torch.rand(1, 1, 1, 1, dtype=torch.float32)  # Matches input shape comment above
-
+sm = torch.jit.script(MyMod())
+sm.eval()
+print("Original")
+sm._c.dump(True, True, False)
+print("==========")
+frozen = wrap_cpp_module(torch._C._freeze_module(sm_1._c))
+print("POST FREEZING")
+frozen._c.dump(True, True, False)
+print("==========")

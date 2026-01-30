@@ -1,29 +1,22 @@
-# torch.rand(10, 9, 8, 6, dtype=torch.float32) ← Add a comment line at the top with the inferred input shape
 import torch
 import torch.nn as nn
+import traceback
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
+def forward(x, device):
+  x = torch.rsqrt(input=x, out=torch.rand([10, 9, 8, 6], dtype=torch.float32).to('cpu'))                
+  return x
+input_tensor = torch.rand([10, 9, 8, 6], dtype=torch.float32).to('cpu')
+cuda_tensor = input_tensor.clone().to('cuda')
+no_op_info = forward(input_tensor, 'cpu')
+print("build succeded")
+op_info = torch.compile(forward, mode='max-autotune',fullgraph=False,dynamic=True)(cuda_tensor, 'cuda')
 
-    def forward(self, x):
-        # Use torch.rsqrt and return the result
-        out = torch.rsqrt(x)
-        return out
-
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(10, 9, 8, 6, dtype=torch.float32)
-
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
-# compiled_model = torch.compile(model)
-# compiled_output = compiled_model(input_tensor)
-# print(torch.allclose(output, compiled_output, rtol=1e-3, atol=1e-3, equal_nan=True))
-
+same_val = torch.allclose(no_op_info.to('cpu'), 
+                        op_info.to('cpu'), 
+                        rtol=1e-3, atol=1e-3, 
+                        equal_nan=True)
+if same_val == False : 
+    print("BUGBUG DIFFERENTIAL")
+    raise ValueError('diff value')
+else :
+    print("no_error")

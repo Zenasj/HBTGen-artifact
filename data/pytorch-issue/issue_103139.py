@@ -1,10 +1,20 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)
 import torch
+import logging
+import torch._dynamo
 import torch.nn as nn
 import torch.nn.functional as F
 import itertools
 
+# torch._dynamo.config.print_guards = True
+# torch._logging.set_logs(dynamo=logging.DEBUG)
+
+def conv3x3(in_planes, out_planes, stride=1):
+    """3x3 convolution with padding"""
+    return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride, padding=1, bias=False)
+
+
 class Shake(torch.autograd.Function):
+
     @classmethod
     def forward(cls, ctx, inp1, inp2, training):
         assert inp1.size() == inp2.size()
@@ -20,7 +30,7 @@ class Shake(torch.autograd.Function):
     def backward(cls, ctx, grad_output):
         grad_inp1 = grad_inp2 = grad_training = None
         gate_size = [grad_output.size()[0], *itertools.repeat(1, grad_output.dim() - 1)]
-        gate = rad_output.data.new(*gate_size).uniform_(0, 1)  # Typo preserved as in original issue
+        gate = rad_output.data.new(*gate_size).uniform_(0, 1)
         if ctx.needs_input_grad[0]:
             grad_inp1 = grad_output * gate
         if ctx.needs_input_grad[1]:
@@ -28,10 +38,13 @@ class Shake(torch.autograd.Function):
         assert not ctx.needs_input_grad[2]
         return grad_inp1, grad_inp2, grad_training
 
+
 def shake(inp1, inp2, training=False):
     return Shake.apply(inp1, inp2, training)
 
-class MyModel(nn.Module):
+
+class ShakeShakeBlock(nn.Module):
+
     @classmethod
     def out_channels(cls, planes, groups):
         assert groups == 1
@@ -40,8 +53,8 @@ class MyModel(nn.Module):
     def __init__(self, inplanes=4, planes=4, groups=1, stride=1, downsample=None):
         super().__init__()
         assert groups == 1
-        self.conv_a1 = nn.Conv2d(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False)
-        self.conv_b1 = nn.Conv2d(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False)
+        self.conv_a1 = conv3x3(inplanes, planes, stride)
+        self.conv_b1 = conv3x3(inplanes, planes, stride)
 
     def forward(self, x):
         a, b = x, x
@@ -50,9 +63,11 @@ class MyModel(nn.Module):
         ab = shake(a, b, training=self.training)
         return ab
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    return torch.rand(4, 4, 4, 4, dtype=torch.float32)
+x = torch.rand(4, 4, 4, 4)
 
+m = ShakeShakeBlock()
+print(m(x))
+
+opt_m = torch.compile(backend="eager")(m)
+print(opt_m(x))

@@ -1,25 +1,25 @@
-# tf.random.uniform((batch_size, 100, 10), dtype=tf.float32)  ← Inferred input shape from the issue example
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Flatten layer and Dense layer matching the Sequential model from the issue
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense = tf.keras.layers.Dense(3, activation='softmax')
-    
-    def call(self, inputs, training=False):
-        x = self.flatten(inputs)
-        return self.dense(x)
+batch_size = 33
 
-def my_model_function():
-    # Returns an instance of MyModel
-    return MyModel()
+input_tensor = tf.keras.Input(shape=[5], batch_size=batch_size)
+lstm_input = tf.keras.layers.Dense(16, activation=tf.keras.activations.elu)(input_tensor)
+lstm_input = tf.expand_dims(lstm_input, axis=1)
+lstm_layer = tf.keras.layers.LSTM(16, stateful=True,return_state=True)
+lstm_out, h, c = lstm_layer(lstm_input)
+out = tf.keras.layers.Dense(1, activation=tf.keras.activations.linear)(lstm_out)
 
-def GetInput():
-    # Provide a random input matching the expected input shape to MyModel
-    # Shape corresponds to the input defined in the reported issue: (batch_size, 100, 10)
-    batch_size = 33  # Chosen batch size similar to example in chunk 2
-    return tf.random.uniform((batch_size, 100, 10), dtype=tf.float32)
+model = tf.keras.Model(
+    inputs=[input_tensor],
+    outputs=[out, h, c])
+model.compile(optimizer=tf.keras.optimizers.Adam(), loss=tf.keras.losses.MeanSquaredError())
+model.summary()
 
+input_arr = np.random.random(size=(batch_size, 5))
+model.predict(input_arr,batch_size=batch_size)

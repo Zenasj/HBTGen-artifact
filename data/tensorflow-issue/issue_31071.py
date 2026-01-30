@@ -1,29 +1,39 @@
-# tf.random.uniform((10, 3, 5), dtype=tf.float32) ← inferred from input_shape=(3, len(train_X[0])) with batch_size=10 and train_X originally shaped (200,5)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+
+import numpy as np
 import tensorflow as tf
+#tf.enable_eager_execution()
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Stateful LSTM layer with 86 units, input shape (3 timesteps, 5 features), batch size 10
-        self.lstm = tf.keras.layers.LSTM(86, return_sequences=True, stateful=True,
-                                         batch_input_shape=(10, 3, 5))
-        # Dense layer outputs 2 classes (categorical)
-        self.dense = tf.keras.layers.Dense(2)
-        self.activation = tf.keras.layers.Activation('softmax')
+train_X = np.arange(1, 1001).reshape((200, 5))
+train_Y = np.array(list(map(
+    lambda x: np.array([1, 0]) if x == 0 else np.array([0, 1]),
+    np.random.randint(2, size=200))))
 
-    def call(self, inputs, training=False):
-        x = self.lstm(inputs, training=training)
-        x = self.dense(x)
-        x = self.activation(x)
-        return x
+ds = tf.data.Dataset.from_tensor_slices((train_X, train_Y))
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+ws = 3
+sh = None
+st = 1
+bs = 10
+nu = 86
+ne = 5
 
-def GetInput():
-    # Return input tensor compatible with the model expected shape:
-    # batch_size=10, time_steps=3, features=5 (as per the example data shape)
-    # Use float32 dtype as typical for TF inputs
-    return tf.random.uniform((10, 3, 5), dtype=tf.float32)
+ds = ds.window(size=ws, shift=sh, stride=st, drop_remainder=True).flat_map(lambda x, y: tf.data.Dataset.zip((x.batch(ws), y.batch(ws)))).batch(bs, drop_remainder=True)
 
+model = tf.keras.Sequential([
+    tf.keras.layers.InputLayer(input_shape=(ws, len(train_X[0])), batch_size=bs),
+    tf.keras.layers.LSTM(nu, return_sequences=True, stateful=True),
+    tf.keras.layers.Dense(2), # categorical
+    tf.keras.layers.Activation('softmax'), # categorical
+])
+model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['categorical_accuracy'])
+print(model.summary())
+
+history = {}
+for e in range(ne):
+    history[e] = model.fit(ds, epochs=1, shuffle=False)
+    model.reset_states()
+
+#history = model.fit(ds, epochs=ne, shuffle=False)

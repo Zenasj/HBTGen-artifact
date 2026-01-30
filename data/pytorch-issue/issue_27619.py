@@ -1,18 +1,9 @@
-# torch.rand(B, 100, dtype=torch.float32)
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.linear = nn.Linear(100, 1)
+import torch
 
-    def forward(self, x):
-        return self.linear(x)
+print(torch.__version__)
+print(torch.version.git_version)
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(0, 100, dtype=torch.float32)
-
+l = torch.nn.Linear(100, 1)
+print(l(torch.randn(0, 100)))

@@ -1,51 +1,36 @@
-# tf.random.uniform((B, 28, 28, 1), dtype=tf.float32)
+from tensorflow.keras import layers
 
+py
 import tensorflow as tf
+print(tf.__version__)
 import numpy as np
+import os
+from tensorflow import keras
+from tensorflow.python.lib.io import file_io
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Define convolutional layers similar to conv_model in the issue
-        self.conv1 = tf.keras.layers.Conv2D(32, kernel_size=5, padding='same', activation='relu', name='conv_layer1')
-        self.pool1 = tf.keras.layers.MaxPooling2D(pool_size=2, strides=2, padding='same')
-        
-        self.conv2 = tf.keras.layers.Conv2D(64, kernel_size=5, padding='same', activation='relu', name='conv_layer2')
-        self.pool2 = tf.keras.layers.MaxPooling2D(pool_size=2, strides=2, padding='same')
-        
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(1024, activation='relu')
-        self.dropout = tf.keras.layers.Dropout(rate=0.5)
-        self.dense_logits = tf.keras.layers.Dense(10)  # 10 classes for digits 0-9
+# os.environ['AWS_ACCESS_KEY_ID'] = "Q3AM3UQ867SPQQA43P2F"
+# os.environ['AWS_SECRET_ACCESS_KEY'] = "zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG"
+# os.environ['AWS_REGION'] = "us-east-1"
+# os.environ['S3_ENDPOINT'] = "play.min.io"
+# os.environ['S3_USE_HTTPS'] = "1"
+# os.environ['S3_VERIFY_SSL'] = "1"
 
-    def call(self, inputs, training=False):
-        # Expect inputs of shape (batch, 28, 28, 1)
-        x = self.conv1(inputs)       # (batch, 28, 28, 32)
-        x = self.pool1(x)            # (batch, 14, 14, 32)
-        
-        x = self.conv2(x)            # (batch, 14, 14, 64)
-        x = self.pool2(x)            # (batch, 7, 7, 64)
-        
-        x = self.flatten(x)          # (batch, 7*7*64)
-        x = self.dense1(x)           # (batch, 1024)
-        x = self.dropout(x, training=training)
-        
-        logits = self.dense_logits(x) # (batch, 10)
-        return logits
+os.environ['AWS_ACCESS_KEY_ID'] = "minio"
+os.environ['AWS_SECRET_ACCESS_KEY'] = "minio123"
+os.environ['AWS_REGION'] = "us-east-1"
+os.environ['S3_ENDPOINT'] = "localhost:9000"
+os.environ['S3_USE_HTTPS'] = "0"
+os.environ['S3_VERIFY_SSL'] = "0"
 
+print(file_io.stat('s3://tfbuck6'))
 
-def my_model_function():
-    # Instantiate and return the model.
-    model = MyModel()
-    # Build the model by running a dummy input through it once (to create weights)
-    dummy_input = tf.random.uniform((1, 28, 28, 1), dtype=tf.float32)
-    model(dummy_input, training=False)
-    return model
+def get_model():
+  # Create a simple model.
+  inputs = keras.Input(shape=(32,))
+  outputs = keras.layers.Dense(1)(inputs)
+  model = keras.Model(inputs, outputs)
+  model.compile(optimizer='adam', loss='mean_squared_error')
+  return model
 
-
-def GetInput():
-    # Return a random tensor input matching the expected model input shape
-    # Shape: (batch_size, height, width, channels) = (100, 28, 28, 1)
-    # Batch size chosen to be 100 matching the batch size in the original script
-    return tf.random.uniform((100, 28, 28, 1), dtype=tf.float32)
-
+tfmodel = get_model()
+keras.experimental.export_saved_model(tfmodel, "s3://tfbuck6", serving_only=True)

@@ -1,29 +1,34 @@
-# torch.rand(2, 4, 64, 64, dtype=torch.float16, device="cuda")
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+pipe = StableDiffusionXLPipeline.from_pretrained(base_model_path, torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
+pipe.to("cuda")
+pipe.unet = torch.compile(pipe.unet, mode="reduce-overhead", fullgraph=True)
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Simplified UNET-like structure for demonstration (actual architecture may vary)
-        self.conv1 = nn.Conv2d(4, 32, kernel_size=3, padding=1)
-        self.norm1 = nn.GroupNorm(8, 32)
-        self.conv2 = nn.Conv2d(32, 4, kernel_size=3, padding=1)
+#...
+for x in pipe.__module__:
+    del x
+del pipe
+gc.collect()
+torch.cuda.empty_cache()
+torch.cuda.synchronize()
 
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.norm1(x)
-        x = F.silu(x)
-        x = self.conv2(x)
-        return x
+from diffusers import DiffusionPipeline
+import torch, gc
+#Any model will suffice for demonstration, this is from huggingface diffusers
+pipe = DiffusionPipeline.from_pretrained(base_model_path, torch_dtype=torch.float16, use_safetensors=True, variant="fp16")
+pipe.to("cuda")
+pipe.unet = torch.compile(pipe.unet, mode="reduce-overhead", fullgraph=True)
 
-def my_model_function():
-    # Returns a compiled UNET instance with minimal architecture
-    model = MyModel()
-    return model.to(torch.float16).cuda()  # Matches dtype/device from the issue
+#...
+for x in pipe.__module__:
+    del x
+del pipe
+gc.collect()
+torch.cuda.empty_cache()
+torch.cuda.synchronize()
 
-def GetInput():
-    # Generates input matching StableDiffusion UNET's expected dimensions
-    return torch.randn(2, 4, 64, 64, dtype=torch.float16, device="cuda")
-
+for x in pipe.__module__:
+    del x
+del pipe
+gc.collect()
+torch._dynamo.reset()
+torch.cuda.empty_cache()
+torch.cuda.synchronize()

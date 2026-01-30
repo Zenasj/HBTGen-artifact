@@ -1,32 +1,51 @@
-# torch.rand(1, dtype=torch.float32)  # Dummy input tensor (not used in computation)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.eps = torch.tensor(0.001, dtype=torch.float32)  # Default float32 tensor
-        self.steps = 1_000_000  # Number of iterations from original example
+x = 0.0
+y = torch.tensor(0.0)
+eps = torch.tensor(0.001)
+for i in range(1_000_000):
+    x += eps.item()
+    y += eps
 
-    def forward(self, _):
-        # Accumulate using Python float (64-bit) and torch.float32 tensor
-        x = 0.0  # Python float (64-bit)
-        y = torch.tensor(0.0, dtype=torch.float32)  # torch.float32 accumulator
-        eps_val = self.eps.item()  # Convert to 64-bit float via .item()
-        
-        for _ in range(self.steps):
-            x += eps_val  # 64-bit accumulation
-            y += self.eps  # 32-bit accumulation
-        
-        # Compare final values using torch operations
-        y_float = y.float()  # Ensure same precision for comparison
-        difference = torch.abs(torch.tensor(x) - y_float)
-        return difference  # Return absolute difference as tensor
+print(f"x = {x}")
+print(f"y = {y.item()}")
 
-def my_model_function():
-    return MyModel()
+# x = 1000.0000474974513
+# y = 991.1415405273438
 
-def GetInput():
-    # Dummy input to satisfy model interface requirements
-    return torch.rand(1, dtype=torch.float32)
+import torch
+torch.set_printoptions(precision=19)
 
+eps = torch.tensor(0.001)
+
+print(eps)
+print(eps.item())
+
+# tensor(0.0010000000474974513)
+# 0.0010000000474974513
+
+x = 0.0
+y = torch.tensor(0.0)
+eps = torch.tensor(0.001)
+for i in range(2):
+    x += eps.item()
+    y += eps
+
+print(f"x = {x}")
+print(f"y = {y.item()}")
+
+# x = 0.0020000000949949026
+# y = 0.0020000000949949026
+
+x = 0.0
+y = torch.tensor(0.0)
+eps = torch.tensor(0.001)
+for i in range(3):
+    x += eps.item()
+    y += eps
+
+print(f"x = {x}")
+print(f"y = {y.item()}")
+
+# x = 0.003000000142492354
+# y = 0.003000000026077032

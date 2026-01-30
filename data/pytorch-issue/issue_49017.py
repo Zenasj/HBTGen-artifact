@@ -1,42 +1,67 @@
-# torch.rand(B, C, H, W, dtype=...) ← Add a comment line at the top with the inferred input shape
+def gen():
+    for i in range(10):
+        yield i
+    
+    # return with a value is automatically converted to StopIteration
+    return 10
+
+for i in gen():
+    print(i)
+
+it = gen()
+try:
+    while True:
+        print(next(it))
+
+except StopIteration as e:
+    print(type(e), e, e.value)
+
+def gen():
+    for i in range(10):
+        yield i
+
+it = gen()
+try:
+    while True:
+        print(next(it))
+
+except StopIteration as e:
+    print(type(e), e, e.value)
+
+# ctx.py
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, padding=1)
-        self.relu = nn.ReLU()
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
+def gen():
+    with torch.no_grad():
+        yield 1  # some compute, e.g. torch.matmul(...)
+    yield 2
 
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.relu(x)
-        x = self.pool(x)
-        return x
+with torch.enable_grad():
+    it = gen()
+    print(torch.is_grad_enabled())
+    print(next(it))
+    print(torch.is_grad_enabled())
+    print(next(it))
+    print(torch.is_grad_enabled())
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+class ctx:
+    def __enter__(self):
+        print('>>> enter')
+    def __exit__(self, typ, val, tb):
+        print('<<< exit')
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    B, C, H, W = 1, 3, 224, 224
-    return torch.rand(B, C, H, W, dtype=torch.float32)
+def gen():
+    with ctx():
+        yield 1
+    yield 2
 
-# Example usage of the generator with a grad-mode decorator
-def no_grad_wrapper(gen):
-    def wrapped():
-        g = gen()
-        with torch.no_grad():
-            resp = g.send(None)
+it = gen()
+print(next(it))
+print('do something')
+print(next(it))
 
-        while True:
-            req = yield resp
-            with torch.no_grad():
-                resp = g.send(req)
-
-    return wrapped
+# ctx.py
+import torch
 
 def gen():
     print("inside 0 ", torch.is_grad_enabled())
@@ -45,7 +70,33 @@ def gen():
     yield 2
     print("inside 2 ", torch.is_grad_enabled())
 
-# Usage
+def no_grad_wrapper(gen):
+    def wrapped():
+        g = gen()
+        with torch.no_grad():
+            resp = g.send(None)
+
+        while True:
+            # Simplified version of the wrapper in this PR that
+            # wraps the send but not the yield
+            req = yield resp
+
+            with torch.no_grad():
+                resp = g.send(req)
+
+    return wrapped
+
+print("default:")
+with torch.enable_grad():
+    it = gen()
+    print(torch.is_grad_enabled())
+    print(next(it))
+    print(torch.is_grad_enabled())
+    print(next(it))
+    print(torch.is_grad_enabled())
+
+print("")
+print("wrapped:")
 with torch.enable_grad():
     it = no_grad_wrapper(gen)()
     print(torch.is_grad_enabled())
@@ -53,13 +104,3 @@ with torch.enable_grad():
     print(torch.is_grad_enabled())
     print(next(it))
     print(torch.is_grad_enabled())
-
-# The provided GitHub issue discusses the enhancement of generators with grad-mode decorators in PyTorch. The main focus is on the interaction between the grad-mode context and the generator, ensuring that the grad mode is correctly set when the execution flow is inside the body of the generator.
-# Since the issue does not provide a specific PyTorch model or code structure, I will create a simple example that demonstrates the use of a generator with a grad-mode decorator. This example will include a `MyModel` class and a `GetInput` function to generate a random input tensor.
-# ### Explanation:
-# 1. **MyModel Class**: A simple convolutional neural network with a single convolutional layer, ReLU activation, and max-pooling.
-# 2. **my_model_function**: Returns an instance of `MyModel`.
-# 3. **GetInput Function**: Generates a random tensor input with the shape (1, 3, 224, 224) and `dtype=torch.float32`.
-# 4. **no_grad_wrapper**: A decorator that wraps a generator and ensures that the `torch.no_grad()` context is applied to each `send` call.
-# 5. **gen**: A simple generator function that prints the grad-enabled state at different points.
-# This code demonstrates how to use a generator with a grad-mode decorator, ensuring that the grad mode is correctly set when the execution flow is inside the body of the generator.

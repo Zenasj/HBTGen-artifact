@@ -1,20 +1,19 @@
-# torch.rand(13, 1, 28, 28, dtype=torch.float32)  # Inferred input shape
-
 import torch
 import torch.nn as nn
+from torch.utils.tensorboard import SummaryWriter
 
-class MyModel(nn.Module):
+class LeNet(nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Sequential(
+        super(LeNet, self).__init__()
+        self.conv1 = nn.Sequential(     #input_size=(1*28*28)
             nn.Conv2d(1, 6, 5, 1, 2),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2)
+            nn.ReLU(),      #(6*28*28)
+            nn.MaxPool2d(kernel_size=2, stride=2),  #output_size=(6*14*14)
         )
         self.conv2 = nn.Sequential(
             nn.Conv2d(6, 16, 5),
-            nn.ReLU(),
-            nn.MaxPool2d(2, 2)
+            nn.ReLU(),      #(16*10*10)
+            nn.MaxPool2d(2, 2)  #output_size=(16*5*5)
         )
         self.fc1 = nn.Sequential(
             nn.Linear(16 * 5 * 5, 120),
@@ -35,11 +34,16 @@ class MyModel(nn.Module):
         x = self.fc3(x)
         return x
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+dummy_input = torch.rand(13, 1, 28, 28)
+model = LeNet()
+with SummaryWriter(comment='Net', log_dir='/output') as w:
+    w.add_graph(model, (dummy_input, ))
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(13, 1, 28, 28, dtype=torch.float32)
-
+import torch
+import torchvision.models as models
+from torch.utils.tensorboard import SummaryWriter
+resnet18 = models.resnet18(pretrained=True)
+x = torch.randn(1, 3, 224, 224)
+writer = SummaryWriter()
+writer.add_graph(resnet18, x)
+writer.close()

@@ -1,23 +1,15 @@
-# torch.randint(0, 50257, (1, 20), dtype=torch.long)
-import torch
-import torch.nn as nn
+import time
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # GPT2-large parameters: vocab_size=50257, hidden_size=1024
-        self.embedding = nn.Embedding(50257, 1024)
-        self.linear = nn.Linear(1024, 1024)  # Simplified layer for BLAS usage
-    
-    def forward(self, x):
-        x = self.embedding(x)
-        x = self.linear(x)
-        return x
+from transformers import pipeline, set_seed
 
-def my_model_function():
-    return MyModel()
+generator = pipeline('text-generation', model='gpt2-large')
+set_seed(42)
 
-def GetInput():
-    # Random input tokens matching GPT2's expected input shape
-    return torch.randint(0, 50257, (1, 20), dtype=torch.long)
+start_time = time.time()
 
+generator("Hello, I'm a language model", max_length=40, num_return_sequences=1)
+
+end_time = time.time()
+
+elapsed_time = end_time - start_time
+print(f"Time elapsed: {elapsed_time} seconds")

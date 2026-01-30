@@ -1,39 +1,27 @@
-# torch.rand(20, dtype=torch.float32), torch.rand(10, dtype=torch.float32)  # input shape
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
+def forward(self, primals, tangents):
+    primals_1: "f32[10]"; primals_2: "f32[10]"; tangents_1: "f32[10]"
+
+    primals_1, primals_2, tangents_1, = fx_pytree.tree_flatten_spec([primals, tangents], self._in_spec)
+    # File: depyf/tests/test_pytorch/test_debug_function_aot.py:5, code: x = a / (torch.abs(a) + 1)
+    abs_1: "f32[10]" = torch.ops.aten.abs.default(primals_1)
+    add: "f32[10]" = torch.ops.aten.add.Tensor(abs_1, 1);  abs_1 = None
+    div: "f32[10]" = torch.ops.aten.div.Tensor(primals_1, add)
     
-    def forward(self, inputs):
-        primals, tangents = inputs
-        primals_1, primals_2 = primals.split([10, 10])
-        tangents_1 = tangents
-
-        abs_1 = torch.abs(primals_1)
-        add = abs_1 + 1
-        div = primals_1 / add
-
-        sum_1 = torch.sum(primals_2)
-        lt = sum_1 < 0  # boolean scalar
-
-        neg = -tangents_1
-        div_1 = primals_1 / add  # redundant but preserved per original code
-        div_2 = div_1 / add
-        mul = neg * div_2
-        div_3 = tangents_1 / add
-        sign = torch.sign(primals_1)
-        mul_1 = mul * sign
-        add_1 = div_3 + mul_1
-
-        return (div, lt, add_1)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    primals = torch.rand(20, dtype=torch.float32)
-    tangents = torch.rand(10, dtype=torch.float32)
-    return (primals, tangents)
-
+    # File: depyf/tests/test_pytorch/test_debug_function_aot.py:6, code: if b.sum() < 0:
+    sum_1: "f32[]" = torch.ops.aten.sum.default(primals_2);  primals_2 = None
+    lt: "b8[]" = torch.ops.aten.lt.Scalar(sum_1, 0);  sum_1 = None
+    
+    # File: depyf/tests/test_pytorch/test_debug_function_aot.py:5, code: x = a / (torch.abs(a) + 1)
+    neg: "f32[10]" = torch.ops.aten.neg.default(tangents_1)
+    div_1: "f32[10]" = torch.ops.aten.div.Tensor(primals_1, add)
+    div_2: "f32[10]" = torch.ops.aten.div.Tensor(div_1, add);  div_1 = None
+    mul: "f32[10]" = torch.ops.aten.mul.Tensor(neg, div_2);  neg = div_2 = None
+    div_3: "f32[10]" = torch.ops.aten.div.Tensor(tangents_1, add);  tangents_1 = add = None
+    sign: "f32[10]" = torch.ops.aten.sign.default(primals_1);  primals_1 = None
+    mul_1: "f32[10]" = torch.ops.aten.mul.Tensor(mul, sign);  mul = sign = None
+    
+    # File: depyf/tests/test_pytorch/test_debug_function_aot.py:5, code: x = a / (torch.abs(a) + 1)
+    add_1: "f32[10]" = torch.ops.aten.add.Tensor(div_3, mul_1);  div_3 = mul_1 = None
+    return pytree.tree_unflatten([div, lt, add_1, None], self._out_spec)

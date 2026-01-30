@@ -1,70 +1,105 @@
-# tf.random.uniform((BATCH, 32, 32, 3), dtype=tf.float32)  # inferred input shape from CIFAR-10 images
+def inception(input_shape: Tuple[int, int, int]) -> k.Model:
+    # set the input
+    input_img = k.layers.Input(shape=input_shape)
 
+    tower_1 = k.layers.Conv2D(64, (1, 1), padding="same", activation="relu")(input_img)
+    tower_1 = k.layers.Conv2D(64, (3, 3), padding="same", activation="relu")(tower_1)
+
+    tower_2 = k.layers.Conv2D(64, (1, 1), padding="same", activation="relu")(input_img)
+    tower_2 = k.layers.Conv2D(64, (5, 5), padding="same", activation="relu")(tower_2)
+
+    tower_3 = k.layers.MaxPooling2D((3, 3), strides=(1, 1), padding="same")(input_img)
+    tower_3 = k.layers.Conv2D(64, (1, 1), padding="same", activation="relu")(tower_3)
+
+    output = k.layers.concatenate([tower_1, tower_2, tower_3], axis=3)
+
+    output = k.layers.Flatten()(output)
+    out = k.layers.Dense(10, activation="softmax")(output)
+
+    model = k.models.Model(inputs=[input_img], outputs=[out])
+
+    print(model.summary())
+
+    return model
+
+import tensorflow_datasets as tfds
 import tensorflow as tf
 from tensorflow import keras as k
 
-BATCH = 128
+import multiprocessing
+import model
+
+DATADIR = "/run/media/federico/XData/tensorflow_datasets"
 CLASSES = 10
+EPOCHS = 25
+BATCH = 128
+LRATE = 0.01
+DECAY = LRATE / EPOCHS
 
-class MyModel(tf.keras.Model):
-    """
-    A fused model encapsulating the Inception-style toy classifier from the issue.
-    This model replaces the Keras functional model definition with a subclassed Keras Model.
-    """
+# this is applied to every single data passed
+def process_features(feature):
+    image, label = feature["image"], feature["label"]
 
-    def __init__(self, input_shape=(32, 32, 3), num_classes=10):
-        super().__init__()
-        # Input shape is fixed (CIFAR-10) by default: 32x32x3, num_classes=10
+    # image conversion into [0, 1]
+    image = image / 255
+    image = tf.cast(image, tf.float32)
+    feature["image"] = image
 
-        # Define layers corresponding to the three towers of the inception block
-        self.conv1x1_tower1 = k.layers.Conv2D(64, (1, 1), padding="same", activation="relu")
-        self.conv3x3_tower1 = k.layers.Conv2D(64, (3, 3), padding="same", activation="relu")
+    # label conversion into one-hot
+    print(label)
+    label = tf.one_hot(label, CLASSES)
+    feature["label"] = label
 
-        self.conv1x1_tower2 = k.layers.Conv2D(64, (1, 1), padding="same", activation="relu")
-        self.conv5x5_tower2 = k.layers.Conv2D(64, (5, 5), padding="same", activation="relu")
+    return feature
 
-        self.maxpool_tower3 = k.layers.MaxPooling2D((3, 3), strides=(1, 1), padding="same")
-        self.conv1x1_tower3 = k.layers.Conv2D(64, (1, 1), padding="same", activation="relu")
+# print(tfds.list_builders())
 
-        self.concat = k.layers.Concatenate(axis=3)
-        self.flatten = k.layers.Flatten()
-        self.classifier = k.layers.Dense(num_classes, activation="softmax")
+dataset, dataset_info = tfds.load(name="cifar10", data_dir=DATADIR, with_info=True)
+train_dataset, test_dataset = dataset["train"], dataset["test"]
 
-        # Build dummy call to create weights, optional for subclassed model inference
-        self.build((None,) + input_shape)
+# process features
+train_dataset = (
+    train_dataset.map(process_features, num_parallel_calls=multiprocessing.cpu_count())
+    .shuffle(1000)
+    .batch(BATCH)
+    .repeat(EPOCHS)
+    # .prefetch(10)
+)
 
-    @tf.function(jit_compile=True)
-    def call(self, inputs, training=False):
-        # Forward pass implementing the inception block
-        x = inputs
 
-        tower1 = self.conv1x1_tower1(x)
-        tower1 = self.conv3x3_tower1(tower1)
+test_dataset = test_dataset.map(
+    process_features, num_parallel_calls=multiprocessing.cpu_count()
+).batch(dataset_info.splits["test"].get_proto().statistics.num_examples)
 
-        tower2 = self.conv1x1_tower2(x)
-        tower2 = self.conv5x5_tower2(tower2)
+for f in test_dataset:
+    images_t, labels_t = f["image"], f["label"]
 
-        tower3 = self.maxpool_tower3(x)
-        tower3 = self.conv1x1_tower3(tower3)
+model = model.inception(dataset_info.features["image"].shape)
 
-        merged = self.concat([tower1, tower2, tower3])
+# compile the model
+model.compile(
+    optimizer=k.optimizers.RMSprop(learning_rate=LRATE, decay=DECAY),
+    loss=k.losses.categorical_crossentropy,
+    metrics=[k.metrics.categorical_accuracy],
+)
 
-        flat = self.flatten(merged)
-        out = self.classifier(flat)
+tbCallback = [
+    k.callbacks.TensorBoard(
+        log_dir="./log", histogram_freq=0, write_graph=False, write_images=False
+    )
+]
+# tbCallback = [k.callbacks.TensorBoard(log_dir='./log')]
 
-        return out
-
-def my_model_function():
-    """
-    Returns an instance of MyModel initialized to match the inception-like model.
-    """
-    return MyModel(input_shape=(32, 32, 3), num_classes=CLASSES)
-
-def GetInput():
-    """
-    Return a random input tensor matching the CIFAR-10 data shape expected by MyModel.
-    The tensor dtype is float32 and values in [0,1] (as in original data preprocessing).
-    """
-    # shape: (batch_size, height, width, channels)
-    return tf.random.uniform((BATCH, 32, 32, 3), dtype=tf.float32)
-
+step = 0
+for f in train_dataset:
+    images, labels = f["image"], f["label"]
+    step += 1
+    model.fit(
+        images,
+        labels,
+        validation_data=(images_t, labels_t),
+        steps_per_epoch=100,
+        epochs=1,
+        batch_size=BATCH,
+        callbacks=tbCallback,
+    )

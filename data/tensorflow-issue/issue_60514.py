@@ -1,29 +1,21 @@
-# tf.random.uniform((B, 128, 128, 1), dtype=tf.float32) ← Input shape inferred from issue's example
+from tensorflow.keras import layers
 
 import tensorflow as tf
+from tensorflow import keras
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Following the example architecture in the issue:
-        # Input shape (128, 128, 1)
-        # Conv2D layers: 32 filters -> 64 filters -> 1 filter with sigmoid activation
-        self.conv1 = tf.keras.layers.Conv2D(32, 3, activation='relu', padding='same')
-        self.conv2 = tf.keras.layers.Conv2D(64, 3, activation='relu', padding='same')
-        self.conv3 = tf.keras.layers.Conv2D(1, 3, activation='sigmoid', padding='same')
+# Define the shape of the input tensor
+input_shape = (128, 128, 1)
 
-    def call(self, inputs, training=False):
-        x = self.conv1(inputs)
-        x = self.conv2(x)
-        output = self.conv3(x)
-        return output
+# Create an input tensor with the specified shape
+input_tensor = keras.layers.Input(shape=input_shape)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+# Create a model that uses the input tensor
+x = keras.layers.Conv2D(32, 3, activation='relu', padding='same')(input_tensor)
+x = keras.layers.Conv2D(64, 3, activation='relu', padding='same')(x)
+output_tensor = keras.layers.Conv2D(1, 3, activation='sigmoid', padding='same')(x)
 
-def GetInput():
-    # Generate a random float32 tensor with shape (batch_size, 128, 128, 1)
-    # Here batch_size is arbitrary, assume 1 for demonstration
-    return tf.random.uniform((1, 128, 128, 1), dtype=tf.float32)
+print(type(output_tensor)) # <class 'keras.engine.keras_tensor.KerasTensor'>
 
+# Convert the output tensor to a numpy array
+print(type(output_tensor.numpy())) # AttributeError: 'KerasTensor' object has no attribute 'numpy'
+print(type(tf.keras.backend.eval(output_tensor))) #AttributeError: 'KerasTensor' object has no attribute 'numpy'`

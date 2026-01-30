@@ -1,43 +1,54 @@
-# torch.rand(B, 1, 100, dtype=torch.float32)  # Inferred input shape (batch, seq_len, features)
 import torch
-import torch.nn as nn
-from torch.nn import TransformerEncoder, TransformerEncoderLayer
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.lstm = nn.LSTM(input_size=100, hidden_size=64, batch_first=True)
-        encoder_layer = TransformerEncoderLayer(d_model=64, nhead=2)
-        self.transformer = TransformerEncoder(encoder_layer, num_layers=1)
-        self.fc = nn.Linear(64, 4)  # Output 4 classes (0-3)
-        self.hidden = None
-        self.cell = None
+for epoch in tqdm(range(1)):
 
-    def reset_states(self):
-        self.hidden = None
-        self.cell = None
+    ore.train()
 
-    def forward(self, x):
-        batch_size = x.size(0)
-        # Initialize hidden/cell states if not provided
-        h0 = torch.zeros(1, batch_size, 64, device=x.device)
-        c0 = torch.zeros(1, batch_size, 64, device=x.device)
-        if self.hidden is not None and self.cell is not None:
-            h0, c0 = self.hidden, self.cell
-        lstm_out, (self.hidden, self.cell) = self.lstm(x, (h0, c0))
+    tick_loss = 0
+    tick = 0
+
+    future_dataset = FutureDataset('/project/231/data/body_edited/deepdata/y240520240102d.csv')
+
+    actions = []
+
+    ore.reset_states()
+
+    for idx in range(len(future_dataset)):
         
-        # Transformer expects (seq_len, batch, features)
-        transformer_in = lstm_out.permute(1, 0, 2)
-        transformer_out = self.transformer(transformer_in)
+        train_data, label = future_dataset[idx]
+
+        logits = ore(train_data.to("cuda:0").unsqueeze(0))
+        final_action = torch.softmax(logits, dim=-1).argmax()
+
+        if not actions:
+            if final_action != 0:
+                actions.append(final_action.item())
+        elif final_action != actions[-1]:
+            actions.append(final_action.item())
+
+        loss = loss_function(logits.unsqueeze(0), label.to("cuda:0").type(torch.long).unsqueeze(0))
+        optimizer.zero_grad()
+        loss.backward(retain_graph=True)
+        optimizer.step()
+
+        tick_loss += loss.item()
+        tick += 1
+
+        if idx % 3000 == 0:
+            print(f'当前已训练 {idx} 条 TICK')
+
+    average_loss = tick_loss / tick
+
+    print(f'重点操作：{actions}')
+    print(f'平均损失：{average_loss}')
+
+ore.eval()
+ore.reset_states()
+with torch.inference_mode():
+    for idx in range(len(future_dataset)):
         
-        # Take last LSTM output for classification
-        # (could also average/concatenate Transformer outputs)
-        final_out = transformer_out[-1]  # Take last sequence element
-        return self.fc(final_out)
+        train_data, label = future_dataset[idx]
 
-def my_model_function():
-    return MyModel()
+        logits = ore(train_data.to("cuda:0").unsqueeze(0))
 
-def GetInput():
-    return torch.rand(1, 1, 100, dtype=torch.float32)  # (batch=1, seq_len=1, features=100)
-
+        print(torch.softmax(logits, dim=-1))

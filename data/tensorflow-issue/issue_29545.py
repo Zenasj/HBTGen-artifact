@@ -1,71 +1,129 @@
-# tf.random.uniform((batch_size, input_dim), dtype=tf.float32)
+import random
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
 import tensorflow as tf
+from tensorflow import keras
 
-class MyModel(tf.keras.Model):
-    def __init__(self, output_dim, activation=None, **kwargs):
+class resblock(keras.layers.Layer):
+    def __init__(self, n_layers, n_neurons, **kwargs):
         super().__init__(**kwargs)
-        self.flatten = tf.keras.layers.Flatten()
-        self.hidden1 = tf.keras.layers.Dense(
-            100, activation='elu', kernel_initializer='he_normal', name="hidden1"
-        )
-        self.resblock1 = self._make_resblock(2, 100)
-        self.resblock2 = self._make_resblock(2, 100)
-        self.output_layer = tf.keras.layers.Dense(
-            output_dim, activation=tf.keras.activations.get(activation)
-        )
-        self._output_dim = output_dim
-        self._activation = activation
-
-    def _make_resblock(self, n_layers, n_neurons):
-        # Define a residual block as a tf.keras.Layer with multiple Dense layers and skip connection
-        class ResBlock(tf.keras.layers.Layer):
-            def __init__(self, n_layers, n_neurons):
-                super().__init__()
-                self.hidden_layers = [
-                    tf.keras.layers.Dense(
-                        n_neurons,
-                        activation='elu',
-                        kernel_initializer='he_normal'
-                    )
-                    for _ in range(n_layers)
-                ]
-            def call(self, inputs):
-                z = inputs
-                for layer in self.hidden_layers:
-                    z = layer(z)
-                return inputs + z
-        return ResBlock(n_layers, n_neurons)
-
+        self.hidden = [keras.layers.Dense(n_neurons,
+                                          activation='elu',
+                                          kernel_initializer='he_normal')
+                       for _ in range(n_layers)]
+        
     def call(self, inputs):
-        z = self.flatten(inputs)
-        z = self.hidden1(z)
-        # Apply resblock1 four times
-        for _ in range(4):
-            z = self.resblock1(z)
-        # Apply resblock2 once after that
-        z = self.resblock2(z)
-        return self.output_layer(z)
-
+        z = inputs
+        for layer in self.hidden:
+            z = layer(z)
+        return inputs + z
+    
     def get_config(self):
         base_config = super().get_config()
-        # Store output_dim and activation for potential serialization reuse
-        return {**base_config,
-                "output_dim": self._output_dim,
-                "activation": self._activation}
+        return {**base_config}
 
-def my_model_function():
-    # Create a MyModel instance - use 10 output dim and softmax activation as default (typical classification)
-    return MyModel(output_dim=10, activation='softmax')
+class res_mod(keras.models.Model):
+    def __init__(self, output_dim, activation=None, **kwargs):
+        super().__init__(**kwargs)
+        self.f1 = keras.layers.Flatten()
+        self.hidden1 = keras.layers.Dense(100, activation='elu', kernel_initializer='he_normal')
+        self.b1 = resblock(2, 100)
+        self.b2 = resblock(2, 100)
+        self.output1 = keras.layers.Dense(output_dim, activation=keras.activations.get(activation))
+        
+    def call(self, inputs):
+        z = self.f1(inputs)
+        z = self.hidden1(z)
+        for _ in range(4):
+            z = self.b1(z)
+        z = self.b2(z)
+        return self.output1(z)
+    
+    def get_config(self):
+        base_config = super().get_config()
+        return{**base_config, "output_dim" : output_dim, "activation": activation}
+    
 
-def GetInput():
-    # Assumptions:
-    # Input to this model is arbitrary shape but must be compatible with Flatten layer.
-    # From usage, likely image-like data with shape (batch_size, height, width, channels)
-    # Let's assume batch size 4, and 28x28 grayscale images (e.g. MNIST-like) as a reasonable default.
-    # dtype=float32.
-    batch_size = 4
-    height = 28
-    width = 28
-    channels = 1
-    return tf.random.uniform((batch_size, height, width, channels), dtype=tf.float32)
+model = res_mod(10, activation='softmax')
+model.compile(loss='sparse_categorical_crossentropy', optimizer='nadam', metrics=['accuracy'])
 
+model.fit(train, epochs=25, validation_data=test)
+
+# This is able to save and works correctly, returning the trained model
+model.save('custom_model.h5py')
+del model
+model = keras.models.load_model('custom_model.h5py', custom_objects={'resblock': resblock})
+
+model.save('custom_model.h5')
+
+x = tf.random.uniform((100,))
+y = tf.random.uniform((100,))
+
+
+class test_model(keras.models.Model):
+    def __init__(self, output_dim, activation=None, **kwargs):
+        super().__init__(**kwargs)
+        self.f1 = keras.layers.Flatten()
+        self.hidden1 = keras.layers.Dense(100, activation='elu', kernel_initializer='he_normal', name="h1")
+        self.output1 = keras.layers.Dense(output_dim, activation=keras.activations.get(activation))
+        
+    def call(self, inputs):
+        z = self.f1(inputs)
+        z = self.hidden1(z)
+        return self.output1(z)
+    
+    def get_config(self):
+        base_config = super().get_config()
+        return{**base_config, "output_dim" : output_dim, "activation": activation}
+    
+model = test_model(1)
+model.compile(loss='mse', optimizer='adam', metrics=['mae'])
+model.fit(x, y, epochs=5)
+print(model.weights[0])
+model.save('custom_model.hdf5')
+del model
+model = keras.models.load_model('custom_model.hdf5')
+print(model.weights[0])
+
+x = tf.random.uniform((100,))
+y = tf.random.uniform((100,))
+
+
+class test_model(keras.models.Model):
+    def __init__(self, output_dim, activation=None, **kwargs):
+        super().__init__(**kwargs)
+        self.f1 = keras.layers.Flatten()
+        self.hidden1 = keras.layers.Dense(100, activation='elu', kernel_initializer='he_normal', name="h1")
+        self.output1 = keras.layers.Dense(output_dim, activation=keras.activations.get(activation))
+        
+    def call(self, inputs):
+        z = self.f1(inputs)
+        z = self.hidden1(z)
+        return self.output1(z)
+    
+    def get_config(self):
+        base_config = super().get_config()
+        return{**base_config, "output_dim" : output_dim, "activation": activation}
+    
+model = test_model(1)
+model.compile(loss='mse', optimizer='adam', metrics=['mae'])
+model.fit(x, y, epochs=5)
+print(model.weights[0])
+model.save('custom_model.h5py')
+del model
+model = keras.models.load_model('custom_model.h5py')
+print(model.weights[0])
+
+model.save("NameOfModel", save_format='tf')
+
+loaded_tfkmodel = tf.keras.models.load_model('./NameOfModel')
+
+keras.models.load_model('path_to_my_model')
+
+model.save_weights('model_weights', save_format='tf')
+
+loaded_model = ClassifierModel(parameter)
+loaded_model.compile(parameters)
+loaded_model.train_on_batch(x_train[:1], y_train[:1])
+loaded_model.load_weights('model_weights')

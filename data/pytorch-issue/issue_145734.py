@@ -1,37 +1,62 @@
-# torch.rand(2, dtype=torch.float32)  # Input shape inferred as 1D tensor of size 2
+import torch.nn as nn
+
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
+
+class Wrapper(torch.nn.Module):
+    def __init__(self, *args, **kwargs):
         super().__init__()
-        self.cond_model = self.CondModel()
+        self.cond_model = CondModel(*args, **kwargs)
 
-    class CondModel(nn.Module):
-        def forward(self, x):
-            z = torch.ones_like(x)
+    # @torch.compile()
+    def forward(self, x):
+        nt = self.cond_model(x)
+        return nt
 
-            def true_fn(x, z):
-                x = x + 1.0
-                z = z * 1.0  # Placeholder operation to match output structure
-                return x, z
 
-            def false_fn(x, z):
-                x = x - 1.0
-                z = z * 0.0  # Placeholder operation to match output structure
-                return x, z
-
-            # Use tuple return from cond, which is now supported
-            return torch.cond(x.sum() > 0, true_fn, false_fn, (x, z))
+class CondModel(torch.nn.Module):
+    def __init__(self, *args, **kwargs):
+        super().__init__()
 
     def forward(self, x):
-        return self.cond_model(x)
+        z = torch.ones_like(x)
 
-def my_model_function():
-    # Returns an instance of MyModel
-    return MyModel()
+        def true_fn(x, z):
+            x = x + 1.0
+            z = z * 1.0
+            return x, z
 
-def GetInput():
-    # Returns a random tensor matching the input shape (2 elements)
-    return torch.rand(2, dtype=torch.float32)
+        def false_fn(x, z):
+            x = x - 1.0
+            z = z * 0.0
+            return x, z
 
+        # nt = true_fn(x,z) if x.sum() > 0 else false_fn(x,z)
+        x = torch.cond(x.sum() > 0, true_fn, false_fn, (x, z))
+        return x, z
+
+
+input_tensor_1 = torch.tensor([1, 2])
+input_tensor_2 = torch.tensor([1, -2])
+model = Wrapper(z_shape=input_tensor_1.shape)
+
+
+# result = model(input_tensor_1)
+# print(result)
+# result = model(input_tensor_2)
+# print(result)
+
+print("Exporting program...")
+ep = torch.export.export(model, (input_tensor_1,), strict=False)
+# print(ep)
+print("Program exported")
+print("Exporting to ONNX...")
+onnx_program = torch.onnx.export(
+    # model,
+    ep,
+    (input_tensor_1,),
+    dynamo=True,
+    fallback=False,
+    report=True,
+)
+onnx_program.save("example_conditional.onnx")

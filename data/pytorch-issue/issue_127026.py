@@ -1,14 +1,11 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)
 import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
+class M(nn.Module):
     def forward(self, x):
         return x.sin()
 
-def my_model_function():
-    return MyModel()
+def f(m):
+    return callable(m)
 
-def GetInput():
-    return torch.rand(1, 1, 3, 3, dtype=torch.float32)
-
+res = torch.compile(f, fullgraph=True)(M())

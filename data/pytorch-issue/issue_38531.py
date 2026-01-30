@@ -1,23 +1,49 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Assumed input shape for compatibility, though this issue is unrelated to models
-import torch
-from torch import nn
 import torch.distributed.rpc as rpc
-import multiprocessing as mp
+from torch.multiprocessing import Process
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Dummy module to satisfy structure requirements
-        self.identity = nn.Identity()  # Placeholder for model components
+import os
+import time
 
-    def forward(self, x):
-        return self.identity(x)  # Pass-through to meet torch.compile requirements
+def do_nothing():
+    pass
 
-def my_model_function():
-    # Returns a dummy model instance (issue's core problem is unrelated to model structure)
-    return MyModel()
+def test(rank, size):
+    rpc.init_rpc("Rank"+str(rank), rank=rank, world_size=size)
+    print("Rank %s rpc init" % rank)
 
-def GetInput():
-    # Returns a dummy tensor to satisfy input requirements (issue involves RPC, not model processing)
-    return torch.rand(1, 1, 1, 1, dtype=torch.float32)
+    i = 0
+    # To test easily, I changed <PATH_TO_TORCH_LIB>/torch/distributed/rpc/backend_registry.py.
+    # Under def _process_group_init_backend_handler(),
+    # I changed the below line
+    # >> process_group_timeout = rpc_constants.DEFAULT_PROCESS_GROUP_TIMEOUT
+    # (which makes the timeout 30 minutes), to somewhat shorter value, e.g.,
+    # >> process_group_timeout = datetime.timedelta(seconds=10).
+    # Otherwise, if I wait for 30 min the problem still occurs.
 
+    ## Loop that does not do anything for a long time...
+    while i < 10:
+        time.sleep(1)
+        print("Rank %s %s sec passed..." % (rank, i))
+
+        ## Uncommenting the below two lines makes the crash go away!
+        ## I.e., generating some RPC traffic.
+        #target = rank ^ 0x1
+        #rpc.rpc_sync("Rank"+str(target), do_nothing)
+        i += 1
+
+    rpc.shutdown()
+    print("Rank %s rpc shutdown" % rank)
+    pass
+
+if __name__ == "__main__":
+    os.environ['MASTER_ADDR'] = "localhost"
+    os.environ['MASTER_PORT'] = "29502"
+
+    processes = []
+    for rank in [0,1]:
+        p = Process(target=test, args=(rank, 2, ))
+        p.start()
+        processes.append(p)
+
+    for p in processes:
+        p.join()

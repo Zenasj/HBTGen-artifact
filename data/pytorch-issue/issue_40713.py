@@ -1,25 +1,25 @@
-# torch.rand(B, 10, dtype=torch.float32)
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+import torch
+from typing import Optional
+
+class MyModule(torch.nn.Module):
+    submod: Optional[torch.nn.Linear]
+
     def __init__(self):
-        super().__init__()
-        # Initialize with a dummy Linear layer to avoid Optional issues
-        self.submod = nn.Linear(10, 5)  # Default input features = 10
+        super(MyModule, self).__init__()
+        self.submod = None
 
     def init_params(self, input):
-        # Dynamically replace the dummy layer with correct dimensions
-        in_features = input.size(-1)
-        self.submod = nn.Linear(in_features, 5)
-
+        # NOTE: This function is called *before* forward (by another caller function),
+        # not *by* forward, so it's not scripted.
+        # In fact, you can remove this `init_params` function and see the same segfault.
+        self.submod = torch.nn.Linear(input[-1], 5)
+    
     def forward(self, input):
-        return self.submod(input)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Returns a tensor matching the dummy Linear's input features (10)
-    return torch.rand(2, 10)  # B=2, features=10
-
+        submod = self.submod
+        assert submod is not None
+        return submod(input)
+    
+m = MyModule()
+print(torch.jit.script(m))

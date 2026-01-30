@@ -1,34 +1,4 @@
-# torch.rand(B, C, H, W, dtype=...) ← Add a comment line at the top with the inferred input shape
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1)
-        self.relu = nn.ReLU()
-        self.fc = nn.Linear(64 * 32 * 32, 10)
-
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.relu(x)
-        x = x.view(x.size(0), -1)
-        x = self.fc(x)
-        return x
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    B, C, H, W = 4, 3, 32, 32  # Batch size, Channels, Height, Width
-    return torch.rand(B, C, H, W, dtype=torch.float32)
-
-# The provided issue does not contain a complete PyTorch model or any specific code for a model. Instead, it describes a CI (Continuous Integration) failure related to a test case in the PyTorch repository. The issue is about a timeout in a distributed test case when switching from CUDA 11.8 to CUDA 12.1.
-# Since there is no model or specific code to extract, I will create a simple example of a PyTorch model and input generation function that could be used in a similar context. This will include a basic model and a function to generate a random input tensor.
-# ### Explanation:
-# - **MyModel**: A simple convolutional neural network with one convolutional layer, a ReLU activation, and a fully connected layer.
-# - **my_model_function**: Returns an instance of `MyModel`.
-# - **GetInput**: Generates a random tensor with shape `(B, C, H, W)` where `B` is the batch size, `C` is the number of channels, and `H` and `W` are the height and width of the input image, respectively.
-# This code can be used as a starting point for a more complex model or for testing purposes. If you have a specific model or additional requirements, please provide more details.
+if device.type == "cuda" and torch.cuda.get_device_capability(device) < (6, 0):
+    torch.cuda.set_device(device)

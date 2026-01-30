@@ -1,15 +1,10 @@
-# torch.rand(1, 3, 224, 224, dtype=torch.float32)
 import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Docstring to trigger interface compilation error (per issue description)."""
-        return x  # Minimal implementation to reproduce interface AST check failure
+@torch.jit.interface
+class TestInterface(torch.nn.Module):
+    def forward(self, x: int) -> int:
+        r""" Any doc-string """
+        pass
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
-
+Module(body=[FunctionDef(name='forward', args=arguments(posonlyargs=[], args=[arg(arg='self', annotation=None, type_comment=None), arg(arg='x', annotation=Name(id='int', ctx=Load()), type_comment=None)], vararg=None, kwonlyargs=[], kw_defaults=[], kwarg=None, defaults=[]), body=[Expr(value=Constant(value=' Any doc-string ', kind=None)), Pass()], decorator_list=[], returns=Name(id='int', ctx=Load()), type_comment=None)], type_ignores=[])

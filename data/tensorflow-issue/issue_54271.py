@@ -1,132 +1,171 @@
-# tf.random.uniform((B, 64, 64, 3), dtype=tf.float32) ← inferred input shape per each of the 3 inputs
+from tensorflow.keras import layers
 
-import tensorflow as tf
+element [[[x1, y1, z1], [c1,]], [[x2, y2, z2], [c2,]], [[x3, y3, z3], [c3,]]] 
+element [[[x1, y1, z1], [c1,]], [[x2, y2, z2], [c2,]], [[x3, y3, z3], [c3,]]] 
+...
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        IMG_SHAPE = (64, 64, 3)
+# %%
+import os
 
-        # Base pretrained models - MobileNetV3Large without top layers, pooling by max, dropout 0.2
-        # Disabled training (training=False in call), load ImageNet weights
-        self.base_model1 = tf.keras.applications.MobileNetV3Large(
-            input_shape=IMG_SHAPE,
-            include_top=False,
-            weights='imagenet',
-            minimalistic=False,
-            pooling='max',
-            dropout_rate=0.2)
-        self.base_model2 = tf.keras.applications.MobileNetV3Large(
-            input_shape=IMG_SHAPE,
-            include_top=False,
-            weights='imagenet',
-            minimalistic=False,
-            pooling='max',
-            dropout_rate=0.2)
-        self.base_model3 = tf.keras.applications.MobileNetV3Large(
-            input_shape=IMG_SHAPE,
-            include_top=False,
-            weights='imagenet',
-            minimalistic=False,
-            pooling='max',
-            dropout_rate=0.2)
+import tensorflow as tf # tensorflow nightly, version>=2.5
+from tensorflow import keras
+from tensorflow.image import crop_to_bounding_box as tfimgcrop
+from tensorflow.keras.preprocessing import image_dataset_from_directory
 
-        # Ensure the layer names won't clash (as per original code renaming – 
-        # here just documenting as comment)
-        # self.base_model1._name = "MobilenetV3large1"
-        # self.base_model2._name = "MobilenetV3large2"
-        # self.base_model3._name = "MobilenetV3large3"
+BATCH_SIZE=32 # Adjust?
 
-        # Dense layers before concatenation with ReLU activation
-        self.pre_concat_layer1 = tf.keras.layers.Dense(
-            64, activation='relu',
-            kernel_initializer='random_uniform',
-            bias_initializer='zeros')
-        self.pre_concat_layer2 = tf.keras.layers.Dense(
-            64, activation='relu',
-            kernel_initializer='random_uniform',
-            bias_initializer='zeros')
-        self.pre_concat_layer3 = tf.keras.layers.Dense(
-            64, activation='relu',
-            kernel_initializer='random_uniform',
-            bias_initializer='zeros')
+IMG_SIZE=(224, 224)
+IMG_SHAPE = IMG_SIZE + (3,)
 
-        self.dropout = tf.keras.layers.Dropout(0.2)
-        self.batch_norm = tf.keras.layers.BatchNormalization()
+# %%
+_URL = 'https://storage.googleapis.com/mledu-datasets/cats_and_dogs_filtered.zip'
+path_to_zip = tf.keras.utils.get_file('cats_and_dogs.zip', origin=_URL, extract=True)
+PATH = os.path.join(os.path.dirname(path_to_zip), 'cats_and_dogs_filtered')
 
-        # Post concatenation layers
-        self.post_concat_layer = tf.keras.layers.Dense(
-            128, activation='relu',
-            kernel_initializer='random_uniform',
-            bias_initializer='zeros')
-        self.prediction_layer = tf.keras.layers.Dense(
-            2, activation='softmax',
-            kernel_initializer='random_uniform',
-            bias_initializer='zeros')
+train_dir = os.path.join(PATH, 'train')
+validation_dir = os.path.join(PATH, 'validation')
 
-    def call(self, inputs, training=False):
-        # inputs is expected to be a tuple or list of three tensors
-        input1, input2, input3 = inputs
+train_dataset = tf.keras.preprocessing.image_dataset_from_directory(train_dir,
+                                             shuffle=False,
+                                             label_mode='categorical',
+                                             batch_size=32,
+                                             image_size=IMG_SIZE)
+validation_dataset = tf.keras.preprocessing.image_dataset_from_directory(validation_dir,
+                                             shuffle=False,
+                                             label_mode='categorical',
+                                             batch_size=32,
+                                             image_size=IMG_SIZE)
 
-        # Process each input through respective base model and Dense layers
-        # Base models are called with training=False to keep pretrained
-        # batchnorm layers in inference mode.
+# %%
+base_model1 = tf.keras.applications.MobileNetV3Large(input_shape=IMG_SHAPE,
+                                               include_top=False,
+                                               weights='imagenet',
+                                               minimalistic=False,
+                                               pooling=max,
+                                               dropout_rate=0.2)
+base_model2 = tf.keras.applications.MobileNetV3Large(input_shape=IMG_SHAPE,
+                                               include_top=False,
+                                               weights='imagenet',
+                                               minimalistic=False,
+                                               pooling=max,
+                                               dropout_rate=0.2)
+base_model3 = tf.keras.applications.MobileNetV3Large(input_shape=IMG_SHAPE,
+                                               include_top=False,
+                                               weights='imagenet',
+                                               minimalistic=False,
+                                               pooling=max,
+                                               dropout_rate=0.2)
 
-        x1 = self.base_model1(input1, training=False)
-        x1 = tf.keras.layers.GlobalAveragePooling2D()(x1)
-        x1 = self.dropout(x1, training=training)
-        x1 = self.batch_norm(x1, training=training)
-        x1 = self.pre_concat_layer1(x1)
-        x1 = self.dropout(x1, training=training)
-        x1 = self.batch_norm(x1, training=training)
+# %%
+pre_concat_layer1 = tf.keras.layers.Dense(64, 
+                                        activation='relu', 
+                                        kernel_initializer='random_uniform', 
+                                        bias_initializer='zeros')
+pre_concat_layer2 = tf.keras.layers.Dense(64, 
+                                        activation='relu', 
+                                        kernel_initializer='random_uniform', 
+                                        bias_initializer='zeros')
+pre_concat_layer3 = tf.keras.layers.Dense(64, 
+                                        activation='relu', 
+                                        kernel_initializer='random_uniform', 
+                                        bias_initializer='zeros')
 
-        x2 = self.base_model2(input2, training=False)
-        x2 = tf.keras.layers.GlobalAveragePooling2D()(x2)
-        x2 = self.dropout(x2, training=training)
-        x2 = self.batch_norm(x2, training=training)
-        x2 = self.pre_concat_layer2(x2)
-        x2 = self.dropout(x2, training=training)
-        x2 = self.batch_norm(x2, training=training)
+post_concat_layer = tf.keras.layers.Dense(128, 
+                                        activation='relu', 
+                                        kernel_initializer='random_uniform', 
+                                        bias_initializer='zeros')
+prediction_layer = tf.keras.layers.Dense(2, 
+                                        activation='softmax', 
+                                        kernel_initializer='random_uniform', 
+                                        bias_initializer='zeros')
 
-        x3 = self.base_model3(input3, training=False)
-        x3 = tf.keras.layers.GlobalAveragePooling2D()(x3)
-        x3 = self.dropout(x3, training=training)
-        x3 = self.batch_norm(x3, training=training)
-        x3 = self.pre_concat_layer3(x3)
-        x3 = self.dropout(x3, training=training)
-        x3 = self.batch_norm(x3, training=training)
+# %%
+input1 = tf.keras.Input(shape=(64, 64, 3), name="First")
+input2 = tf.keras.Input(shape=(64, 64, 3), name="Second")
+input3 = tf.keras.Input(shape=(64, 64, 3), name="Third")
 
-        # Concatenate outputs from the 3 branches
-        concatenated = tf.keras.layers.concatenate([x1, x2, x3], axis=-1)
+x = base_model1(input1, training=False)
+x = tf.keras.layers.GlobalAveragePooling2D()(x)
+x = tf.keras.layers.Dropout(0.2)(x)
+x = tf.keras.layers.BatchNormalization()(x)
+x = pre_concat_layer1(x)
+x = tf.keras.layers.Dropout(0.2)(x)
+outputs = tf.keras.layers.BatchNormalization()(x)
+body1 = tf.keras.Model(input1, outputs)
 
-        # Post concatenation processing
-        x = self.post_concat_layer(concatenated)
-        x = self.dropout(x, training=training)
-        x = self.batch_norm(x, training=training)
+x = base_model2(input2, training=False)
+x = tf.keras.layers.GlobalAveragePooling2D()(x)
+x = tf.keras.layers.Dropout(0.2)(x)
+x = tf.keras.layers.BatchNormalization()(x)
+x = pre_concat_layer2(x)
+x = tf.keras.layers.Dropout(0.2)(x)
+outputs = tf.keras.layers.BatchNormalization()(x)
+body2 = tf.keras.Model(input2, outputs)
 
-        # Final prediction layer: 2-class softmax
-        output = self.prediction_layer(x)
-        return output
+x = base_model3(input3, training=False)
+x = tf.keras.layers.GlobalAveragePooling2D()(x)
+x = tf.keras.layers.Dropout(0.2)(x)
+x = tf.keras.layers.BatchNormalization()(x)
+x = pre_concat_layer3(x)
+x = tf.keras.layers.Dropout(0.2)(x)
+outputs = tf.keras.layers.BatchNormalization()(x)
+body3 = tf.keras.Model(input3, outputs)
 
+# %%
+body1.get_layer("MobilenetV3large")._name = "MobilenetV3large1"
+body2.get_layer("MobilenetV3large")._name = "MobilenetV3large2"
+body3.get_layer("MobilenetV3large")._name = "MobilenetV3large3"
 
-def my_model_function():
-    # Return a new instance of MyModel
-    model = MyModel()
+# %%
+combinedInput = tf.keras.layers.concatenate([body1.output, body2.output, body3.output])
+x = post_concat_layer(combinedInput)
+x = tf.keras.layers.Dropout(0.2)(x)
+x = tf.keras.layers.BatchNormalization()(x)
+foutput = prediction_layer(x)
+final_model = tf.keras.Model(inputs=[body1.input, body2.input, body3.input], outputs=foutput)
 
-    # Since base MobileNetV3Large loads pretrained ImageNet weights automatically,
-    # no further weight loading is necessary here.
-    return model
+# %%
+def resize_data1(images, classes):
+    return (tfimgcrop(images,
+                        offset_height=0,
+                        offset_width=0,
+                        target_height=64,
+                        target_width=64),
+                    classes)
+def resize_data2(images, classes):
+    return (tfimgcrop(images,
+                        offset_height=0,
+                        offset_width=64,
+                        target_height=64,
+                        target_width=64),
+                    classes)
+def resize_data3(images, classes):
+    return (tfimgcrop(images,
+                        offset_height=0,
+                        offset_width=128,
+                        target_height=64,
+                        target_width=64),
+                    classes)
 
+# %%
+train_dataset_unb = train_dataset.unbatch()
+train_dataset1 = train_dataset_unb.map(resize_data1)
+train_dataset2 = train_dataset_unb.map(resize_data2)
+train_dataset3 = train_dataset_unb.map(resize_data3)
+train_dataset_zip = tf.data.Dataset.zip((train_dataset1, train_dataset2, train_dataset3))
 
-def GetInput():
-    # Return a tuple of three random input tensors corresponding to:
-    # batch size 32 (typical batch size from original code)
-    # input shape (64, 64, 3) per image branch
-    # dtype float32 typical for images scaled 0..1 (random uniform)
-    BATCH_SIZE = 32
-    input_shape = (64, 64, 3)
-    input1 = tf.random.uniform((BATCH_SIZE,) + input_shape, dtype=tf.float32)
-    input2 = tf.random.uniform((BATCH_SIZE,) + input_shape, dtype=tf.float32)
-    input3 = tf.random.uniform((BATCH_SIZE,) + input_shape, dtype=tf.float32)
-    return (input1, input2, input3)
+validation_dataset_unb = validation_dataset.unbatch()
+validation_dataset1 = validation_dataset_unb.map(resize_data1)
+validation_dataset2 = validation_dataset_unb.map(resize_data2)
+validation_dataset3 = validation_dataset_unb.map(resize_data3)
+validation_dataset_zip = tf.data.Dataset.zip((validation_dataset1, validation_dataset2, validation_dataset3))
 
+# %%
+final_model.compile()
+
+# %%
+history = final_model.fit(train_dataset_zip,
+                        epochs=999, 
+                        validation_data=validation_dataset_zip,
+                        validation_steps=32
+                        )

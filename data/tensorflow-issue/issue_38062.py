@@ -1,50 +1,143 @@
-# tf.random.uniform((B, 28, 28, 1), dtype=tf.float32) ← B is batch size (e.g., 1 or more)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
+
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define the MnistSequential model architecture as in the issue
-        self.conv1 = tf.keras.layers.Conv2D(
+""" Step0: configure test
+"""
+batch_size = 128
+num_epochs = 10
+calibration_size = 300
+input_shape = (28, 28, 1)
+num_classes = 10
+
+""" Step1: prepare dataset
+"""
+(x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
+
+x_train = x_train.reshape((x_train.shape[0],) + input_shape).astype('float32') / 255
+x_test = x_test.reshape((x_test.shape[0],) + input_shape).astype('float32') / 255
+
+y_train = tf.keras.utils.to_categorical(y_train, num_classes)
+y_test = tf.keras.utils.to_categorical(y_test, num_classes)
+
+
+def calibration_gen():
+    for i in range(calibration_size):
+        yield [x_train[i].reshape((1,) + input_shape)]
+
+
+""" Step2: prepare models
+"""
+trained_models = []
+model_sequential = tf.keras.Sequential(
+    [
+        tf.keras.layers.Conv2D(
             32, 5,
             padding='same',
             activation='relu',
             use_bias=False,
-            input_shape=(28, 28, 1),
-        )
-        self.pool1 = tf.keras.layers.MaxPooling2D((2, 2), (2, 2), padding='same')
-        self.conv2 = tf.keras.layers.Conv2D(
+            input_shape=input_shape,
+        ),
+        tf.keras.layers.MaxPooling2D((2, 2), (2, 2), padding='same'),
+        tf.keras.layers.Conv2D(
             64, 5,
             padding='same',
             activation='relu',
             use_bias=False,
-        )
-        self.pool2 = tf.keras.layers.MaxPooling2D((2, 2), (2, 2), padding='same')
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(1024, activation='relu')
-        self.dropout = tf.keras.layers.Dropout(0.4)
-        self.dense2 = tf.keras.layers.Dense(10)
-        self.softmax = tf.keras.layers.Softmax()
+        ),
+        tf.keras.layers.MaxPooling2D((2, 2), (2, 2), padding='same'),
+        tf.keras.layers.Flatten(),
+        tf.keras.layers.Dense(1024, activation='relu'),
+        tf.keras.layers.Dropout(0.4),
+        tf.keras.layers.Dense(num_classes),
+        tf.keras.layers.Softmax(),
+    ],
+    name='MnistSequential',
+)
+trained_models.append(model_sequential)
 
-    def call(self, inputs, training=False):
-        x = self.conv1(inputs)
-        x = self.pool1(x)
-        x = self.conv2(x)
-        x = self.pool2(x)
-        x = self.flatten(x)
-        x = self.dense1(x)
-        x = self.dropout(x, training=training)
-        x = self.dense2(x)
-        x = self.softmax(x)
-        return x
 
-def my_model_function():
-    # Return an instance of MyModel; weights are uninitialized here
-    # User can train or load weights as needed
-    return MyModel()
+""" Step3: train models
+"""
+for model in trained_models:
+    print(f'Train {model.name}...')
+    model.compile(
+        loss=tf.keras.losses.categorical_crossentropy,
+        optimizer=tf.keras.optimizers.Adadelta(),
+        metrics=['accuracy']
+    )
+    model.fit(
+        x_train, y_train,
+        validation_data=(x_test, y_test),
+        batch_size=batch_size,
+        epochs=num_epochs,
+        verbose=True,
+    )
 
-def GetInput():
-    # Returns a random float32 tensor matching the input shape (1, 28, 28, 1)
-    # This shape aligns with the expected input of MyModel.
-    return tf.random.uniform((1, 28, 28, 1), dtype=tf.float32)
 
+""" Step4: convert models
+"""
+converted_models = []
+for model in trained_models:
+    converter = tf.lite.TFLiteConverter.from_keras_model(model)
+    converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS]
+
+    tflite_model = converter.convert()
+    tflite_path = f'./{model.name}.tflite'
+    open(tflite_path, "wb").write(tflite_model)
+    converted_models.append(tflite_path)
+
+with quantize_scope():
+    for model in trained_models:
+        converter = tf.lite.TFLiteConverter.from_keras_model(model)
+        converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
+        converter.optimizations = [tf.lite.Optimize.DEFAULT]
+        converter.representative_dataset = calibration_gen
+
+        tflite_model = converter.convert()
+        tflite_path = f'./{model.name}_quantized.tflite'
+        open(tflite_path, "wb").write(tflite_model)
+        converted_models.append(tflite_path)
+
+""" Step5: evaluate keras models & tflite models
+"""
+x_test = x_test[:calibration_size, :]
+y_test = y_test[:calibration_size, :]
+
+for model in trained_models:
+    total_seen = 0
+    num_correct = 0
+
+    for img, label in zip(x_test, y_test):
+        inp = img.reshape((1,) + input_shape)
+        total_seen += 1
+        predictions = model(inp)
+        if np.argmax(predictions) == np.argmax(label):
+            num_correct += 1
+
+    score = float(num_correct) / float(total_seen)
+    print(f'{model.name} accuracy: {score}')
+
+for tflite_path in converted_models:
+    interpreter = tf.lite.Interpreter(model_path=tflite_path)
+    interpreter.allocate_tensors()
+    input_index = interpreter.get_input_details()[0]['index']
+    output_index = interpreter.get_output_details()[0]['index']
+
+    total_seen = 0
+    num_correct = 0
+
+    for img, label in zip(x_test, y_test):
+        inp = img.reshape((1,) + input_shape)
+        total_seen += 1
+        interpreter.set_tensor(input_index, inp)
+        interpreter.invoke()
+        predictions = interpreter.get_tensor(output_index)
+        if np.argmax(predictions) == np.argmax(label):
+            num_correct += 1
+
+    score = float(num_correct) / float(total_seen)
+    print(f'{tflite_path} accuracy: {score}')

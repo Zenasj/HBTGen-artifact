@@ -1,23 +1,14 @@
-# torch.rand(1, 1, 768, 64, dtype=torch.bfloat16, device="cuda", requires_grad=True)  # Inferred input shape
+import torch.nn as nn
 
 import torch
-from torch.nn import Module
+from torch.nn.attention.flex_attention import flex_attention
 
-class MyModel(Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Assuming FlexAttention is a part of the model
-        # For the sake of this example, we will use a placeholder module
-        self.flex_attention = torch.nn.Identity()
 
-    def forward(self, x):
-        return self.flex_attention(x)
+@torch.compile(backend="aot_eager")
+def fwd_bwd(x: torch.Tensor):
+    flex_attention(x, x, x).sum().backward()
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(1, 1, 768, 64, dtype=torch.bfloat16, device="cuda", requires_grad=True)
-
+v = torch.zeros(1, 1, 768, 64, dtype=torch.bfloat16, device="cuda", requires_grad=True)
+with torch._dynamo.compiled_autograd._enable(torch.compile(backend="aot_eager")):
+    fwd_bwd(v)

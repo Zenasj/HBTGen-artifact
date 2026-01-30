@@ -1,21 +1,6 @@
-# torch.rand(B, 3, dtype=torch.float32)
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Reproduces the scenario where Adamax's stride issue occurs
-        self.linear = nn.Linear(3, 2)  # Matches the 2x3 tensor example from the issue
-
-    def forward(self, x):
-        return self.linear(x)
-
-def my_model_function():
-    # Returns a model instance with default initialization
-    return MyModel()
-
-def GetInput():
-    # Returns a random input tensor matching the model's expected input shape
-    return torch.rand(1, 3, dtype=torch.float32)  # Matches the model's input dimension (batch=1, features=3)
-
+torch.max(torch.randn(2,3).cuda(1), dim=0, out=(torch.randn(6).cuda(1)[::2], torch.randn(3).long().cuda(1)))
+torch.return_types.max_out(
+values=tensor([0.1383, 1.9499, 1.2522], device='cuda:1'),
+indices=tensor([0, 1, 1], device='cuda:1'))

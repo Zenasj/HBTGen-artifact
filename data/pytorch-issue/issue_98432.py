@@ -1,14 +1,15 @@
-# torch.rand(1, 1, dtype=torch.float32, requires_grad=True)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return x ** x  # Core operation causing stack traces in profiler
+with torch.autograd.profiler.profile(with_stack=True) as prof:
+    x = torch.randn((1, 1), requires_grad=True)
+    for _ in range(100):
+        y = x ** x
+        y.backward()
+prof.export_chrome_trace('trace.json')
 
-def my_model_function():
-    return MyModel()  # Returns the model instance with default initialization
-
-def GetInput():
-    return torch.rand(1, 1, dtype=torch.float32, requires_grad=True)  # Matches profiler test requirements
-
+def export_chrome_trace(self, path):
+        self._check_finish()
+        # if kineto_available():
+        #     self.kineto_results.save(path)  # type: ignore[union-attr]
+        # else:
+        return self.function_events.export_chrome_trace(path)  # type: ignore[union-attr]

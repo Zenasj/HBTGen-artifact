@@ -1,17 +1,10 @@
-# torch.rand(2, 3, 4, dtype=torch.float32)  # Inferred input shape based on sum() usage pattern
 import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
+class M(torch.nn.Module):
     def forward(self, x):
-        # Reproduces the export bug with empty dim list in sum operation
-        return torch.sum(x, dim=[])  # Uses dim=[] to trigger the serialization issue
+        return torch.ops.aten.sum.dim_IntList(x, [])
 
-def my_model_function():
-    # Returns the model instance with default initialization
-    return MyModel()
+ep = torch.export._trace._export(M(), (x,), strict=False, pre_dispatch=False)
 
-def GetInput():
-    # Generates random input tensor matching the expected shape and dtype
-    return torch.rand(2, 3, 4, dtype=torch.float32)
-
+print(torch._export.serde.serialize.serialize(ep).exported_program)

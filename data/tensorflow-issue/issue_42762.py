@@ -1,31 +1,33 @@
-# tf.random.uniform((112, 32, 32, 3), dtype=tf.float32)  # inferred from cifar10 dataset used in original code
-import tensorflow as tf
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
-class MyModel(tf.keras.Model):
-    def __init__(self, num_classes=10):
-        super().__init__()
-        # BatchNormalization layer with momentum and epsilon set as in original code
-        self.bn = tf.keras.layers.BatchNormalization(momentum=0.4639004933194679, epsilon=0.6515653837017596)
-        # PReLU activation layer with alpha_initializer='zeros'
-        self.prelu = tf.keras.layers.PReLU(alpha_initializer='zeros')
-        self.flatten = tf.keras.layers.Flatten()
-        # Dense layer to output num_classes logits
-        self.dense = tf.keras.layers.Dense(num_classes)
-        
-    def call(self, inputs, training=False):
-        x = self.bn(inputs, training=training)
-        x = self.prelu(x)
-        x = self.flatten(x)
-        x = self.dense(x)
-        return x
+batch_size = 112
+epochs = 119
+num_classes = 10
+import os
+save_dir = 'model'
+model_name = 'test971_trained_model.h5'
+import tensorflow.keras as keras
+(x_train, y_train), (x_test, y_test) = keras.datasets.cifar10.load_data()
+print('x_train shape:', x_train.shape)
+print(x_train.shape[0], 'train samples')
+print(x_test.shape[0], 'test samples')
+img_rows, img_cols = x_train.shape[1], x_train.shape[2]
+y_train = keras.utils.to_categorical(y_train, num_classes)
+y_test = keras.utils.to_categorical(y_test, num_classes)
+model = keras.models.Sequential()
+model.add(keras.layers.BatchNormalization(momentum = 0.4639004933194679,epsilon=0.6515653837017596))
+model.add(keras.layers.PReLU(alpha_initializer='Zeros'))
 
-def my_model_function():
-    # Return an instance of MyModel, with num_classes=10 as in original example
-    return MyModel(num_classes=10)
-
-def GetInput():
-    # Return a random tensor input matching CIFAR-10 input shape and dtype
-    # CIFAR-10 images have shape (32, 32, 3) and batch size 112
-    # Using float32 dtype since input is normalized to 0-1 float in original code
-    return tf.random.uniform((112, 32, 32, 3), dtype=tf.float32)
-
+model.add(keras.layers.Flatten())
+model.add(keras.layers.Dense(num_classes))
+x_train = x_train.astype('float32')
+x_test = x_test.astype('float32')
+x_train /= 255
+x_test /= 255
+model.compile(loss=keras.losses.categorical_crossentropy,optimizer=keras.optimizers.Adadelta(), metrics=['accuracy'])
+model.fit(x_train, y_train, batch_size=batch_size, epochs=epochs, verbose=1, validation_data=(x_test, y_test))
+print('Test accuracy:', score[1])
+model_path = os.path.join(save_dir, model_name)
+model.save(model_path)

@@ -1,4 +1,128 @@
-# tf.random.uniform((B=1, H=2, W=2, C=1), dtype=tf.float32)
+from tensorflow import keras
+from tensorflow.keras import layers
+
+import tensorflow as tf
+
+
+class Conv2d_BN(tf.keras.layers.Layer):
+    def __init__(self, filters, kernel_size, strides, padding, is_use_bias=True, name=None):
+        super(Conv2d_BN, self).__init__(name=name)
+        self.conv2d = tf.keras.layers.Conv2D(filters, kernel_size, strides=strides,
+                                             padding=padding, use_bias=is_use_bias, kernel_initializer=tf.ones)
+        # self.bn = tf.keras.layers.BatchNormalization(name=name+"/bn")
+
+    @tf.function
+    def call(self, inputs):
+        output = self.conv2d(inputs)
+        # output = self.bn(output)
+        return output
+
+
+class test_model2(tf.keras.Model):
+    def __init__(self, layer_name, layer_filters, name="test_model2"):
+        super(test_model2, self).__init__(name=name)
+        self.convs = []
+        for n, f in zip(layer_name, layer_filters):
+            if "2" in n:
+                continue
+            self.convs.append(Conv2d_BN(filters=f, kernel_size=1, strides=(1,1), padding="valid", is_use_bias=False,
+                                        name=self.name + "/" + n + "/conv1"))
+        self.empty_layer = None
+
+    @tf.function
+    def call(self, inputs):
+        output1 = inputs[0]
+        for c_layer in self.convs:
+            output1 = c_layer(output1)
+
+        output2 = inputs[1]
+        for c_layer in self.convs:
+            output2 = c_layer(output2)
+        if self.empty_layer is None:
+            print("None")
+        return output1, output2
+
+
+layer_name = ["layer1", "layer2", "layer3", "layer4", "layer5"]
+layer_filters = [3, 4, 5, 6, 7]
+model = test_model2(layer_name, layer_filters)
+test_input1 = tf.ones((1, 2, 2, 1))
+test_input2 = tf.zeros((1, 2, 2, 1))
+input_list = [test_input1, test_input2]
+# tf.keras.backend.set_learning_phase(True)
+test_output1, test_output2 = model(input_list)
+print(test_output1)
+print(test_output2)
+model._set_inputs(input_list)
+
+# tf.saved_model.save(model, "./save4")
+
+
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+tflite_model = converter.convert()
+open("./save4/converted_model.tflite", "wb").write(tflite_model)
+
+import tensorflow as tf
+
+
+class Conv2d_BN(tf.keras.layers.Layer):
+    def __init__(self, filters, kernel_size, strides, padding, is_use_bias=True, name=None):
+        super(Conv2d_BN, self).__init__(name=name)
+        self.conv2d = tf.keras.layers.Conv2D(filters, kernel_size, strides=strides,
+                                             padding=padding, use_bias=is_use_bias, kernel_initializer=tf.ones)
+        self.bn = tf.keras.layers.BatchNormalization(name=name+"/bn")
+
+    @tf.function
+    def call(self, inputs):
+        output = self.conv2d(inputs)
+        output = self.bn(output)
+        return output
+
+
+class test_model2(tf.keras.Model):
+    def __init__(self, layer_name, layer_filters, name="test_model2"):
+        super(test_model2, self).__init__(name=name)
+        self.convs = []
+        for n, f in zip(layer_name, layer_filters):
+            if "2" in n:
+                continue
+            self.convs.append(Conv2d_BN(filters=f, kernel_size=1, strides=(1,1), padding="valid", is_use_bias=False,
+                                        name=self.name + "/" + n + "/conv1"))
+        self.empty_layer = None
+
+    @tf.function
+    def call(self, inputs):
+        output1 = inputs[0]
+        for c_layer in self.convs:
+            output1 = c_layer(output1)
+
+        output2 = inputs[1]
+        for c_layer in self.convs:
+            output2 = c_layer(output2)
+        if self.empty_layer is None:
+            print("None")
+        return output1, output2
+
+
+layer_name = ["layer1", "layer2", "layer3", "layer4", "layer5"]
+layer_filters = [3, 4, 5, 6, 7]
+model = test_model2(layer_name, layer_filters)
+test_input1 = tf.ones((1, 2, 2, 1))
+test_input2 = tf.zeros((1, 2, 2, 1))
+input_list = [test_input1, test_input2]
+tf.keras.backend.set_learning_phase(True)
+test_output1, test_output2 = model(input_list)
+print(test_output1)
+print(test_output2)
+model._set_inputs(input_list)
+
+# tf.saved_model.save(model, "./save4")
+
+
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+tflite_model = converter.convert()
+open("./save4/converted_model.tflite", "wb").write(tflite_model)
+
 import tensorflow as tf
 from tensorflow.python.keras import initializers
 from tensorflow.python.keras import regularizers
@@ -9,7 +133,7 @@ from tensorflow.python.ops import variables as tf_variables
 from tensorflow.python.keras.engine.input_spec import InputSpec
 from tensorflow.python.keras.utils import tf_utils
 
-# Custom BatchNorm layer adapted from the issue to avoid incompatibility of tf.keras.layers.BatchNormalization with TFLite.
+
 class BatchNorm(tf.keras.layers.Layer):
     def __init__(self,
                  axis=-1,
@@ -36,7 +160,8 @@ class BatchNorm(tf.keras.layers.Layer):
         elif isinstance(axis, int):
             self.axis = axis
         else:
-            raise TypeError('axis must be int or list, type given: %s' % type(axis))
+            raise TypeError('axis must be int or list, type given: %s'
+                            % type(axis))
         self.momentum = momentum
         self.epsilon = epsilon
         self.center = center
@@ -44,7 +169,8 @@ class BatchNorm(tf.keras.layers.Layer):
         self.beta_initializer = initializers.get(beta_initializer)
         self.gamma_initializer = initializers.get(gamma_initializer)
         self.moving_mean_initializer = initializers.get(moving_mean_initializer)
-        self.moving_variance_initializer = initializers.get(moving_variance_initializer)
+        self.moving_variance_initializer = initializers.get(
+            moving_variance_initializer)
         self.beta_regularizer = regularizers.get(beta_regularizer)
         self.gamma_regularizer = regularizers.get(gamma_regularizer)
         self.beta_constraint = constraints.get(beta_constraint)
@@ -78,10 +204,13 @@ class BatchNorm(tf.keras.layers.Layer):
 
         if self.virtual_batch_size is not None:
             if self.virtual_batch_size <= 0:
-                raise ValueError('virtual_batch_size must be a positive integer that divides the true batch size of the input Tensor')
-            # If using virtual batches, the first dimension must be the batch dimension and cannot be the batch norm axis
+                raise ValueError('virtual_batch_size must be a positive integer that '
+                                 'divides the true batch size of the input Tensor')
+            # If using virtual batches, the first dimension must be the batch
+            # dimension and cannot be the batch norm axis
             if 0 in self.axis:
-                raise ValueError('When using virtual_batch_size, the batch dimension must be 0 and thus axis cannot include 0')
+                raise ValueError('When using virtual_batch_size, the batch dimension '
+                                 'must be 0 and thus axis cannot include 0')
 
         if self.fused:
             if self.axis == [1]:
@@ -89,12 +218,14 @@ class BatchNorm(tf.keras.layers.Layer):
             elif self.axis == [3]:
                 self._data_format = 'NHWC'
             else:
-                raise ValueError('Unsupported axis, fused batch norm only supports axis == [1] or axis == [3]')
+                raise ValueError('Unsupported axis, fused batch norm only supports '
+                                 'axis == [1] or axis == [3]')
 
         axis_to_dim = {x: input_shape.dims[x].value for x in self.axis}
         for x in axis_to_dim:
             if axis_to_dim[x] is None:
-                raise ValueError('Input has undefined `axis` dimension. Input shape: ', input_shape)
+                raise ValueError('Input has undefined `axis` dimension. Input shape: ',
+                                 input_shape)
         self.input_spec = InputSpec(ndim=ndims, axes=axis_to_dim)
 
         if len(axis_to_dim) == 1 and self.virtual_batch_size is None:
@@ -166,7 +297,6 @@ class BatchNorm(tf.keras.layers.Layer):
         if self.fused:
             outputs = self._fused_batch_norm(inputs, training=training)
             return outputs
-        # Fallback (not implemented here) for non-fused path could be added if needed.
 
     def _get_training_value(self, training=None):
         if training is None:
@@ -180,6 +310,8 @@ class BatchNorm(tf.keras.layers.Layer):
         """Returns the output of fused batch norm."""
         beta = self.beta if self.center else self._beta_const
         gamma = self.gamma if self.scale else self._gamma_const
+
+        inputs_size = None
 
         def _fused_batch_norm_training():
             return tf.compat.v1.nn.fused_batch_norm(
@@ -206,21 +338,28 @@ class BatchNorm(tf.keras.layers.Layer):
             output, mean, variance = _fused_batch_norm_inference()
 
         training_value = tf_utils.constant_value(training)
-        momentum = self.momentum if (training_value is None or training_value) else 1.0
-
-        def mean_update():
-            return self._assign_moving_average(self.moving_mean, mean, momentum)
-
-        def variance_update():
-            return self._assign_moving_average(self.moving_variance, variance, momentum)
-
+        if training_value is None:
+            if training:
+                momentum = self.momentum
+            else:
+                momentum = 1.0
+        else:
+            momentum = tf.convert_to_tensor(self.momentum)
         if training_value or training_value is None:
+            def mean_update():
+                return self._assign_moving_average(self.moving_mean, mean, momentum,
+                                                   inputs_size)
+
+            def variance_update():
+                return self._assign_moving_average(self.moving_variance, variance,
+                                                   momentum, inputs_size)
+
             self.add_update(mean_update)
             self.add_update(variance_update)
 
         return output
 
-    def _assign_moving_average(self, variable, value, momentum):
+    def _assign_moving_average(self, variable, value, momentum, inputs_size):
         decay = tf.convert_to_tensor(1.0 - momentum, name='decay')
         if decay.dtype != variable.dtype.base_dtype:
             decay = tf.cast(decay, variable.dtype.base_dtype)
@@ -234,75 +373,3 @@ class BatchNorm(tf.keras.layers.Layer):
             return dtypes.float32
         else:
             return self.dtype or dtypes.float32
-
-
-# Custom Conv2d + BatchNorm block using the above custom BN instead of tf.keras BatchNormalization
-class Conv2d_BN(tf.keras.Model):
-    def __init__(self, filters, kernel_size, strides, padding, is_use_bias=True, name=None):
-        super(Conv2d_BN, self).__init__(name=name)
-        self.conv2d = tf.keras.layers.Conv2D(filters, kernel_size, strides=strides,
-                                             padding=padding, use_bias=is_use_bias,
-                                             kernel_initializer=tf.ones)
-        self.bn = BatchNorm(axis=3, name=name + "/bn")
-
-    @tf.function
-    def call(self, inputs):
-        x = self.conv2d(inputs)
-        x = self.bn(x)
-        return x
-
-
-# The main model uses a list of these Conv2d_BN layers (with conditional filtering on layer name)
-class MyModel(tf.keras.Model):
-    def __init__(self, layer_name, layer_filters, name="test_model2"):
-        super(MyModel, self).__init__(name=name)
-        self.convs = []
-        for n, f in zip(layer_name, layer_filters):
-            # Skip layers with "2" in name as original code does
-            if "2" in n:
-                continue
-            # Create Conv2d_BN layers with kernel size of 1
-            self.convs.append(
-                Conv2d_BN(filters=f, kernel_size=1, strides=(1, 1), padding="valid", is_use_bias=False,
-                          name=self.name + "/" + n + "/conv1"))
-        self.empty_layer = None
-
-    @tf.function
-    def call(self, inputs):
-        output1 = inputs[0]
-        for c_layer in self.convs:
-            output1 = c_layer(output1)
-
-        output2 = inputs[1]
-        for c_layer in self.convs:
-            output2 = c_layer(output2)
-
-        if self.empty_layer is None:
-            # Note: In original code this print shows 'None' for diagnostic
-            tf.print("None")  # Use tf.print for graph compatibility
-        return output1, output2
-
-
-def my_model_function():
-    # Provide sensible layer_name and layer_filters as in original example
-    layer_name = ["layer1", "layer2", "layer3", "layer4", "layer5"]
-    layer_filters = [3, 4, 5, 6, 7]
-    model = MyModel(layer_name, layer_filters)
-    # Initialize weights by calling model once
-    dummy_input = GetInput()
-    model(dummy_input)
-    return model
-
-
-def GetInput():
-    # Return a list of two Tensors matching required inputs:
-    # Original example uses shape (1,2,2,1) tensors for each input
-    # It's a tuple/list of two tensors, one with ones, one with zeros, shape=(1,2,2,1)
-    batch_size = 1
-    height = 2
-    width = 2
-    channels = 1
-    input1 = tf.ones((batch_size, height, width, channels), dtype=tf.float32)
-    input2 = tf.zeros((batch_size, height, width, channels), dtype=tf.float32)
-    return [input1, input2]
-

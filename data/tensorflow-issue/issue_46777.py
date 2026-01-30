@@ -1,30 +1,54 @@
-# tf.random.uniform((B, 1), dtype=tf.float32) ← Input shape inferred as [batch_size, 1] based on example
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
+import numpy as np
 import tensorflow as tf
+from tensorflow.python.framework.ops import disable_eager_execution
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Mimicking the sequential model from the issue: Dense(1, input_shape=(1,)), Dense(10), Dense(1)
-        self.dense1 = tf.keras.layers.Dense(1)
-        self.dense2 = tf.keras.layers.Dense(10)
-        self.dense3 = tf.keras.layers.Dense(1)
 
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        x = self.dense3(x)
-        return x
-
-def my_model_function():
-    # Create model and compile to replicate behavior close to the issue example
-    model = MyModel()
-    # Build the model by calling it once with dummy input to initialize weights
-    _ = model(tf.zeros((1,1)))
+def build_model():
+    model = tf.keras.models.Sequential([
+        tf.keras.layers.Dense(1, input_shape=(1,)),
+        tf.keras.layers.Dense(10),
+        tf.keras.layers.Dense(1)
+    ])
     model.compile(optimizer='sgd', loss='mse')
     return model
 
-def GetInput():
-    # Return a random tensor matching input shape [batch_size, 1], batch size = 2 as in example
-    return tf.random.uniform((2, 1), dtype=tf.float32)
 
+def do_test():
+    x = np.asarray([[0], [1]])
+    y = x
+    model = build_model()
+    model.fit(x=x, y=y, epochs=1000, verbose=0)
+    model.get_weights()
+    result = model.predict(x=x)
+    print('result:', result)
+    print('result close?:', np.allclose(result, y, atol=0.01))
+
+
+def test_with_graph_static_execution():
+    with tf.Graph().as_default():  # pylint: disable=not-context-manager
+        do_test()
+
+
+def test_without_explicit_graph_using_static_execution():
+    disable_eager_execution()
+    do_test()
+
+
+def test_without_graph_eager_execution():
+    do_test()
+
+
+test_with_graph_static_execution()
+# test_without_explicit_graph_using_static_execution()
+# test_without_graph_eager_execution()
+
+def test_without_explicit_graph_using_disable_eager_execution():
+    disable_eager_execution()
+    do_test()
+
+def test_without_explicit_graph_using_tf_function():
+    tf.function(do_test())

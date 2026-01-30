@@ -1,54 +1,60 @@
-# tf.random.uniform((B, 1), dtype=tf.float32) ← original input shape is (batch_size, 1)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
+import numpy as np
 import tensorflow as tf
 from tensorflow.keras import backend as K
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Dense, Input
 
-class MyModel(tf.keras.Model):
-    def __init__(self, rate_mse=1e5, rate_reg=5e-2):
-        super(MyModel, self).__init__()
-        self.dense1 = tf.keras.layers.Dense(20, activation='relu')
-        self.reg_rate = rate_reg
-        self.output_layer = tf.keras.layers.Dense(1, activation='linear')
-        self.mse_rate = rate_mse
+def rate_mse(rate=1e5):
+    @tf.function # also needed for printing
+    def loss(y_true, y_pred):
+        tmp = rate*K.mean(K.square(y_pred - y_true), axis=-1)
+#        tf.print('shape %s and rank %s output in mse'%(K.shape(tmp), tf.rank(tmp)))
+        tf.print('shape and rank output in mse',[K.shape(tmp), tf.rank(tmp)])
+        tf.print('mse loss:',tmp) # print when I put tf.function
+        return tmp
+    return loss
 
-    # Custom MSE loss function returning per-sample losses (vector)
-    def rate_mse_loss(self, y_true, y_pred):
-        # mean squared error per sample averaged over last axis
-        # scaled with mse_rate
-        loss_per_sample = self.mse_rate * K.mean(K.square(y_pred - y_true), axis=-1)
-        return loss_per_sample  # shape: (batch_size,)
+class newLayer(tf.keras.layers.Layer):
+    def __init__(self, rate=5e-2, **kwargs):
+        super(newLayer, self).__init__(**kwargs)
+        self.rate = rate
+        
+#    @tf.function # to be commented for NN training
+    def call(self, inputs):
+        tmp = self.rate*K.mean(inputs*inputs, axis=-1)
+        tf.print('shape and rank output in regularizer',[K.shape(tmp), tf.rank(tmp)])
+        tf.print('regularizer loss:',tmp)
+        self.add_loss(tmp, inputs=True)
+        return inputs
 
-    def call(self, inputs, training=None):
-        x = self.dense1(inputs)  # (batch_size, 20)
-        # The regularizer loss must be scalar per batch sample
-        # The issue from the original code was that axis was -1 which only reduces last dim,
-        # leaving shape (batch_size,), which is compatible as scalar loss per sample.
-        # But Keras requires losses to be scalar tensor, so we add scalar loss with add_loss per batch step.
+tot_n = 10000
+xx = np.random.rand(tot_n,1)
+yy = np.pi*xx
 
-        # Compute regularization loss as mean squared activation per sample:
-        # (batch_size,)
-        reg_loss_per_sample = self.reg_rate * K.mean(x * x, axis=-1)
+train_size = int(0.9*tot_n)
+xx_train = xx[:train_size]; xx_val = xx[train_size:]
+yy_train = yy[:train_size]; yy_val = yy[train_size:]
 
-        # Add scalar loss to model losses (Keras expects scalar loss tensors, so reduce batch axis)
-        reg_loss_scalar = K.mean(reg_loss_per_sample)
-        self.add_loss(reg_loss_scalar, inputs=True)
+reg_layer = newLayer()
 
-        output = self.output_layer(x)
-        return output
+input_layer = Input(shape=(1,))                                      # input
+hidden = Dense(20, activation='relu', input_shape=(2,))(input_layer) # hidden layer
+hidden = reg_layer(hidden)
+output_layer = Dense(1, activation='linear')(hidden) 
 
-    def compute_loss(self, y_true, y_pred):
-        # Return scalar loss for compiled loss function in Keras:
-        # reduce rate_mse_loss vector to scalar to be compatible with model-level loss aggregation
-        mse_vector = self.rate_mse_loss(y_true, y_pred)
-        return K.mean(mse_vector)
+model = Model(inputs=[input_layer], outputs=[output_layer])
+model.compile(optimizer='Adam', loss=rate_mse(), experimental_run_tf_function=False)
+#model.compile(optimizer='Adam', loss=None, experimental_run_tf_function=False)
+history = model.fit(xx_train, yy_train, epochs=50, batch_size = 100, 
+                    validation_data=(xx_val,yy_val), verbose=2)
 
-def my_model_function():
-    # Return an instance of MyModel initialized as in the shared code.
-    return MyModel()
+print(model.predict(np.array([[1]]))) # sanity check
 
-def GetInput():
-    # From code: input shape is (batch_size, 1)
-    # batch size used in example is 100, but can be any integer; here let's pick 100 for consistency.
-    batch_size = 100
-    return tf.random.uniform((batch_size, 1), dtype=tf.float32)
+K.mean(inputs * inputs, axis=-1)
 
+K.mean(inputs * inputs)

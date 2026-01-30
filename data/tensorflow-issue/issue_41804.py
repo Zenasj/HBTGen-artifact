@@ -1,34 +1,46 @@
-# tf.random.uniform((1, 512, 2), dtype=tf.float32), tf.random.uniform((1, 1), maxval=512, dtype=tf.int64)
+import os
 
 import tensorflow as tf
+from tensorflow.contrib import quantize as contrib_quantize
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # No trainable parameters needed; tf.gather is a TF built-in op.
-        pass
+os.environ['CUDA_VISIBLE_DEVICES'] = ''
+MODEL = './test.tflite'
 
-    def call(self, inputs):
-        # inputs: a tuple (data, indices)
-        # data shape: [1, 512, 2]
-        # indices shape: [1, 1] (int64)
-        data, indices = inputs
-        # Perform tf.gather with batch_dims=1, replicating the example.
-        # According to the original issue:
-        # TensorFlow (graph) output shape: (1, 1, 2)
-        # TFLite output shape error: (1, 1, 1, 2)
-        output = tf.gather(data, indices, batch_dims=1)
-        return output
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+def convert():
+    with tf.Graph().as_default() as g:
+        with tf.Session() as sess:
+            data = tf.placeholder('float32', [1, 512, 2], name='data')
+            indices = tf.placeholder('int64', [1, 1], name='indices')
+            output = tf.gather(data, indices, batch_dims=1)
 
-def GetInput():
-    # Generate a tuple of inputs matching the expected input signatures:
-    # data: float32 tensor of shape [1, 512, 2]
-    # indices: int64 tensor of shape [1, 1], values in [0,512)
-    data = tf.random.uniform((1, 512, 2), dtype=tf.float32)
-    indices = tf.random.uniform((1, 1), minval=0, maxval=512, dtype=tf.int64)
-    return (data, indices)
+            # Tensor("GatherV2:0", shape=(1, 1, 2), dtype=float32)
+            print(output)
+            contrib_quantize.experimental_create_eval_graph(
+                input_graph=g)
+            converter = tf.lite.TFLiteConverter.from_session(
+                sess,
+                input_tensors=[data, indices],
+                output_tensors=[output])
+            tflite_model = converter.convert()
+            with open(MODEL, "wb") as w:
+                w.write(tflite_model)
 
+
+def load():
+    interpreter = tf.lite.Interpreter(MODEL)
+    interpreter.allocate_tensors()
+    output_details = interpreter.get_output_details()
+
+    # [
+    # {'name': 'GatherV2', 'index': 0,
+    # 'shape': array([1, 1, 1, 2], dtype=int32),
+    # 'dtype': <class 'numpy.float32'>,
+    # 'quantization': (0.0, 0)}
+    # ]
+    print(output_details)
+
+
+if __name__ == '__main__':
+    convert()
+    load()

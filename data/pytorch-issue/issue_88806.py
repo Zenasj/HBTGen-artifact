@@ -1,28 +1,39 @@
-# torch.rand(B, C, H, W, dtype=...)  # Add a comment line at the top with the inferred input shape
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self, embed_dim, num_heads, dropout=0.1):
-        super(MyModel, self).__init__()
-        self.mha = nn.MultiheadAttention(embed_dim, num_heads, dropout=dropout, batch_first=True)
-        self.dropout = dropout
+import unittest
+import unittest.mock as mock
 
-    def forward(self, x):
-        # x is expected to be of shape (batch_size, seq_len, embed_dim)
-        return self.mha(x, x, x)[0]
+import torch
+import torch.nn
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    embed_dim = 16
-    num_heads = 8
-    dropout = 0.1
-    return MyModel(embed_dim, num_heads, dropout)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    batch_size = 8
-    src_len = 5
-    embed_dim = 16
-    return torch.rand(batch_size, src_len, embed_dim)
+class TestMultiheadAttentionFastPath(unittest.TestCase):
 
+    @torch.no_grad()
+    def test_multihead_attn_fast_path_eval_mode_with_dropout(self):
+        """Ensure that fast path works with dropout, if we are in eval mode."""
+        device = "cpu"
+        embed_dim = 16
+        num_heads = 8
+        batch_size = 8
+        src_len = 5
+
+        query = value = key = torch.rand(batch_size, src_len, embed_dim).to(device)
+        with mock.patch("torch._native_multi_head_attention") as fastpath_mock:
+            mta_model = torch.nn.MultiheadAttention(
+                embed_dim, num_heads, batch_first=True, device=device, dropout=0.1
+            )
+            # without eval mode and with dropout, the fast path should not be taken
+            mta_model(query, key, value)
+            self.assertFalse(fastpath_mock.called)
+
+            # this should effectively disable dropout, making the check for dropout in fast_path irrelevant
+            # and making `self.training` a falsy value, which should enable the fast_path
+            mta_model.eval()
+            mta_model(query, key, value)
+            # This currently fails:
+            self.assertTrue(fastpath_mock.called)
+
+
+if __name__ == "__main__":
+    unittest.main()

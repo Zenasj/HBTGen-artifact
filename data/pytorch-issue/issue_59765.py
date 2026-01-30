@@ -1,22 +1,13 @@
-# torch.rand(B, C), torch.randint(0, C, (B,), dtype=torch.uint8)
 import torch
 import torch.nn as nn
+import math
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.loss = nn.NLLLoss()
-        
-    def forward(self, inputs):
-        log_probs, target = inputs
-        return self.loss(log_probs, target)
+e = torch.Tensor([[math.log(3/4), math.log(1/4)]])
+t = torch.LongTensor([0])
+torch.nn.NLLLoss()(e, t)
 
-def my_model_function():
-    return MyModel()
+t = torch.CharTensor([0])
+torch.nn.NLLLoss()(e, t) # RuntimeError: expected scalar type Long but found Char
 
-def GetInput():
-    B, C = 2, 3  # Example batch size and number of classes
-    log_probs = torch.rand(B, C)
-    target = torch.randint(0, C, (B,), dtype=torch.uint8)
-    return (log_probs, target)
-
+t = torch.ByteTensor([0])
+torch.nn.NLLLoss()(e, t) # RuntimeError: expected scalar type Long but found Byte

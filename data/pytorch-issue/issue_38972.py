@@ -1,21 +1,23 @@
-# torch.rand(B, 5, dtype=torch.float32)
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Example model structure based on inferred input shape (5 features)
-        self.linear = nn.Linear(5, 10)
-    
-    def forward(self, x):
-        return self.linear(x)
+def convert_to_tensor(module, input):
+    torch_inputs = [x for x in input]
+    for i, x in enumerate(input):
+        if not isinstance(x, torch.Tensor):
+            torch_inputs[i] = torch.tensor(x, requires_grad=True)
+    return tuple(torch_inputs)
 
-def my_model_function():
-    # Initialize with default weights
-    return MyModel()
 
-def GetInput():
-    # Generate random input matching the model's expected shape (B=1, 5 features)
-    return torch.rand(1, 5, dtype=torch.float32)
+torch.nn.Module.register_global_forward_pre_hook(convert_to_tensor)
+module = MyModule()
+new_module = MyModule2()
+input = numpy.ones((5,), dtype=numpy.float32)
+module(input)
+module2(input)
 
+from chainer.link_hooks import TimerHook
+hook = TimerHook()
+with hook:
+    trainer.run()
+hook.print_report()

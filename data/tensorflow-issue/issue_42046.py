@@ -1,51 +1,35 @@
-# tf.random.uniform((B,), dtype=string) ← Model expects a 1D string tensor input (batch of sentences)
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
 import tensorflow_hub as hub
 
-class MyModel(tf.keras.Model):
+class MyModel(tf.keras.Model):    
     def __init__(self):
         super().__init__()
-        # Use the TF Hub Universal Sentence Encoder KerasLayer (trainable)
-        # This layer expects a 1D tensor of strings as input: shape (batch_size,)
-        self.embed = hub.KerasLayer(
-            "https://tfhub.dev/google/universal-sentence-encoder/4",
-            output_shape=[512],
-            input_shape=[],
-            dtype=tf.string,
-            trainable=True,
-        )
-        # Final regression layer
+        self.embed = hub.load("https://tfhub.dev/google/universal-sentence-encoder/4")
         self.dense = tf.keras.layers.Dense(1)
-
+        
     def call(self, inputs, training=False):
-        # Handle the implicit 2D expansion added by model.fit and Input layers:
-        # inputs shape could be (batch_size, 1) instead of (batch_size,)
-        # Squeeze last dimension if rank is 2 and last dim == 1
-        if tf.rank(inputs) == 2 and inputs.shape[-1] == 1:
-            inputs = tf.squeeze(inputs, axis=-1)
-
-        x = self.embed(inputs)  # shape: (batch_size, 512)
-        x = self.dense(x)       # shape: (batch_size, 1)
+        x = self.embed(inputs)
+        x = self.dense(x)
         return x
+    
+model = MyModel()
+x = ['a sentence', 'b sentence']
+y = [0, 1]
 
-def my_model_function():
-    # Return an instance of the model
-    return MyModel()
+model(x, y)  # works fine
 
-def GetInput():
-    # Return a 1D batch of string tensors simulating sentences
-    # For example, batch size = 4, random sentences from some placeholder strings
+model.compile(loss='mse', optimizer='sgd')
+model.fit(x, y)  # errors
 
-    # Since inputs are strings, create a tf.constant of shape (batch_size,)
-    batch_size = 4
-    dummy_sentences = [
-        "this is a test sentence",
-        "another example sentence",
-        "tensorflow hub universal sentence encoder",
-        "keras model fit input issue",
-    ]
-    # Take batch_size samples (repeat or truncate as needed)
-    inputs = tf.constant(dummy_sentences[:batch_size], dtype=tf.string)
-    return inputs
+import tensorflow as tf
+import tensorflow_hub as hub
 
+# adapted from https://github.com/tensorflow/hub/issues/648
+hub_layer = hub.KerasLayer('https://tfhub.dev/google/universal-sentence-encoder/4', output_shape=(None, 512), input_shape=(None,), trainable=True, dtype=tf.string)
+inputs = tf.keras.layers.Input(shape=(None,), dtype='string')
+
+hub_layer(tf.squeeze(inputs))  # works
+hub_layer(inputs)  # errors

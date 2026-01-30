@@ -1,40 +1,37 @@
-# torch.rand(1, 3, 224, 224, dtype=torch.float32)
+import torchvision
+
 import torch
-from torch import nn
 
-class BasicBlock(nn.Module):
-    def __init__(self, in_channels, out_channels):
-        super().__init__()
-        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
-        self.relu = nn.ReLU()
-        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1)
-    
-    def forward(self, x):
-        identity = x
-        out = self.conv1(x)
-        out = self.relu(out)
-        out = self.conv2(out)
-        out += identity  # In-place addition causing issues
-        return out
+from torchvision.models.resnet import resnet18
+from torch.ao.quantization.quantizer.xnnpack_quantizer import (
+  XNNPACKQuantizer,
+  get_symmetric_quantization_config,
+)
+from torch.ao.quantization.quantize_pt2e import (
+  prepare_pt2e,
+  convert_pt2e,
+)
+from executorch import exir
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3)
-        self.relu = nn.ReLU()
-        self.pool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-        self.block = BasicBlock(64, 64)
-    
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.relu(x)
-        x = self.pool(x)
-        x = self.block(x)
-        return x
+model = resnet18(pretrained=True)
+model.to("cpu").eval()
+example_inputs = (torch.rand(1, 3, 224, 224),)
+exported_model = torch.export.export_for_training(model, example_inputs).module()
 
-def my_model_function():
-    return MyModel()
+quantizer = XNNPACKQuantizer()
+quantizer.set_global(get_symmetric_quantization_config(
+    is_per_channel = True,
+    is_dynamic = False,
+    act_qmin = -128,
+    act_qmax = 127,
+    weight_qmin = -127,
+    weight_qmax = 127)
+)
+prepared_model = prepare_pt2e(exported_model, quantizer)
+quantized_model = convert_pt2e(prepared_model, use_reference_representation=True)
 
-def GetInput():
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
-
+aten_dialect_program = torch.export.export(quantized_model, example_inputs)
+edge_dialect_program = exir.to_edge(aten_dialect_program)
+executorch_program = edge_dialect_program.to_executorch()
+with open(f"exported/r18_quantized.pte", "wb") as f:
+    f.write(executorch_program.buffer)

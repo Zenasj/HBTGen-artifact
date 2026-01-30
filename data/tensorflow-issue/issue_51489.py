@@ -1,40 +1,100 @@
-# tf.random.normal([batch_size=1, input_dim=2]) ← Input shape assumed from usage: a batch of 1 sample with feature size 2
+import random
+
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # We replicate the simple Dense layer from the issue with custom variables
-        # input_dim=2, output_size=4 inferred from example.
-        self.w = tf.Variable(tf.random.normal([2, 4]), name='w')
-        self.b = tf.Variable(tf.zeros([4]), name='b')
-
-    def call(self, x):
+class Dense(tf.Module):
+    def __init__(self, input_dim, output_size, name=None):
+        super(Dense, self).__init__(name=name)
+        self.w = tf.Variable(
+            tf.random.normal([input_dim, output_size]), name='w')
+        self.b = tf.Variable(tf.zeros([output_size]), name='b')
+    def __call__(self, x):
         y = tf.matmul(x, self.w) + self.b
         return tf.nn.relu(y)
 
-def my_model_function():
-    # Just return an instance of MyModel with fresh variables
-    return MyModel()
+test = Dense(2,4)
+output = test([[7.0,3]])
+# print(output)
+# print(test.trainable_variables)
 
-def GetInput():
-    # According to code in the issue, input is [[7.0, 3]] which is (1, 2)
-    # To enable random tests, return a random float tensor shape (1, 2)
-    return tf.random.normal([1, 2])
+def loss_fn():
+    y_true = tf.ones([1,4])
 
-# ---
-#   
-# ### Explanation / Assumptions:
-# - Input shape is `[1, 2]` (batch size 1, input dim 2) based on `model([[7.0, 3]])` seen in the issue.
-# - The "Dense" layer is implemented manually with Variables `w` and `b`, shape `(2, 4)` and `(4,)` respectively.
-# - Activation is relu, matching original code.
-# - The issue centers around attempts to minimize a loss function involving computed output.
-# - The main subtlety in the issue was capturing correct gradient flow:
-#   - Storing output as a member variable outside `loss_fn` breaks graph connectivity and gradient flow.
-#   - Correct usage is to compute output inside `loss_fn` at each call.
-# - We do not implement the training loop or tf1-style optimizer here (since asked for only the model code).
-# - This snippet fits TF 2.x eager and graph mode usage and is compatible with XLA compilation.
-# - Omitting optimizer and training loop so user can build their training code externally.
-# If you instantiate and call the model on `GetInput()`, you get a tensor shape `(1, 4)`, consistent with the example. The user can then define loss functions and training around this.
-# ---
-# This implements a minimal, runnable version of the model discussed in the issue.
+    loss = tf.reduce_mean(tf.square(y_true - output))
+    return loss
+
+for i in range(10):
+    train_op = tf.compat.v1.train.AdamOptimizer(0.4).minimize(loss_fn, var_list=test.trainable_variables)
+    print(train_op)
+
+import tensorflow as tf
+
+class Dense(tf.Module):
+    def __init__(self, input_dim, output_size, name=None):
+        super(Dense, self).__init__(name=name)
+        self.w = tf.Variable(
+            tf.random.normal([input_dim, output_size]), name='w')
+        self.b = tf.Variable(tf.zeros([output_size]), name='b')
+
+
+    def __call__(self, x):
+        y = tf.matmul(x, self.w) + self.b
+        return tf.nn.relu(y)
+
+model = Dense(2,4)
+
+class Test(object):
+    def __init__(self):
+        self.output = model([[7.0, 3]])
+
+    def loss_fn(self):
+        y_true = tf.ones([1,4])
+
+        # loss = tf.reduce_mean(tf.square(y_true - self.output)) # error
+
+        output2 = model([[7.0, 3]])
+        loss = tf.reduce_mean(tf.square(y_true - output2))
+
+        print(loss)
+        return loss
+
+    def run(self):
+        for i in range(20):
+            train_op = tf.compat.v1.train.AdamOptimizer(0.4).minimize(self.loss_fn)
+
+Test().run()
+
+import tensorflow as tf
+
+class Dense(tf.Module):
+    def __init__(self, input_dim, output_size, name=None):
+        super(Dense, self).__init__(name=name)
+        self.w = tf.Variable(
+            tf.random.normal([input_dim, output_size]), name='w')
+        self.b = tf.Variable(tf.zeros([output_size]), name='b')
+
+
+    def __call__(self, x):
+        y = tf.matmul(x, self.w) + self.b
+        return tf.nn.relu(y)
+
+model = Dense(2,4)
+
+class Test(object):
+    def __init__(self):
+        self.output = model([[7.0, 3]])
+
+    def loss_fn(self):
+        y_true = tf.ones([1,4])
+
+        loss = tf.reduce_mean(tf.square(y_true - self.output)) 
+
+        print(loss)
+        return loss
+
+    def run(self):
+        for i in range(20):
+            train_op = tf.compat.v1.train.AdamOptimizer(0.4).minimize(self.loss_fn)
+            self.output = model([[7.0, 3]])
+
+Test().run()

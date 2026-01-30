@@ -1,27 +1,30 @@
-# torch.randint(0, 2, (), dtype=torch.int64)  # shape: (), dtype: torch.int64
+py
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-    
-    def forward(self, x):
-        # Compute on CPU
-        cpu_x = x.to('cpu')
-        cpu_result = torch.bitwise_right_shift(cpu_x, 64)
-        # Compute on CUDA if available
-        if torch.cuda.is_available():
-            cuda_x = x.to('cuda')
-            cuda_result = torch.bitwise_right_shift(cuda_x, 64).to('cpu')
-        else:
-            return torch.tensor(False, dtype=torch.bool)  # No CUDA, no discrepancy possible
-        # Compare results and return as tensor
-        return torch.tensor(not torch.allclose(cpu_result, cuda_result), dtype=torch.bool)
+cuda_output = torch.bitwise_right_shift(torch.tensor(1).cuda(), 1)
+print(cuda_output)
 
-def my_model_function():
-    return MyModel()
+cpu_output = torch.bitwise_right_shift(torch.tensor(1), 64)
+print(cpu_output)
 
-def GetInput():
-    return torch.tensor(1, dtype=torch.int64)
+tensor(0, device='cuda:0')
+tensor(1)
 
+py
+for i in range(1, 1000):
+    cpu_output = torch.bitwise_right_shift(torch.tensor(1), i)
+    if cpu_output != 0:
+        print(i, cpu_output)
+
+py
+import torch
+
+a = torch.tensor(1)
+cpu_output = torch.bitwise_left_shift(a, -1)
+cuda_output = torch.bitwise_left_shift(a.cuda(), -1)
+
+print(cpu_output)
+print(cuda_output)
+
+tensor(-9223372036854775808)
+tensor(0, device='cuda:0')

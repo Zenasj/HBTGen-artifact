@@ -1,22 +1,21 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)
-import torch
-from torch import nn, Tensor
+import re
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.linear = nn.Linear(224*224*3, 10)  # Example layer matching input shape
+with open("error_file.txt", "r") as f:
+    errors = f.readlines()
 
-    def forward(self, x: Tensor) -> Tensor:
-        is_batched = x.dim() == 4
-        if not is_batched:
-            x = x.unsqueeze(0)  # Ensure batch dimension
-        x = x.view(x.size(0), -1)
-        return self.linear(x)
+error_lines = {}
+for error in errors:
+    match = re.match(r"(.*):(\d+):\d+: error:.*\[(.*)\]", error)
+    if match:
+        file_path, line_number, error_type = match.groups()
+        if file_path not in error_lines:
+            error_lines[file_path] = {}
+        error_lines[file_path][int(line_number)] = error_type
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
-
+for file_path, lines in error_lines.items():
+    with open(file_path, "r") as f:
+        code = f.readlines()
+    for line_number, error_type in sorted(lines.items(), key=lambda x: x[0], reverse=True):
+        code[line_number - 1] = code[line_number - 1].rstrip() + f"  # type: ignore[{error_type}]\n"
+    with open(file_path, "w") as f:
+        f.writelines(code)

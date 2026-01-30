@@ -1,35 +1,108 @@
-# tf.random.uniform((16, 2048, 1028), dtype=tf.float32) ← inferred input shape from JAX ShapeDtypeStruct x
+import numpy as np
 
-import tensorflow as tf
+import os
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # The original code defines a flax.linen Dense layer with 1024 output units and a custom dot_general operator.
-        # We'll implement a Keras Dense equivalent without the custom dot_general since it is JAX-specific.
-        # Output dimension 1024 inferred from nn.Dense(1024,...)
-        self.dense = tf.keras.layers.Dense(
-            1024,
-            activation=None,
-            use_bias=True,
-            kernel_initializer='glorot_uniform',
-            bias_initializer='zeros'
-        )
-    
-    def call(self, inputs, training=False):
-        # inputs shape: (16, 2048, 1028) - as per ShapeDtypeStruct in the JAX example
-        # We apply the dense layer to the last dimension.
-        # This replicates a batched Dense application.
-        # In TensorFlow: dense applies to last axis by default.
-        x = self.dense(inputs)
-        return x
+import flax
+import flax.linen
+import flax.linen as nn
+from flax.linen import fp8_ops
 
-def my_model_function():
-    # Instantiate and return the model
-    return MyModel()
+import jax
+import jax.experimental
+import jax.experimental.serialize_executable
+import jax.numpy as jnp
+from jax.experimental import topologies
 
-def GetInput():
-    # Return a random tensor input matching the expected input:
-    # Shape: (16, 2048, 1028), dtype: float32, matching the JAX example shape
-    return tf.random.uniform((16, 2048, 1028), dtype=tf.float32)
+h100_gpu_target_config = """
+gpu_device_info {
+  threads_per_block_limit: 1024
+  threads_per_warp: 32
+  shared_memory_per_block: 49152
+  shared_memory_per_core: 233472
+  threads_per_core_limit: 2048
+  core_count: 132
+  fpus_per_core: 128
+  block_dim_limit_x: 2147483647
+  block_dim_limit_y: 65535
+  block_dim_limit_z: 65535
+  memory_bandwidth: 3352320000000
+  l2_cache_size: 52428800
+  clock_rate_ghz: 1.98
+  device_memory_size: 84929347584
+  shared_memory_per_block_optin: 232448
+  cuda_compute_capability {
+    major: 9
+  }
+  registers_per_core_limit: 65536
+  registers_per_block_limit: 65536
+}
+platform_name: "CUDA"
+dnn_version_info {
+  major: 9
+  minor: 7
+}
+runtime_version {
+  major: 12
+  minor: 8
+  patch: 0
+}
+device_description_str: "NVIDIA H100 80GB HBM3"
+"""
 
+# Fake not having a GPU on my machine
+os.environ["XLA_FLAGS"] = " ".join([
+  "--xla_gpu_enable_triton_gemm=false",
+  "--xla_dump_to=./dump",
+  "--xla_dump_hlo_as_text=true",
+])
+# os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "0"
+os.environ["TF_CPP_VMODULE"] = "gemm_rewriter=10"
+# os.environ["TF_CPP_VMODULE"] = "cuda_executor=10,"
+
+topology = topologies.get_topology_desc(
+  platform="cuda",
+  target_config=h100_gpu_target_config,
+  topology="1x1x1",
+)
+
+
+model = nn.Dense(
+  1024,
+  dot_general_cls=fp8_ops.Fp8DirectDotGeneralOp
+)
+
+@jax.jit
+def fn(params, x):
+    return model.apply(params, x)
+
+mesh = topologies.make_mesh(
+  topology,
+  (1,),
+  ("devices",),
+)
+replicated_sharding = jax.sharding.NamedSharding(
+  mesh,
+  jax.sharding.PartitionSpec(
+    "devices",
+  ),
+)
+x = jax.ShapeDtypeStruct(
+  (16, 2048, 1028),
+  jnp.float32,
+  sharding=replicated_sharding,
+)
+params = jax.eval_shape(
+  model.init,
+  jax.ShapeDtypeStruct((2,), jnp.uint32),
+  x
+)
+
+inputs = [
+  params, x
+]
+
+lowered = fn.lower(*inputs)  # <- fail here
+compiled = lowered.compile()
+print(compiled)
+seriazied, in_tree, out_tree = jax.experimental.serialize_executable.serialize(compiled)

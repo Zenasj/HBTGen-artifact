@@ -1,19 +1,151 @@
-# tf.random.uniform((B, 784), dtype=tf.float32) ← inferred input shape for dense layer input (batch_size, 784)
-
+import numpy as np
 import math
 import tensorflow as tf
 from tensorflow import keras
-from tensorflow.keras.layers import Layer
-from keras import activations, constraints, initializers, regularizers, backend
-from keras.engine.input_spec import InputSpec
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
+(train_images, train_labels), (test_images, test_labels) = tf.keras.datasets.mnist.load_data()
+
+train_labels = train_labels[:1000]
+test_labels = test_labels[:1000]
+
+train_images = train_images[:1000].reshape(-1, 28 * 28) / 255.0
+test_images = test_images[:1000].reshape(-1, 28 * 28) / 255.0
+
+
+# Normalize the input image so that each pixel value is between 0 to 1.
+train_images = train_images.astype(np.float32) / 255.0
+test_images = test_images.astype(np.float32) / 255.0
+
+
+# Define a simple sequential model
+
+model_infrence = tf.keras.Sequential([
+    MyDense(512, activation='relu', input_shape=(784,)),
+    keras.layers.Dense(512, activation='relu', input_shape=(784,)),
+    keras.layers.Dropout(0.2),
+    keras.layers.Dense(10)
+  ])
+
+model_infrence.compile(optimizer='adam',
+                loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+                metrics=[tf.keras.metrics.SparseCategoricalAccuracy()])
+
+
+
+# Create a basic model instance
+
+
+# Display the model's architecture
+model_infrence.summary()
+
+# Create a basic model instance
+
+
+# Display the model's architecture
+model_infrence.summary()
+
+# Copyright 2015 The TensorFlow Authors. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+"""Contains the Dense layer."""
+
+
+import tensorflow.compat.v2 as tf
+
+from keras import activations
+from keras import backend
+from keras import constraints
+from keras import initializers
+from keras import regularizers
 from keras.dtensor import utils
+from keras.engine.base_layer import Layer
+from keras.engine.input_spec import InputSpec
 
-# Because the original custom Dense layer was named `MyDense`, we adapt this inside `MyModel`.
-# We also incorporate the specialized Residue Number System (RNS) based modular arithmetic
-# logic in the call to the layer that tries to compute outputs differently using mod divmod.
+# isort: off
+from tensorflow.python.util.tf_export import keras_export
 
+
+@keras_export("keras.layers.Dense")
 class MyDense(Layer):
-    """Custom Dense layer with Residue Number System modular arithmetic computations."""
+    """Just your regular densely-connected NN layer.
+
+    `Dense` implements the operation:
+    `output = activation(dot(input, kernel) + bias)`
+    where `activation` is the element-wise activation function
+    passed as the `activation` argument, `kernel` is a weights matrix
+    created by the layer, and `bias` is a bias vector created by the layer
+    (only applicable if `use_bias` is `True`). These are all attributes of
+    `Dense`.
+
+    Note: If the input to the layer has a rank greater than 2, then `Dense`
+    computes the dot product between the `inputs` and the `kernel` along the
+    last axis of the `inputs` and axis 0 of the `kernel` (using `tf.tensordot`).
+    For example, if input has dimensions `(batch_size, d0, d1)`, then we create
+    a `kernel` with shape `(d1, units)`, and the `kernel` operates along axis 2
+    of the `input`, on every sub-tensor of shape `(1, 1, d1)` (there are
+    `batch_size * d0` such sub-tensors).  The output in this case will have
+    shape `(batch_size, d0, units)`.
+
+    Besides, layer attributes cannot be modified after the layer has been called
+    once (except the `trainable` attribute).
+    When a popular kwarg `input_shape` is passed, then keras will create
+    an input layer to insert before the current layer. This can be treated
+    equivalent to explicitly defining an `InputLayer`.
+
+    Example:
+
+    >>> # Create a `Sequential` model and add a Dense layer as the first layer.
+    >>> model = tf.keras.models.Sequential()
+    >>> model.add(tf.keras.Input(shape=(16,)))
+    >>> model.add(tf.keras.layers.Dense(32, activation='relu'))
+    >>> # Now the model will take as input arrays of shape (None, 16)
+    >>> # and output arrays of shape (None, 32).
+    >>> # Note that after the first layer, you don't need to specify
+    >>> # the size of the input anymore:
+    >>> model.add(tf.keras.layers.Dense(32))
+    >>> model.output_shape
+    (None, 32)
+
+    Args:
+        units: Positive integer, dimensionality of the output space.
+        activation: Activation function to use.
+            If you don't specify anything, no activation is applied
+            (ie. "linear" activation: `a(x) = x`).
+        use_bias: Boolean, whether the layer uses a bias vector.
+        kernel_initializer: Initializer for the `kernel` weights matrix.
+        bias_initializer: Initializer for the bias vector.
+        kernel_regularizer: Regularizer function applied to
+            the `kernel` weights matrix.
+        bias_regularizer: Regularizer function applied to the bias vector.
+        activity_regularizer: Regularizer function applied to
+            the output of the layer (its "activation").
+        kernel_constraint: Constraint function applied to
+            the `kernel` weights matrix.
+        bias_constraint: Constraint function applied to the bias vector.
+
+    Input shape:
+        N-D tensor with shape: `(batch_size, ..., input_dim)`.
+        The most common situation would be
+        a 2D input with shape `(batch_size, input_dim)`.
+
+    Output shape:
+        N-D tensor with shape: `(batch_size, ..., units)`.
+        For instance, for a 2D input with shape `(batch_size, input_dim)`,
+        the output would have shape `(batch_size, units)`.
+    """
 
     @utils.allow_initializer_layout
     def __init__(
@@ -28,10 +160,10 @@ class MyDense(Layer):
         activity_regularizer=None,
         kernel_constraint=None,
         bias_constraint=None,
-        n=6,  # added n parameter for modular base exponent (default 6 as in provided code)
         **kwargs,
     ):
         super().__init__(activity_regularizer=activity_regularizer, **kwargs)
+
         self.units = int(units) if not isinstance(units, int) else units
         if self.units < 0:
             raise ValueError(
@@ -49,7 +181,6 @@ class MyDense(Layer):
 
         self.input_spec = InputSpec(min_ndim=2)
         self.supports_masking = True
-        self.n = n  # store n for modular arithmetic base exponent
 
     def build(self, input_shape):
         dtype = tf.as_dtype(self.dtype or backend.floatx())
@@ -68,7 +199,7 @@ class MyDense(Layer):
                 f"Full input shape received: {input_shape}"
             )
         self.input_spec = InputSpec(min_ndim=2, axes={-1: last_dim})
-        self.w = self.add_weight(
+        self.kernel = self.add_weight(
             "kernel",
             shape=[last_dim, self.units],
             initializer=self.kernel_initializer,
@@ -78,9 +209,11 @@ class MyDense(Layer):
             trainable=True,
         )
         if self.use_bias:
-            self.b = self.add_weight(
+            self.bias = self.add_weight(
                 "bias",
-                shape=[self.units],
+                shape=[
+                    self.units,
+                ],
                 initializer=self.bias_initializer,
                 regularizer=self.bias_regularizer,
                 constraint=self.bias_constraint,
@@ -88,98 +221,117 @@ class MyDense(Layer):
                 trainable=True,
             )
         else:
-            self.b = None
+            self.bias = None
         self.built = True
 
     def call(self, inputs):
-        # Cast inputs to compute dtype if needed
         if inputs.dtype.base_dtype != self._compute_dtype_object.base_dtype:
             inputs = tf.cast(inputs, dtype=self._compute_dtype_object)
 
-        # Handle RaggedTensors (not fully expanded here, assuming flat input)
-        # Omitted detailed ragged logic for brevity, assume dense tensor input.
+        is_ragged = isinstance(inputs, tf.RaggedTensor)
+        if is_ragged:
+            # In case we encounter a RaggedTensor with a fixed last dimension
+            # (last dimension not ragged), we can flatten the input and restore
+            # the ragged dimensions at the end.
+            if tf.compat.dimension_value(inputs.shape[-1]) is None:
+                raise ValueError(
+                    "Dense layer only supports RaggedTensors when the "
+                    "innermost dimension is non-ragged. Received: "
+                    f"inputs.shape={inputs.shape}."
+                )
+            original_inputs = inputs
+            if inputs.flat_values.shape.rank > 1:
+                inputs = inputs.flat_values
+            else:
+                # Innermost partition is encoded using uniform_row_length.
+                # (This is unusual, but we can handle it.)
+                if inputs.shape.rank == 2:
+                    inputs = inputs.to_tensor()
+                    is_ragged = False
+                else:
+                    for _ in range(original_inputs.ragged_rank - 1):
+                        inputs = inputs.values
+                    inputs = inputs.to_tensor()
+                    original_inputs = tf.RaggedTensor.from_nested_row_splits(
+                        inputs, original_inputs.nested_row_splits[:-1]
+                    )
 
         rank = inputs.shape.rank
-        n = self.n
-
         if rank == 2 or rank is None:
-            # Use the custom RNS modular arithmetic path inspired from original code:
-            # The original issue code tried to do this custom divmod with powers of two and residues.
+            # We use embedding_lookup_sparse as a more efficient matmul
+            # operation for large sparse input tensors. The op will result in a
+            # sparse gradient, as opposed to
+            # sparse_ops.sparse_tensor_dense_matmul which results in dense
+            # gradients. This can lead to sigfinicant speedups, see b/171762937.
+            if isinstance(inputs, tf.SparseTensor):
+                # We need to fill empty rows, as the op assumes at least one id
+                # per row.
+                inputs, _ = tf.sparse.fill_empty_rows(inputs, 0)
+                # We need to do some munging of our input to use the embedding
+                # lookup as a matrix multiply. We split our input matrix into
+                # separate ids and weights tensors. The values of the ids tensor
+                # should be the column indices of our input matrix and the
+                # values of the weights tensor can continue to the actual matrix
+                # weights.  The column arrangement of ids and weights will be
+                # summed over and does not matter. See the documentation for
+                # sparse_ops.sparse_tensor_dense_matmul a more detailed
+                # explanation of the inputs to both ops.
+                ids = tf.SparseTensor(
+                    indices=inputs.indices,
+                    values=inputs.indices[:, 1],
+                    dense_shape=inputs.dense_shape,
+                )
+                weights = inputs
+                outputs = tf.nn.embedding_lookup_sparse(
+                    self.kernel, ids, weights, combiner="sum"
+                )
+            else:
+                
 
-            # For clarity, rename 'self.w' to use convention w and 'self.b' to b:
-            w = self.w
-            b = self.b if self.b is not None else 0.0
+                  print(inputs)
+                  quotient, x = divmod(inputs, (2**n))
+                  #x = inputs % (2**n);
+                  quotient1, x1 = divmod(inputs, (2**n - 1))
+                  #x1 = inputs % (2**n - 1);
+                  quotient2, x2 = divmod(inputs, (2**n + 1))
+                  #x2 = inputs % (2**n + 1);
+                  # w =  self.w % (2**n);
+                  quotient3, w = divmod(self.w, (2**n))
+                  # w1 = self.w % (2**n - 1);
+                  quotient4, w1 = divmod(self.w, (2**n - 1))
+                  # w2 = self.w % (2**n + 1)
+                  quotient5, w2 = divmod(self.w, (2**n + 1))
+                  quotient6, z = divmod((tf.matmul(x, w) + self.b), (2**n))
+                  # z = (tf.matmul(x, w) + self.b) % (2**n)
+                  quotient7, z1 = divmod((tf.matmul(x, w) + self.b), (2**n - 1))
+                  # z1 = (tf.matmul(x1, w1) + self.b) % (2**n - 1)
+                  quotient8, z2 = divmod((tf.matmul(x, w) + self.b), (2**n + 1))
+                  # z2 = tf.matmul(x2, w2) + self.b % (2**n + 1)
 
-            # Moduli for RNS:
-            M1 = 2 ** n
-            M2 = 2 ** n - 1
-            M3 = 2 ** n + 1
+                  Dm = (2**n) * (2**n - 1) * (2**n + 1);
+                  m1 = math.floor(((2**n) * (2**n - 1) * (2**n + 1))/(2**n));
+                  m2 = math.floor(((2**n) * (2**n - 1) * (2**n + 1))/(2**n - 1));
+                  m3 = math.floor(((2**n) * (2**n - 1) * (2**n + 1))/(2**n + 1));
 
-            # Compute inputs mod each base
-            _, x = tf.math.floordiv_mod(inputs, M1)  # x = inputs % M1
-            _, x1 = tf.math.floordiv_mod(inputs, M2)  # x1 = inputs % M2
-            _, x2 = tf.math.floordiv_mod(inputs, M3)  # x2 = inputs % M3
-
-            # Compute weights mod each base
-            _, w0 = tf.math.floordiv_mod(w, M1)  # w mod M1
-            _, w1 = tf.math.floordiv_mod(w, M2)  # w mod M2
-            _, w2 = tf.math.floordiv_mod(w, M3)  # w mod M3
-
-            # Compute (x @ w + b) mod each modulus:
-            # Here we respect matrix multiplication between inputs mod base with weights mod base:
-            # Note: b broadcast over batch dimension and units dimension.
-
-            z_mod_1 = tf.math.floormod(tf.matmul(x, w0) + b, M1)
-            z_mod_2 = tf.math.floormod(tf.matmul(x1, w1) + b, M2)
-            z_mod_3 = tf.math.floormod(tf.matmul(x2, w2) + b, M3)
-
-            # Compute constants for reconstruction:
-            Dm = M1 * M2 * M3
-            m1 = Dm // M1
-            m2 = Dm // M2
-            m3 = Dm // M3
-
-            # Modular multiplicative inverses for m1 mod M1, m2 mod M2, m3 mod M3:
-            x1_inv = 1
-            for i in range(1, M1):
-                if (i * m1) % M1 == 1:
-                    x1_inv = i
-                    break
-            x2_inv = 1
-            for i in range(1, M2):
-                if (i * m2) % M2 == 1:
-                    x2_inv = i
-                    break
-            x3_inv = 1
-            for i in range(1, M3):
-                if (i * m3) % M3 == 1:
-                    x3_inv = i
-                    break
-
-            # Use CRT (Chinese Remainder Theorem) to reconstruct decimal from residues:
-            term1 = z_mod_1 * m1 * x1_inv
-            term2 = z_mod_2 * m2 * x2_inv
-            term3 = z_mod_3 * m3 * x3_inv
-            num = tf.math.floormod(term1 + term2 + term3, Dm)
-
-            outputs = tf.cast(num, self.dtype)
-
+                  outputs = rns_to_decimal(Dm, z, z1, z2, m1, m2, m3, n)
+                  print(outputs)
+        # Broadcast kernel to inputs.
         else:
-            # For input rank > 2 fallback to standard dense matmul:
-            outputs = tf.tensordot(inputs, self.w, [[rank - 1], [0]])
-            if self.b is not None:
-                outputs = tf.nn.bias_add(outputs, self.b)
+            outputs = tf.tensordot(inputs, self.kernel, [[rank - 1], [0]])
+            # Reshape the output back to the original ndim of the input.
+            if not tf.executing_eagerly():
+                shape = inputs.shape.as_list()
+                output_shape = shape[:-1] + [self.kernel.shape[-1]]
+                outputs.set_shape(output_shape)
 
-        # Apply bias if use_bias is True and wasn't applied above:
-        if rank == 2 and self.b is not None:
-            # Bias was included in RNS path,
-            # so no extra addition needed here for rank==2.
-            pass
-        elif self.b is not None:
-            outputs = tf.nn.bias_add(outputs, self.b)
+        # if self.use_bias:
+        #     outputs = tf.nn.bias_add(outputs, self.bias)
 
         if self.activation is not None:
             outputs = self.activation(outputs)
+
+        if is_ragged:
+            outputs = original_inputs.with_flat_values(outputs)
 
         return outputs
 
@@ -201,73 +353,53 @@ class MyDense(Layer):
                 "units": self.units,
                 "activation": activations.serialize(self.activation),
                 "use_bias": self.use_bias,
-                "kernel_initializer": initializers.serialize(self.kernel_initializer),
-                "bias_initializer": initializers.serialize(self.bias_initializer),
-                "kernel_regularizer": regularizers.serialize(self.kernel_regularizer),
-                "bias_regularizer": regularizers.serialize(self.bias_regularizer),
-                "activity_regularizer": regularizers.serialize(self.activity_regularizer),
-                "kernel_constraint": constraints.serialize(self.kernel_constraint),
+                "kernel_initializer": initializers.serialize(
+                    self.kernel_initializer
+                ),
+                "bias_initializer": initializers.serialize(
+                    self.bias_initializer
+                ),
+                "kernel_regularizer": regularizers.serialize(
+                    self.kernel_regularizer
+                ),
+                "bias_regularizer": regularizers.serialize(
+                    self.bias_regularizer
+                ),
+                "activity_regularizer": regularizers.serialize(
+                    self.activity_regularizer
+                ),
+                "kernel_constraint": constraints.serialize(
+                    self.kernel_constraint
+                ),
                 "bias_constraint": constraints.serialize(self.bias_constraint),
-                "n": self.n,
             }
         )
         return config
-
-
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define two dense layers:  
-        # - one custom MyDense layer with RNS logic
-        # - one standard keras Dense layer with activation relu for demonstration
-
-        self.my_dense = MyDense(512, activation='relu', input_shape=(784,))
-        self.dense_ref = keras.layers.Dense(512, activation='relu')
-
-        # A dropout and output layer
-        self.dropout = keras.layers.Dropout(0.2)
-        self.out = keras.layers.Dense(10)
-
-    def call(self, inputs, training=False):
-        # Pass through layers sequentially
-        x1 = self.my_dense(inputs)       # custom dense
-        x2 = self.dense_ref(inputs)      # standard dense for comparison
-
-        # Compare outputs with a tolerance and return boolean tensor of elementwise closeness
-        tolerance = 1e-4
-        comparison = tf.abs(x1 - x2) < tolerance
-
-        # Aggregate comparison over all elements: Are all within tolerance?
-        all_close = tf.reduce_all(comparison, axis=-1, keepdims=True)  # Shape: (batch_size, 1)
-
-        # Pass one path (e.g., custom dense) through dropout and output layer
-        x_out = self.dropout(x1, training=training)
-        output_logits = self.out(x_out)
-
-        # Return a dictionary with output and comparison info for debug
-        # output_logits: final classification logits
-        # all_close: boolean tensor indicating if two dense outputs matched within tolerance per sample
-
-        return {
-            "logits": output_logits,
-            "dense_outputs_close": all_close,
-            "custom_dense_output": x1,
-            "reference_dense_output": x2,
-        }
-
-
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-
-def GetInput():
-    # Return a random float32 tensor of shape (batch_size=32, 784)
-    # Typical normalized flattened MNIST image shape
-    batch_size = 32
-    H = 28
-    W = 28
-    C = 1  # grayscale images, but flattened so C=1 is just for clarity
-    shape = (batch_size, H*W)  # (32, 784)
-    return tf.random.uniform(shape, dtype=tf.float32)
-
+    def rns_to_decimal(dm, z1, z2, z3, m1, m2, m3, n = 6):
+        M1 = 2**n
+        M2 = 2**n - 1
+        M3 = 2**n + 1
+        x1 = 1
+        x2 = 1
+        x3 = 1
+        quotient, mm1 = divmod(m1, M1)
+       # mm1 = m1 % M1
+        for i in range(1, M1):
+            quotient1, X = divmod((i * mm1), M1)
+            if X == 1:
+                x1 = i
+        quotient2, mm2 = divmod(m2, M2)
+       # mm2 = m2 % M2
+        for i in range(1, M2):
+            quotient3, X1 = divmod((i * mm2), M2)
+            if X1 == 1:
+                x2 = i
+       # mm3 = m3 % M3
+        quotient4, mm3 = divmod(m3, M3)
+        for i in range(1, M3):
+            quotient5, X2 = divmod((i * mm3), M3)
+            if X2 == 1:
+                x3 = i
+        quotient5, num = divmod((z1 * m1 * x1 + z2 * m2 * x2 + z3 * m3 * x3), dm)
+       # num = (z1 * m1 * x1 + z2 * m2 * x2 + z3 * m3 * x3) % dm
+        return num

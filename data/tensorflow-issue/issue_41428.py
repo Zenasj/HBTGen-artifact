@@ -1,26 +1,50 @@
-# tf.random.uniform((50000, 3072), dtype=tf.float32) ← CIFAR-10 flattened input shape
+import numpy as np
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
-import numpy as np
+from sklearn.datasets import fetch_openml
+from sklearn.utils import shuffle
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # CIFAR-10 images have 32x32x3 = 3072 features when flattened
-        self.dense1 = tf.keras.layers.Dense(64, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(10)  # logits for 10 classes
+data, targets = shuffle(*fetch_openml('CIFAR_10', version=1, return_X_y=True)) # same happens if I force these to be float32s
+train_sz = 50000
+X_train, X_test, y_train, y_test = data[:train_sz, :], data[train_sz:, :], np.asarray(targets[:train_sz], dtype=np.int), np.asarray(targets[train_sz:], dtype=np.int)
 
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        return x
+model = tf.keras.Sequential()
+model.add(tf.keras.Input(shape=(X_train.shape[1],)))
+model.add(tf.keras.layers.Dense(64, activation='relu'))
+model.add(tf.keras.layers.Dense(10))
+model.compile(loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True), optimizer='adam')
 
-def my_model_function():
-    # Return an instance of MyModel; weights are initialized randomly by default
-    return MyModel()
+s = 0
+for _ in range(500):
+    for i in range(100):
+        layers = []
+        for layer in model.get_weights():
+            layers.append(np.random.normal(0, 1, layer.shape))
+        model.set_weights(layers)
+        eval = model.evaluate(X_train, y_train)
+        s += eval
+        print(f'Done {i}')
+print(s)
 
-def GetInput():
-    # Return a random tensor input with shape [50000, 3072] matching CIFAR-10 flattened data
-    # Use float32 dtype as typical for TensorFlow models
-    return tf.random.uniform((50000, 3072), dtype=tf.float32)
+preds = model(X_train)
+eval = my_loss(y_train, preds)
 
+s = 0
+for j in range(100):
+    for i in range(100):
+        layers = []
+        for layer in model.get_weights():
+            layers.append(np.random.normal(0, 1, layer.shape))
+        model.set_weights(layers)
+        eval = model.evaluate(X_train, y_train)
+        s += eval
+        tf.keras.backend.clear_session()
+        gc.collect()
+        print(f'Done {i}')
+    print('*'*100)
+    print(f'Done {j}')
+        
+print(s)

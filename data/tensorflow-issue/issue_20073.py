@@ -1,40 +1,37 @@
-# tf.random.uniform((None, 8, 8, 1), dtype=tf.float32) ← Input shape inferred from minimal reproducible example in issue
-
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
-class MyModel(tf.keras.Model):
-    """
-    A fused model example combining the insights from the issue discussion.
+FN = 'tmp.model.h5'
+model = keras.Sequential([
+  keras.layers.InputLayer(input_shape=(8, 8, 1)),
+  keras.layers.Conv2D(1, 5),
+])
+keras.models.save_model(model, FN)
+keras.models.load_model(FN)
 
-    This model mimics the minimal CNN that was causing the weight-loading issue when
-    InputLayer was separated from the first Conv2D layer.
+model = keras.Sequential([                                                        
+  keras.layers.Conv2D(1, 5, input_shape=(8, 8, 1)),                               
+])
 
-    The model is constructed with input_shape specified directly on the Conv2D layer,
-    avoiding InputLayer. This matches the workaround described.
+def makeModel(env, shape, fname, lr):
 
-    The call method forwards input through Conv2D; this simulates the discussed minimal model.
-    """
-    def __init__(self):
-        super().__init__()
-        # According to the issue, including InputLayer as separate causes weight loading issue,
-        # so here input_shape is specified in first Conv2D layer instead.
-        self.conv = tf.keras.layers.Conv2D(
-            filters=1,
-            kernel_size=5,
-            input_shape=(8, 8, 1),
-            activation=None
-        )
+    # does not work due to https://github.com/tensorflow/tensorflow/issues/20073
+    # if os.path.isfile(fname):
+    #    print("Loading model")
+    #    return load_model(fname)
 
-    def call(self, inputs):
-        return self.conv(inputs)
-
-def my_model_function():
-    # Return an initialized instance of MyModel
-    # No pretrained weights loaded here, consistent with minimal example from issue
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input matching expected input shape (batch, height, width, channels)
-    # batch dimension is None/variable; here we pick batch = 1 for simplicity
-    return tf.random.uniform((1, 8, 8, 1), dtype=tf.float32)
-
+    m = Sequential()
+    m.add(InputLayer(input_shape=shape+(4,)))
+    m.add(Conv2D(32, kernel_size=8, strides=4, activation='relu'))
+    m.add(Conv2D(64, kernel_size=4, strides=2, activation='relu'))
+    m.add(Conv2D(64, kernel_size=3, activation='relu'))
+    m.add(Dense(512, activation='relu', activity_regularizer="l2"))
+    m.add(Flatten())
+    m.add(Dense(env.action_space.n, activation="linear"))
+    m.compile(loss=huber_loss, optimizer=tf.keras.optimizers.RMSprop(lr))
+    if os.path.isfile(fname):
+       m.load_weights(fname)
+    return m

@@ -1,14 +1,11 @@
-# torch.rand(1, dtype=torch.bfloat16)
 import torch
-from torch import nn
+torch.set_default_dtype(torch.bfloat16)
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return torch.randn(1, dtype=torch.bfloat16)
+@torch.compile
+def f():
+    return torch.randn(1, dtype=torch.bfloat16)
 
-def my_model_function():
-    return MyModel()
+print("Expected: torch.bfloat16\nOutput:", f().dtype)
 
-def GetInput():
-    return torch.rand(1, dtype=torch.bfloat16)
-
+Expected: torch.bfloat16
+Output: torch.float32

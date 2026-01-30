@@ -1,15 +1,16 @@
-# torch.rand(1, 2, 1, 2, 1, 2, dtype=torch.float32)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        v = x.select(2, 0)  # Selects 0th index along dimension 2 (third position)
-        return v.add_(1)    # In-place addition triggers the compile error
+def fn(input):
+    v = input.select(2, 0)
+    return v.add_(1) # works w/ non-inplace op "add"
 
-def my_model_function():
-    return MyModel()
+x = torch.rand([1, 2, 1, 2, 1, 2]) # works fine w/ other shapes like [1, 1, 1, 1, 1, 1]
 
-def GetInput():
-    return torch.rand(1, 2, 1, 2, 1, 2)  # Matches the input shape in the original issue
+ret_eager = fn(x)
+print('==== Eager mode OK! ====')
 
+compiled = torch.compile(fn)
+print('==== torchcomp compilation OK! ====')
+
+ret_compiled = compiled(x)
+print('==== torchcomp mode OK! ====')

@@ -1,25 +1,22 @@
-# torch.rand(B, C, D, H, W, dtype=torch.float32)
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+import traceback
+def forward(x, device):
+  x = torch.nn.functional.adaptive_max_pool3d_with_indices(output_size=x, input=torch.rand([9, 10, 9, 8, 6], dtype=torch.float32),return_indices=False)        
+  return x
+input_tensor = 2
+cuda_tensor = input_tensor
+no_op_info = forward(input_tensor, 'cpu')
+print("build succeded")
 
-class MyModel(nn.Module):
-    def __init__(self, output_size):
-        super().__init__()
-        self.output_size = output_size
+op_info = torch.compile(forward, mode='max-autotune',fullgraph=False,dynamic=True)(cuda_tensor, 'cuda')
 
-    def forward(self, x):
-        return F.adaptive_max_pool3d_with_indices(
-            input=x,
-            output_size=self.output_size,
-            return_indices=False
-        )
-
-def my_model_function():
-    # Matches the original test case's output_size=2 (passed as first argument)
-    return MyModel(output_size=2)
-
-def GetInput():
-    # Matches the input tensor shape from the original test case
-    return torch.rand(9, 10, 9, 8, 6, dtype=torch.float32)
-
+same_val = torch.allclose(no_op_info.to('cpu'), 
+                        op_info.to('cpu'), 
+                        rtol=1e-3, atol=1e-3, 
+                        equal_nan=True)
+if same_val == False : 
+    print("BUGBUG DIFFERENTIAL")
+    raise ValueError('diff value')
+else :
+    print("no_error")

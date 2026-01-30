@@ -1,26 +1,22 @@
-# torch.rand(2, 3, 4, dtype=torch.float32)
 import torch
-from torch import nn
+import lazy_tensor_core as ltc
+from lazy_tensor_core.debug import metrics
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Tensor-based min value for second clamp operation
-        self.min_tensor = nn.Parameter(torch.tensor(0.5, dtype=torch.float32))
+ltc._LAZYC._ltc_init_ts_backend()
+device = 'lazy'
+dtype = torch.float32
 
-    def forward(self, x):
-        # First clamp with scalar bounds
-        a = torch.clamp(x, min=0.2, max=1.0)
-        # Second clamp with tensor min value
-        b = torch.clamp(a, min=self.min_tensor)
-        # Third clamp with scalar min (no max)
-        c = torch.clamp(b, min=0.1)
-        return c
+x = torch.randn((2,3,4), device=device, dtype=dtype)
+y = torch.randn((2,3,4), device=device, dtype=dtype)
 
-def my_model_function():
-    return MyModel()
+def computation(x,y):
+    # clamp with scalar bounds
+    a = torch.clamp(x, 0.2, 1.0)
+    # clamp with tensor bounds
+    b = torch.clamp(a, torch.tensor(0.5, device=device))
+    # clamp with out tensor specified
+    c = torch.clamp(b, 0.1, out=y)
+    return c
 
-def GetInput():
-    # Matches the input shape and dtype from the original test script
-    return torch.randn(2, 3, 4, dtype=torch.float32)
-
+computation(x, y)
+print(metrics.metrics_report())

@@ -1,61 +1,63 @@
-# tf.random.uniform((B, 32, 32, 3), dtype=tf.float32)  # CIFAR-10 sized input images (batch size B is dynamic)
+from tensorflow import keras
+
+#!/usr/bin/env python
+# coding: utf-8
+
+# Can't use tf.distribute.MirroredStrategy in srun (slurm) enviroment
+
+# Tried with tf 2.5 and tf nightly.
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Simple CNN model matching the CIFAR-10 example in the issue
-        self.conv1 = tf.keras.layers.Conv2D(32, (3, 3), activation='relu', input_shape=(32, 32, 3))
-        self.pool1 = tf.keras.layers.MaxPooling2D((2, 2))
-        self.conv2 = tf.keras.layers.Conv2D(64, (3, 3), activation='relu')
-        self.pool2 = tf.keras.layers.MaxPooling2D((2, 2))
-        self.conv3 = tf.keras.layers.Conv2D(64, (3, 3), activation='relu')
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(64, activation='relu')
-        self.output_layer = tf.keras.layers.Dense(10)  # 10 classes CIFAR-10
-        
-    def call(self, inputs, training=False):
-        x = self.conv1(inputs)
-        x = self.pool1(x)
-        x = self.conv2(x)
-        x = self.pool2(x)
-        x = self.conv3(x)
-        x = self.flatten(x)
-        x = self.dense1(x)
-        x = self.output_layer(x)
-        return x
+# Force dynamic memory growth
+gpus = tf.config.experimental.list_physical_devices('GPU')
+for gpu in gpus:
+    tf.config.experimental.set_memory_growth(gpu, True)
+
+tf.__version__
 
 
-def my_model_function():
-    model = MyModel()
+# op 1 . NCCL error in slurmn enviroment. Works fine inside enroot container (not submitted via srun)
+strategy = tf.distribute.MirroredStrategy()
+
+# op 2. Not using NCCL. Works.
+#strategy = tf.distribute.MirroredStrategy(cross_device_ops=tf.distribute.HierarchicalCopyAllReduce())
+
+# op 2. Works in slurmn enviroment. Needs to be optimized
+#slurm_resolver = tf.distribute.cluster_resolver.SlurmClusterResolver()
+#strategy = tf.distribute.MultiWorkerMirroredStrategy(cluster_resolver=slurm_resolver)
+
+# op 3 # Works in slurmn enviroment
+#strategy = tf.distribute.MultiWorkerMirroredStrategy()
+
+
+from tensorflow.keras import datasets, layers, models
+import matplotlib.pyplot as plt
+
+
+(train_images, train_labels), (test_images, test_labels) = datasets.cifar10.load_data()
+
+# Normalize pixel values to be between 0 and 1
+train_images, test_images = train_images / 255.0, test_images / 255.0
+
+
+with strategy.scope():
+
+    model = models.Sequential()
+    model.add(layers.Conv2D(32, (3, 3), activation='relu', input_shape=(32, 32, 3)))
+    model.add(layers.MaxPooling2D((2, 2)))
+    model.add(layers.Conv2D(64, (3, 3), activation='relu'))
+    model.add(layers.MaxPooling2D((2, 2)))
+    model.add(layers.Conv2D(64, (3, 3), activation='relu'))
+    model.add(layers.Flatten())
+    model.add(layers.Dense(64, activation='relu'))
     
-    # Compile model with SparseCategoricalCrossentropy with logits, Adam optimizer
-    # This matches the original example in the issue
-    model.compile(
-        optimizer='adam',
-        loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
-        metrics=['accuracy']
-    )
-    return model
+    model.add(layers.Dense(10))
+    # ADD sync bn..
+    model.compile(optimizer='adam',
+              loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+              metrics=['accuracy'])
 
 
-def GetInput():
-    # Return a random 4D tensor with shape (batch_size, 32, 32, 3)
-    # Batch size chosen as 8 for example; dtype float32 per typical image tensor
-    batch_size = 8  # Arbitrary but reasonable batch size
-    return tf.random.uniform((batch_size, 32, 32, 3), minval=0, maxval=1, dtype=tf.float32)
 
-# ---
-# ### Explanation / Assumptions:
-# - The issue describes a small CNN model for CIFAR-10 with input shape `(32, 32, 3)`.
-# - The model layers and structure are explicitly given in the initial chunks.
-# - Loss is sparse categorical crossentropy from logits (no softmax applied in model output).
-# - Optimizer used is Adam.
-# - Input data is CIFAR-10 normalized between 0 and 1, so `tf.random.uniform` from 0 to 1 with shape `(batch_size, 32, 32, 3)` fits well.
-# - Batch size in `GetInput()` is arbitrarily set to 8 for demonstration.
-# - The main NCCL error relates to distributed training in SLURM `srun` environments and is not part of the model code itself.
-# - Since the user wants a self-contained python model file, no distributed strategy code or usage environment setup is included.
-# - Model is compatible with TensorFlow 2.20.0 and can be compiled with XLA (`@tf.function(jit_compile=True)`) if desired externally.
-# - No test or run code included per instructions.
-# If you want me to add a `@tf.function(jit_compile=True)` decorator around a compiled call or inference step, feel free to ask!
+history = model.fit(train_images, train_labels, epochs=10, steps_per_epoch=100)

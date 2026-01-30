@@ -1,21 +1,13 @@
-# torch.rand(2, 2, dtype=torch.float32)
-import torch
-import torch.nn as nn
+import torch as th
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.fc = nn.Linear(2, 2)  # Matches the minimal example's tensor shape
+t1 = th.tensor([[1, 2], [3,4]]).float().requires_grad_()
+t2 = th.argmin(t1, dim=1)
+t3 = t1[t2]
+t3.sum().backward()
 
-    def forward(self, x):
-        x = self.fc(x)
-        indices = torch.argmin(x, dim=1)  # Triggers the argmin indexing issue
-        selected = x[indices]  # Problematic indexing operation causing backward error
-        return selected.sum()  # Returns a scalar for loss computation
+import torch as th
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(2, 2)  # 2x2 input matching the model's forward requirements
-
+t1 = th.tensor([[1, 2], [3,4]]).float().requires_grad_()
+t2 = th.argmin(t1, dim=1)
+t3 = t1[t2.detach()]
+t3.sum().backward()

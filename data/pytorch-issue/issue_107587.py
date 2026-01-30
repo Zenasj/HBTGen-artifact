@@ -1,19 +1,26 @@
-# torch.rand(B, S, dtype=torch.long)  # B=batch_size=1, S=seq_len=16
-import torch
-from torch import nn
+import transformers
+import torch._dynamo
+torch._dynamo.config.suppress_errors = False
+    
+def make_data(model, device):
+    batch_size = 1
+    seq_len = 16
+    input = torch.randint(
+        low=0, high=model.config.vocab_size, size=(batch_size, seq_len), device=device
+    )
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        prob = torch.rand([])  # Simulates dynamic control flow causing the error
-        if prob < 0.5:
-            return x * 2
-        else:
-            return x * 3
+    label = torch.randint(low=0, high=model.config.vocab_size, size=(batch_size, seq_len),
+                          device=device)
+    return input, label
 
-def my_model_function():
-    return MyModel()
+device = torch.device('cuda')
+config = transformers.AutoConfig.from_pretrained("facebook/opt-125m")
+config.tie_word_embeddings = False
+model = transformers.OPTForCausalLM(config=config)
+model.to(device)
 
-def GetInput():
-    # Matches OPT's input format: token indices tensor
-    return torch.randint(0, 10000, (1, 16), device='cuda', dtype=torch.long)
-
+optimized_model = torch.compile(model, backend='inductor',options={'trace.enabled':True,'trace.graph_diagram':True})
+data = make_data(model, device)
+model.zero_grad(set_to_none=True)
+with torch.cuda.amp.autocast(enabled=True, dtype=torch.float16):
+    torch._dynamo.explain(model, data[0])

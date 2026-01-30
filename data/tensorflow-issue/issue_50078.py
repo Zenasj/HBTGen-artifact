@@ -1,77 +1,124 @@
-# tf.random.uniform((100, 50, 50, 1), dtype=tf.float32)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+
+import numpy
+import tensorflow
+
+from tensorflow.keras import datasets, layers, models
+from tensorflow.keras import mixed_precision
+
+
+# No. of images
+nImg = 1000
+
+nBinX = 50
+nBinY = 50
+
+# No. of layers/channels
+nLayer = 1
+
+nPixelTot = nBinX*nBinY
+
+l_idx = []
+l_val = []
+l_label = []
+
+# Create a sparse dataset with random entries
+for iImg in range(0, nImg) :
+    
+    # Fill at most 60 pixels
+    nFill = numpy.random.randint(low = 1, high = 61)
+    
+    for iFill in range(0, nFill) :
+        
+        # Index of the filled pixel
+        # [image idx, row idx, col idx, layer]
+        idx = [
+            iImg,
+            numpy.random.randint(low = 0, high = nBinY),
+            numpy.random.randint(low = 0, high = nBinX),
+            nLayer-1,
+        ]
+        
+        if (idx in l_idx) :
+            continue
+        
+        l_idx.append(idx)
+        l_val.append(numpy.random.rand())
+    
+    l_label.append(numpy.random.randint(low = 0, high = 2))
+
+
+img_shape = (nBinY, nBinX, nLayer)
+dense_shape = (nImg, nBinY, nBinX, nLayer)
+
+# Create the sparse rensor
+input_img_sparseTensor = tensorflow.sparse.reorder(tensorflow.sparse.SparseTensor(
+    indices = l_idx,
+    values = l_val,
+    dense_shape = dense_shape,
+))
+
+
+print("=====> Creating dataset...")
+
+dataset_img = tensorflow.data.Dataset.from_tensor_slices(input_img_sparseTensor)
+dataset_label = tensorflow.data.Dataset.from_tensor_slices(l_label)
+
+batch_size = 100
+
+dataset = tensorflow.data.Dataset.zip((dataset_img, dataset_label)).batch(batch_size)
+
+print("dataset.element_spec:", dataset.element_spec)
+print("=====> Created dataset...")
+
+
+# Dummy CNN model
+model = models.Sequential()
+
+##model.add(layers.InputLayer(input_shape = img_shape, sparse = True, batch_size = batch_size))
+model.add(layers.Conv2D(10, kernel_size = (10, 10), activation = "relu", input_shape = img_shape))
+model.add(layers.MaxPooling2D((2, 2)))
+model.add(layers.Conv2D(5, kernel_size = (5, 5), activation = "relu"))
+model.add(layers.MaxPooling2D((2, 2)))
+model.add(layers.Flatten())
+model.add(layers.Dense(50, activation = "relu"))
+model.add(layers.Dense(2, activation = "relu"))
+
+model.summary()
+
+print("=====> Compiling model...")
+
+model.compile(
+    optimizer = "adam",
+    loss = tensorflow.keras.losses.SparseCategoricalCrossentropy(from_logits = True),
+    metrics = ["accuracy"],
+)
+
+print("=====> Compiled model...")
+
+print("=====> Starting fit...")
+
+# Use the same data for train and test, just to check if it runs
+history = model.fit(
+    x = dataset,
+    epochs = 5,
+    #batch_size = batch_size,
+    validation_data = dataset,
+    shuffle = False,
+)
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Input shape: (50, 50, 1)
-        # Since Conv2D does not support SparseTensor inputs directly,
-        # we convert sparse input to dense first as a workaround.
+x = tf.keras.Input(shape=(4,), sparse=True)
+y = tf.keras.layers.Dense(4)(x)
+model = tf.keras.Model(x, y)
 
-        # Lambda layer to convert SparseTensor input to dense tensor
-        self.sparse_to_dense = tf.keras.layers.Lambda(lambda x: tf.sparse.to_dense(x, validate_indices=False))
+x = tf.keras.Input(shape=(4,2, ), sparse=True)
+y = tf.keras.layers.Dense(4)(x)
+model = tf.keras.Model(x, y)
 
-        # CNN model layers (replicating the Sequential model from the issue)
-        self.conv1 = tf.keras.layers.Conv2D(10, kernel_size=(10, 10), activation="relu", input_shape=(50, 50, 1))
-        self.pool1 = tf.keras.layers.MaxPooling2D((2, 2))
-        self.conv2 = tf.keras.layers.Conv2D(5, kernel_size=(5, 5), activation="relu")
-        self.pool2 = tf.keras.layers.MaxPooling2D((2, 2))
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(50, activation="relu")
-        self.dense2 = tf.keras.layers.Dense(2, activation="relu")
-
-    def call(self, inputs, training=False):
-        # Inputs expected as SparseTensor with shape (batch, 50, 50, 1)
-        # Convert SparseTensor to dense
-        x = self.sparse_to_dense(inputs)
-        x = self.conv1(x)
-        x = self.pool1(x)
-        x = self.conv2(x)
-        x = self.pool2(x)
-        x = self.flatten(x)
-        x = self.dense1(x)
-        x = self.dense2(x)
-        return x
-
-
-def my_model_function():
-    return MyModel()
-
-
-def GetInput():
-    # Generate a random sparse tensor with shape (100, 50, 50, 1)
-    # to mimic the input used in the original issue.
-
-    batch_size = 100
-    height = 50
-    width = 50
-    channels = 1
-
-    # For demo: randomly generate sparse indices
-    # Fill at most 60 pixels per image same as original issue
-    import numpy as np
-
-    indices = []
-    values = []
-
-    for i in range(batch_size):
-        n_fill = np.random.randint(1, 61)
-        seen_positions = set()
-        for _ in range(n_fill):
-            row = np.random.randint(0, height)
-            col = np.random.randint(0, width)
-            pos = (row, col)
-            if pos in seen_positions:
-                continue
-            seen_positions.add(pos)
-            indices.append([i, row, col, 0])
-            values.append(np.random.rand())
-
-    dense_shape = [batch_size, height, width, channels]
-    indices_tf = tf.constant(indices, dtype=tf.int64)
-    values_tf = tf.constant(values, dtype=tf.float32)
-    sparse_tensor = tf.sparse.reorder(tf.sparse.SparseTensor(indices=indices_tf, values=values_tf, dense_shape=dense_shape))
-
-    return sparse_tensor
-
+x = tf.keras.Input(shape=(4,2, ), sparse=False)
+y = tf.keras.layers.Dense(4)(x)
+model = tf.keras.Model(x, y)

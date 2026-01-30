@@ -1,19 +1,9 @@
-# torch.rand(4), torch.tensor([3])  # x: (4,), y: (1,)
-import torch
-from torch import nn
-
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        x, y = inputs
-        z = y.item()
-        torch._check(z == 3)
-        return x + z
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    x = torch.rand(4)
-    y = torch.tensor([3])
-    return (x, y)
-
+for ra in ras:
+                        log.debug("inserting runtime assert %s", ra.expr)
+                        # Need to process ALL free symbols, not just unbacked ones
+                        fvs = free_symbols(ra.expr)
+                        missing = fvs - symbol_to_proxy.keys()
+                        if missing:
+                            i1 = sorted(missing)[0]
+                            assert self.shape_env.is_unbacked_symint(i1), i1
+                            ras_by_symbol.setdefault(i1, []).append(ra)

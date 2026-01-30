@@ -1,92 +1,101 @@
-# tf.random.uniform((B, H, W, C), dtype=tf.int32) with B=1000, H=128, W=128, C=3 inferred from foo_volume tensor shape (1000, 2, 128, 128, 3) and input to model of shape (128,128,3)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
-import tensorflow as tf
+gpus = tf.config.experimental.list_physical_devices('GPU')
+if gpus:
+    try:
+        tf.config.experimental.set_virtual_device_configuration(
+            gpus[0],
+            [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=5* 1024)]
+        )
+    except RuntimeError as e:
+        print(e)
 
+# This is a standalone code for reproducing bugs or issues.
+import tensorflow as tf  # tf == 2.3.1
+import numpy as np
+import nvgpu
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Following the original sequential model structure that caused cudnn/cublas allocation issues
-        # Input shape used later is (128,128,3)
-        cnn_filters = [64, 64, 64]
+from pprint import pprint
+from sklearn import model_selection
+from tensorflow.keras.layers import Input, BatchNormalization
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, UpSampling2D, Dense
 
-        self.input_layer = tf.keras.layers.InputLayer(input_shape=(128, 128, 3))
+tf.keras.backend.clear_session()
 
-        # Conv2D -> BatchNorm layers repeated per cnn_filters
-        self.conv_bn_blocks1 = []
-        for filters in cnn_filters:
-            self.conv_bn_blocks1.append(tf.keras.layers.Conv2D(filters, (3, 3), activation='relu', padding='same'))
-            self.conv_bn_blocks1.append(tf.keras.layers.BatchNormalization())
-
-        self.up_sampling = tf.keras.layers.UpSampling2D((2, 2))
-        self.bn_after_upsampling = tf.keras.layers.BatchNormalization()
-
-        # Conv2D -> BatchNorm layers in reverse filters (cnn_filters[::-1]) repeated twice based on code chunks
-        self.conv_bn_blocks2 = []
-        for filters in reversed(cnn_filters):
-            self.conv_bn_blocks2.append(tf.keras.layers.Conv2D(filters, (3, 3), activation='relu', padding='same'))
-            self.conv_bn_blocks2.append(tf.keras.layers.BatchNormalization())
-        # Following MaxPooling and BatchNorm
-        self.max_pooling = tf.keras.layers.MaxPooling2D((2, 2), padding='same')
-        self.bn_after_pooling = tf.keras.layers.BatchNormalization()
-
-        # An additional Conv2D -> BatchNorm per cnn_filters before final Dense (producing output shape with 3 channels)
-        self.conv_bn_blocks3 = []
-        for filters in cnn_filters:
-            self.conv_bn_blocks3.append(tf.keras.layers.Conv2D(filters, (3, 3), activation='relu', padding='same'))
-            self.conv_bn_blocks3.append(tf.keras.layers.BatchNormalization())
-
-        # The final Dense layer mapped to 3 channels as per summary (Dense(3) on last conv output)
-        # Since Dense on 4D tensors isn't standard, we infer it is a TimeDistributed/Dense applied per pixel, 
-        # but to keep simplicity and match the original code, we implement it as Conv2D with kernel 1x1 and 3 output filters (common approximation)
-        # The original has Dense(3) after conv layers, this can be approximated by Conv2D(3, 1x1)
-        self.final_conv = tf.keras.layers.Conv2D(3, (1, 1), activation='linear')
-
-    def call(self, inputs, training=False):
-        x = self.input_layer(inputs)
-        # First conv batchnorm blocks
-        for layer in self.conv_bn_blocks1:
-            x = layer(x, training=training)
-        # UpSampling + BatchNorm
-        x = self.up_sampling(x)
-        x = self.bn_after_upsampling(x, training=training)
-        # Second conv batchnorm blocks
-        for layer in self.conv_bn_blocks2:
-            x = layer(x, training=training)
-        # MaxPool and BatchNorm
-        x = self.max_pooling(x)
-        x = self.bn_after_pooling(x, training=training)
-        # Third conv batchnorm blocks
-        for layer in self.conv_bn_blocks3:
-            x = layer(x, training=training)
-        # Final conv to 3 channels
-        x = self.final_conv(x)
-        return x
+print('NVIDIA GPU info.:')
+pprint(nvgpu.gpu_info())
+print()
 
 
-def my_model_function():
-    # Instantiate the model
-    model = MyModel()
-    # Build the model by calling once with correct input shape
-    dummy_input = tf.zeros((1, 128, 128, 3), dtype=tf.float32)
-    model(dummy_input)
+def prepare_dataset(volume: np.array, ts_size: float) -> np.array:
+    zipped_vol = np.array([*zip(volume[:, 0], volume[:, 1])])
+    tr, ts = split_trts(zipped_vol, ts_size)
+    print('Train volume shape:')
+    print('  ', tr.shape)
+    print('Test volume shape: ')
+    print('  ', ts.shape)
+    print()
+    return tr, ts
 
-    # Compile the model similar to original (SGD momentum=0.05, mse loss)
-    optmz = tf.keras.optimizers.SGD(momentum=0.05)
+
+def split_trts(video_volume, ts_size):
+    vol_tr, vol_ts = model_selection.train_test_split(video_volume, test_size=ts_size)
+    vol_tr, vol_ts = np.asarray(vol_tr), np.asarray(vol_ts)
+    vol_tr = vol_tr.astype("float32") / 255.
+    vol_ts = vol_ts.astype("float32") / 255.
+    return vol_tr, vol_ts
+
+
+def config_gpus(memory_limit):
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    if gpus:
+        try:
+            tf.config.experimental.set_virtual_device_configuration(
+                gpus[0],
+                [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=memory_limit * 1024)]
+            )
+        except RuntimeError as e:
+            print(e)
+
+
+def build_model(input_shape, cnn_filters):
+    model = tf.keras.Sequential()
+    model.add(Input(input_shape))
+    for depth in cnn_filters:
+        model.add(Conv2D(depth, (3, 3), activation='relu', padding='same'))
+        model.add(BatchNormalization())
+    model.add(UpSampling2D((2, 2)))
+    model.add(BatchNormalization())
+    for depth in cnn_filters[::-1]:
+        model.add(Conv2D(depth, (3, 3), activation='relu', padding='same'))
+        model.add(BatchNormalization())
+    model.add(MaxPooling2D((2, 2), padding='same'))
+    model.add(BatchNormalization())
+    for depth in cnn_filters:
+        model.add(Conv2D(depth, (3, 3), activation='relu', padding='same'))
+        model.add(BatchNormalization())
+    model.add(Dense(3))
+    optmz = tf.keras.optimizers.SGD(momentum=.05)
     loss = tf.keras.losses.MeanSquaredError()
-    model.compile(optimizer=optmz, loss=loss)
-
+    model.compile(optmz, loss)
     return model
 
 
-def GetInput():
-    # Return a random tensor shaped (batch, height, width, channels) with values roughly matching original range 0-255 and dtype int32
-    # Batch size arbitrary pick 4 for demonstration, compatible with model input (128,128,3)
-    batch_size = 4
-    input_tensor = tf.random.uniform(
-        (batch_size, 128, 128, 3), minval=0, maxval=255, dtype=tf.int32
-    )
-    # Normalize input to float32 0~1, since typical Keras conv expects float input (original code also normalizes to [0,1])
-    input_tensor = tf.cast(input_tensor, tf.float32) / 255.0
-    return input_tensor
+foo_volume = tf.random.uniform(
+    (1000, 2, 128, 128, 3), minval=0, maxval=255, dtype=tf.dtypes.int32, seed=None, name=None
+)
+train, test = prepare_dataset(foo_volume, ts_size=0.4)
+config_gpus(5)
+tf.debugging.set_log_device_placement(True)
+my_model = build_model(train.shape[2:], [64, 64, 64])
+print('Your model:'), print(my_model.summary())
+if input("Proceed? */n: ") != 'n':
+    history = my_model.fit(train[:, 1], train[:, 0],  # noisy train, clean train
+                           batch_size=4, epochs=20000, verbose=True,
+                           validation_data=(test[:, 1], test[:, 0])).history
 
+config_gpus(5)
+tf.debugging.set_log_device_placement(True)

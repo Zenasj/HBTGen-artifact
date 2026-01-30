@@ -1,98 +1,70 @@
-# tf.random.uniform((64, 28*28), dtype=tf.float32) ← Input shape inferred from RBM batch_size=64, nv=28*28 flattened image vector
+import random
 
 import tensorflow as tf
+import numpy as np
 
-class MyModel(tf.keras.Model):
+# Restricted Boltzmann Machine
+
+class RBM():
     def __init__(self, nv=28 * 28, nh=512, cd_steps=3):
-        super().__init__()
-        # Seed for reproducibility
         tf.random.set_seed(42)
+        self.graph = tf.Graph()
+        with self.graph.as_default():
+            tf.random.set_seed(42)
+            self.W = tf.Variable(tf.compat.v1.truncated_normal((nv, nh)) * 0.01)
+            self.bv = tf.Variable(tf.zeros((nv, 1)))
+            self.bh = tf.Variable(tf.zeros((nh, 1)))
 
-        self.nv = nv  # number of visible units (input dim)
-        self.nh = nh  # number of hidden units
-        self.cd_steps = cd_steps  # number of contrastive divergence steps
+            self.cd_steps = cd_steps
+            self.modelW = None
 
-        # Initialize weights and biases similar to RBM original code
-        # Using tf.Variable for weights and biases to replicate RBM parameters
-        self.W = tf.Variable(
-            tf.random.truncated_normal((nv, nh), stddev=0.01, seed=42),
-            name='W')
-        self.bv = tf.Variable(tf.zeros([nv, 1]), name='bv')  # visible bias
-        self.bh = tf.Variable(tf.zeros([nh, 1]), name='bh')  # hidden bias
-
-    def bernoulli_sample(self, p):
-        # Bernoulli sampling: output 1 with probability p, else 0
-        # Using tf.sign and uniform random tensor as in original code
-        # tf.sign(p - random_uniform) gives +1 if p > uniform, 0 if equal, -1 if less;
-        # tf.nn.relu zeroes negative => binary samples 0/1
-        uniform_sample = tf.random.uniform(tf.shape(p), dtype=p.dtype)
-        return tf.nn.relu(tf.sign(p - uniform_sample))
-
-    def sample_h(self, v):
-        # Sample hidden units given visible
-        # ph_given_v = sigmoid(v * W + bh)
-        linear_part = tf.matmul(v, self.W) + tf.squeeze(self.bh)  # shape [batch, nh]
-        ph_given_v = tf.sigmoid(linear_part)
-        return self.bernoulli_sample(ph_given_v)
-
-    def sample_v(self, h):
-        # Sample visible units given hidden
-        # pv_given_h = sigmoid(h * W^T + bv)
-        linear_part = tf.matmul(h, tf.transpose(self.W)) + tf.squeeze(self.bv)  # shape [batch, nv]
-        pv_given_h = tf.sigmoid(linear_part)
-        return self.bernoulli_sample(pv_given_h)
+    def bernoulli(self, p):
+        return tf.nn.relu(tf.sign(p - tf.compat.v1.random_uniform(p.shape)))
 
     def energy(self, v):
-        # Energy function of RBM: E(v) = - sum_i b_i v_i - sum_j log(1 + exp(sum_i v_i W_ij + bh_j))
-        # v shape: [batch, nv]
-        # b_term: batch x 1 
-        # h_term: batch x 1 (sum over hidden units)
-        b_term = tf.matmul(v, self.bv)  # shape [batch, 1]
-        linear_transform = tf.matmul(v, self.W) + tf.squeeze(self.bh)  # shape [batch, nh]
-        h_term = tf.reduce_sum(tf.math.log(tf.exp(linear_transform) + 1), axis=1, keepdims=True)  # shape [batch,1]
-        energy_per_sample = -h_term - b_term  # shape [batch,1]
-        mean_energy = tf.reduce_mean(energy_per_sample)
-        return mean_energy
+        b_term = tf.matmul(v, self.bv)
+        linear_tranform = tf.matmul(v, self.W) + tf.squeeze(self.bh)
+        h_term = tf.reduce_sum(tf.compat.v1.log(tf.exp(linear_tranform) + 1), axis=1)
+        return tf.reduce_mean(-h_term - b_term)
 
-    def gibbs_step(self, k, vk):
-        # Perform one step of Gibbs sampling: v -> h -> v
+    def sample_h(self, v):
+        ph_given_v = tf.sigmoid(tf.matmul(v, self.W) + tf.squeeze(self.bh))
+        return self.bernoulli(ph_given_v)
+
+    def sample_v(self, h):
+        pv_given_h = tf.sigmoid(tf.matmul(h, tf.transpose(self.W)) + tf.squeeze(self.bv))
+        return self.bernoulli(pv_given_h)
+
+    def gibbs_step(self, i, k, vk):
         hk = self.sample_h(vk)
         vk = self.sample_v(hk)
-        return k + 1, vk
+        return i + 1, k, vk
 
-    @tf.function
-    def call(self, input_tensor):
-        # Forward pass: input_tensor shape: [batch, nv]
-        # For demonstration, run CD steps and return energy difference (loss)
-        v = tf.round(input_tensor)  # binarize input (like placeholder rounding in original)
-        vk = tf.identity(v)
+    def train(self, X, lr=0.01, batch_size=64, epochs=5):
+        with self.graph.as_default():
+            tf_v = tf.compat.v1.placeholder(tf.float32, [batch_size, self.bv.shape[0]])
+            v = tf.round(tf_v)
+            vk = tf.identity(v)
 
-        i = tf.constant(0)
-        k = tf.constant(self.cd_steps)
+            i = tf.constant(0)
+            _, _, vk = tf.while_loop(cond=lambda i, k, *args: i <= k,
+                                     body=self.gibbs_step,
+                                     loop_vars=[i, tf.constant(self.cd_steps), vk],
+                                     parallel_iterations=1,
+                                     back_prop=False)
 
-        # Since tf.while_loop requires a cond function, define it here
-        def cond(k_, vk_):
-            return k_ < self.cd_steps
+            vk = tf.stop_gradient(vk)
+            loss = self.energy(v) - self.energy(vk)
+            optimizer = tf.compat.v1.train.AdamOptimizer(lr).minimize(loss)
+            init = tf.compat.v1.global_variables_initializer()
 
-        def body(k_, vk_):
-            k_new, vk_new = self.gibbs_step(k_, vk_)
-            return k_new, vk_new
-
-        k_final, vk_final = tf.while_loop(cond, body, loop_vars=[i, vk])
-
-        # Compute contrastive divergence loss (energy difference)
-        loss = self.energy(v) - self.energy(vk_final)
-        # Output the loss as forward output for convenience
-        return loss
-
-def my_model_function():
-    # Instantiate model with default parameters (visible units=28*28, hidden=512, cd_steps=3)
-    return MyModel()
-
-def GetInput():
-    # Return a random uniform tensor input matching (batch_size=64, nv=28*28)
-    # dtype float32 consistent with RBM input expected
-    batch_size = 64
-    nv = 28 * 28
-    return tf.random.uniform((batch_size, nv), minval=0.0, maxval=1.0, dtype=tf.float32)
-
+        with tf.compat.v1.Session(graph=self.graph) as sess:
+            init.run()
+            for epoch in range(epochs):
+                losses = []
+                for i in range(0, len(X) - batch_size, batch_size):
+                    x_batch = X[i:i + batch_size]
+                    l, _ = sess.run([loss, optimizer], feed_dict={tf_v: x_batch})
+                    losses.append(l)
+                print('Epoch Cost %d: ' % epoch, np.mean(losses), end='\r')
+            self.modelW = self.W.eval()

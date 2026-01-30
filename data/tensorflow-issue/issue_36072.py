@@ -1,47 +1,60 @@
-# tf.random.uniform((B, 160, 160, 3), dtype=tf.float32) ← inferred input shape from issue's MobileNetV2 example with (160,160,3)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
+import tensorflow.keras as keras
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Based on the issue code, base model is MobileNetV2 feature extractor with input_shape=(160,160,3)
-        # followed by GlobalAveragePooling2D, BatchNormalization, Dense(2000 classes), softmax activation.
-        # We build same architecture here.
+print(tf.version.VERSION, tf.executing_eagerly(), keras.layers.BatchNormalization._USE_V2_BEHAVIOR)
 
-        self.base_model = tf.keras.applications.MobileNetV2(
-            include_top=False,
-            input_shape=(160, 160, 3),
-            weights=None,  # weights=None to match example without pretrained weights
-            pooling=None,
-            classes=2000
-        )
-        self.global_pool = tf.keras.layers.GlobalAveragePooling2D()
-        self.batch_norm = tf.keras.layers.BatchNormalization()
-        self.dense = tf.keras.layers.Dense(2000)
-        self.softmax = tf.keras.layers.Softmax()
+# keras.layers.BatchNormalization._USE_V2_BEHAVIOR = False
 
-    def call(self, inputs, training=False):
-        x = self.base_model(inputs, training=training)
-        x = self.global_pool(x)
-        x = self.batch_norm(x, training=training)
-        x = self.dense(x)
-        x = self.softmax(x)
-        return x
+# tf.compat.v1.disable_eager_execution() # Uncomment this sentence works normally
 
-def my_model_function():
-    # Return an instance of MyModel, compiled similarly to issue example's model.compile
-    model = MyModel()
-    optimizer = tf.keras.optimizers.Adam(amsgrad=True)
-    loss = tf.keras.losses.CategoricalCrossentropy()
-    model.compile(optimizer=optimizer, loss=loss, metrics=['accuracy'])
-    return model
+# os.environ["CUDA_VISIBLE_DEVICES"]="-1"
+tf.config.experimental.set_memory_growth(tf.config.experimental.list_physical_devices('GPU')[0], True)
 
-def GetInput():
-    # Generate a random input tensor with shape matching model input,
-    # dtype float32, range [0,1], like issue's preprocess scaling x/255
-    # Batch size can be arbitrary; use batch size 8 as a reasonable default
-    batch_size = 8
-    input_shape = (batch_size, 160, 160, 3)
-    return tf.random.uniform(input_shape, minval=0, maxval=1, dtype=tf.float32)
+(x_train, y_train), (x_test, y_test) = keras.datasets.fashion_mnist.load_data()
+print(x_train.shape, ' ', y_train.shape)
+print(x_test.shape, ' ', y_test.shape)
 
+x_train = x_train.reshape((-1, 28, 28, 1))
+x_test = x_test.reshape((-1, 28, 28, 1))
+
+y_train = keras.utils.to_categorical(y_train, 10)
+y_test = keras.utils.to_categorical(y_test, 10)
+
+print(x_train.shape, ' ', y_train.shape)
+print(x_test.shape, ' ', y_test.shape)
+
+input_shape = (160, 160, 3)
+classes = 2000
+
+def preprocess(x, y):
+    x = tf.image.resize(x, input_shape[:2])
+    if x.shape[2] == 1:
+        x = tf.image.grayscale_to_rgb(x)
+    x = x / 255
+
+    y = tf.one_hot(0, classes)
+
+    return (x, y), y
+
+
+base_model = keras.applications.mobilenet_v2.MobileNetV2(include_top=False, input_shape=input_shape, classes=classes)
+inputs = tf.keras.layers.Input(shape=input_shape)
+x = base_model(inputs)
+x = tf.keras.layers.GlobalAveragePooling2D()(x)
+x = keras.layers.BatchNormalization()(x)
+x = keras.layers.Dense(classes)(x)
+x = keras.activations.softmax(x)
+model = tf.keras.models.Model(inputs=inputs, outputs=x)
+
+model.compile(optimizer=tf.keras.optimizers.Adam(amsgrad=True),loss="categorical_crossentropy",metrics=['accuracy'])
+
+model.summary()
+
+data_train = tf.data.Dataset.from_tensor_slices((x_train, y_train)).map(preprocess).batch(64).repeat()
+
+model.fit(data_train, steps_per_epoch=10000, epochs=5)

@@ -1,14 +1,23 @@
-# torch.rand(50000, 1, dtype=torch.float32, requires_grad=True, device='cuda')
 import torch
-from torch import nn
+import torch.nn as nn
+import time
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return torch.pdist(x, p=2)
+nb_iters = 10
+sizes = [int(50000/2**i) for i in range(10)]
 
-def my_model_function():
-    return MyModel()
+for size in sizes:
+    x = torch.randn(size, 1, device='cuda', requires_grad=True)
+    # warmup
+    for _ in range(nb_iters):
+        out = torch.pdist(x)
+        out.mean().backward()
+    #print(torch.cuda.memory_allocated()/1024**3)
 
-def GetInput():
-    return torch.rand(50000, 1, dtype=torch.float32, requires_grad=True, device='cuda')
-
+    torch.cuda.synchronize()
+    t0 = time.time()
+    for _ in range(nb_iters):
+        out = torch.pdist(x)
+        out.mean().backward()
+    torch.cuda.synchronize()
+    t1 = time.time()
+    print('size {}, time {:.4f}ms/iter'.format(size, 1000*(t1 - t0)/nb_iters))

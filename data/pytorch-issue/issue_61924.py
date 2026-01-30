@@ -1,10 +1,12 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Input shape: (batch_size, 3, 32, 32)
-
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torchvision.transforms as transforms
+import torchvision
+import torch.optim as optim
+import torch
 
-class MyModel(nn.Module):
+
+class Net(nn.Module):
     def __init__(self):
         super().__init__()
         self.conv1 = nn.Conv2d(3, 6, 5)
@@ -17,16 +19,35 @@ class MyModel(nn.Module):
         x = self.pool(F.relu(self.conv1(x)))
         x = self.pool(F.relu(self.conv2(x)))
         x = self.bn(x)
-        x = torch.flatten(x, 1)  # flatten all dimensions except batch
+        x = torch.flatten(x, 1) # flatten all dimensions except batch
         x = self.fc(x)
         return x
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+transform = transforms.Compose(
+    [transforms.ToTensor(),
+     transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    batch_size = 4
-    return torch.rand(batch_size, 3, 32, 32, dtype=torch.float32).cuda()
+batch_size = 4
+    
+trainset = torchvision.datasets.CIFAR10(root='./data', train=True,
+                                        download=True, transform=transform)
+trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size,
+                                          shuffle=True, num_workers=2)
 
+
+net = Net().cuda()
+criterion = nn.CrossEntropyLoss().cuda()
+optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+scaler = torch.cuda.amp.GradScaler()
+for i, data in enumerate(trainloader, 0):
+    # get the inputs; data is a list of [inputs, labels]
+    inputs, labels = data
+    inputs = inputs.cuda()
+    labels = labels.cuda()
+    optimizer.zero_grad()
+    with torch.cuda.amp.autocast():
+        outputs = net(inputs)
+        loss = criterion(outputs, labels)
+    scaler.scale(loss).backward()
+    scaler.step(optimizer)
+    scaler.update()

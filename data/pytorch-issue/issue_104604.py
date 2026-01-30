@@ -1,28 +1,13 @@
-# torch.rand(1, 512, 1024, dtype=torch.float32)
+import torch.nn as nn
+
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.linear = nn.Linear(1024, 1024, bias=False)
-        self.transformer = nn.TransformerEncoderLayer(
-            d_model=1024, nhead=16, dim_feedforward=4096, dropout=0.1
-        )
-    
-    def forward(self, x):
-        # Process Linear layer input directly
-        out_linear = self.linear(x)
-        
-        # Process Transformer input (requires (seq_len, batch, features))
-        x_transformer = x.permute(1, 0, 2)  # Convert (B, S, E) → (S, B, E)
-        out_transformer = self.transformer(x_transformer)
-        
-        return out_linear, out_transformer
+#model = torch.nn.TransformerEncoderLayer(1024, 16, 4096, dropout=0.1).cuda()
+model = torch.nn.Linear(1024, 1024, bias=False).cuda()
 
-def my_model_function():
-    return MyModel()
+print("after init: memory_allocated:", torch.cuda.memory_allocated() / 2 ** 20)
+inputs = torch.rand(1, 512, 1024).cuda()
 
-def GetInput():
-    return torch.rand(1, 512, 1024, dtype=torch.float32)
-
+outputs = model(inputs)
+print("after forward: memory_allocated:", torch.cuda.memory_allocated() / 2 ** 20)
+print("after forward: max_memory_allocated", torch.cuda.max_memory_allocated() / 2 ** 20)

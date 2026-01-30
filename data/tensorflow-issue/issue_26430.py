@@ -1,23 +1,29 @@
-# tf.random.uniform((10, 3), dtype=tf.float32) ← inferred from the example "x = tf.zeros([10, 3])" input shape for the model
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
+model = tf.keras.models.Sequential([
+    tf.keras.layers.Dense(256)
+])
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # single Dense layer with 256 units as per the example
-        self.dense = tf.keras.layers.Dense(256)
+x = tf.zeros([10, 3])   # dummy input
+model(x)
 
-    def call(self, inputs):
-        return self.dense(inputs)
+sess = tf.InteractiveSession()
+sess.run(tf.global_variables_initializer())
 
-def my_model_function():
-    # Return an instance of MyModel.
-    # No special initialization needed except normal Dense layer initialization.
-    return MyModel()
+# finalize the graph (or it's done automatically in MonitoredSession)
+tf.get_default_graph().finalize()
 
-def GetInput():
-    # Returns a random float input tensor matching expected input [10,3]
-    # dtype tf.float32 as typical for Dense inputs
-    return tf.random.uniform((10, 3), dtype=tf.float32)
+# Error!
+model.save('/tmp/keras-test')
 
+is_initialized = session.run(
+     [variables_module.is_variable_initialized(v) for v in candidate_vars])
+
+# g : tf.Graph (e.g. tf.get_default_graph())
+
+g._finalized = False       # de-finalized for a while
+# ... (add more ops) ...
+g.finalize()              # finalize again

@@ -1,0 +1,1 @@
+os.environ['TORCH_LOGS']="recompiles"

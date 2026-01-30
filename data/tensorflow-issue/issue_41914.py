@@ -1,100 +1,181 @@
-# tf.random.uniform((B, 100, 1), dtype=tf.float32) ← Inferred input shape based on data preprocessing and model input shape
+import random
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
+class Rand(Activation):                
+     def __init__(self, activation, **kwargs):
+        super(Rand, self).__init__(activation, **kwargs)
+        self.__name__ = 'rand'
+
+ 
+def rand(x):
+    result = tf.Variable(tf.cond(tf.random.uniform(shape=[1])[0] > tf.Variable(x), 1, 0))
+    return result
+
+from __future__ import print_function
+from keras.layers.core import Dense, Dropout, Activation
+from keras.utils import np_utils 
+import pandas as pd
+from imblearn.over_sampling import ADASYN
+from imblearn.under_sampling import RandomUnderSampler
+import numpy as np
+from numpy import loadtxt
+from keras.models import Sequential
+from keras.layers import Dense, GRU
+from keras import regularizers
+from keras.layers import Activation
+from keras.utils.generic_utils import get_custom_objects
+from keras.utils.np_utils import to_categorical
 import tensorflow as tf
-from tensorflow.keras.layers import Conv1D, MaxPooling1D, GRU, Dropout, Dense
-from tensorflow.keras import Model, Input
+from sklearn.model_selection import train_test_split
+from sklearn import metrics
+from sklearn.metrics import precision_score , recall_score
+from sklearn.metrics import confusion_matrix
+from keras.callbacks import Callback, LearningRateScheduler
+import math
+from keras.models import load_model
+import csv
+from keras.callbacks import EarlyStopping
+from keras.callbacks import ModelCheckpoint
+from keras.layers import Dense, Dropout, Flatten
+from keras.layers import Conv2D, MaxPooling1D
+from keras.layers.convolutional import Conv1D
+from keras.optimizers import adam
+from keras.callbacks import Callback, LearningRateScheduler
+from keras import backend as K
 
-class RandActivation(tf.keras.layers.Layer):
-    """
-    Custom random activation layer that outputs 1 if random number > input,
-    else outputs 0. Designed to operate element-wise or with single neuron input.
+#activation function
+class Rand(Activation):             # Take care of Rand and rand in the following few lines
     
-    In original code intent:
-    For each input x, generate random uniform scalar r,
-    output 1 if r > x else 0.
-    """
-    def __init__(self, **kwargs):
-        super(RandActivation, self).__init__(**kwargs)
+    def __init__(self, activation, **kwargs):
+        super(Rand, self).__init__(activation, **kwargs)
+        self.__name__ = 'rand'
 
-    def call(self, inputs, training=None):
-        # Inputs expected shape: (batch, 1)
-        # We'll generate random floats in [0,1) of shape (batch, 1)
-        # Compare element-wise: output 1 if random > input else 0.
+  
+def rand(x):
+    # r = np.random.uniform(low=0.0, high=1.0, size=None)
+    # bool = tf.Variable(x<r)
+    # result = init_bias = tf.Variable(init_bias,validate_shape=False)
+    result = tf.Variable(tf.cond(tf.random.uniform(shape=[1])[0] > tf.Variable(x), 1, 0))
+    print ("asdasdasdasD", result)
+    return result
+    # if x is not None:
+        # print ("yes")
+    # if x<r:
+        # return int(0)
+    # else:
+        # return int(1)
 
-        # To ensure the operation is compatible with TF graph and jit_compile,
-        # use tf.random.uniform and tf.where without TF Variables.
+get_custom_objects().update({'rand': Rand(rand)})
 
-        random_vals = tf.random.uniform(shape=tf.shape(inputs), dtype=inputs.dtype)
-        outputs = tf.where(random_vals > inputs, tf.ones_like(inputs), tf.zeros_like(inputs))
-        return outputs
+path_data_original = "/home/tntech.edu/miibrahem42/GAN_Paper/Defense/"
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Following the architecture described:
-        # Conv1D(150, kernel_size=50, activation='relu', input_shape=(100,1))
-        # MaxPooling1D(pool_size=4)
-        # GRU(200)
-        # Dropout(0.25)
-        # Dense(128, relu)
-        # Dense(35, relu)
-        # Dropout(0.25)
-        # Dense(1, relu, use_bias=False)
-        # Dense(1, custom random activation layer, use_bias=False)
+# load the data
+def data():
+    no_samples = 200000 #number of zero of one samples
+    last_col_indx = 100
+    data = pd.read_csv('Dataset.csv', sep=',', index_col=False, header=None)
+    
+    # # take n balanced samples
+    # s0 = data[last_col_indx][data[last_col_indx].eq(0)].sample(no_samples).index
+    # s1 = data[last_col_indx][data[last_col_indx].eq(1)].sample(no_samples).index 
+    # data = data.loc[s0.union(s1)]
+    # # data = data.reindex(np.random.permutation(data.index))
+    # data = data.sample(frac=1)
+    # # print (len(list(data.to_numpy())[0]))
+    # # print ((list(data.to_numpy())))
+    
+    X_res = data.iloc[:,:data.shape[1]-1].to_numpy() #400,000
+    print ("total data shape: ",X_res.shape)
+    Y_res = data.iloc[:,data.shape[1]-1]
+    print ("total label shape: ",Y_res.shape)
+    
+    ada = RandomUnderSampler(ratio='majority',random_state=42)
+    x_train, y_train = ada.fit_sample(X_res,Y_res) # over-sampled data
+    print ("sum of resulted labels is: ", sum(y_train))
 
-        self.conv1d = Conv1D(150, kernel_size=50, activation='relu')
-        self.maxpool = MaxPooling1D(pool_size=4)
-        self.gru = GRU(200)
-        self.dropout1 = Dropout(0.25)
-        self.dense128 = Dense(128, activation='relu')
-        self.dense35 = Dense(35, activation='relu')
-        self.dropout2 = Dropout(0.25)
-        self.dense_relu = Dense(1, activation='relu', use_bias=False)
-        self.rand_activation = RandActivation()
+    xtr, x_valid, ytr, y_valid = train_test_split(x_train, y_train, test_size=0.3)
 
-    def call(self, inputs, training=None):
-        x = self.conv1d(inputs)
-        x = self.maxpool(x)
-        x = self.gru(x)
-        if training:
-            x = self.dropout1(x, training=training)
-        else:
-            x = self.dropout1(x, training=False)
-        x = self.dense128(x)
-        x = self.dense35(x)
-        if training:
-            x = self.dropout2(x, training=training)
-        else:
-            x = self.dropout2(x, training=False)
-        x = self.dense_relu(x)
-        # reshape to (batch, 1) if needed
-        # The dense_relu outputs shape (batch, 1)
-        # rand_activation layer expects same shape
-        x = tf.reshape(x, (-1, 1))
-        out = self.rand_activation(x)
-        return out
+    xtr = xtr.reshape(-1,xtr.shape[1],1)
+    x_valid = x_valid.reshape(-1,x_valid.shape[1],1)
+    
+    nb_classes = 2
 
-def my_model_function():
-    """
-    Returns an instance of MyModel, constructed and compiled with
-    mean_squared_error loss and Adam optimizer with lr=0.0001, accuracy metric.
-    """
-    model = MyModel()
-    # Compile with similar setup as original:
-    model.compile(
-        optimizer=tf.keras.optimizers.Adam(learning_rate=0.0001),
-        loss='mean_squared_error',
-        metrics=['accuracy']
-    )
-    return model
+    print ("Number of training samples is: ",xtr.shape[0])
+    print ("Number of test samples is: ",x_valid.shape[0])
 
-def GetInput():
-    """
-    Returns a random tensor matching the expected input shape to MyModel.
-    From the original code:
-    input_shape = (100,1), batch size inferred to be arbitrary - use batch=32
-    """
-    batch_size = 32
-    input_shape = (100, 1)
-    return tf.random.uniform((batch_size,) + input_shape, dtype=tf.float32)
+    # ytr = to_categorical(ytr, nb_classes)
+    # y_valid = to_categorical(y_valid, nb_classes)
 
+    print ("label has a shape of: ", y_valid.shape,ytr.shape)
+    return xtr,ytr,x_valid,y_valid
+
+lr = 0.0001 
+
+def scheduler(epoch):
+  if epoch < 8:
+    print (lr)
+    return lr
+  else:
+    return lr * math.exp(0.1 * (4 - epoch))
+learning_rte = LearningRateScheduler(scheduler)
+
+class TestCallback(Callback):
+    def __init__(self, test_data):
+        self.test_data = test_data
+
+    def on_epoch_end(self, epoch, logs={}):
+        x, y = self.test_data
+        # loss, acc = self.model.evaluate(x, y, verbose=1)
+        # print('\nTesting loss: {}, acc: {}\n'.format(loss, acc*100))
+ 
+
+xtr,ytr,x_valid,y_valid=data()
+
+# input dimensions
+
+# Train a RNN model without optimization
+
+batch_size = 400
+num_classes = 2
+epochs = 1  #should be set
+
+input_shape = (100,1)
+
+print (xtr.shape)
+print (x_valid.shape)
+
+# the monitoring parameter should be the same on both earlystopping and modelcheckpoint in case of classification problems
+stop_training = EarlyStopping( monitor='val_accuracy', mode='max', verbose=1, patience=15) #monitor='val_loss', mode='min'
+best_model_save = ModelCheckpoint(path_data_original+'best_model_RNN_rand.h5',monitor='val_accuracy', mode='max', verbose=1
+, save_best_only=True)
+
+model = Sequential()
+model.add(Conv1D(150, kernel_size=50, activation='relu', input_shape=(input_shape)))
+model.add(MaxPooling1D(pool_size=4))
+model.add(GRU(200))
+model.add(Dropout(0.25))
+# model.add(Flatten())
+model.add(Dense(128, activation='relu'))
+model.add(Dense(35, activation='relu'))
+model.add(Dropout(0.25))
+model.add(Dense(1, activation='relu', use_bias=False))
+model.add(Dense(1, activation='rand', use_bias=False))  
+print (model.summary())
+# model.layers[8].trainable = False  
+
+# # weights_of_last_layer = list([np.array([[1 , 1 ],
+       # # [0, 0]], dtype='float32'), np.array([0., 0.], dtype='float32')])
+
+# weights_of_last_layer = list([np.array([[1] ,[ 0 ]], dtype='float32'), np.array([0.], dtype='float32')])
+       
+# model.layers[8].set_weights(weights_of_last_layer)  
+  
+model.compile(loss='mean_squared_error', optimizer=adam(lr=lr), metrics=['accuracy'])  #categorical_crossentropy if binary classification
+model.fit(xtr, ytr,
+          batch_size=batch_size,
+          epochs=epochs,
+          verbose=1, 
+         validation_split=0.1, callbacks=[TestCallback((x_valid, y_valid)), best_model_save, 
+         stop_training, learning_rte])

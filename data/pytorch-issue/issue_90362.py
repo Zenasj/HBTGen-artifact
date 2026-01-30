@@ -1,20 +1,11 @@
-# torch.rand(4, dtype=torch.float32), torch.rand(4, dtype=torch.float32)  # Input is a tuple of two tensors
 import torch
-from torch import nn
+from typing import List
+import torch._dynamo
 
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        a, b = inputs
-        x = a / (torch.abs(a) + 1)
-        if b.sum() < 0:
-            b = -b
-        return x * b
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    a = torch.rand(4, dtype=torch.float32)
-    b = torch.rand(4, dtype=torch.float32)
-    return (a, b)
-
+def toy(a, b):
+    x = a / (torch.abs(a) + 1)
+    if (b.sum() < 0):
+        b = b* -1
+    return x*b
+compiled_toy = torch.compile(toy)
+print(compiled_toy(torch.randn(4), torch.randn(4)))

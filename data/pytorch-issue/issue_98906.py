@@ -1,30 +1,31 @@
-# torch.rand(B, 3, 224, 224, dtype=torch.float32)
+from torchvision import models
 import torch
-import torchvision.models as models
 import copy
 
 def make_contiguous(module):
     with torch.no_grad():
         state_dict = module.state_dict()
-        state_dict = copy.deepcopy(state_dict)
+        state_dict=copy.deepcopy(state_dict)
+        print("Non contiguous state dict:")
         for name, param in state_dict.items():
             if not param.is_contiguous():
+                print(name)
+                print(param.is_contiguous())
                 state_dict[name] = param.contiguous()
-        module.load_state_dict(state_dict, assign=True)
+                print(state_dict[name].is_contiguous())
 
-class MyModel(torch.nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.model = models.resnet50()
-        self.model = self.model.to(memory_format=torch.channels_last)
-        make_contiguous(self.model)
-        
-    def forward(self, x):
-        return self.model(x)
+    print("New non contiguous state dict:")
+    module.load_state_dict(state_dict, assign=True)
+    for name, param in module.state_dict().items():
+        if not param.is_contiguous():
+            print(name)
+            print(param.is_contiguous())
 
-def my_model_function():
-    return MyModel()
+def train(learning_rate):
+    # Set up standard model.
+    model = getattr(models, "resnet50")()
+    model = model.to(memory_format=torch.channels_last)
+    make_contiguous(model)
 
-def GetInput():
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
-
+if __name__ == '__main__':
+    train(0.1)

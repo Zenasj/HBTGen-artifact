@@ -1,27 +1,22 @@
-# torch.rand(2, dtype=torch.double)
 import torch
-from torch import nn, autograd
+from torch import autograd
 
 class BadCustomFunction(autograd.Function):
-    @staticmethod
-    def forward(ctx, inp):
-        interm = inp * 2
-        ctx.foo = interm
-        res = interm ** 2
-        return res
+  @staticmethod
+  def forward(ctx, inp):
+    interm = inp * 2
+    ctx.foo = interm
+    res = interm ** 2
+    return res
 
-    @staticmethod
-    def backward(ctx, gres):
-        grad = 2 * 2 * ctx.foo * gres
-        return grad
+  @staticmethod
+  def backward(ctx, gres):
+      grad = 2 * 2 * ctx.foo * gres
+      return grad
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return BadCustomFunction.apply(x)
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(2, dtype=torch.double, requires_grad=True)
-
+inp = torch.rand(2, dtype=torch.double, requires_grad=True)
+# Gradcheck is correct
+autograd.gradcheck(BadCustomFunction.apply, inp)  # True
+# Double grad is silently wrong
+autograd.gradgradcheck(BadCustomFunction.apply, inp)  # False

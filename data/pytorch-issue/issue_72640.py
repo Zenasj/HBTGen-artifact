@@ -1,23 +1,15 @@
-# torch.rand(2, 1000, dtype=torch.float32)
+import torch.nn as nn
+
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.linear = nn.Linear(1000, 2000)
-    
-    def forward(self, x):
-        full_out = self.linear(x)
-        first_out = self.linear(x[:1])  # Compute output for first element
-        # Return absolute difference between first element in full batch vs isolated batch
-        return torch.abs(full_out[0, 0] - first_out[0, 0])
+li = torch.nn.Linear(1000,2000)
+li.eval()
 
-def my_model_function():
-    model = MyModel()
-    model.eval()  # Matches original example's .eval() call
-    return model
+ex = torch.rand(2,1000)
+ex3 = ex[:1]
 
-def GetInput():
-    return torch.rand(2, 1000, dtype=torch.float32)
+out = li(ex)
+out3 = li(ex3)
 
+print(out[0,0].item(), out3[0,0].item())
+# 0.6420710682868958 0.6420711278915405

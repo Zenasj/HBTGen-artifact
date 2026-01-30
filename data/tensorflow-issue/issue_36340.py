@@ -1,155 +1,187 @@
-# tf.random.uniform((B, 2), dtype=tf.float32) ← GAN input noise shape is (batch_size, latent_dim=5), discriminator input is (batch_size, 2)
+import math
+import random
+from tensorflow import keras
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
-import tensorflow as tf
-from tensorflow.keras import layers
 import numpy as np
+from numpy import hstack
+from numpy import zeros
+from numpy import ones
+from numpy.random import rand
+from numpy.random import randn
+from keras.models import Sequential
+from keras.layers import Dense
+import keras.backend as K
+from matplotlib import pyplot
 
-class MyModel(tf.keras.Model):
-    """
-    Fusion of both Keras and TF GAN models discussed in the issue:
-    - Generator: maps latent_dim=5 noise vector to 2D points (x,y).
-    - Discriminator: binary classifier on 2D points.
-    We expose a train step and a call that outputs discriminator real/fake predictions.
-    We provide a method to compare outputs of both models for testing their equivalence.
+class GanPointGraph_Keras(object):
     
-    Notes/Assumptions:
-    - Using beta_1=0.5 and learning_rate=0.0005 for Adam optimizers, 
-      per issue comments for stable GAN convergence.
-    - Generator uses ReLU and linear output.
-    - Discriminator uses ReLU then sigmoid output.
-    - Binary crossentropy (with from_logits=False) for losses.
-    """
+    def __init__(self):
+        self.latent_dim = 5
+        self.discriminator = self.define_discriminator()
+        self.generator = self.define_generator(self.latent_dim)
+        self.gan_model = self.define_gan(self.generator, self.discriminator)
 
-    def __init__(self, latent_dim=5):
-        super().__init__()
-        self.latent_dim = latent_dim
-
-        # Generator model: latent_dim -> 15 units relu -> 2 units linear (x,y)
-        self.generator = tf.keras.Sequential([
-            layers.Dense(15, activation='relu', kernel_initializer='he_uniform', input_shape=(latent_dim,)),
-            layers.Dense(2, activation='linear')
-        ])
-
-        # Discriminator model: 2 inputs (x,y) -> 25 units relu -> 1 unit sigmoid
-        self.discriminator = tf.keras.Sequential([
-            layers.Dense(25, activation='relu', kernel_initializer='he_uniform', input_shape=(2,)),
-            layers.Dense(1, activation='sigmoid')
-        ])
-
-        # Optimizers with stable GAN parameters suggested by comments
-        self.gen_optimizer = tf.keras.optimizers.Adam(
-            learning_rate=0.0005, beta_1=0.5)
-        self.disc_optimizer = tf.keras.optimizers.Adam(
-            learning_rate=0.0005, beta_1=0.5)
-
-        # Loss function: binary crossentropy
-        self.bce = tf.keras.losses.BinaryCrossentropy(from_logits=False)
-
+    def define_discriminator(self, n_inputs=2):
+        model = Sequential()
+        model.add(Dense(25, activation='relu', kernel_initializer='he_uniform', input_dim=n_inputs))
+        model.add(Dense(1, activation='sigmoid'))
+        model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
+        print(K.eval(model.optimizer.lr))
+        return model
+    
+    def define_generator(self, latent_dim, n_outputs=2):
+        model = Sequential()
+        model.add(Dense(15, activation='relu', kernel_initializer='he_uniform', input_dim=latent_dim))
+        model.add(Dense(n_outputs, activation='linear'))
+        return model
+    
+    def define_gan(self, generator, discriminator):
+        discriminator.trainable = False
+        model = Sequential()
+        model.add(generator)
+        model.add(discriminator)
+        model.compile(loss='binary_crossentropy', optimizer='adam')
+        return model
+    
     def generate_latent_points(self, n):
-        """
-        Generate random latent points as input noise for generator.
-        Shape: (n, latent_dim)
-        """
-        return tf.random.normal(shape=(n, self.latent_dim), dtype=tf.float32)
+        x_input = randn(self.latent_dim * n)
+        x_input = x_input.reshape(n, self.latent_dim)
+        return x_input
+    
+    def generate_fake_samples(self, n):
+        x_input = self.generate_latent_points(n)
+        X = self.generator.predict(x_input)
+        return X
 
     def generate_real_samples(self, n):
-        """
-        Generate true points (x, x^2) with x in range [-0.5,0.5].
-        Shape: (n,2)
-        """
-        x1 = tf.random.uniform((n,1), minval=-0.5, maxval=0.5, dtype=tf.float32)
-        x2 = tf.math.square(x1)
-        return tf.concat([x1, x2], axis=1)  # shape (n,2)
+        X1 = rand(n) - 0.5
+        X2 = X1 * X1
+        X1 = X1.reshape(n, 1)
+        X2 = X2.reshape(n, 1)
+        X = hstack((X1, X2))    
+        return X
+    
+    def train(self):
+        n_batch = 128
+        half_batch = int(n_batch / 2)
+        x_real = self.generate_real_samples(half_batch)
+        y_real = ones((half_batch, 1))
+        x_fake = self.generate_fake_samples(half_batch)
+        y_fake = zeros((half_batch, 1))
+        self.discriminator.train_on_batch(x_real, y_real)
+        self.discriminator.train_on_batch(x_fake, y_fake)
+        x_gan = self.generate_latent_points(n_batch)
+        y_gan = ones((n_batch, 1))
+        self.gan_model.train_on_batch(x_gan, y_gan)
 
-    def generate_fake_samples(self, n):
-        """
-        Generate fake points by passing latent noise through generator.
-        """
-        latent_points = self.generate_latent_points(n)
-        generated = self.generator(latent_points, training=False)
-        return generated
+if __name__ == "__main__":
+    g = GanPointGraph_Keras();
 
-    def call(self, inputs, training=False):
-        """
-        Forward call returns discriminator output for given inputs.
-        inputs: either latent noise (to generate points) or points directly.
-        For compatibility, assume input is latent noise, output discriminator prediction on generated points.
-        """
-        generated_points = self.generator(inputs, training=training)
-        disc_output = self.discriminator(generated_points, training=training)
-        return disc_output
+    for epoch in range(10000):
+        print('Epoch', epoch)
+        g.train()
+        if epoch % 1000 == 0:
+            g_objects = g.generate_fake_samples(100)
+            r_objects = g.generate_real_samples(100)
+ 
+            pyplot.clf()
+            pyplot.title('Keras iteration ' + str(epoch))
+            pyplot.scatter([i[0] for i in r_objects], [i[1] for i in r_objects], c='black')
+            pyplot.scatter([i[0] for i in g_objects], [i[1] for i in g_objects], c='red')
+            pyplot.show()
 
+import tensorflow as tf
+tf.enable_eager_execution() # if using TF 1.15.x
+from tensorflow.keras import layers
+
+import numpy as np
+from numpy.random import rand
+from numpy import hstack
+
+from matplotlib import pyplot
+
+class GanPointGraph(object):
+
+    def __init__(self):
+        self.latent_dim = 5
+        self.generator = self.make_generator()
+        self.discriminator = self.make_discriminator()
+        
+        self.cross_entropy = tf.keras.losses.BinaryCrossentropy(from_logits=True)        
+        self.generator_optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
+        self.discriminator_optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
+        
+    def make_generator(self):
+        model = tf.keras.Sequential()
+        model.add(layers.Dense(15, activation='relu', input_dim=self.latent_dim))
+        model.add(layers.Dense(2))
+        return model
+      
+    def make_discriminator(self):
+        model = tf.keras.Sequential()
+        model.add(layers.Dense(25, activation='relu', input_dim=2))
+        model.add(layers.Dense(1, activation='sigmoid')) # (-infinity, infinity) -> (0, 1)
+        return model
+    
     def generator_loss(self, fake_output):
-        """
-        Generator tries to fool discriminator, so minimize loss between fake_output and ones.
-        """
-        return self.bce(tf.ones_like(fake_output), fake_output)
+        #return self.cross_entropy(tf.ones_like(fake_output), fake_output)
+        return tf.reduce_mean(tf.math.log(1-fake_output))
 
     def discriminator_loss(self, real_output, fake_output):
-        """
-        Discriminator tries to classify real as ones and fake as zeros.
-        """
-        real_loss = self.bce(tf.ones_like(real_output), real_output)
-        fake_loss = self.bce(tf.zeros_like(fake_output), fake_output)
-        total_loss = real_loss + fake_loss
-        return total_loss
+        #real_loss = self.cross_entropy(tf.ones_like(real_output), real_output)
+        #fake_loss = self.cross_entropy(tf.zeros_like(fake_output), fake_output)
+        #total_loss = real_loss + fake_loss
+        #return total_loss
+        loss_real = tf.reduce_mean(-tf.math.log(real_output))
+        loss_fake = tf.reduce_mean(-tf.math.log(1-fake_output))
+        D_loss = loss_real + loss_fake
+        return D_loss
 
-    @tf.function(jit_compile=True)
-    def train_step(self, n_batch=128):
-        """
-        Single training step: update generator and discriminator with batch size n_batch.
-        Splits batch in half for real/fake training discriminator.
-        """
-
-        half_batch = n_batch // 2
-
-        # Generate real and fake samples
-        real_samples = self.generate_real_samples(half_batch)
-        latent_fake = self.generate_latent_points(half_batch)
-
+    def generate_real_samples(self, n):
+        X1 = rand(n) - 0.5
+        X2 = X1 * X1
+        X1 = X1.reshape(n, 1)
+        X2 = X2.reshape(n, 1)
+        x_train = hstack((X1, X2))
+        return x_train
+    
+    def generate_fake_samples(self, n):
+        z_sample = np.random.normal(0, 1.0, size=[n, self.latent_dim]).astype(np.float32)
+        return self.generator(z_sample, training=False).numpy()
+    
+    def train(self):
+        images = self.generate_real_samples(128);
+        noise = tf.random.normal([images.shape[0], self.latent_dim])
+        
         with tf.GradientTape() as gen_tape, tf.GradientTape() as disc_tape:
-            # Generate fake points
-            fake_samples = self.generator(latent_fake, training=True)
-
-            # Discriminator output on real and fake
-            real_output = self.discriminator(real_samples, training=True)
-            fake_output = self.discriminator(fake_samples, training=True)
-
-            # Compute losses
+            generated_images = self.generator(noise, training=True)
+            
+            real_output = self.discriminator(images, training=True)
+            fake_output = self.discriminator(generated_images, training=True)
+            
             gen_loss = self.generator_loss(fake_output)
             disc_loss = self.discriminator_loss(real_output, fake_output)
-
-        # Compute gradients and apply
-        gen_grads = gen_tape.gradient(gen_loss, self.generator.trainable_variables)
-        disc_grads = disc_tape.gradient(disc_loss, self.discriminator.trainable_variables)
-
-        self.gen_optimizer.apply_gradients(zip(gen_grads, self.generator.trainable_variables))
-        self.disc_optimizer.apply_gradients(zip(disc_grads, self.discriminator.trainable_variables))
-
-        return {'gen_loss': gen_loss, 'disc_loss': disc_loss}
-
-    def generate_and_classify(self, n):
-        """
-        Convenience method generating n fake samples and discriminator predictions.
-        Returns tuple (fake_samples, discriminator_scores).
-        """
-        latent = self.generate_latent_points(n)
-        fake_samples = self.generator(latent, training=False)
-        disc_scores = self.discriminator(fake_samples, training=False)
-        return fake_samples, disc_scores
-
-def my_model_function():
-    """
-    Returns a new instance of MyModel with default latent_dim=5.
-    """
-    return MyModel()
-
-def GetInput():
-    """
-    Returns a batch of latent noise inputs for the generator,
-    shape (batch_size=128, latent_dim=5), float32 tensor.
-    """
-    batch_size = 128
-    latent_dim = 5
-    return tf.random.normal(shape=(batch_size, latent_dim), dtype=tf.float32)
-
+        
+        gradients_of_generator = gen_tape.gradient(gen_loss, self.generator.trainable_variables)
+        gradients_of_discriminator = disc_tape.gradient(disc_loss, self.discriminator.trainable_variables)
+        
+        self.generator_optimizer.apply_gradients(zip(gradients_of_generator, self.generator.trainable_variables))
+        self.discriminator_optimizer.apply_gradients(zip(gradients_of_discriminator, self.discriminator.trainable_variables))
+    
+if __name__ == "__main__":
+    g = GanPointGraph();
+    
+    for epoch in range(10000):
+        print('Epoch', epoch)
+        g.train()
+        if epoch % 1000 == 0:
+            g_objects = g.generate_fake_samples(100)
+            r_objects = g.generate_real_samples(100)
+ 
+            pyplot.clf()
+            pyplot.title('Tensorflow iteration ' + str(epoch))
+            pyplot.scatter([i[0] for i in r_objects], [i[1] for i in r_objects], c='black')
+            pyplot.scatter([i[0] for i in g_objects], [i[1] for i in g_objects], c='red')
+            pyplot.show()

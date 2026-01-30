@@ -1,23 +1,29 @@
-# tf.random.normal((10, 9), dtype=tf.bfloat16)
-import tensorflow as tf
+import random
 
-class MyModel(tf.keras.Model):
+import tensorflow as tf
+import traceback
+
+class Network(tf.Module):
     def __init__(self):
         super().__init__()
 
     @tf.function(jit_compile=True)
-    def call(self, x):
-        # Apply cosine followed by square using raw_ops as per the original issue
-        x = tf.raw_ops.Cos(x=x)
-        x = tf.raw_ops.Square(x=x)
-        return x
+    def __call__(self, x):
+      
+      x = tf.raw_ops.Cos(x=x, )        
+      x = tf.raw_ops.Square(x=x, )        
+      return x
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+m = Network()
+inp = {
+    "x": tf.random.normal([10, 9], dtype=tf.bfloat16),
+    }
 
-def GetInput():
-    # Generate a random input tensor with shape [10, 9] and dtype bfloat16,
-    # matching the original example input.
-    return tf.random.normal([10, 9], dtype=tf.bfloat16)
+with tf.device('/GPU:0'):
+    tf.config.run_functions_eagerly(True)
+    no_op_res = m(**inp)
+    tf.config.run_functions_eagerly(False)
+    with tf.device('/GPU:0'):
+        op_res = m(**inp)
 
+    tf.debugging.assert_near(tf.cast(no_op_res, tf.float64), tf.cast(op_res, tf.float64), atol=0.001, rtol=0.001)

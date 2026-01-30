@@ -1,28 +1,32 @@
-# tf.random.uniform((B, 10), dtype=tf.float32) <- Input shape inferred from "x = np.random.rand(10000, 10)"
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
+import numpy as np
+from sklearn.model_selection import train_test_split
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Sequential model layers as given in the issue
-        self.dense1 = tf.keras.layers.Dense(128, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(64, activation='relu')
-        self.dense3 = tf.keras.layers.Dense(32, activation='relu')
-        self.dense4 = tf.keras.layers.Dense(10, activation='softmax')
+x = np.random.rand(10000, 10)
+y = np.random.choice([0, 1], (10000, ))
 
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        x = self.dense3(x)
-        x = self.dense4(x)
-        return x
+x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.3)
 
-def my_model_function():
-    # Return an instance of MyModel (weights would normally be loaded externally)
-    return MyModel()
 
-def GetInput():
-    # Return a batch of inputs with shape (batch_size, 10), here batch_size=32 arbitrarily chosen
-    return tf.random.uniform((32, 10), dtype=tf.float32)
+model = tf.keras.Sequential([
+    tf.keras.layers.Dense(128, activation='relu'),
+    tf.keras.layers.Dense(64, activation='relu'),
+    tf.keras.layers.Dense(32, activation='relu'),
+    tf.keras.layers.Dense(10, activation='softmax')
+])
 
+model.compile(loss=tf.keras.losses.SparseCategoricalCrossentropy(), metrics=['accuracy'])
+
+model.fit(x_train, y_train, epochs=10)
+
+model.save('./test_model/')
+
+loaded_model = tf.keras.models.load_model('./test_model/')
+
+print(model.evaluate(x_test, y_test))
+print(loaded_model.evaluate(x_test, y_test))

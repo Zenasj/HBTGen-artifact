@@ -1,37 +1,44 @@
-# torch.rand(1, 3, 224, 224, dtype=torch.float32)  # Inferred input shape: B=1, C=3, H=224, W=224
-
 import torch
-from torch import nn
+from torch.utils._python_dispatch import TorchDispatchMode, _pop_mode_temporarily
+import torch._dispatch.python
+from functools import partial
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1)
-        self.relu = nn.ReLU()
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
-        self.fc = nn.Linear(64 * 112 * 112, 10)
+class DummyDispatcher(TorchDispatchMode):
+    def __torch_dispatch__(self, func, types, args=(), kwargs=None):
+        return func(*args, **kwargs)
 
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.relu(x)
-        x = self.pool(x)
-        x = x.view(-1, 64 * 112 * 112)
-        x = self.fc(x)
-        return x
+x = torch.zeros([10, 10], device="cuda")
+x.record_stream(torch.cuda.Stream())
+with DummyDispatcher():
+    # Boom
+    x.record_stream(torch.cuda.Stream())
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+class TorchFuncMockNoDispatch:
+    """
+    Wraps a method to call it without the custom
+    pytorch dispatcher
+    """
+    def __init__(self, pt_impl):
+        self.pt_impl = pt_impl
+    def __get__(self, obj, c):
+        return partial(self, obj)
+    def __call__(self, obj, *args, **kwargs):
+        with _pop_mode_temporarily():
+            return self.pt_impl(obj, *args, **kwargs)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
-
-# The provided issue is about a bug in PyTorch's custom dispatch mechanism, specifically related to the `record_stream` method and `Stream` objects. The issue does not describe a PyTorch model or any specific neural network architecture. Instead, it provides a workaround for the bug.
-# Since the issue does not contain any information about a PyTorch model, I will create a minimal example that includes a simple PyTorch model and a function to generate an input tensor. This will meet the requirements of the task while providing a complete and functional code snippet.
-# Here is the generated code:
-# ### Explanation:
-# 1. **MyModel**: A simple convolutional neural network with one convolutional layer, ReLU activation, max pooling, and a fully connected layer.
-# 2. **my_model_function**: Returns an instance of `MyModel`.
-# 3. **GetInput**: Generates a random tensor with the shape `(1, 3, 224, 224)` and `dtype=torch.float32`, which is a common input shape for image classification tasks.
-# This code snippet can be used as a standalone Python file and meets the requirements specified in the task.
+class DispatcherWithoutBrokenFuncs(TorchDispatchMode):
+    TENSOR_FUNCS_NO_DISPATCH = [
+        # Can't convert Stream argument to Python object
+        'record_stream'
+    ]
+    def __enter__(self) -> None:
+        self._pt_impls = {}
+        for k in self.TENSOR_FUNCS_NO_DISPATCH:
+            impl = getattr(torch.Tensor, k)
+            self._pt_impls[k] = impl
+            setattr(torch.Tensor, k, TorchFuncMockNoDispatch(impl))
+        return super().__enter__()
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        for k in self.TENSOR_FUNCS_NO_DISPATCH:
+            setattr(torch.Tensor, k, self._pt_impls[k])
+        return super().__exit__(exc_type, exc_val, exc_tb)

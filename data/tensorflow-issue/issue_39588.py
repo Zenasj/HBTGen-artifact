@@ -1,41 +1,69 @@
-# tf.random.uniform((B, 28*28), dtype=tf.float32) ← Input shape inferred from EMNIST images reshaped (28x28 images flattened)
+import random
+from tensorflow.keras import layers
 
-import tensorflow as tf
+py
+import typing
+
+import numpy as np
 from tensorflow import keras
+import tensorflow_datasets as tfds
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Build a simple multilayer perceptron similar to the reported model in the issue
-        self.dense1 = keras.layers.Dense(112, activation='relu')
-        self.dense2 = keras.layers.Dense(112, activation='relu')
-        # Number of output classes for EMNIST is 26 (letters) or 62 depending on split,
-        # but we'll assume 47 classes, which is standard for EMNIST Balanced split.
-        self.dense3 = keras.layers.Dense(47, activation='softmax')
 
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        x = self.dense3(x)
-        return x
+def build_neural_network(input_dimension: int, number_of_classes: int, compile_options: dict):
+    model = keras.Sequential()
+    model.add(keras.layers.Dense(112, activation='relu', input_dim=input_dimension))
+    model.add(keras.layers.Dense(112, activation='relu'))
+    model.add(keras.layers.Dense(number_of_classes, activation='softmax'))
 
-def my_model_function():
-    # Instantiate and compile the model similarly as in the reported code
-    model = MyModel()
-    compile_options = {
+    model.compile(**compile_options)
+
+    print(model.summary())
+
+    return model
+
+def load_in_images_and_labels_and_reshape(dataset) -> typing.Tuple[np.ndarray, np.ndarray]:
+    images = []
+    labels = []
+    for image, label in tfds.as_numpy(dataset):
+        new_image_shape = image.shape[0] * image.shape[1]
+        images.append(image.reshape(new_image_shape))
+        labels.append(label)
+
+    return np.array(images), np.array(labels)
+
+
+def train_neural_network(is_random_weighing: bool):
+    dataset_train      = tfds.load('emnist', split='train', as_supervised=True)
+    dataset_validation = tfds.load('emnist', split='test', as_supervised=True)
+
+    train_images, train_labels           = load_in_images_and_labels_and_reshape(dataset_train)
+    validation_images, validation_labels = load_in_images_and_labels_and_reshape(dataset_validation)
+    train_labels      = keras.utils.to_categorical(train_labels)
+    validation_labels = keras.utils.to_categorical(validation_labels)
+
+    print("load")
+    compile_options =  {
         "loss": "categorical_crossentropy",
         "optimizer": "adam",
         "metrics": ["categorical_accuracy"],
         "weighted_metrics": ["categorical_accuracy"]
     }
-    model.compile(**compile_options)
-    return model
+    network = build_neural_network(train_images.shape[-1], len(train_labels[0]), compile_options)
 
-def GetInput():
-    # Create random input tensor matching shape: batch_size x input_dim = 2048 x (28*28)
-    # Using batch size 2048 as per fit_options in the issue
-    batch_size = 2048
-    input_dim = 28 * 28  # Flattened image size for EMNIST
-    # Return input tensor of shape (batch_size, input_dim), float32 between 0 and 1
-    return tf.random.uniform((batch_size, input_dim), dtype=tf.float32)
+    fit_options = {    
+        "batch_size": 2048,
+        "epochs": 10,
+        "verbose": 1,
+        "workers": 1
+    }
+    if is_random_weighing:
+        random_weights = np.random.rand(len(validation_images))
+        validation_data_tuple = (validation_images, validation_labels, random_weights)
+    else:
+        validation_data_tuple = (validation_images, validation_labels)
+    history = network.fit(train_images, train_labels, validation_data=validation_data_tuple, **fit_options)
 
+
+if __name__ == "__main__":
+    is_random_weighing = True
+    train_neural_network(is_random_weighing)

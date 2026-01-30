@@ -1,18 +1,23 @@
-# torch.rand(2, 2, 1, dtype=torch.long)
+torch.Size([2, 2, 1])
+tensor([[[[[1],
+           [1]]],
+
+         [[[1],
+           [1]]]],
+
+        [[[[1],
+           [1]]],
+
+         [[[1],
+           [1]]]]])
+
 import torch
 import torch.nn as nn
+data=torch.tensor([[[1],[1]],[[1],[1]]]);
+index=torch.tensor([[[1],[1]],[[1],[1]]]);
+print(data.shape)
+print(data[index])
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.index = torch.tensor([[[1], [1]], [[1], [1]]], dtype=torch.long)
-
-    def forward(self, x):
-        return x[self.index]
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.randint(0, 2, (2, 2, 1), dtype=torch.long)
-
+data=torch.tensor([[[1],[1]],[[1],[1]]]);
+index=torch.tensor([[[1],[1]],[[1],[1]]]);
+print(data[index])

@@ -1,57 +1,66 @@
-# torch.rand(B, C, T, H, W, dtype=torch.float32)  # B: batch size, C: channels, T: time (frames), H: height, W: width
-
-import torch
-import torch.nn as nn
 import numpy as np
 
-class MyModel(nn.Module):
+import torch
+# Choose the `slow_r50` model 
+model = torch.hub.load('facebookresearch/pytorchvideo', 'slow_r50', pretrained=True)
+model = torch.jit.script(model)
+
+class ConvTest(torch.nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
+        super(ConvTest, self).__init__()
         conv_a_stride = (2, 1, 1)
         conv_b_stride = (1, 2, 2)
-        stride = tuple(map(int, map(np.prod, zip(conv_a_stride, conv_b_stride))))
-        self.conv = nn.Conv3d(3, 2, (3, 5, 2), stride=stride, padding=(3, 2, 0), bias=False)
-        self.resblock = ResBlock()
-        self.net = Net(self.resblock)
+        stride = tuple(map(np.prod, zip(conv_a_stride, conv_b_stride)))
+        self.conv = torch.nn.Conv3d(3, 2, (3, 5, 2), stride=stride, padding=(3, 2, 0), bias=False)
 
     def forward(self, x):
-        x = self.conv(x)
-        x = self.resblock(x)
-        x = self.net(x)
-        return x
+        return self.conv(x)
 
-class ResBlock(nn.Module):
-    def __init__(self):
-        super(ResBlock, self).__init__()
-        self.branch2 = IdentityModel()
-        self.branch_fusion = self.branch_fusion_func
+model = ConvTest()
+model = torch.jit.script(model)
 
-    def branch_fusion_func(self, x, y):
-        return x + y
+import torch.nn as nn
+from typing import Callable
+def set_attributes(self, params: List[object] = None) -> None:
+    if params:
+        for k, v in params.items():
+            if k != "self":
+                setattr(self, k, v)
 
-    def forward(self, x):
-        if self.branch2 is not None:
-            x = self.branch_fusion(x, self.branch2(x))
-        return x
-
-class Net(nn.Module):
-    def __init__(self, basic_model):
-        super(Net, self).__init__()
-        self.blocks = nn.ModuleList([basic_model, basic_model, basic_model])
-
-    def forward(self, x):
-        for idx in range(len(self.blocks)):
-            x = self.blocks[idx](x)
-        return x
-
-class IdentityModel(nn.Module):
+class IdentityModel(torch.nn.Module):
     def forward(self, a):
         return a
 
-def my_model_function():
-    return MyModel()
+class ResBlock(nn.Module):
+    def __init__(
+        self,
+        branch1_conv: nn.Module = None,
+        branch2: nn.Module = None,
+        branch_fusion: Callable = lambda x, y: x + y,
+    ) -> nn.Module:
+        super().__init__()
+        set_attributes(self, locals())
 
-def GetInput():
-    B, C, T, H, W = 1, 3, 16, 112, 112
-    return torch.rand(B, C, T, H, W, dtype=torch.float32)
+    def forward(self, x) -> torch.Tensor:
+        if self.branch1_conv is None:
+            x = self.branch_fusion(x, self.branch2(x))
+        return x
 
+model = ResBlock(None, IdentityModel())
+model = torch.jit.script(model)
+
+import torch.nn as nn
+class IdentityModel(torch.nn.Module):
+    def forward(self, a):
+        return a
+
+class Net(nn.Module):
+    def __init__(self, basic_model):
+        super().__init__()
+        self.blocks = nn.ModuleList([basic_model, basic_model, basic_model])
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        for idx in range(len(self.blocks)):
+            x = self.blocks[idx](x)
+model = Net(IdentityModel())
+model = torch.jit.script(model)

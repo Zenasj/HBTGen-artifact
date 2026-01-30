@@ -1,6 +1,5 @@
-# torch.rand(10, 3, 4, dtype=torch.float32, requires_grad=True)
+py
 import torch
-from torch import nn
 
 class NJT:
     def __repr__(self):
@@ -26,19 +25,19 @@ class NJT:
             return NJT(torch.mul(x._values, y._values), x._offsets)
         raise AssertionError("not implemented")
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.offsets = torch.tensor([0, 3, 10])
+values1 = torch.randn(10, 3, 4, requires_grad=True)
+values2 = torch.randn(10, 3, 4, requires_grad=True)
+values3 = torch.randn(10, 3, 4, requires_grad=True)
+values4 = torch.randn(10, 3, 4, requires_grad=True)
+offsets = torch.tensor([0, 3, 10])
+njt1 = NJT(values1, offsets)
+njt2 = NJT(values2, offsets)
+njt3 = NJT(values1, offsets)
+njt4 = NJT(values2, offsets)
 
-    def forward(self, x):
-        njt = NJT(x, self.offsets)
-        res = njt.sin()
-        return res._values  # Return the underlying tensor after operation
+@torch.compile(backend="eager", fullgraph=True)
+def f(x):
+    return x.sin()
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(10, 3, 4, dtype=torch.float32, requires_grad=True)
-
+res = f(njt1)
+res = f(njt2)

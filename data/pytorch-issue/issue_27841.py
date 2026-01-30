@@ -1,37 +1,45 @@
-# torch.rand(1, 64, 50, 50, dtype=torch.float32)
-import torch
 import torch.nn as nn
+
+from torch import nn
 import torch.nn.functional as F
+import onnx
+import torch
+import torch.onnx
 
 class MyModel(nn.Module):
     def __init__(self):
         super().__init__()
-        # Conv layer required for pixel_shuffle path
-        self.conv_ps = nn.Conv2d(64, 64*4, kernel_size=1, bias=False)
 
     def forward(self, input):
-        # Original path (interpolate-based upsampling)
-        x_orig = F.avg_pool2d(input, 2, ceil_mode=True)
-        upscaled_orig = F.interpolate(x_orig, scale_factor=2)
-        orig_output = torch.cat([input, upscaled_orig], dim=1)
-        
-        # Simple path (summing two avg_pools)
-        x_simple = F.avg_pool2d(input, 2)
-        y_simple = F.avg_pool2d(input, 2)
-        simple_output = x_simple + y_simple
-        
-        # PixelShuffle path
-        x_ps = F.avg_pool2d(input, 2, ceil_mode=True)
-        x_ps = self.conv_ps(x_ps)
-        upscaled_ps = F.pixel_shuffle(x_ps, 2)
-        ps_output = torch.cat([input, upscaled_ps], dim=1)
-        
-        # Return all outputs to capture all discussed model variants
-        return orig_output, simple_output, ps_output
 
-def my_model_function():
-    return MyModel()
+        x = F.avg_pool2d(input, 2, ceil_mode=True)  
+        upscaled = F.interpolate(x, scale_factor=2)
+        return  torch.cat([input, upscaled], dim=1)
 
-def GetInput():
-    return torch.rand(1, 64, 50, 50, dtype=torch.float32)
+model = MyModel()
 
+dummy = torch.ones((1, 64, 50, 50))
+out = model(dummy)
+torch.onnx.export(model,               # model being run
+                  dummy,                         # model input (or a tuple for multiple inputs)
+                  "model.onnx",   # where to save the model (can be a file or file-like object)
+                  export_params=True,        # store the trained parameter weights inside the model file
+                  opset_version=11,          # the ONNX version to export the model to
+                  do_constant_folding=True,  # wether to execute constant folding for optimization
+                  input_names = ['input'],   # the model's input names
+                  output_names = ['output'], # the model's output names
+                  dynamic_axes={'input':{0:'batch'}})
+
+
+model = onnx.load("model.onnx")
+onnx.checker.check_model(model)
+onnx.helper.printable_graph(model.graph)
+
+class MyModel(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, input):
+        x = F.avg_pool2d(input, 2)
+        y = F.avg_pool2d(input, 2)
+        return x + y

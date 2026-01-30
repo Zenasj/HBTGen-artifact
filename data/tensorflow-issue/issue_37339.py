@@ -1,36 +1,32 @@
-# tf.random.uniform((B, 5), dtype=tf.float32) ← Inputs are two tensors of shape (batch_size, 5)
+from tensorflow import keras
+from tensorflow.keras import models
 
 import tensorflow as tf
-
-class MyModel(tf.keras.Model):
+from tensorflow.keras import layers
+class Model():
     def __init__(self):
-        super().__init__()
-        # Define two Dense layers explicitly as attributes to avoid saved model loading issues
-        self.dense1 = tf.keras.layers.Dense(1, name='dense1')
-        self.dense2 = tf.keras.layers.Dense(1, name='dense2')
+        self.build_model()
 
-    def call(self, inputs, training=False):
-        # Expect inputs as a tuple/list of two tensors each of shape (batch_size, 5)
-        input1, input2 = inputs
-        # Pass through respective dense layers
-        out1 = self.dense1(input1)
-        out2 = self.dense2(input2)
-        # Calculate difference
+    def build_model(self):
+        input1 = layers.Input(shape=(5,))
+        input2 = layers.Input(shape=(5,))
+
+        out1 = layers.Dense(1)(input1)
+        out2 = layers.Dense(1)(input2)
         out = out1 - out2
-        # Apply sigmoid activation
         out = tf.nn.sigmoid(out)
-        return out
 
-def my_model_function():
-    # Return a new instance of MyModel
-    # No special initialization needed beyond __init__
-    return MyModel()
+        self.model = tf.keras.Model(inputs=[input1, input2], outputs=out)
 
-def GetInput():
-    # Generate example inputs matching the expected input shape: two tensors with shape (batch_size, 5)
-    # Using batch size = 4 as an example
-    batch_size = 4
-    input1 = tf.random.uniform((batch_size, 5), dtype=tf.float32)
-    input2 = tf.random.uniform((batch_size, 5), dtype=tf.float32)
-    return (input1, input2)
+model = Model()
+s1 = "exp\\model"
+model.model.save(s1)
+model2 = tf.keras.models.load_model(s1)
 
+model = Model()
+s1 = "exp\\model"
+model.model.save(s1)
+model2 = tf.keras.models.load_model(s1)
+
+# Correct if not using this line
+out = tf.nn.sigmoid(out)

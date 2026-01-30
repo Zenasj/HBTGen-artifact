@@ -1,64 +1,71 @@
-# tf.random.uniform((None, 20), dtype=tf.float32) ← Inferred input shape based on issue's model Input(batch_shape=(None, 20))
-
+import numpy as np
+import random
 import tensorflow as tf
-from tensorflow.keras.layers import Dense, Input
-from tensorflow.keras.models import Model
-from tensorflow.keras.losses import binary_crossentropy
-from tensorflow.keras import backend as K
+from tensorflow import keras
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
-class MyModel(tf.keras.Model):
-    """
-    This model replicates the example used in the GitHub issue:
-    - Input shape: (None, 20)
-    - One Dense hidden layer with 1028 units
-    - Output Dense layer with 1 unit and sigmoid activation
+def custom_loss2(output2, label2):
+    loss_value = K.mean(binary_crossentropy(label2, output2)) 
+    return loss_value
+def EWC_loss(new_weights, old_weights, fisher_matrix, rate):
+    sum_w = 0
+    for v in range(len(fisher_matrix)):
+        sum_w += tf.reduce_sum(tf.multiply(fisher_matrix[v], tf.square(new_weights[v] - old_weights[v]))) 
+    return sum_w*rate
 
-    The forward pass returns the output tensor.
-    
-    Additionally, this class includes methods to compute:
-    - custom_loss2: a mean binary crossentropy loss 
-    - EWC_loss: Elastic Weight Consolidation loss on weights
-    
-    It also provides a combined loss function similar to the issue trying to combine both.
-    """
+del optimizer
+del tape
+optimizer = tf.keras.optimizers.SGD()
+ewc_model = tf.keras.models.clone_model(model)
+old_weights = model.trainable_variables.copy()
+for epoch in range(num_epochs):
+    with tf.GradientTape() as tape:
+        out = ewc_model(features_t)
+        new_weights = ewc_model.trainable_variables.copy()
+        ewc_loss = EWC_loss(new_weights, old_weights, fisher_matrix, 0.5)
+        loss = ewc_loss + custom_loss2(out, labels_2_t)
+        grad = tape.gradient(loss, ewc_model.trainable_variables)
+        optimizer.apply_gradients(grads_and_vars=zip(grad, ewc_model.trainable_variables))
+    if (epoch+1)%100 == 0:
+        print("epch: {}, loss: {}".format(epoch, loss.numpy()))
+        print(ewc_loss.numpy(), loss.numpy())
 
-    def __init__(self):
-        super().__init__()
-        self.dense_1 = Dense(1028)
-        self.output_2 = Dense(1, activation="sigmoid")
+del optimizer
+del tape
+optimizer = tf.keras.optimizers.SGD()
+ewc_model = tf.keras.models.clone_model(model)
+old_weights = model.trainable_variables.copy()
+for epoch in range(num_epochs):
+    with tf.GradientTape() as tape:
+        out = ewc_model(features_t)
+        new_weights = ewc_model.trainable_variables.copy()
+        ewc_loss = 0.5*EWC_loss(new_weights, old_weights, fisher_matrix, 1.0)
+        loss = ewc_loss + custom_loss2(out, labels_2_t)
+        grad = tape.gradient(loss, ewc_model.trainable_variables)
+        optimizer.apply_gradients(grads_and_vars=zip(grad, ewc_model.trainable_variables))
+    if (epoch+1)%100 == 0:
+        print("epch: {}, loss: {}".format(epoch, loss.numpy()))
+        print(ewc_loss.numpy(), loss.numpy())
 
-    def call(self, inputs, training=False):
-        x = self.dense_1(inputs)
-        out = self.output_2(x)
-        return out
+tf.Tensor(14.144677747478463, shape=(), dtype=float64)
+tf.Tensor(14.254150624518838, shape=(), dtype=float64)
 
-    def custom_loss2(self, outputs, labels):
-        # Mean binary crossentropy computed similarly as K.mean(binary_crossentropy(label2, output2))
-        # Use Keras backend binary_crossentropy with default from_logits=False since output activation=sigmoid
-        loss_value = K.mean(binary_crossentropy(labels, outputs))
-        return loss_value
+tf.Tensor(0.15645654679566814, shape=(), dtype=float64)
+tf.Tensor(0.263113701303186, shape=(), dtype=float64)
 
-    def EWC_loss(self, new_weights, old_weights, fisher_matrix, rate):
-        # Fisher matrix, old_weights, new_weights are all list of tf.Tensors (model.trainable_variables)
-        sum_w = 0.0
-        for v in range(len(fisher_matrix)):
-            # tf.multiply performs elementwise multiplication on fisher_matrix[v] and squared difference
-            sum_w += tf.reduce_sum(tf.multiply(fisher_matrix[v], tf.square(new_weights[v] - old_weights[v])))
-        return sum_w * rate
+# del optimizer
+# del tape
 
-def my_model_function():
-    """
-    Returns a fresh instance of MyModel.
-    """
-    return MyModel()
+# Input layer, one hidden layer
+input_layer = Input(batch_shape=(None, 20))
+dense_1 = Dense(1028)(input_layer)
+output_2 = Dense(1, activation="sigmoid")(dense_1)
+model = Model(inputs=input_layer, outputs= output_2)
+print(model.summary())
 
-def GetInput():
-    """
-    Returns a random float32 tensor shaped (batch_size, 20),
-    matching the model input, here batch_size=32 assumed for example.
-    Values generated with uniform distribution in [0,1).
-    """
-    batch_size = 32  # assuming a typical batch size
-    # According to the issue: input shape is (None, 20), no channels dimension
-    return tf.random.uniform((batch_size, 20), dtype=tf.float32)
-
+n_sample = 1000
+fix = np.array([range(n_sample),]*20).transpose()
+features = np.cos(fix + np.random.rand(n_sample,20))
+labels_2 = np.cos(np.array([range(n_sample),]*1).transpose() + np.random.rand(n_sample,1))
+labels_2 = np.array([labels_2>=0]).astype(float)

@@ -1,23 +1,14 @@
-# torch.rand(4, dtype=torch.bool), torch.rand(4, dtype=torch.bool)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        x, y = inputs
-        try:
-            x = x - y  # Intentional unsupported op to trigger Dynamo error
-        except:
-            return x
-        return y
+def f(x, y):
 
-def my_model_function():
-    return MyModel()
+    try:
+        x = x - y
+    except:
+        return x
+    return y
 
-def GetInput():
-    # Exact tensors from original repro case
-    return (
-        torch.tensor([1, 0, 1, 0], dtype=torch.bool),
-        torch.tensor([1, 1, 0, 0], dtype=torch.bool)
-    )
-
+opt_f = torch.compile(f, backend="eager")
+inp_x = torch.tensor([1, 0, 1, 0], dtype=torch.bool)
+inp_y = torch.tensor([1, 1, 0, 0], dtype=torch.bool)
+opt_f(inp_x, inp_y)

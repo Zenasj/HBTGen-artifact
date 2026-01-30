@@ -1,28 +1,26 @@
-# torch.randint(0, 100, (B, S), dtype=torch.long)  # B=batch_size, S=sequence_length (e.g., (1, 64))
+import torch.nn as nn
+
 import torch
-from transformers import AutoModel
-import torch.quantization
-from torch import nn
+from transformers import AutoConfig,AutoModel
+model = AutoModel.from_pretrained("bert-base-uncased")
+model_quant = torch.quantization.quantize_dynamic(model,{torch.nn.Linear}, dtype=torch.qint8)
+torch.jit.save(model_quant, 'quantized.pt')
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.model = AutoModel.from_pretrained("bert-base-uncased")
-        # Apply dynamic quantization to Linear layers
-        torch.quantization.quantize_dynamic(
-            self.model,
-            {torch.nn.Linear},
-            dtype=torch.qint8
-        )
-    
-    def forward(self, input_ids):
-        # BERT expects input_ids as primary input (other args like attention_mask can be added if needed)
-        return self.model(input_ids)[0]  # Return last_hidden_state for simplicity
+torch.jit.save(model, 'quantized.pt')
 
-def my_model_function():
-    return MyModel()
+state_dict
 
-def GetInput():
-    # Generate random input_ids tensor matching BERT's expected input (int64/long type)
-    return torch.randint(0, 100, (1, 64), dtype=torch.long)
+import torch
+from transformers import AutoConfig,AutoModel
+model = AutoModel.from_pretrained("bert-base-uncased")
+model_quant = torch.quantization.quantize_dynamic(model,{torch.nn.Linear}, dtype=torch.qint8)
+quantized_state_dict = model_quant.state_dict()
+torch.jit.save(quantized_state_dict, 'scriptmodule.pt')
 
+import torch
+from transformers import BertConfig, BertModel
+model = BertModel.from_pretrained("bert-base-uncased")
+model_quant = torch.quantization.quantize_dynamic(model,{torch.nn.Linear}, dtype=torch.qint8)
+torch.jit.save(model_quant, 'quantized.pt')
+
+torch.trace

@@ -1,23 +1,12 @@
-# tf.random.uniform((B=1, H=32, W=32, C=3), dtype=tf.float32)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Input shape inferred from example: (32,32,3)
-        # We include a BatchNormalization layer as per the example reproducing the issue.
-        self.bn = tf.keras.layers.BatchNormalization()
+input_layer = tf.keras.layers.Input(shape=(32,32,3))
+output = tf.keras.layers.BatchNormalization()(input_layer)
+model = tf.keras.Model(inputs=input_layer, outputs=output)
 
-    def call(self, inputs, training=False):
-        # Forward pass through BatchNormalization layer
-        return self.bn(inputs, training=training)
-
-def my_model_function():
-    # Return an instance of MyModel with default initialization.
-    return MyModel()
-
-def GetInput():
-    # Return a random input tensor matching expected shape (batch, height, width, channels)
-    # Using batch size 1 as example.
-    return tf.random.uniform((1, 32, 32, 3), dtype=tf.float32)
-
+yaml_out = model.to_yaml()
+model2 = tf.keras.models.model_from_yaml(yaml_out)

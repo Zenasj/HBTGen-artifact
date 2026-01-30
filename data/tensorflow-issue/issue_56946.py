@@ -1,39 +1,141 @@
-# tf.random.uniform((1, 1, 1, 1, 1), dtype=tf.float32) ← Input shape is a 5D tensor [batch=1,1,1,1,1]
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
+import pathlib
+import numpy as np
+import matplotlib.pyplot as plt
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Simple single Dense layer with 1 unit to mimic y = 2*x regression
-        # Input shape: (1,1,1,1,1) flattened internally by Dense layer
-        # Since Dense expects input (batch_size, feature_dim), we flatten the input tensor accordingly in call.
-        self.dense = tf.keras.layers.Dense(units=1)
+print('\u2022 Using TensorFlow Version:', tf.__version__)
 
-    def call(self, inputs):
-        # Flatten the input tensor to 2D: (batch_size, feature_dim)
-        # Here batch_size=inputs.shape[0], feature_dim=1*1*1*1=1, so flatten all but batch dimension
-        batch_size = tf.shape(inputs)[0]
-        x = tf.reshape(inputs, [batch_size, -1])
-        # Forward through dense layer
-        y = self.dense(x)
-        # To keep output consistent with 5D shape, we reshape output back to (batch_size,1,1,1,1)
-        y = tf.reshape(y, [batch_size, 1, 1, 1, 1])
-        return y
+# Create a simple Keras model.
+x = [-5, -1, 0, 1, 4]
+y = [-10, -2, 0, 2, 8]
 
-def my_model_function():
-    model = MyModel()
-    # Initialize weights so the Dense layer roughly implements y=2*x
-    # Dense layer weights: kernel shape == (input_dim, units)
-    # Since input_dim=1, units=1, kernel is [[w]], bias is [b]
-    # We want w=2, b=0
-    weights = [tf.constant([[2.0]], dtype=tf.float32),
-               tf.constant([0.0], dtype=tf.float32)]
-    model.dense.set_weights(weights)
-    return model
+model = tf.keras.models.Sequential([
+        tf.keras.layers.Dense(units = 1, input_shape=[1,1,1,1])
+])
+model.compile(optimizer='sgd',
+              loss='mean_squared_error')
 
-def GetInput():
-    # Return a random tensor of shape (1,1,1,1,1) with float32 type matching model input
-    # Values between -10 and 10 for demonstration
-    return tf.random.uniform(shape=(1, 1, 1, 1, 1), minval=-10, maxval=10, dtype=tf.float32)
+model.fit(x, y, epochs=200)
 
+export_dir = 'saved_model/2'
+tf.saved_model.save(model, export_dir)
+
+# Convert the model.
+converter = tf.lite.TFLiteConverter.from_saved_model(export_dir)
+# converter.target_spec.supported_ops = [
+#   tf.lite.OpsSet.SELECT_TF_OPS # enable TensorFlow ops.
+# ]
+tflite_model = converter.convert()
+
+tflite_model_file = pathlib.Path('model.tflite')
+tflite_model_file.write_bytes(tflite_model)
+
+# Load TFLite model and allocate tensors.
+interpreter = tf.lite.Interpreter(model_content=tflite_model)
+interpreter.allocate_tensors()
+
+# Get input and output tensors.
+input_details = interpreter.get_input_details()
+output_details = interpreter.get_output_details()
+
+# Test the TensorFlow Lite model on random input data.
+input_shape = input_details[0]['shape']
+inputs, outputs, outputsTFL = [], [], []
+for _ in range(100):
+    input_data = np.array(np.random.random_sample(input_shape)*100, dtype=np.float32)
+    interpreter.set_tensor(input_details[0]['index'], input_data)
+    
+    interpreter.invoke()
+    tflite_results = interpreter.get_tensor(output_details[0]['index'])
+    
+    # Test the TensorFlow model on random input data.
+    tf_results = model(tf.constant(input_data))
+    output_data = np.array(tf_results)
+    
+    inputs.append(input_data[0][0][0][0][0])
+    outputs.append(output_data[0][0][0][0][0])
+    outputsTFL.append(np.array(tflite_results)[0][0][0][0][0])
+
+plt.plot(inputs, outputs, 'r')
+plt.show()
+plt.plot(inputs, outputsTFL, 'r')
+plt.show()
+
+import pathlib
+import numpy as np
+import matplotlib.pyplot as plt
+
+import tensorflow as tf
+
+print('\u2022 Using TensorFlow Version:', tf.__version__)
+
+# Create a simple Keras model.
+x = [-5, -1, 0, 1, 4]
+y = [-10, -2, 0, 2, 8]
+
+model = tf.keras.models.Sequential([
+        tf.keras.layers.Dense(units = 1, input_shape=[1,1,1,1,1])
+])
+model.compile(optimizer='sgd',
+              loss='mean_squared_error')
+
+model.fit(x, y, epochs=200)
+
+export_dir = 'saved_model/2'
+tf.saved_model.save(model, export_dir)
+
+# Convert the model.
+converter = tf.lite.TFLiteConverter.from_saved_model(export_dir)
+converter.target_spec.supported_ops = [
+  tf.lite.OpsSet.SELECT_TF_OPS # enable TensorFlow ops.
+]
+tflite_model = converter.convert()
+
+tflite_model_file = pathlib.Path('model.tflite')
+tflite_model_file.write_bytes(tflite_model)
+
+# Load TFLite model and allocate tensors.
+interpreter = tf.lite.Interpreter(model_content=tflite_model)
+interpreter.allocate_tensors()
+
+# Get input and output tensors.
+input_details = interpreter.get_input_details()
+output_details = interpreter.get_output_details()
+
+# Test the TensorFlow Lite model on random input data.
+input_shape = input_details[0]['shape']
+inputs, outputs, outputsTFL = [], [], []
+for _ in range(100):
+    input_data = np.array(np.random.random_sample(input_shape)*100, dtype=np.float32)
+    interpreter.set_tensor(input_details[0]['index'], input_data)
+    
+    interpreter.invoke()
+    tflite_results = interpreter.get_tensor(output_details[0]['index'])
+    
+    # Test the TensorFlow model on random input data.
+    tf_results = model(tf.constant(input_data))
+    output_data = np.array(tf_results)
+    
+    inputs.append(input_data[0][0][0][0][0][0])
+    outputs.append(output_data[0][0][0][0][0][0])
+    outputsTFL.append(np.array(tflite_results)[0][0][0][0][0][0])
+
+plt.plot(inputs, outputs, 'r')
+plt.show()
+plt.plot(inputs, outputsTFL, 'r')
+plt.show()
+
+model = tf.keras.models.Sequential([
+        tf.keras.layers.Dense(units = 1, input_shape=[1])
+])
+
+converter.target_spec.supported_ops = [
+  tf.lite.OpsSet.TFLITE_BUILTINS, # enable TensorFlow Lite ops.
+  tf.lite.OpsSet.SELECT_TF_OPS # enable TensorFlow ops.
+]

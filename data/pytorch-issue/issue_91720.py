@@ -1,19 +1,17 @@
-# torch.rand(B, 2, 3, dtype=torch.float32)
-import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
+import torch
+
+torch._dynamo.config.dynamic_shapes = True
+
+class MyModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.my_param = torch.nn.Parameter(torch.randn([2, 3]))  # Matches parameter shape from original issue
+        self.my_param = torch.nn.Parameter(torch.randn([2, 3]))
 
     def forward(self, x):
-        return x + self.my_param  # Addition with parameter as in original issue
+        return x + self.my_param
 
-def my_model_function():
-    return MyModel()  # Returns initialized model instance
+m = MyModule()
 
-def GetInput():
-    # Returns batched input (B=2) with shape (2, 2, 3) to allow dynamic batch dimension
-    return torch.rand(2, 2, 3, dtype=torch.float32)  # dtype matches parameter's float32
-
+torch._dynamo.export(m, torch.randn([2,3]), aten_graph=True, tracing_mode="symbolic")

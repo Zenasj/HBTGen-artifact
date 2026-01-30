@@ -1,19 +1,27 @@
-# torch.rand(B, 10), torch.randint(0, 10, (B,))  # Input shapes for probs and labels
-import torch
-from torch import nn
 import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        probs, labels = inputs
-        return F.nll_loss(probs, labels)
+import torch
+from matplotlib import pyplot as plt
+from torch.nn import functional as F
 
-def my_model_function():
-    return MyModel()
+timing = []
+batches=  list(range(32, 4096, 32))
 
-def GetInput():
-    B = 32  # Matched to test script's initial batch size
-    probs = torch.rand(B, 10, device='cuda')
-    labels = torch.randint(0, 10, (B,), device='cuda')
-    return probs, labels
+for batch in [32] + batches:
+    samples = []
+    for _ in range(100):
+        probs = torch.rand(batch, 10).cuda()
+        labels = torch.randint(0, 10, (batch,)).cuda()
+        start = torch.cuda.Event(enable_timing=True)
+        end = torch.cuda.Event(enable_timing=True)
+        start.record()
+        F.nll_loss(probs, labels)
+        end.record()
+        torch.cuda.synchronize()
+        elapsed = start.elapsed_time(end)
+        samples.append(elapsed)
+    timing.append(sum(samples) / len(samples))
+timing = timing[1:]
 
+plt.plot(batches, timing)
+plt.show()

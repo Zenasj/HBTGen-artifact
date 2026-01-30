@@ -1,63 +1,59 @@
-# tf.random.normal((B, 784)) ← The input to the encoder is a batch of flattened MNIST images with shape (batch_size, 784)
+from tensorflow import keras
+from tensorflow.keras import optimizers
+
 import tensorflow as tf
 from tensorflow.keras import layers
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        original_dim = 784
-        intermediate_dim = 64
-        latent_dim = 32
-        
-        # Encoder network layers
-        self.encoder_dense = layers.Dense(intermediate_dim, activation='relu')
-        self.z_mean_layer = layers.Dense(latent_dim, name='z_mean')
-        self.z_log_var_layer = layers.Dense(latent_dim, name='z_log_var')
-        
-        # Decoder network layers
-        self.decoder_dense = layers.Dense(intermediate_dim, activation='relu')
-        self.decoder_output = layers.Dense(original_dim, activation='sigmoid')
-        
-    def sampling(self, inputs):
-        # Reparameterization trick: sample from N(z_mean, exp(z_log_var))
-        z_mean, z_log_var = inputs
-        batch = tf.shape(z_mean)[0]
-        dim = tf.shape(z_mean)[1]
-        epsilon = tf.random.normal(shape=(batch, dim))
-        return z_mean + tf.exp(0.5 * z_log_var) * epsilon
-    
-    def encode(self, x):
-        x = self.encoder_dense(x)
-        z_mean = self.z_mean_layer(x)
-        z_log_var = self.z_log_var_layer(x)
-        z = self.sampling((z_mean, z_log_var))
-        return z_mean, z_log_var, z
-    
-    def decode(self, z):
-        x = self.decoder_dense(z)
-        return self.decoder_output(x)
-    
-    def call(self, inputs, training=False):
-        # Forward pass: encode, sample and decode
-        z_mean, z_log_var, z = self.encode(inputs)
-        reconstruction = self.decode(z)
-        if training:
-            # Add KL divergence as a loss if training
-            kl_loss = -0.5 * tf.reduce_mean(
-                z_log_var - tf.square(z_mean) - tf.exp(z_log_var) + 1
-            )
-            self.add_loss(kl_loss)
-        return reconstruction
+# Get training data.
+(x_train, _), _ = tf.keras.datasets.mnist.load_data()
+x_train = x_train.reshape(60000, 784).astype('float32') / 255
 
-def my_model_function():
-    # Return an instance of the VAE model (MyModel)
-    return MyModel()
+original_dim = 784
+intermediate_dim = 64
+latent_dim = 32
 
-def GetInput():
-    # Return random input tensor matching shape (batch_size, 784) and type float32
-    # Use batch size 64 as default (matching training batch size in original example)
-    batch_size = 64
-    original_dim = 784
-    # Uniform or normal distribution okay; original training inputs were normalized MNIST digits
-    return tf.random.uniform((batch_size, original_dim), minval=0., maxval=1., dtype=tf.float32)
+def sampling(inputs):
+    z_mean, z_log_var = inputs
+    batch = tf.shape(z_mean)[0]
+    dim = tf.shape(z_mean)[1]
+    epsilon = tf.keras.backend.random_normal(shape=(batch, dim))
+    return z_mean + tf.exp(0.5 * z_log_var) * epsilon    
 
+# Define encoder model.
+original_inputs = tf.keras.Input(shape=(original_dim,), name='encoder_input')
+x = layers.Dense(intermediate_dim, activation='relu')(original_inputs)
+z_mean = layers.Dense(latent_dim, name='z_mean')(x)
+z_log_var = layers.Dense(latent_dim, name='z_log_var')(x)
+z = tf.keras.layers.Lambda(sampling)((z_mean, z_log_var))
+encoder = tf.keras.Model(inputs=original_inputs, outputs=z, name='encoder')
+
+# Define decoder model.
+latent_inputs = tf.keras.Input(shape=(latent_dim,), name='z_sampling')
+x = layers.Dense(intermediate_dim, activation='relu')(latent_inputs)
+outputs = layers.Dense(original_dim, activation='sigmoid')(x)
+decoder = tf.keras.Model(inputs=latent_inputs, outputs=outputs, name='decoder')
+
+# Define VAE model.
+outputs = decoder(z)
+vae = tf.keras.Model(inputs=original_inputs, outputs=outputs, name='vae')
+
+# Add KL divergence regularization loss.
+kl_loss = - 0.5 * tf.reduce_mean(
+    z_log_var - tf.square(z_mean) - tf.exp(z_log_var) + 1)
+vae.add_loss(kl_loss)
+
+# Train.
+optimizer = tf.keras.optimizers.Adam(learning_rate=1e-3)
+vae.compile(optimizer, loss=tf.keras.losses.MeanSquaredError())
+vae.fit(x_train, x_train, epochs=3, batch_size=64)
+
+# Save model.
+tf.keras.experimental.export_saved_model(vae, 'vae_functional_saved_model')
+
+python
+kl_loss = - 0.5 * tf.reduce_mean(
+    z_log_var - tf.square(z_mean) - tf.exp(z_log_var) + 1)
+vae.add_loss(kl_loss)
+
+python
+vae.compile(optimizer, loss=tf.keras.losses.MeanSquaredError())

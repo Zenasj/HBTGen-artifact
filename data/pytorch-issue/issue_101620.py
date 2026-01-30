@@ -1,22 +1,20 @@
-# torch.rand(1, 1, 5, 2, dtype=torch.float32) ← Add a comment line at the top with the inferred input shape
+import torch.nn.functional as F
 
 import torch
-from torch import nn
 from torch.nn import functional as F
+t = torch.tensor([[
+          [[ 0.0000, -0.4945],
+          [ 0.0000,  0.3474],
+          [ 0.0000,  0.8383],
+          [ 0.0000,  0.5882],
+          [ 0.0000,  0.3417]],
+]])
+t = t.to('cpu')
+for _ in range(int(1e7)):  # sometimes you need more runs 
+    bins = F.gumbel_softmax(t, tau=0.15, hard=False, dim=-1)
+    assert not bins.isnan().any().item(), f"Found {bins.isnan().sum()} nans"
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-
-    def forward(self, x):
-        # Apply Gumbel-Softmax on the input tensor
-        return F.gumbel_softmax(x, tau=0.15, hard=False, dim=-1)
-
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(1, 1, 5, 2, dtype=torch.float32)
-
+t = t.to('cuda:0')
+for _ in range(int(1e7)):  # no bug here
+    bins = F.gumbel_softmax(t, tau=0.15, hard=False, dim=-1)
+    assert not bins.isnan().any().item(), f"Found {bins.isnan().sum()} nans"

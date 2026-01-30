@@ -1,19 +1,11 @@
-# torch.rand(10, 100, dtype=torch.float32)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        a = torch.sin(x)
-        b = torch.cos(a)
-        return b
+def fn(x):
+    a = torch.sin(x)
+    b = torch.cos(a)
+    return b
 
-def my_model_function():
-    return MyModel()
+inp = torch.randn(10, 100)
+fn_tvm = torch.compile(fn, backend="tvm")
 
-def GetInput():
-    return torch.randn(10, 100, dtype=torch.float32)
-
+print(torch.allclose(fn(inp), fn_tvm(inp)))

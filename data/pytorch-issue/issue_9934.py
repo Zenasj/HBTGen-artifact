@@ -1,31 +1,21 @@
-# torch.rand(2, 2, dtype=torch.float32, device='cuda')
-import torch
 import numpy as np
 
-class MyModel(torch.nn.Module):
-    def forward(self, x):
-        # Compare implicit vs explicit NumPy conversion behaviors
-        try:
-            # Implicit conversion via __array__ (may auto-CPU)
-            implicit_arr = np.linalg.inv(x)
-            implicit_tensor = torch.from_numpy(implicit_arr)
-        except:
-            implicit_tensor = None
+import torch, numpy as np
 
-        # Explicit conversion (manual CPU move)
-        explicit_arr = x.cpu().numpy()
-        explicit_arr_inv = np.linalg.inv(explicit_arr)
-        explicit_tensor = torch.from_numpy(explicit_arr_inv)
+a = torch.eye(2, 2).cuda()
+print(np.linalg.inv(a))
+# [[1. 0.]
+# [0. 1.]]
 
-        # Return comparison result
-        if implicit_tensor is not None:
-            return torch.allclose(implicit_tensor, explicit_tensor)
-        else:
-            return torch.tensor(False, dtype=torch.bool)
+print(np.linalg.inv(a.numpy()))
+# TypeError: can't convert CUDA tensor to numpy. Use Tensor.cpu() to copy the tensor to host memory first.
 
-def my_model_function():
-    return MyModel()
+print(torch.__version__)
+# '0.5.0a0+bcd20f9'
 
-def GetInput():
-    return torch.rand(2, 2, dtype=torch.float32, device='cuda')
+def to_numpy(array):
+    if isinstance(array, torch.Tensor):
+        array = array.cpu()
 
+    # torch only supports np.asarray for cpu tensors
+    return np.asarray(array)

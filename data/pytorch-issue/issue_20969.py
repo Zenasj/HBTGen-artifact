@@ -1,11 +1,17 @@
-# torch.rand(B, 1, 28, 28, dtype=torch.float32)  # MNIST input shape (batch, channels, height, width)
+from __future__ import print_function
+import argparse
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.optim as optim
+from datetime import datetime
+import time
+import datetime
+from torchvision import datasets, transforms
 
-class MyModel(nn.Module):
+class Net(nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
+        super(Net, self).__init__()
         self.conv1 = nn.Conv2d(1, 10, kernel_size=5)
         self.conv2 = nn.Conv2d(10, 20, kernel_size=5)
         self.conv2_drop = nn.Dropout2d()
@@ -21,31 +27,99 @@ class MyModel(nn.Module):
         x = self.fc2(x)
         return F.log_softmax(x, dim=1)
 
-def my_model_function():
-    return MyModel()
+def train(args, model, device, train_loader, optimizer, epoch):
+    model.train()
+    for batch_idx, (data, target) in enumerate(train_loader):
+        data, target = data.to(device), target.to(device)
+        optimizer.zero_grad()
+        output = model(data)
+        loss = F.nll_loss(output, target)
+        loss.backward()
+        optimizer.step()
+        if batch_idx % args.log_interval == 0:
+            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                epoch, batch_idx * len(data), len(train_loader.dataset),
+                100. * batch_idx / len(train_loader), loss.item()))
 
-def GetInput():
-    batch_size = 4  # Arbitrary batch size for testing
-    return torch.rand(batch_size, 1, 28, 28, dtype=torch.float32)
+def test(args, model, device, test_loader):
+    model.eval()
+    test_loss = 0
+    correct = 0
+    with torch.no_grad():
+        for data, target in test_loader:
+            data, target = data.to(device), target.to(device)
+            output = model(data)
+            test_loss += F.nll_loss(output, target, reduction='sum').item() # sum up batch loss
+            pred = output.max(1, keepdim=True)[1] # get the index of the max log-probability
+            correct += pred.eq(target.view_as(pred)).sum().item()
 
-# Alright, let's tackle this problem. The user wants me to generate a complete Python code file based on the GitHub issue provided. The main issue here is about a performance regression in PyTorch 1.1.0 compared to 1.0.0 when running the MNIST example on Windows. The user provided the code for the MNIST model and some context about the problem.
-# First, I need to extract the model from the provided code. Looking at the issue's main.py, the model is defined as the Net class. The structure is straightforward: two convolutional layers followed by dropout, then two fully connected layers. The forward method uses ReLU activations, max-pooling, and log-softmax for the output.
-# The next step is to structure this into the required format. The output must include a class MyModel inheriting from nn.Module, a function my_model_function that returns an instance of MyModel, and a GetInput function that returns a random input tensor. 
-# Wait, the user mentioned that if there are multiple models being compared, they need to be fused into a single MyModel with submodules and comparison logic. But in this issue, the user is only discussing the same model between different PyTorch versions. Since the problem is about performance, not model structure differences, there's no need to fuse multiple models. So I can proceed with the single Net class, renamed to MyModel.
-# Now, the input shape. The MNIST images are 28x28 grayscale, so the input is (batch_size, 1, 28, 28). The original code uses transforms.ToTensor() which converts PIL images to tensors of shape (C, H, W). So the input shape should be Bx1x28x28. The comment at the top should reflect that with torch.rand(B, 1, 28, 28, dtype=torch.float32).
-# The GetInput function needs to return a random tensor with that shape. The batch size isn't specified, but the original code uses --batch-size 512. However, since the function should be generic, maybe using a placeholder batch size like 4? Or perhaps just 1? Wait, the user's main.py uses 512, but for testing, maybe a small batch is better. The exact batch size might not matter as long as the shape is correct. Let's set it to 4 for simplicity, but the batch size can be arbitrary as it's just for generating input.
-# The my_model_function should return an instance of MyModel, initialized properly. The original code uses .to(device), but since the function isn't handling device placement, maybe just return MyModel() without device, assuming the user will handle it when using torch.compile.
-# Wait, but in the original code, the model is moved to device via .to(device). Since the generated code shouldn't include test code, perhaps the function should return the model in CPU by default? The user's GetInput must return a tensor that works with the model. Since the model's parameters are on whatever device, but the input needs to match. However, the GetInput function is supposed to generate a tensor that works with the model. Maybe the input is generated on CPU unless specified otherwise. But the user might handle device in their own code.
-# Next, check if there's any missing code. The provided Net class seems complete. The forward function uses F.dropout, which requires self.training. The layers are all there. The only thing is that the original code uses log_softmax, which is correctly implemented.
-# The user's code also includes training and testing functions, but those aren't part of the model itself. So the MyModel class is just the Net class renamed. The my_model_function is straightforward.
-# Now, for the GetInput function: the input should be a tensor of shape (B, 1, 28, 28). Let's set B=4 as an example. Using torch.rand(4, 1, 28, 28, dtype=torch.float32). The dtype should be float32 because PyTorch's default is float32 on CPU, and the MNIST data uses that.
-# Putting it all together:
-# The class MyModel is the Net class renamed. The functions my_model_function and GetInput are as specified. The comment at the top of the code block should have the input shape line.
-# Wait, the user mentioned that if there are missing components, use placeholders. In this case, everything seems present. The model's layers are all there. The forward method is complete.
-# Another point: the original Net uses a dropout layer in the forward (self.conv2_drop). The model is okay as is. The MyModel class will have those layers.
-# So, the final code should have:
-# - The MyModel class with the same structure as Net.
-# - The my_model_function returns MyModel().
-# - GetInput returns a random tensor of the correct shape.
-# I think that's all. Let me structure the code accordingly.
-# </think>
+    test_loss /= len(test_loader.dataset)
+    print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
+        test_loss, correct, len(test_loader.dataset),
+        100. * correct / len(test_loader.dataset)))
+
+def main():
+    # Training settings
+    parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
+    parser.add_argument('--batch-size', type=int, default=512, metavar='N',
+                        help='input batch size for training (default: 512)')
+    parser.add_argument('--test-batch-size', type=int, default=10000, metavar='N',
+                        help='input batch size for testing (default: 10000)')
+    parser.add_argument('--epochs', type=int, default=10, metavar='N',
+                        help='number of epochs to train (default: 10)')
+    parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
+                        help='learning rate (default: 0.01)')
+    parser.add_argument('--momentum', type=float, default=0.5, metavar='M',
+                        help='SGD momentum (default: 0.5)')
+    parser.add_argument('--no-cuda', action='store_true', default=False,
+                        help='disables CUDA training')
+    parser.add_argument('--seed', type=int, default=1, metavar='S',
+                        help='random seed (default: 1)')
+    parser.add_argument('--log-interval', type=int, default=10, metavar='N',
+                        help='how many batches to wait before logging training status')
+    args = parser.parse_args()
+    use_cuda = not args.no_cuda and torch.cuda.is_available()
+
+    torch.manual_seed(args.seed)
+
+    device = torch.device("cuda" if use_cuda else "cpu")
+
+    kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
+    train_loader = torch.utils.data.DataLoader(
+        datasets.MNIST('../data', train=True, download=True,
+                       transform=transforms.Compose([
+                           transforms.ToTensor(),
+                           transforms.Normalize((0.1307,), (0.3081,))
+                       ])),
+        batch_size=args.batch_size, shuffle=True, **kwargs)
+    test_loader = torch.utils.data.DataLoader(
+        datasets.MNIST('../data', train=False, transform=transforms.Compose([
+                           transforms.ToTensor(),
+                           transforms.Normalize((0.1307,), (0.3081,))
+                       ])),
+        batch_size=args.test_batch_size, shuffle=True, **kwargs)
+
+
+    model = Net().to(device)
+    optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
+
+    for epoch in range(1, args.epochs + 1):
+        
+        train_start = datetime.datetime.now()
+        train(args, model, device, train_loader, optimizer, epoch)
+        train_end = datetime.datetime.now()
+        diff_train=train_end - train_start
+        result_train=diff_train.total_seconds()
+        print ("training iterations/second %g" % (60000/result_train))
+        test_start = datetime.datetime.now()   
+        test(args, model, device, test_loader)
+        test_end = datetime.datetime.now()
+        diff_test=test_end - test_start
+        result_test=diff_test.total_seconds()
+        print ("test images/second %g" % (10000/result_test))
+
+
+
+
+if __name__ == '__main__':
+    main()

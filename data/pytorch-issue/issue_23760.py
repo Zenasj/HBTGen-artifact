@@ -1,14 +1,17 @@
-# torch.randint(0, 255, (256, 900, 2), dtype=torch.long, device='cuda') ← inferred input shape and dtype
+import torch.nn as nn
+
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return x
 
-def my_model_function():
-    return MyModel()
+class Model(torch.nn.Module):
 
-def GetInput():
-    return torch.randint(0, 255, (256, 900, 2), dtype=torch.long, device='cuda')
+    def forward(self, a):
+        return a
 
+
+device = torch.device('cuda')
+model = Model()
+model.to(device)
+a = torch.randint(0, 255, (256, 900, 2), device=device)
+print('`torch.nn.parallel.data_parallel`')
+torch.nn.parallel.data_parallel(module=model, inputs=(a,))

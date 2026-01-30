@@ -1,19 +1,40 @@
-# torch.rand(1, 3, 224, 224, dtype=torch.float32)
-import torch
-from torch import nn
+import torch.nn as nn
+import random
 
-class MyModel(nn.Module):
+3
+import torch
+
+# init module
+class MyModule(torch.nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
-        # Adjusted buffer shape to avoid slicing in forward pass
-        self.register_buffer("rb", torch.randn(1, 3, 1, 1))  # Shape (1, C, 1, 1) for channel-wise addition
+        super(MyModule, self).__init__()
+        self.register_buffer("rb", torch.randn(1, 1, 3, 1, 1)) 
+        # you can run with the workaround
+        # self.rb = torch.randn(1, 1, 3, 1, 1)
 
     def forward(self, x):
-        return x + self.rb  # Direct addition without slicing
+        x += self.rb[0]
+        return x
 
-def my_model_function():
-    return MyModel()
+torch_model = MyModule().eval()
 
-def GetInput():
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
+# torch.onnx.export
+torch.onnx.export(torch_model,
+        torch.randn(1, 3, 224, 224),
+        "./tmp.onnx",
+        input_names=["inputs"],
+        output_names=["outputs"],
+        dynamic_axes={"inputs": {0: "batch", 2: "height", 3: "width"}, "outputs": {0: "batch", 1: "class", 2: "height", 3: "width"}},
+        opset_version=11,
+        export_params=True)
 
+# onnxruntime
+import os
+import numpy as np
+import onnxruntime
+from onnxruntime.datasets import get_example
+
+onnx_model = get_example(os.path.join(os.getcwd(), "tmp.onnx"))
+sess = onnxruntime.InferenceSession(onnx_model)
+inputs = np.random.randn(1, 3, 224, 224).astype(np.float32)
+onnx_out = sess.run(None, {"inputs": inputs})

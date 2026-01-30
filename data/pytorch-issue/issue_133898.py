@@ -1,24 +1,22 @@
-# torch.rand(2, 3, dtype=torch.float, device="cuda")  # Inferred input shape: matches the parameter's shape
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Create a parameter with the same shape as in the original issue's repro code
-        self.param = nn.Parameter(
-            torch.rand(2, 3, dtype=torch.float, device="cuda", requires_grad=True)
-        )
-    
-    def forward(self, x):
-        # Dummy forward pass to satisfy the input requirement (not used in the original issue's logic)
-        return x
+torch._logging.set_logs(recompiles_verbose=True)
 
-def my_model_function():
-    # Returns an instance of MyModel with the parameter initialized
-    return MyModel()
+param = torch.rand(2, 3, dtype=torch.float, device="cuda", requires_grad=True)
+param.grad = torch.rand_like(param)
 
-def GetInput():
-    # Returns a random tensor compatible with MyModel's forward() input requirements
-    return torch.rand(2, 3, dtype=torch.float, device="cuda")
+lr = torch.tensor(0.001, device="cuda")
+total_steps = 10000
+optimizer = torch.optim.AdamW([param], lr=lr)
+scheduler = torch.optim.lr_scheduler.OneCycleLR(
+    optimizer, max_lr=lr, total_steps=total_steps
+)
 
+@torch.compile()
+def step():
+    optimizer.step()
+    scheduler.step()
+
+
+for _ in range(total_steps):
+    step()

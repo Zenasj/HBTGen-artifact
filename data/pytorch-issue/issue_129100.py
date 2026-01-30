@@ -1,22 +1,21 @@
-# torch.rand(B, 3, 9, 9, dtype=torch.float32)  # Input shape inferred from 9x9 screen (RGB channels)
+import torch.nn as nn
 
+import pygame
 import torch
 from torch import nn
-
-class MyModel(nn.Module):
+screen = pygame.display.set_mode((9, 9))
+class BearBrain(nn.Module):
     def __init__(self):
         super().__init__()
-        # Minimal structure to avoid empty model (required for optimizer)
-        self.fc = nn.Linear(3*9*9, 10)  # 3 channels × 9×9 pixels → 10 outputs
+brain = BearBrain()
+optimizer = torch.optim.Adam([1], lr=1)
 
-    def forward(self, x):
-        x = x.view(x.size(0), -1)  # Flatten input tensor
-        return self.fc(x)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Generate random tensor matching expected input shape (B=1, RGB, 9x9)
-    return torch.rand(1, 3, 9, 9, dtype=torch.float32)
-
+import pygame
+import torch
+from torch import nn
+screen = pygame.display.set_mode((9, 9))
+class BearBrain(nn.Module):
+    def __init__(self):
+        super().__init__()
+brain = BearBrain()
+optimizer = torch.optim.Adam([1], lr=1)

@@ -1,23 +1,31 @@
-# torch.rand((), dtype=torch.float32)
+import torch.nn as nn
+
 import torch
-from torch import nn
+a = torch.nn.Parameter(torch.complex(torch.rand(3), torch.rand(3)))
+b = torch.tensor(1.0)
+c = a * b
+c.real = c.real.clamp(0, 0.1)
+c.abs().mean().backward()
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Initialize complex parameter with real/imag parts from uniform distribution
-        self.a = nn.Parameter(torch.complex(torch.rand(3), torch.rand(3)))
-    
-    def forward(self, x):
-        c = self.a * x  # Element-wise multiplication with scalar input
-        # Problematic in-place clamping of real component
-        c.real = c.real.clamp(0, 0.1)
-        return c.abs().mean()  # Return mean of absolute values for backprop
+import torch
+a = torch.nn.Parameter(torch.complex(torch.rand(3), torch.rand(3)))
+b = torch.tensor(1.0)
+c = a * b
+c.real = c.real.clamp_(0, 0.1)
+c.abs().mean().backward()
 
-def my_model_function():
-    return MyModel()
+a = torch.complex(torch.rand(1, requires_grad=True), torch.rand(1, requires_grad=True))
+a.real = a.real.clamp(0, 0.1)
+a.real.backward()
 
-def GetInput():
-    # Scalar input tensor matching the original code's 'b' parameter
-    return torch.tensor(1.0, dtype=torch.float32)
-
+import torch
+func_cls=torch.Tensor.clamp
+a = torch.nn.Parameter(torch.complex(torch.rand(3), torch.rand(3)))
+b = torch.tensor(1.0)
+c = a * b
+x=c.real
+def test():
+	tmp_result= func_cls(x,0, 0.1)
+	return tmp_result
+c.real = test()
+c.abs().mean().backward()

@@ -1,32 +1,85 @@
-# tf.random.uniform((BATCH_SIZE, 28, 28, 1), dtype=tf.float32) ← inferred input shape matching MNIST images batch
+from tensorflow import keras
+from tensorflow.keras import layers
 
+from __future__ import absolute_import, division, print_function, unicode_literals
+
+import tensorflow_datasets as tfds
 import tensorflow as tf
+import os
+import json
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Simple CNN architecture from the issue's model_fn
-        self.conv1 = tf.keras.layers.Conv2D(32, 3, activation='relu', input_shape=(28, 28, 1))
-        self.pool = tf.keras.layers.MaxPooling2D()
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(64, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(10, activation='softmax')
+BUFFER_SIZE = 10000
+BATCH_SIZE = 64
 
-    def call(self, inputs, training=False):
-        x = self.conv1(inputs)
-        x = self.pool(x)
-        x = self.flatten(x)
-        x = self.dense1(x)
-        return self.dense2(x)
+def input_fn(mode, input_context=None):
+    datasets, info = tfds.load(name='mnist',
+                                with_info=True,
+                                as_supervised=True)
+    mnist_dataset = (datasets['train'] if mode == tf.estimator.ModeKeys.TRAIN else
+                     datasets['test'])
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+    def scale(image, label):
+        image = tf.cast(image, tf.float32)
+        image /= 255
+        return image, label
 
-def GetInput():
-    # Return a random tensor input matching the MNIST input shape batch
-    # Using BATCH_SIZE=64 as per original code, dtype float32
-    BATCH_SIZE = 64
-    # Input shape is (batch_size, 28, 28, 1)
-    return tf.random.uniform((BATCH_SIZE, 28, 28, 1), dtype=tf.float32)
+    if input_context:
+        mnist_dataset = mnist_dataset.shard(input_context.num_input_pipelines,
+                                            input_context.input_pipeline_id)
+    return mnist_dataset.map(scale).shuffle(BUFFER_SIZE).batch(BATCH_SIZE)
 
+
+NUM_WORKERS = 1
+IP_ADDRS = ['localhost']
+PORTS = [12345]
+
+os.environ['TF_CONFIG'] = json.dumps({
+    'cluster': {
+        'worker': ['%s:%d' % (IP_ADDRS[w], PORTS[w]) for w in range(NUM_WORKERS)]
+    },
+    'task': {'type': 'worker', 'index': 0}
+})
+
+LEARNING_RATE = 1e-4
+
+def model_fn(features, labels, mode):
+    model = tf.keras.Sequential([
+      tf.keras.layers.Conv2D(32, 3, activation='relu', input_shape=(28, 28, 1)),
+      tf.keras.layers.MaxPooling2D(),
+      tf.keras.layers.Flatten(),
+      tf.keras.layers.Dense(64, activation='relu'),
+      tf.keras.layers.Dense(10, activation='softmax')
+    ])
+    logits = model(features, training=False)
+
+    if mode == tf.estimator.ModeKeys.PREDICT:
+        predictions = {'logits': logits}
+        return tf.estimator.EstimatorSpec(labels=labels, predictions=predictions)
+
+    optimizer = tf.compat.v1.train.GradientDescentOptimizer(
+      learning_rate=LEARNING_RATE)
+    loss = tf.keras.losses.SparseCategoricalCrossentropy(
+      from_logits=True, reduction=tf.keras.losses.Reduction.NONE)(labels, logits)
+    loss = tf.reduce_sum(loss) * (1. / BATCH_SIZE)
+    if mode == tf.estimator.ModeKeys.EVAL:
+        return tf.estimator.EstimatorSpec(mode, loss=loss)
+
+    return tf.estimator.EstimatorSpec(
+      mode=mode,
+      loss=loss,
+      train_op=optimizer.minimize(
+          loss, tf.compat.v1.train.get_or_create_global_step()))
+
+strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
+
+config = tf.estimator.RunConfig(train_distribute=strategy)
+
+classifier = tf.estimator.Estimator(
+    model_fn=model_fn, config=config)
+eval_result = tf.estimator.train_and_evaluate(
+    classifier,
+    train_spec=tf.estimator.TrainSpec(input_fn=input_fn),
+    eval_spec=tf.estimator.EvalSpec(input_fn=input_fn)
+)
+
+print(eval_result)

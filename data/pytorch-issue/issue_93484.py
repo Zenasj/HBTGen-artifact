@@ -1,27 +1,40 @@
-# torch.randint(0, 50257, (1, 14), dtype=torch.int64)  # Input shape inferred from error logs (B=1, S=14)
 import torch
-import torch.nn as nn
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # BLOOM-560M has vocab_size=250887 and hidden_size=1024, but simplified here for minimal repro
-        self.word_embeddings = nn.Embedding(50257, 512)  # Approximate embedding layer
-        self.transformer_block = nn.Sequential(
-            nn.Linear(512, 512),
-            nn.ReLU(),
-            nn.Linear(512, 512)
-        )  # Dummy transformer block to mimic model structure
+sentence = "Question: Can I run BLOOM on a single GPU? Answer:"
 
-    def forward(self, input_ids):
-        embeddings = self.word_embeddings(input_ids)
-        return self.transformer_block(embeddings)
+# Load model
+def load_model(model_name: str = "bigscience/bloom-560m"):
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        torch_dtype=torch.float16,
+        device_map="auto",
+        offload_state_dict=True,
+    )
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-def my_model_function():
-    # Returns a minimal model with embedding layer and dummy transformer blocks
-    return MyModel()
+    inputs = tokenizer(sentence, return_tensors="pt").to(0)
+    print(inputs.keys())
+    return model, inputs, tokenizer
 
-def GetInput():
-    # Generates input_ids tensor matching BLOOM's expected format
-    return torch.randint(0, 50257, (1, 14), dtype=torch.int64)
 
+# Inference in PyTorch
+def run_model(model, inputs, tokenizer):
+    with torch.no_grad():
+        outputs = model(**inputs, return_dict=False)
+
+    token_id = outputs[0][0][-1].argmax()
+    answer = tokenizer.decode([token_id])
+    print(f"{sentence}\n{answer}")
+
+
+# Inference in dynamo
+def run_dynamo(model, inputs, tokenizer):
+    from torch import _dynamo as torchdynamo
+    opt_model = torchdynamo.optimize("eager")(model)
+    run_model(opt_model, inputs, tokenizer)
+
+
+model, inputs, tokenizer = load_model()
+run_model(model, inputs, tokenizer)  # this works
+run_dynamo(model, inputs, tokenizer)  # this fails

@@ -1,33 +1,65 @@
-# tf.random.normal((10, 9), dtype=tf.float32)
-import tensorflow as tf
+import math
+import random
 
-class MyModel(tf.keras.Model):
+#this issue is about tf.raw_ops.IgammaGradA
+import tensorflow as tf
+import traceback
+
+def replace_special_values(tensor):
+    # Convert tensor to tf.float32 if it's not a supported dtype
+    supported_dtypes = [tf.float16, tf.float32, tf.float64, tf.bfloat16]
+    if tensor.dtype not in supported_dtypes:
+        original_dtype = tensor.dtype
+        tensor = tf.cast(tensor, tf.float32)
+    else :
+        original_dtype = None
+    
+    # Replace NaNs with zeros
+    tensor = tf.where(tf.math.is_nan(tensor), tf.zeros_like(tensor), tensor)
+    
+    # Replace positive infinities with a large number (e.g., 1e30)
+    tensor = tf.where(tf.math.is_inf(tensor), 100, tensor)
+    
+    # Replace negative infinities with a small number (e.g., -1e30)
+    tensor = tf.where(tf.math.is_inf(tensor) & tf.math.less(tensor, 0), -100, tensor)
+    
+    # Convert tensor back to its original dtype
+    if original_dtype is not None :
+        tensor = tf.cast(tensor, original_dtype)
+    return tensor
+
+class Network(tf.Module):
     def __init__(self):
         super().__init__()
-        # As the original code uses tf.raw_ops.IgammaGradA inside the forward pass,
-        # we will replicate that behavior here.
-        # The param `a` is randomly generated inside the call with a fixed shape:
-        # [1, 3, 6, 6, 1, 4, 6, 2, 1, 1]
-        # The input `x` is expected with shape (10, 9)
-        # Because tf.raw_ops.IgammaGradA is a low-level op related to incomplete gamma gradient,
-        # no trainable variables or layers are used.
 
     @tf.function(jit_compile=True)
-    def call(self, x):
-        # According to source, igamma_grad_a accepts inputs:
-        # x: Tensor, a: Tensor
-        # Both must be broadcastable shapes; here 'a' is fixed shape, 'x' is input shape.
-        a = tf.random.normal([1, 3, 6, 6, 1, 4, 6, 2, 1, 1], dtype=tf.float32)
-        result = tf.raw_ops.IgammaGradA(x=x, a=a)
-        return result
+    def __call__(self, x):
+      
+      x = tf.raw_ops.IgammaGradA(x=x, a=tf.random.normal([1, 3, 6, 6, 1, 4, 6, 2, 1, 1], dtype=tf.float32))        
+      return x
 
+is_valid = True
+inf = float('inf')
+m = Network()
+inp = {
+    "x": tf.random.normal([10, 9], dtype=tf.float32),
+    }
 
-def my_model_function():
-    # Returns an instance of MyModel
-    return MyModel()
+with tf.device('/GPU:0'):
+    tf.config.run_functions_eagerly(True)
+    try :
+        no_op_res = m(**inp)
+    except :
+        print(traceback.format_exc())
+        # Generated ops in forward is invalid, generated code is invalid. 
+        is_valid=False
+if is_valid : 
+    tf.config.run_functions_eagerly(False)
+    with tf.device('/GPU:0'):
+        op_res = m(**inp)
 
-def GetInput():
-    # Returns a tensor with shape and dtype matching expected input of MyModel
-    # Input shape: (10, 9), dtype: float32 consistent with the original code
-    return tf.random.normal([10, 9], dtype=tf.float32)
-
+    if isinstance(no_op_res, tf.Tensor) and isinstance(op_res, tf.Tensor) :
+        no_op_res = replace_special_values(no_op_res)
+        op_res = replace_special_values(op_res)
+        tf.debugging.assert_near(tf.cast(no_op_res, tf.float64), tf.cast(op_res, tf.float64), atol=0.001, rtol=0.001)
+    print("no_error")

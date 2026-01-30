@@ -1,28 +1,43 @@
-# torch.rand(B, 1, 32, 32, dtype=torch.float32)  # Matches the input shape of RandomDataset's data
+import random
+
 import torch
-import torch.nn as nn
+import os
+from torch.utils.data import Dataset, DataLoader
+import numpy as np
 
-class MyModel(nn.Module):
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+
+np.random.seed(5)
+
+class RandomDataset(Dataset):
     def __init__(self):
-        super(MyModel, self).__init__()
-        # Simple CNN architecture matching input shape (1 channel, 32x32)
-        self.conv1 = nn.Conv2d(1, 10, kernel_size=3)
-        self.pool = nn.MaxPool2d(2, 2)
-        self.fc1 = nn.Linear(10 * 15 * 15, 100)  # 32-3=30 → 30/2=15 after pooling
-        self.fc2 = nn.Linear(100, 10)
+        self.data = torch.rand(22, 1, 32, 32)
+        self.name = torch.arange(1, 22)
+        
+    def __getitem__(self, idx):
+        return self.name[idx], self.data[idx]
+    
+    def __len__(self):
+        return len(self.data)
+    
 
-    def forward(self, x):
-        x = self.pool(torch.relu(self.conv1(x)))
-        x = x.view(-1, 10 * 15 * 15)
-        x = torch.relu(self.fc1(x))
-        x = self.fc2(x)
-        return x
+torch.distributed.init_process_group(backend="nccl")
 
-def my_model_function():
-    # Returns an instance of MyModel with default initialization
-    return MyModel()
+dataset = RandomDataset()
+sampler = torch.utils.data.distributed.DistributedSampler(dataset, shuffle=True) 
+dataloader = DataLoader(dataset, 
+    batch_size=5,   
+    pin_memory=True, drop_last=True, sampler=sampler) 
 
-def GetInput():
-    # Returns a random input tensor matching the model's expected input
-    return torch.rand(5, 1, 32, 32, dtype=torch.float32)  # Batch size 5, 1 channel, 32x32
+for epoch in range(3):
+    print("epoch: ", epoch)
+    for i, data in enumerate(dataloader, 0):
+        names, _ = data
+        print(names)
 
+g = torch.Generator ()
+g.manual_seed (self.epoch)
+
+g = torch.Generator ()
+g.manual_seed (self.epoch) 
+self.g = g

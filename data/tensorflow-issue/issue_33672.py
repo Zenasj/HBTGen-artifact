@@ -1,83 +1,118 @@
-# tf.random.uniform((BATCH_SIZE, 8, 32, 32, 3), dtype=tf.float32) ← Input shape inferred from create_model input_shape parameter
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
+import time
+import numpy as np
 import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import *
+from tensorflow.python.client import device_lib
 
-class MyModel(tf.keras.Model):
-    def __init__(self, num_classes=10):
-        super().__init__()
-        act = "relu"
-        pad = "same"
-        ini = "he_uniform"
+print("TensorFlow version is", tf.__version__)
 
-        # Replicating the same Conv3D layers and structure from the Sequential model
-        self.conv3d_1 = tf.keras.layers.Conv3D(128, (3,3,3), activation=act, padding=pad,
-                                               kernel_initializer=ini, input_shape=(8,32,32,3))
-        self.conv3d_2 = tf.keras.layers.Conv3D(256, (3,3,3), activation=act, padding=pad,
-                                               kernel_initializer=ini)
-        self.conv3d_3 = tf.keras.layers.Conv3D(256, (3,3,3), activation=act, padding=pad,
-                                               kernel_initializer=ini)
-        self.conv3d_4 = tf.keras.layers.Conv3D(256, (3,3,3), activation=act, padding=pad,
-                                               kernel_initializer=ini)
-        self.pool1 = tf.keras.layers.MaxPooling3D(pool_size=(2,2,2))
+(x_train, y_train), (x_test, y_test) = tf.keras.datasets.cifar10.load_data()
+NUM_SAMPLES = 1000
+x_train = x_train[:NUM_SAMPLES]
+y_train = y_train[:NUM_SAMPLES]
+x_test = x_test[:NUM_SAMPLES]
+y_test = y_test[:NUM_SAMPLES]
 
-        self.conv3d_5 = tf.keras.layers.Conv3D(256, (3,3,3), activation=act, padding=pad,
-                                               kernel_initializer=ini)
-        self.conv3d_6 = tf.keras.layers.Conv3D(256, (3,3,3), activation=act, padding=pad,
-                                               kernel_initializer=ini)
-        self.conv3d_7 = tf.keras.layers.Conv3D(512, (3,3,3), activation=act, padding=pad,
-                                               kernel_initializer=ini)
-        self.conv3d_8 = tf.keras.layers.Conv3D(512, (3,3,3), activation=act, padding=pad,
-                                               kernel_initializer=ini)
-        self.pool2 = tf.keras.layers.MaxPooling3D(pool_size=(2,2,2))
+def fake3d(x):
+    return np.repeat(x[:, np.newaxis], 8, axis=1)
 
-        self.conv3d_9 = tf.keras.layers.Conv3D(256, (3,3,3), activation=act, padding=pad,
-                                               kernel_initializer=ini)
-        self.conv3d_10 = tf.keras.layers.Conv3D(256, (3,3,3), activation=act, padding=pad,
-                                                kernel_initializer=ini)
-        self.conv3d_11 = tf.keras.layers.Conv3D(256, (3,3,3), activation=act, padding=pad,
-                                                kernel_initializer=ini)
-        self.conv3d_12 = tf.keras.layers.Conv3D(128, (3,3,3), activation=act, padding=pad,
-                                                kernel_initializer=ini)
-        self.pool3 = tf.keras.layers.MaxPooling3D(pool_size=(2,4,4))
+x_train = fake3d(x_train)
+x_test = fake3d(x_test)
 
-        self.flatten = tf.keras.layers.Flatten()
-        self.batchnorm = tf.keras.layers.BatchNormalization()
-        self.dense1 = tf.keras.layers.Dense(512, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(num_classes, activation='softmax')
+num_classes = np.max(y_train) + 1
+y_train = tf.keras.utils.to_categorical(y_train, num_classes)
+y_test = tf.keras.utils.to_categorical(y_test, num_classes)
 
-    def call(self, inputs, training=False):
-        x = self.conv3d_1(inputs)
-        x = self.conv3d_2(x)
-        x = self.conv3d_3(x)
-        x = self.conv3d_4(x)
-        x = self.pool1(x)
+def normalize(ndarray):
+    ndarray = ndarray.astype("float32")
+    ndarray = ndarray/255.0
+    return ndarray
 
-        x = self.conv3d_5(x)
-        x = self.conv3d_6(x)
-        x = self.conv3d_7(x)
-        x = self.conv3d_8(x)
-        x = self.pool2(x)
+x_train = normalize(x_train)
+x_test = normalize(x_test)
 
-        x = self.conv3d_9(x)
-        x = self.conv3d_10(x)
-        x = self.conv3d_11(x)
-        x = self.conv3d_12(x)
-        x = self.pool3(x)
+def create_model(num_classes=10):
+    # model parameters
+    act = "relu"
+    pad = "same"
+    ini = "he_uniform"
 
-        x = self.flatten(x)
-        x = self.batchnorm(x, training=training)
-        x = self.dense1(x)
-        out = self.dense2(x)
-        return out
+    model = tf.keras.models.Sequential([
+        Conv3D(128, (3,3,3), activation=act, padding=pad, kernel_initializer=ini,
+               input_shape=(8,32,32,3)),
+        Conv3D(256, (3,3,3), activation=act, padding=pad, kernel_initializer=ini),
+        Conv3D(256, (3,3,3), activation=act, padding=pad, kernel_initializer=ini),
+        Conv3D(256, (3,3,3), activation=act, padding=pad, kernel_initializer=ini),
+        MaxPooling3D(pool_size=(2,2,2)),
+        Conv3D(256, (3,3,3), activation=act, padding=pad, kernel_initializer=ini),
+        Conv3D(256, (3,3,3), activation=act, padding=pad, kernel_initializer=ini),
+        Conv3D(512, (3,3,3), activation=act, padding=pad, kernel_initializer=ini),
+        Conv3D(512, (3,3,3), activation=act, padding=pad, kernel_initializer=ini),
+        MaxPooling3D(pool_size=(2,2,2)),
+        Conv3D(256, (3,3,3), activation=act, padding=pad, kernel_initializer=ini),
+        Conv3D(256, (3,3,3), activation=act, padding=pad, kernel_initializer=ini),
+        Conv3D(256, (3,3,3), activation=act, padding=pad, kernel_initializer=ini),
+        Conv3D(128, (3,3,3), activation=act, padding=pad, kernel_initializer=ini),
+        MaxPooling3D(pool_size=(2,4,4)),
+        Flatten(),
+        BatchNormalization(),
+        Dense(512, activation='relu'),
+        Dense(num_classes, activation="softmax")
+    ])
 
-def my_model_function():
-    return MyModel()
+    return model
 
-def GetInput():
-    # Return a random float32 tensor matching input shape (batch_size, 8, 32, 32, 3)
-    # Using batch size 64 as recommended in the comments for GPU memory constraints
-    batch_size = 64
-    input_shape = (batch_size, 8, 32, 32, 3)
-    # Normalized values roughly between 0 and 1 as per the example normalization
-    return tf.random.uniform(input_shape, minval=0, maxval=1, dtype=tf.float32)
+model = create_model(num_classes)
+model.summary()
+BATCH_SIZE = 320
+N_EPOCHS = 6
+opt = tf.keras.optimizers.SGD(learning_rate=0.02, momentum=0.5)
 
+def train_model(mixed_precision, optimizer):
+    model = create_model(num_classes)
+
+    if mixed_precision:
+        import tensorflow
+        optimizer = tf.train.experimental.enable_mixed_precision_graph_rewrite(optimizer)
+
+    model.compile(loss="categorical_crossentropy",
+                  optimizer=optimizer,
+                  metrics=["accuracy"])
+
+    train_start = time.time()
+
+    train_log = model.fit(x_train, y_train,
+                          batch_size=BATCH_SIZE,
+                          epochs=N_EPOCHS,
+                          use_multiprocessing=True,
+                          workers=2)
+
+    train_end = time.time()
+
+    results = {
+               "train_time": train_end-train_start,
+               "train_log": train_log}
+
+    return results
+
+fp32_results = train_model(mixed_precision=False, optimizer=opt)
+train_time = round(fp32_results["train_time"], 1)
+print("achieved in", train_time, "seconds")
+
+tf.keras.backend.clear_session()
+time.sleep(10)
+
+mp_results = train_model(mixed_precision=True, optimizer=opt)
+train_time = round(mp_results["train_time"], 1)
+print("achieved in", train_time, "seconds")
+
+TF_AUTO_MIXED_PRECISION_GRAPH_REWRITE_WHITELIST_ADD=Conv3D,Conv3DBackpropFilter,Conv3DBackpropFilterV2,Conv3DBackpropInput,Conv3DBackpropInputV2
+
+import os
+os.environ['TF_AUTO_MIXED_PRECISION_GRAPH_REWRITE_WHITELIST_ADD'] = 'Conv3D,Conv3DBackpropFilter,Conv3DBackpropFilterV2,Conv3DBackpropInput,Conv3DBackpropInputV2'

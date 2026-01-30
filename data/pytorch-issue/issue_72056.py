@@ -1,31 +1,19 @@
-# torch.rand(10, 2, dtype=torch.float32)  # Input shape: B=10, C=2
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.register_buffer('weight', torch.tensor([1.0, 16.0], dtype=torch.float32))
-        self.reduction = 'mean'
-        self.ignore_index = -1
-        self.label_smoothing = 0.1
-
-    def forward(self, x):
-        inputs, targets = x
-        return F.cross_entropy(
-            inputs, targets,
-            weight=self.weight,
-            ignore_index=self.ignore_index,
-            label_smoothing=self.label_smoothing,
-            reduction=self.reduction
-        )
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    inputs = torch.rand(10, 2, dtype=torch.float32)
-    targets = torch.randint(low=-1, high=2, size=(10,), dtype=torch.long)
-    return (inputs, targets)
-
+import torch
+input = torch.FloatTensor([[ 0.1735,  0.2191],
+        [-0.1377,  0.3467],
+        [-0.2162,  0.2021],
+        [-0.1177,  0.2157],
+        [-0.1232,  0.2620],
+        [-0.1578,  0.4038],
+        [-0.0209,  0.3298],
+        [-0.0639,  0.2317],
+        [-0.3914,  0.2106],
+        [-0.4211,  0.3420]])
+target =torch.LongTensor([ 0, -1,  0,  0,  0,  0,  0,  0, -1,  0])
+weight = torch.FloatTensor([1,16])
+reduction = 'mean'
+ignore_index = -1
+label_smoothing = .1
+torch._C._nn.cross_entropy_loss(input, target, weight, _Reduction.get_enum(reduction), ignore_index, label_smoothing)

@@ -1,135 +1,124 @@
-# tf.random.uniform((B, None), dtype=tf.int32)  ← Input is a batch of variable-length integer sequences (word IDs)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
+tf.compat.v1.disable_eager_execution()
 from tensorflow.keras import backend as K
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+import numpy as np
 
 class MyWordEmbedding(tf.keras.layers.Layer):
     def build(self, input_shape):
-        # Embedding kernel: vocab_size=300, embedding_dim=512
-        self.kernel = self.add_weight(shape=(300, 512), dtype='float32',
-                                      initializer='glorot_uniform',
-                                      name='embedding_kernel')
-        super(MyWordEmbedding, self).build(input_shape)  # Call at end
+        self.kernel = self.add_weight(shape=(300, 512), dtype='float32')
+        super(MyWordEmbedding, self).build(input_shape)  # Be sure to call this at the end
     
     def call(self, inputs):
-        # inputs expected as a single tensor (word IDs)
-        # Use embedding lookup on the first element if inputs is a list/tuple,
-        # but in our fused model, always a tensor directly.
-        if isinstance(inputs, (list, tuple)):
-            ids = inputs[0]
-        else:
-            ids = inputs
-        return tf.nn.embedding_lookup(params=self.kernel, ids=ids)
+        return tf.nn.embedding_lookup(params=self.kernel, ids=inputs[0])
 
 class EncoderLayer(tf.keras.layers.Layer):
-    def __init__(self, **kwargs):
-        # The mask_para tensor will be passed during call, not at init
+    def __init__(self, mask_para, **kwargs):
+        self.mask_para = mask_para
         super(EncoderLayer, self).__init__(**kwargs)
 
     def build(self, input_shape):
-        # Qdense weight matrix (512x512)
-        self.Qdense = self.add_weight(name='Qdense',
-                                      shape=(512, 512),
-                                      dtype='float32',
-                                      initializer='glorot_uniform')
+        self.Qdense = self.add_weight(name='Qdense', shape=(512, 512))
         super(EncoderLayer, self).build(input_shape)
 
     def call(self, x):
-        # x is a list/tuple: [input_embeddings, mask_para] with
-        # input_embeddings shape: (batch, seq_len, 512)
-        # mask_para shape: (batch, seq_len)
-        input_embeddings, mask_para = x
-
-        # Compute Q, K, V by multiplying input embeddings by Qdense weight
-        Qoutput = tf.einsum('aij,jk->aik', input_embeddings, self.Qdense)
-        Koutput = tf.einsum('aij,jk->aik', input_embeddings, self.Qdense)
-        Voutput = tf.einsum('aij,jk->aik', input_embeddings, self.Qdense)
-
-        # Broadcast mask_para and apply attention-like scoring
-        # mask_para shape (batch, seq_len)
-        # expand dims at axis=1 to (batch, 1, seq_len)
-        # tile to (batch, 64, seq_len) — assuming max seq length 64 is needed
-        # NOTE: max seq_len is variable, so tile dynamically:
-        seq_len = tf.shape(Qoutput)[1]
-        mask_expanded = tf.expand_dims(mask_para, axis=1)  # (batch, 1, seq_len)
-        mask_tiled = tf.tile(mask_expanded, [1, seq_len, 1])  # (batch, seq_len, seq_len)
-
-        # Attention weights:
-        a = tf.einsum('ajk,afk->ajf', Qoutput, Koutput) * mask_tiled
-        # Matrix multiply attention weights by Voutput
+        Qoutput = tf.einsum('aij,jk->aik', x[0], self.Qdense)
+        Koutput =  tf.einsum('aij,jk->aik', x[0], self.Qdense)
+        Voutput =  tf.einsum('aij,jk->aik', x[0], self.Qdense)
+        a = tf.einsum('ajk,afk->ajf', Qoutput, Koutput) * tf.tile(K.expand_dims(self.mask_para, axis=1), [1, 64, 1])
         a = tf.matmul(a, Voutput)
         return a
 
     def compute_mask(self, inputs, mask):
-        # Pass through the mask unchanged
         return mask
 
     def compute_output_shape(self, input_shape):
-        # Output shape same as input_embeddings shape
         return input_shape[0]
 
-class MyModel(tf.keras.Model):
-    """
-    Combined model encapsulating encoder and decoder logic,
-    demonstrating the error scenario and proper call signatures.
-    Inputs:
-      - word_ids_en: int32 tensor shape (batch, seq_len)
-      - word_ids_fr: int32 tensor shape (batch, seq_len)
-    Forward Steps:
-      1. Encode French word IDs -> embeddings -> encoded tensor via EncoderLayer.
-      2. Decode English word IDs + encoded tensor embeddings, combined by addition,
-         through embedding layer.
-    Output:
-      Combined tensor after addition (shape: batch, variable seq_len, 512)
-    """
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.embedding_layer = MyWordEmbedding()
-        self.encoder_layer = EncoderLayer()
+def create_encoder_model():
+    word_ids_fr = tf.keras.layers.Input(dtype='int32', shape=(None,))
+    a = MyWordEmbedding()([word_ids_fr])
+    a = EncoderLayer(K.cast(K.not_equal(0, word_ids_fr), dtype='float32'))([a])
+    model = tf.keras.models.Model(inputs=[word_ids_fr], outputs=a)
+    return model
 
+def create_model():
+    word_ids_en = tf.keras.layers.Input(dtype='int32', shape=(None,))
+    a = tf.keras.Input(shape=(None, 512,))
+    b = MyWordEmbedding()([word_ids_en])
+    b = b + a
+    model = tf.keras.models.Model(inputs=[word_ids_en, a], outputs=b)
+    return model
+    
+def evaluate():
+    source_sequence_ids = pad_sequences(np.random.randint(5, size=(3, 64)), maxlen=64, padding='pre')
+    output = decoder_model.predict([pad_sequences(np.random.randint(5, size=(3, 64)), maxlen=64, padding='post'), encoder_model(source_sequence_ids, training=False)], steps=1, verbose=1, batch_size=256)
+
+decoder_model = create_model()
+encoder_model = create_encoder_model()
+evaluate()
+
+import tensorflow as tf
+tf.compat.v1.disable_eager_execution()
+from tensorflow.keras import backend as K
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+import numpy as np
+
+class MyWordEmbedding(tf.keras.layers.Layer):
+    def build(self, input_shape):
+        self.kernel = self.add_weight(shape=(300, 512), dtype='float32')
+        super(MyWordEmbedding, self).build(input_shape)  # Be sure to call this at the end
+    
     def call(self, inputs):
-        # inputs is a tuple/list: (word_ids_en, word_ids_fr)
-        word_ids_en, word_ids_fr = inputs
+        return tf.nn.embedding_lookup(params=self.kernel, ids=inputs[0])
 
-        # Encoder path:
-        # Embed French inputs
-        embedded_fr = self.embedding_layer(word_ids_fr)  # (batch, seq_len_fr, 512)
-        # Construct mask: cast not-equal-zero of French inputs (batch, seq_len_fr)
-        mask_fr = tf.cast(tf.not_equal(word_ids_fr, 0), dtype='float32')
-        # Apply EncoderLayer: pass [embeddings, mask]
-        encoded_fr = self.encoder_layer([embedded_fr, mask_fr])  # (batch, seq_len_fr, 512)
+class EncoderLayer(tf.keras.layers.Layer):
+    def __init__(self, **kwargs):
+        super(EncoderLayer, self).__init__(**kwargs)
 
-        # Decoder path:
-        # Embed English inputs
-        embedded_en = self.embedding_layer(word_ids_en)  # (batch, seq_len_en, 512)
+    def build(self, input_shape):
+        self.Qdense = self.add_weight(name='Qdense', shape=(512, 512))
+        super(EncoderLayer, self).build(input_shape)
 
-        # We need to add embedded_en + encoded_fr
-        # Because seq_len of en and fr can differ, 
-        # assume they are equal or truncate/pad as needed.
-        # For simplicity, if seq_len differs, truncate to min seq_len
-        seq_len_en = tf.shape(embedded_en)[1]
-        seq_len_fr = tf.shape(encoded_fr)[1]
-        min_seq_len = tf.minimum(seq_len_en, seq_len_fr)
-        embedded_en_trimmed = embedded_en[:, :min_seq_len, :]
-        encoded_fr_trimmed = encoded_fr[:, :min_seq_len, :]
+    def call(self, x):
+        Qoutput = tf.einsum('aij,jk->aik', x[0], self.Qdense)
+        Koutput =  tf.einsum('aij,jk->aik', x[0], self.Qdense)
+        Voutput =  tf.einsum('aij,jk->aik', x[0], self.Qdense)
+        mask_para = x[1]
+        a = tf.einsum('ajk,afk->ajf', Qoutput, Koutput) * tf.tile(K.expand_dims(mask_para, axis=1), [1, 64, 1])
+        a = tf.matmul(a, Voutput)
+        return a
 
-        combined = embedded_en_trimmed + encoded_fr_trimmed  # (batch, min_seq_len, 512)
-        return combined
+    def compute_mask(self, inputs, mask):
+        return mask
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+    def compute_output_shape(self, input_shape):
+        return input_shape[0]
 
-def GetInput():
-    # Return a tuple of inputs: (word_ids_en, word_ids_fr)
-    # Both are int32 tensors with shape (batch_size, seq_len)
-    # Use batch size 3, seq_len 64 (from example)
-    batch_size = 3
-    seq_len = 64
+def create_encoder_model():
+    word_ids_fr = tf.keras.layers.Input(dtype='int32', shape=(None,))
+    a = MyWordEmbedding()([word_ids_fr])
+    a = EncoderLayer()([a, K.cast(K.not_equal(0, word_ids_fr), dtype='float32')])
+    model = tf.keras.models.Model(inputs=[word_ids_fr], outputs=a)
+    return model
 
-    # Random sequences of integers from 0 to 4 (like vocab indices)
-    word_ids_en = tf.random.uniform((batch_size, seq_len), minval=0, maxval=5, dtype=tf.int32)
-    word_ids_fr = tf.random.uniform((batch_size, seq_len), minval=0, maxval=5, dtype=tf.int32)
+def create_model():
+    word_ids_en = tf.keras.layers.Input(dtype='int32', shape=(None,))
+    a = tf.keras.Input(shape=(None, 512,))
+    b = MyWordEmbedding()([word_ids_en])
+    b = b + a
+    model = tf.keras.models.Model(inputs=[word_ids_en, a], outputs=b)
+    return model
+    
+def evaluate():
+    source_sequence_ids = pad_sequences(np.random.randint(5, size=(3, 64)), maxlen=64, padding='pre')
+    output = decoder_model.predict([pad_sequences(np.random.randint(5, size=(3, 64)), maxlen=64, padding='post'), encoder_model(source_sequence_ids, training=False)], steps=1, verbose=1, batch_size=256)
 
-    return (word_ids_en, word_ids_fr)
-
+decoder_model = create_model()
+encoder_model = create_encoder_model()
+evaluate()

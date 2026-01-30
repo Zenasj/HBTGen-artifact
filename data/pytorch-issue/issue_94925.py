@@ -1,14 +1,25 @@
-# torch.rand((), dtype=torch.float32)
+py
 import torch
-from torch import nn
+from torch.func import jacrev
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return torch.roll(x, 1)
+x = torch.tensor(0.0)
 
-def my_model_function():
-    return MyModel()
+def func(x):
+    y = torch.roll(x, 1)
+    return y
 
-def GetInput():
-    return torch.tensor(0.0)
+print(jacrev(func)(x))
+# IndexError: Dimension out of range (expected to be in range of [-1, 0], but got 1)
 
+py
+import torch
+from torch.autograd.functional import jacobian
+
+x = torch.tensor(0.0)
+
+def func(x):
+    y = torch.roll(x, 1)
+    return y
+
+print(jacobian(func, x))
+# tensor(1.)

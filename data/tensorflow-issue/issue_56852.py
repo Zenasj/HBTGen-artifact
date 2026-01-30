@@ -1,44 +1,51 @@
-# tf.random.normal([1, 100, 64], dtype=tf.float32)  ← Inferred input shape and dtype from example usage in the issue
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
+import logging
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Assumption:
-        # - The encoder is a pretrained model loaded from SavedModel format, frozen/non-trainable.
-        # - The decoder is a simple sequential model with a Dense(2) layer.
-        # Since we can't load the actual model here, we simulate the architecture.
-        
-        # Simulated encoder: a simple layer that mimics output embedding of shape (None, None, emb_dim)
-        self.encoder = tf.keras.Sequential([
-            tf.keras.layers.InputLayer(input_shape=(None, 64)),
-            tf.keras.layers.Dense(32, activation='relu', trainable=False),  # frozen encoder
-            tf.keras.layers.Dense(16, activation='relu', trainable=False)
-        ])
-        self.encoder.trainable = False  # explicitly frozen
-        
-        # Decoder: single Dense layer outputting 2 units (like in original)
-        self.decoder = tf.keras.Sequential([
-            tf.keras.layers.Dense(2)
-        ])
-    
-    def call(self, inputs, training=False):
-        # Forward pass using frozen encoder then decoder
-        emb = self.encoder(inputs, training=False)  # encoder frozen, no training mode
-        outputs = self.decoder(emb)
-        return outputs
+tf.get_logger().setLevel("ERROR")
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
+def get_decoder():
+    """Build the decoder."""
+    decoder = tf.keras.Sequential()
+    decoder.add(tf.keras.layers.Dense(2))
+    return decoder
 
-def my_model_function():
-    # Return an instance of MyModel
-    # According to the original issue, the pretrained encoder is frozen
-    # Returned model corresponds to the final assembled model
-    return MyModel()
+def get_model(encoder):
+    encoder.trainable = False
+    decoder = get_decoder()
+    inputs = encoder.input
+    emb = encoder(inputs, training=False)
+    outputs = decoder(emb)
+    return tf.keras.Model(inputs=inputs, outputs=outputs, name="model")
 
+# local path to SavedModel
+model_dir = "toy_model"
+feats_dim = 64
+distribute_strategy = tf.distribute.MirroredStrategy()
+# build variables inside scope so they are mirrored across gpu replicas
+with distribute_strategy.scope():
+    # load pretrained encoder from tf SavedModel
+    encoder = tf.keras.models.load_model(
+        model_dir,
+    ).get_layer('model')
+    encoder.build(tf.TensorShape([None, None, feats_dim]))
+    # Build decoder on top of frozen encoder
+    model = get_model(encoder=encoder)
+    model(tf.random.normal([1, 100, 64]))
+    model.summary()
+    opt = tf.keras.optimizers.Adam(learning_rate=0.001)
+    model.compile(
+            loss=tf.keras.losses.SparseCategoricalCrossentropy(),
+            optimizer=opt
+    )
 
-def GetInput():
-    # Return a random tensor compatible with MyModel input
-    # From original issue, input shape is [batch=1, timesteps=100, feats_dim=64]
-    return tf.random.normal([1, 100, 64], dtype=tf.float32)
-
+encoder.build(tf.TensorShape([None, None, feats_dim]))
+model(tf.random.normal([1, 100, 64]))

@@ -1,26 +1,72 @@
-# tf.random.uniform((B, 3), dtype=tf.float32) ← Inferred input shape: batch size variable, features=3
+from tensorflow import keras
+from tensorflow.keras import layers
+
+import tensorflow as tf
+from pathlib import Path
+
+inputs = tf.keras.Input(shape=(3,))
+x = tf.keras.layers.Dense(4, activation=tf.nn.relu)(inputs)
+outputs = tf.keras.layers.Dense(5, activation=tf.nn.softmax)(x)
+model = tf.keras.Model(inputs=inputs, outputs=outputs)
+
+tf_model_file = Path("model") / "my_model.tf_model"
+
+model.save_weights(tf_model_file, overwrite=True, save_format="tf")
+
+model.load_weights(tf_model_file)
+model.save_weights(tf_model_file, overwrite=True, save_format="tf")
+
+import tensorflow as tf
+from pathlib import Path
+import shutil
+
+inputs = tf.keras.Input(shape=(3,))
+x = tf.keras.layers.Dense(4, activation=tf.nn.relu)(inputs)
+outputs = tf.keras.layers.Dense(5, activation=tf.nn.softmax)(x)
+model = tf.keras.Model(inputs=inputs, outputs=outputs)
+
+tf_model_file = Path("model") / "my_model.tf_model"
+
+model.save_weights(tf_model_file, overwrite=True, save_format="tf")
+
+model.load_weights(tf_model_file)
+
+shutil.rmtree("model")
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Simple two-layer MLP matching the one from the issue snippet
-        self.dense1 = tf.keras.layers.Dense(4, activation=tf.nn.relu)
-        self.dense2 = tf.keras.layers.Dense(5, activation=tf.nn.softmax)
-    
-    def call(self, inputs):
-        x = self.dense1(inputs)
-        return self.dense2(x)
+ckpt = tf.train.Checkpoint(root=tf.Variable(1.))
+path = ckpt.write('my_checkpoint')
+ckpt.read(path)
+ckpt.write("my_checkpoint")
 
+import tensorflow as tf
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+ckpt = tf.train.Checkpoint(v=tf.Variable(1.))
+path = ckpt.write('my_checkpoint')
+ckpt.read(path)
+ckpt.write("my_checkpoint")
 
+import tensorflow as tf
 
-def GetInput():
-    # Return a random input tensor matching expected input shape (batch_size, 3)
-    # Using batch size = 2 as a reasonable example. dtype float32 as Keras default.
-    return tf.random.uniform((2, 3), dtype=tf.float32)
+inputs = tf.keras.Input(shape=(3,))
+x = tf.keras.layers.Dense(4, activation=tf.nn.relu)(inputs)
+outputs = tf.keras.layers.Dense(5, activation=tf.nn.softmax)(x)
+model = tf.keras.Model(inputs=inputs, outputs=outputs)
 
+ckpt = tf.train.Checkpoint(root=model)
+path = ckpt.write('my_checkpoint')
+ckpt.read(path)
+ckpt.write("my_checkpoint")
+
+import tensorflow as tf
+
+inputs = tf.keras.Input(shape=(3,))
+x = tf.keras.layers.Dense(4, activation=tf.nn.relu)(inputs)
+outputs = tf.keras.layers.Dense(5, activation=tf.nn.softmax)(x)
+model = tf.keras.Model(inputs=inputs, outputs=outputs)
+
+ckpt = tf.train.Checkpoint(model=model)
+path = ckpt.write('my_checkpoint')
+ckpt.read(path)
+ckpt.write("my_checkpoint")

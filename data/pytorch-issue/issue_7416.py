@@ -1,41 +1,20 @@
-# torch.randint(0, 10000, (32,), dtype=torch.long)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Fixed parameters for reproducibility
-        self.vocab_size = 10000
-        self.active_size = 100
-        self.embedding_dim = 10
+vocab_size = BIGNUM # for example, 1000000
+active_size = SMALLNUM # for example, 3000
+active_vocab = torch.randperm(vocab_size)[:SMALLNUM].long()
+index = active_vocab.argsort()
+lookup = torch.zeros(BIGNUM).fill_(SMALLNUM+1).long()
+lookup[active_vocab] = index
 
-        # Seed ensures deterministic active_vocab generation
-        torch.manual_seed(42)
-        active_vocab = torch.randperm(self.vocab_size)[:self.active_size]
-        index = torch.arange(self.active_size, dtype=torch.long)
-        
-        # Create lookup table mapping active vocab indices to embedding positions
-        lookup = torch.full((self.vocab_size,), self.active_size, dtype=torch.long)
-        lookup[active_vocab] = index
-        self.register_buffer('lookup', lookup)
-        
-        # Embedding layer for active vocabulary
-        self.embedding = nn.Embedding(self.active_size, self.embedding_dim)
+# A tensor including only indices from the "active vocab"
+some_tensor = active_vocab[torch.LongTensor(1000).random_(0, active_size)]
 
-    def forward(self, input_indices):
-        # Map input indices to active embedding indices
-        active_indices = self.lookup[input_indices]
-        return self.embedding(active_indices)
+# Your dense embedding matrix.
+embedding = torch.FloatTensor(active_size, 400)
 
-def my_model_function():
-    return MyModel()
+# Map your tensor's indices to those corresponding with the dense embeddings.
+embedding_lookup = lookup[some_tensor]
 
-def GetInput():
-    # Generate input using same seed to ensure indices are in active_vocab
-    torch.manual_seed(42)
-    active_vocab = torch.randperm(10000)[:100]
-    batch_size = 32
-    indices = active_vocab[torch.randint(0, 100, (batch_size,))]
-    return indices.long()
-
+# Sparse Embedding Lookup with Dense Embedding
+output = embedding[embedding_lookup]

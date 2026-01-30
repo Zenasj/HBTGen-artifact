@@ -1,22 +1,36 @@
-# torch.rand(30, 3, 224, 224, dtype=torch.float)  # Inferred input shape based on batchSize=30 and common image dimensions
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+class DeephomographyDataset(Dataset):
+    '''
+    DeepHomography Dataset
+    '''
+    def __init__(self,hdf5file,imgs_key='images',labels_key='labels',
+                 transform=None):
+        '''
+        :argument
+        :param hdf5file: the hdf5 file including the images and the label.
+        :param transform (callable, optional): Optional transform to be
+        applied on a sample
+        '''
+        self.db=h5py.File(hdf5file,'r') # store the images and the labels
+        keys=list(self.db.keys())
+        if imgs_key not in keys:
+            raise(' the ims_key should not be {}, should be one of {}'
+                  .format(imgs_key,keys))
+        if labels_key not in keys:
+            raise(' the labels_key should not be {}, should be one of {}'
+                  .format(labels_key,keys))
+        self.imgs_key=imgs_key
+        self.labels_key=labels_key
+        self.transform=transform
+    def __len__(self):
+        return len(self.db[self.labels_key])
+    def __getitem__(self, idx):
+        image=self.db[self.imgs_key][idx]
+        label=self.db[self.labels_key][idx]
+        sample={'images':image,'labels':label}
+        if self.transform:
+            sample=self.transform(sample)
+        return sample
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1)
-        self.fc = nn.Linear(16 * 224 * 224, 10)  # Dummy output layer
+#   samplesss=trainDataset[0]
 
-    def forward(self, x):
-        x = F.relu(self.conv1(x))
-        x = x.view(x.size(0), -1)
-        return self.fc(x)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(30, 3, 224, 224, dtype=torch.float)
-
+#   samplesss=trainDataset[0]

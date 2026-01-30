@@ -1,18 +1,10 @@
-# torch.rand(3, 3, dtype=torch.float32, device='cuda', requires_grad=True)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.relu = nn.ReLU()
-    
-    def forward(self, x):
-        return self.relu(x).sum()
+def fn(x):
+    y = torch.relu(x).sum()
+    y.backward()
+    return y
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(3, 3, dtype=torch.float32, device='cuda', requires_grad=True)
-
+opt_fn = torch.compile(fn)
+x = torch.ones(3, 3, device="cuda", requires_grad=True)
+y = opt_fn(x)

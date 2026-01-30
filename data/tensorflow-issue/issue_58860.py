@@ -1,57 +1,63 @@
-# tf.random.uniform((B, 32, 32, 3), dtype=tf.float32) ← CIFAR-10 image input shape
+from tensorflow.keras import optimizers
+
+import os
+
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
 import tensorflow as tf
+from tensorflow import keras
 from tensorflow.keras import layers
+from tensorflow.keras.datasets import cifar10
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Conv block 1
-        self.conv1 = layers.Conv2D(32, 3, padding='valid')
-        self.bn1 = layers.BatchNormalization()
-        self.pool1 = layers.MaxPooling2D()
+physical_devices = tf.config.list_physical_devices("GPU")
+tf.config.experimental.set_memory_growth(physical_devices[0], True)
 
-        # Conv block 2
-        self.conv2 = layers.Conv2D(64, 3, padding='valid')
-        self.bn2 = layers.BatchNormalization()
-        self.pool2 = layers.MaxPooling2D()
+(x_train, y_train), (x_test, y_test) = cifar10.load_data()
+x_train = x_train.astype("float32") / 255.0
+x_test = x_test.astype("float32") / 255.0
 
-        # Conv block 3
-        self.conv3 = layers.Conv2D(128, 3, padding='valid')
-        self.bn3 = layers.BatchNormalization()
+model = keras.Sequential(
+    [
+        keras.Input(shape=(32, 32, 3)),
+        layers.Conv2D(32, 3, padding="valid", activation="relu"),
+        layers.MaxPooling2D(),
+        layers.Conv2D(64, 3, activation="relu"),
+        layers.MaxPooling2D(),
+        layers.Conv2D(128, 3, activation="relu"),
+        layers.Flatten(),
+        layers.Dense(64, activation="relu"),
+        layers.Dense(10),
+    ]
+)
 
-        # Classification head
-        self.flatten = layers.Flatten()
-        self.dense1 = layers.Dense(64, activation='relu')
-        self.dense2 = layers.Dense(10)  # logits for 10 classes
 
-    @tf.function(jit_compile=True)
-    def call(self, inputs, training=False):
-        # Forward pass with batch normalization and ReLU activations as per original code
-        x = self.conv1(inputs)
-        x = self.bn1(x, training=training)
-        x = tf.nn.relu(x)
-        x = self.pool1(x)
+def my_model():
+    inputs = keras.Input(shape=(32, 32, 3))
+    x = layers.Conv2D(32, 3)(inputs)
+    x = layers.BatchNormalization()(x)
+    x = keras.activations.relu(x)
+    x = layers.MaxPooling2D()(x)
+    x = layers.Conv2D(64, 3)(x)
+    x = layers.BatchNormalization()(x)
+    x = keras.activations.relu(x)
+    x = layers.MaxPooling2D()(x)
+    x = layers.Conv2D(128, 3)(x)
+    x = layers.BatchNormalization()(x)
+    x = keras.activations.relu(x)
+    x = layers.Flatten()(x)
+    x = layers.Dense(64, activation="relu")(x)
+    outputs = layers.Dense(10)(x)
+    model = keras.Model(inputs=inputs, outputs=outputs)
+    return model
 
-        x = self.conv2(x)
-        x = self.bn2(x, training=training)
-        x = tf.nn.relu(x)
-        x = self.pool2(x)
 
-        x = self.conv3(x)
-        x = self.bn3(x, training=training)
-        x = tf.nn.relu(x)
+model = my_model()
+model.compile(
+    loss=keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+    optimizer=keras.optimizers.Adam(lr=3e-4),
+    metrics=["accuracy"],
+)
 
-        x = self.flatten(x)
-        x = self.dense1(x)
-        logits = self.dense2(x)
-        return logits
+model.fit(x_train, y_train, batch_size=64, epochs=10, verbose=1)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input matching CIFAR-10 shape (batch size 4 chosen arbitrarily)
-    return tf.random.uniform((4, 32, 32, 3), dtype=tf.float32)
-
+fewfewfewf

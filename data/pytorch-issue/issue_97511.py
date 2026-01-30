@@ -1,28 +1,15 @@
-# torch.rand(B, C, H, W, dtype=...)  # Add a comment line at the top with the inferred input shape
 import torch
-import torch.nn as nn
+@torch.compile()
+def test():
+    a = Tensor([i for i in range(10)])
+    a[a > 5] = 0
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.linear = nn.Linear(10, 10)
+test()
 
-    def forward(self, x):
-        x = self.linear(x)
-        x = torch.where(x > 5, 0, x)  # Use torch.where to avoid dynamic indexing
-        return x
+torch.where(a > 5, 0, a)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+tensor[a > b]
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    B, C = 1, 10  # Batch size and feature size
-    return torch.rand(B, C, dtype=torch.float32)
+self(x)
 
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
-
+tensor[a>b]

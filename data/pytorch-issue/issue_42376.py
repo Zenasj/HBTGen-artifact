@@ -1,24 +1,19 @@
-# torch.rand(3)  # Input is a 1D tensor matching the parameter's shape
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.param = nn.Parameter(torch.tensor([1.0, 2.0, 3.0]))
-        self.optimizer = torch.optim.SGD([self.param], lr=0.1, momentum=0.9)
-        self.scheduler = torch.optim.lr_scheduler.OneCycleLR(
-            self.optimizer, max_lr=6.0, total_steps=10
-        )
+def make_lr_scheduler():
+    param1 = torch.tensor([1.0, 2.0, 3.0], requires_grad=True)
+    sgd = torch.optim.SGD([param1], lr=0.1, momentum=0.9)
+    return torch.optim.lr_scheduler.OneCycleLR(sgd, 6.0, total_steps=10)
 
-    def forward(self, x):
-        # Simple forward pass to use the parameter with input
-        return self.param * x
+lr_scheduler = make_lr_scheduler()
+print(lr_scheduler.anneal_func)
 
-def my_model_function():
-    return MyModel()
+with open("checkpoint", "wb") as f:
+    torch.save(lr_scheduler.state_dict(), f)
+    
+lr_scheduler2 = make_lr_scheduler()
+print(lr_scheduler2.anneal_func)
 
-def GetInput():
-    # Returns a 3-element tensor to match the parameter's shape
-    return torch.rand(3)
-
+with open("checkpoint", "rb") as f:
+    lr_scheduler2.load_state_dict(torch.load(f))
+print(lr_scheduler2.anneal_func)

@@ -1,14 +1,26 @@
-# torch.rand(B, 3, H, W, dtype=torch.float32)
-
 import torch
 import torch.nn as nn
-import math
+
+with torch.set_grad_enabled(False):
+    pred1 = model(x)
+    
+with torch.set_grad_enabled(True):
+    pred2 = model(x)
+
+
+print(
+        (nn.functional.l1_loss(y, pred1),
+         nn.functional.l1_loss(pred1, y),
+         nn.functional.l1_loss(y, pred2), 
+         nn.functional.l1_loss(pred2, y))
+    )
 
 def get_conv(in_channels, out_channels, kernel_size=3, actn=True):
     layers = [nn.Conv2d(in_channels, out_channels, kernel_size, padding=kernel_size // 2)]
-    if actn:
-        layers.append(nn.ReLU())
+    if actn: layers.append(nn.ReLU())
+    
     return nn.Sequential(*layers)
+    
 
 class ResSequential(nn.Module):
     def __init__(self, layers, mult):
@@ -16,28 +28,28 @@ class ResSequential(nn.Module):
         self.layers = nn.Sequential(*layers)
         self.mult = mult
     
-    def forward(self, x):
-        return x + self.layers(x) * self.mult
+    def forward(self, input):
+        return input + self.layers(input) * self.mult
 
 def res_block(num_features):
-    layers = [
-        get_conv(num_features, num_features),
-        get_conv(num_features, num_features, actn=False)
-    ]
+    layers = [get_conv(num_features, num_features),
+              get_conv(num_features, num_features, actn=False)]
     return ResSequential(layers, 0.1)
 
 def upsample(in_channels, out_channels, scale):
     layers = []
-    for _ in range(int(math.log(scale, 2))):
+    for i in range(int(log(scale, 2))):
         layers += [get_conv(in_channels, out_channels * 4), nn.PixelShuffle(2)]
+        
     return nn.Sequential(*layers)
 
-class MyModel(nn.Module):
+class SuperResNet(nn.Module):
     def __init__(self, scale, nf=64):
         super().__init__()
+        
         layers = [
             get_conv(3, nf),
-            *[res_block(nf) for _ in range(8)],
+            *[res_block(nf) for i in range(8)],
             upsample(nf, nf, scale),
             nn.BatchNorm2d(nf),
             get_conv(nf, 3, actn=False),
@@ -47,9 +59,22 @@ class MyModel(nn.Module):
     def forward(self, x):
         return self.model(x)
 
-def my_model_function():
-    return MyModel(scale=2)
+model = SuperResNet(scale)
 
-def GetInput():
-    return torch.rand(1, 3, 64, 64, dtype=torch.float32)
+device = torch.device("cuda:0")
+model = model.to(device)
 
+model
+
+def safe_loss(f):
+    """
+    When loss is decorated with a `safe_loss`, it helps you avoid a bug with incorrect arguments order.
+    """
+
+    @wraps(f)
+    def wrapper(y_pred, y_true, **kwargs):
+        if y_true.grad_fn is not None:
+            warn('Usually y_true should have no gradients attached. Please make sure you\'re calling the loss properly')
+        return f(y_pred, y_true, **kwargs)
+
+    return wrapper

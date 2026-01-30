@@ -1,19 +1,19 @@
-# torch.rand(B, 1, 10, dtype=torch.float32)  # Inferred input shape from the example
+Weight: (out_features,in_features)
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class MyModel(nn.Module):
+class Net(nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
-        self.weight = nn.Parameter(torch.ones(1, 10))  # 2D weight for ONNX compatibility (out_features=1, in_features=10)
+        super().__init__()
 
-    def forward(self, x):
-        return F.linear(x, self.weight)
+    def forward(self, a):
+        b = torch.ones([10])
+        return F.linear(a, b)
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(1, 1, 10, dtype=torch.float32)
-
+net = Net()
+a = torch.ones([1,1,10])
+out = net(a)
+print(out)
+torch.onnx.export(net, (a,), "tmp.onnx")

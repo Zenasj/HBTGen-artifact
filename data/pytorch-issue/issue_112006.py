@@ -1,28 +1,27 @@
-# torch.rand(B, C, H, W, dtype=...)  # Inferred input shape: (2, 2, 3)
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.gelu = nn.GELU(approximate="none")
+import torch
+def run_on_device():
+    tensor = torch.randn([2, 2, 3], requires_grad=True)
+    m = torch.nn.GELU(approximate="none")
+    # forward result
+    res = m(tensor)
+    # bwd_tensor
+    grad_in = torch.arange(12).reshape([2, 2, 3]).permute([1, 0, 2])
+    res.backward(grad_in)
+    print(tensor.grad)
 
-    def forward(self, x):
-        return self.gelu(x)
+if __name__ == "__main__":
+    run_on_device()
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+tensor([[[2.7357e-34, 0.0000e+00, 0.0000e+00],
+         [0.0000e+00, 0.0000e+00, 0.0000e+00]],
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn([2, 2, 3], requires_grad=True)
+        [[0.0000e+00, 0.0000e+00, 0.0000e+00],
+         [0.0000e+00, 0.0000e+00, 0.0000e+00]]])
 
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
-# grad_in = torch.arange(12).reshape([2, 2, 3]).permute([1, 0, 2])
-# output.backward(grad_in)
-# print(input_tensor.grad)
+tensor([[[ 0.0000, -0.0524,  1.4309],
+         [ 5.5390, -0.3139,  0.7154]],
 
+        [[ 2.0605,  4.1351,  5.6143],
+         [10.1405, -0.0673, -0.2192]]])

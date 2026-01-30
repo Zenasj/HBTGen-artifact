@@ -1,15 +1,14 @@
-# torch.rand(10, 5, dtype=torch.float)
 import torch
-from torch import nn
-from torch.distributions import Categorical
+from torch.distributions.categorical import Categorical
+@torch.compile(fullgraph=True, mode='reduce-overhead')
+def func():
+    sample = Categorical(torch.rand(10, 5)).sample()
 
-class MyModel(nn.Module):
-    def forward(self, probs):
-        return Categorical(probs).sample()
+import torch
 
-def my_model_function():
-    return MyModel()
+@torch.compile(fullgraph=True, mode='reduce-overhead')
+def num():
+    a = torch.randn(1, 2, 3, 4, 5)
+    return torch.numel(a)
 
-def GetInput():
-    return torch.rand(10, 5)
-
+print("--no of elements: ",num())

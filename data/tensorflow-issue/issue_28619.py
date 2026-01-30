@@ -1,34 +1,33 @@
-# tf.random.uniform((B, 10), dtype=tf.float32) ← inferred input shape (batch_size, 10 features)
+import random
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
+from sklearn.metrics import roc_auc_score
+from keras.layers import Input, Dense
+from keras.models import Model
+from keras import backend as K
 import tensorflow as tf
+import numpy as np
+from functools import partial
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        self.dense1 = tf.keras.layers.Dense(10, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(1, activation='sigmoid')
+def auc(weight):
+    def metric(y_true, y_pred):
+        score = tf.py_func(partial(roc_auc_score, sample_weight=weight), (y_true, y_pred), tf.float32)
+        K.get_session().run(tf.local_variables_initializer())
+        return score
+    return metric
 
-    def call(self, inputs):
-        """
-        Expect inputs as a tuple: (features, sample_weights)
-        However, sample_weights here are only inputs, not used internally in this model since 
-        sklearn roc_auc_score cannot be directly used with tensors in a tf.function.
-        
-        This model replicates the original MLP structure from issue.
-        """
-        x, w = inputs
-        x = self.dense1(x)
-        out = self.dense2(x)
-        return out
+x=Input(shape=(10, ))
+weights = Input(shape=(1,))
+hidden = Dense(10, activation='relu')(x)
+result = Dense(1, activation='sigmoid')(hidden)
+model = Model(inputs=[x, weights], outputs=result)
+model.compile('adam', 'binary_crossentropy', metrics=[auc(weights)])
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Create a random float input tensor matching features shape (batch_size, 10)
-    # Also create a sample_weight tensor of shape (batch_size, 1) filled with random float values
-    batch_size = 32  # arbitrary batch size for input
-    features = tf.random.uniform((batch_size, 10), dtype=tf.float32)
-    sample_weights = tf.random.uniform((batch_size, 1), dtype=tf.float32)
-    return (features, sample_weights)
-
+X = np.random.rand(10000, 10)
+y = np.random.randint(2, size=(10000, 1))
+w = np.random.rand(10000, 1)
+X_val = np.random.rand(100, 10)
+y_val = np.random.randint(2, size=(100, 1))
+w_val = np.random.rand(100, 1)
+model.fit([X, w], y, epochs=20, sample_weight=w.flatten(), validation_data=([X_val, w_val], y_val), verbose=2)

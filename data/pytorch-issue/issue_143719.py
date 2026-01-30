@@ -1,14 +1,17 @@
-# torch.rand(B, C, L, dtype=torch.float32)  # Input shape (Batch, Channels, Length)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return torch.fft.fft(x, n=2, dim=-1, norm=None)
+print(torch.__version__)
 
-def my_model_function():
-    return MyModel()
+@torch.compile
+def fft(input, n=None, dim=-1, norm=None):
+    return torch.fft.fft(input, n, dim, norm)
 
-def GetInput():
-    return torch.rand(1, 1, 1, dtype=torch.float32, device='cuda')
-
+input = torch.tensor([[[1.3703]]])
+input = input.to('cuda')
+n = 2
+dim = -1
+print(f"[CUDA] FFT in compiled mode: {fft(input, n, dim)}")
+print(f"[CUDA] FFT in eager mode: {torch.fft.fft(input, n, dim)}")
+input = input.cpu()
+print(f"[CPU] FFT in compiled mode: {fft(input, n, dim)}")
+print(f"[CPU] FFT in eager mode: {torch.fft.fft(input, n, dim)}")

@@ -1,45 +1,30 @@
-# torch.rand(B, C, H, W, dtype=...)  # Add a comment line at the top with the inferred input shape
-import torch
 import torch.nn as nn
+import random
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1)
-        self.fc1 = nn.Linear(64 * 8 * 8, 10)
-        # Initialize the weights using the truncated normal initializer
-        self._initialize_weights()
+import torch, scipy, random
+from scipy.stats import kstest
+from torch.nn import init
+def _is_trunc_normal(tensor, mean, std, a, b):
+    p_value = scipy.stats.kstest(tensor.flatten().tolist(), 'truncnorm', args=(a, b))[1]
+    return p_value
 
-    def _initialize_weights(self):
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.trunc_normal_(m.weight, mean=0., std=0.01, a=-0.02, b=0.02)
-                if m.bias is not None:
-                    nn.init.zeros_(m.bias)
-            elif isinstance(m, nn.Linear):
-                nn.init.trunc_normal_(m.weight, mean=0., std=0.01, a=-0.02, b=0.02)
-                if m.bias is not None:
-                    nn.init.zeros_(m.bias)
 
-    def forward(self, x):
-        x = self.conv1(x)
-        x = torch.relu(x)
-        x = torch.flatten(x, 1)
-        x = self.fc1(x)
-        return x
+if __name__ == '__main__':
+    input_tensor = torch.empty((10, 10, 20))
+    for _ in range(1000):
+        a = random.uniform(3, 3)
+        b = random.uniform(a, a + 1)
+        init.trunc_normal_(input_tensor.flatten(), mean=0., std=1., a=a, b=b)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+        p_value = _is_trunc_normal(input_tensor, 0., 1., a, b)
+        if p_value <= 0.0001:
+            print("Failed for interval [{0:.3}, {1:.3}], length {2:.3}".format(a, b, b-a))
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    B, C, H, W = 1, 3, 8, 8
-    return torch.rand(B, C, H, W, dtype=torch.float32)
+# Failed for interval [4.98, 5.18], length 0.202
+# Failed for interval [3.87, 3.87], length 0.00138
+# Failed for interval [2.89, 2.89], length 0.000154
 
-# The issue describes the addition of a truncated normal initializer to `torch.nn.init`. Since the issue does not provide a complete model or specific input shape, I will create a simple model that uses the `trunc_normal_` initializer. I will also include a function to generate a random input tensor.
-# ### Explanation:
-# - **MyModel**: A simple convolutional neural network with one convolutional layer and one fully connected layer. The weights are initialized using the `trunc_normal_` initializer.
-# - **my_model_function**: Returns an instance of `MyModel`.
-# - **GetInput**: Generates a random tensor with shape `(B, C, H, W)` where `B=1`, `C=3`, `H=8`, and `W=8`.
-# This code can be used as a standalone file and should work with `torch.compile(MyModel())(GetInput())` without errors.
+t = torch.zeros((1, 10))
+init.trunc_normal_(t, 3, 0.1, -2, 2) # mean is 3, std is .1, truncated to [-2, 2]
+# __main__:1: UserWarning: mean is more than 2 std from [a, b] in nn.init.trunc_normal_.
+# The distribution of values may be incorrect.

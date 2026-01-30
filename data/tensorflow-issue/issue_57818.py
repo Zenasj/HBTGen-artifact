@@ -1,32 +1,86 @@
-# tf.random.uniform((1,), dtype=tf.float64) ← input shape inferred from example input tf.constant([3.12363398], dtype=tf.float64)
-
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
+def get_tflite_callable(model, inp_dict):
+    converter = tf.lite.TFLiteConverter.from_concrete_functions(
+        funcs=[model.__call__.get_concrete_function(**inp_dict)],
+        trackable_obj=model,
+    )
+    converter.target_spec.supported_ops = [
+        tf.lite.OpsSet.TFLITE_BUILTINS, # enable TensorFlow Lite ops.
+        tf.lite.OpsSet.SELECT_TF_OPS # enable TensorFlow ops.
+    ]
+    tflite_bytes = converter.convert()
+    interpreter = tf.lite.Interpreter(model_content=tflite_bytes)
+    runner = interpreter.get_signature_runner()
+    return runner
+
+class MyModule(tf.Module):
     def __init__(self):
         super().__init__()
-        # Constant input value used in original example, dtype float64
         self.const = tf.constant([-10.43154963850975037], dtype=tf.float64)
 
     @tf.function
-    def call(self, x):
-        # Apply leaky relu to the constant (alpha=0.1)
-        c = tf.raw_ops.LeakyRelu(features=self.const, alpha=0.1)
-        # Add the result of leakyrelu(const) to input x
-        out = tf.add(c, x)
-        return out
+    def __call__(self, x):
+        c = tf.raw_ops.LeakyRelu(
+            features=self.const, alpha=0.1,
+        )
+        x = tf.add(c, x)
+        return x
 
-def my_model_function():
-    # Return an instance of MyModel, no additional initialization required
-    return MyModel()
 
-def GetInput():
-    # Produce a random input tensor matching the example shape and dtype
-    
-    # The example input used a 1-D tensor with a single float64 element.
-    # We will generate a similar tensor with one element, dtype float64.
-    input_tensor = tf.random.uniform(
-        shape=(1,), minval=-20.0, maxval=20.0, dtype=tf.float64
-    )
-    return input_tensor
+inp = {
+    "x": tf.constant([3.12363398], dtype=tf.float64),
+}
+m = MyModule()
 
+out = m(**inp)
+print(f'{out}') # t = <tf.Tensor: shape=(1,), dtype=float64, numpy=array([2.080479])>
+
+runner = get_tflite_callable(m, inp)
+out = runner(**inp)['output_0']
+print(f'{out}\n{out.dtype}') # out = array([3.12363398])  out.dtype = dtype('float64')
+
+import tensorflow as tf
+print(tf.__version__)
+
+class MyModule(tf.Module):
+    def __init__(self):
+        super().__init__()
+        self.const = tf.constant([-10.43154963850975037], dtype=tf.float64)
+
+    @tf.function
+    def __call__(self, x):
+        c = tf.raw_ops.LeakyRelu(
+            features=self.const, alpha=0.1,
+        )
+        x = tf.add(c, x)
+        return x
+
+
+inp = {
+    "x": tf.constant([3.12363398], dtype=tf.float64),
+}
+m = MyModule()
+
+out = m(**inp)
+print(f'{out}') # t = <tf.Tensor: shape=(1,), dtype=float64, numpy=array([2.080479])>
+
+call = m.__call__.get_concrete_function(**inp)
+tf.saved_model.save(m, 'saved_model', signatures={'serving_default': call})
+converter = tf.lite.TFLiteConverter.from_saved_model('saved_model', ['serving_default'])
+converter.target_spec.supported_ops = [
+    tf.lite.OpsSet.TFLITE_BUILTINS, # enable TensorFlow Lite ops.
+    tf.lite.OpsSet.SELECT_TF_OPS # enable TensorFlow ops.
+]
+tflite_bytes = converter.convert()
+interpreter = tf.lite.Interpreter(model_content=tflite_bytes)
+runner = interpreter.get_signature_runner()
+
+out = runner(**inp)['output_0']
+print(f'{out}\n{out.dtype}') # out = array([3.12363398])  out.dtype = dtype('float64')
+"""outputs
+2.12.0
+[2.080479]
+[3.12363398]
+float64
+"""

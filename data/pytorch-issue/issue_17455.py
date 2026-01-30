@@ -1,22 +1,18 @@
-# torch.rand(2, dtype=torch.float, requires_grad=True)  # Input shape is a 2-element tensor with requires_grad
 import torch
-import torch.nn as nn
+import numpy as np
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        f = torch.log(torch.exp(x) + 1)
-        # Replicate in-place modifications from the issue's reproduction code
-        f[1] = 0
-        f[:] = 0
-        return f
+x = torch.from_numpy(np.array([0, 100])).float()
+x.requires_grad = True
+f = torch.log((torch.exp(x) + 1))
 
-def my_model_function():
-    return MyModel()
+f[1] = 0
+f[:] = 0
 
-def GetInput():
-    # Return a random 2-element tensor with requires_grad=True to match the original issue's input
-    return torch.rand(2, dtype=torch.float, requires_grad=True)
+clean_f = torch.zeros(100)
+clean_f[0] = f[0]
 
+print(torch.autograd.grad(f[1], x, retain_graph=True))
+print(torch.autograd.grad(f[0], x, retain_graph=True))
+print(torch.autograd.grad(clean_f[1], x, retain_graph=True))
+print(f)
+print(torch.__version__)

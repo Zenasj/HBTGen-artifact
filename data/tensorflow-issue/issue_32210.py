@@ -1,38 +1,42 @@
-# tf.random.uniform((B, 32), dtype=tf.float32) ← inferred input shape from CustomDense input_shape=(32,)
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
-import tensorflow as tf
+from tensorflow import keras
 
+# For our use case this would be a quantizer with a custom gradient
 def projection(x):
-    # Simulates a quantizer function that modifies kernels
     return 2 * x
 
-class CustomDense(tf.keras.layers.Dense):
+class CustomDense(keras.layers.Dense):
     def call(self, inputs):
         original_kernel = self.kernel
-        # Temporarily replace self.kernel with a projected (quantized) kernel
-        # Note: This pattern manipulates the layer's kernel during the forward pass
         self.kernel = projection(self.kernel)
         outputs = super().call(inputs)
-        # Reset to original kernel after computation to not break eager mode
-        self.kernel = original_kernel  
+        self.kernel = original_kernel  # reset the original kernel to make this work in eager mode
         return outputs
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Use the custom dense layer with output units=32, expecting input shape (32,)
-        self.custom_dense = CustomDense(32)
+model = keras.models.Sequential([CustomDense(32, input_shape=(32,))])
 
+assert model.layers[0].kernel in model.layers[0].trainable_weights
+
+from tensorflow import keras
+from tensorflow.python.training.tracking.base import (
+         no_automatic_dependency_tracking_scope,
+     )
+
+def projection(x):
+    return 2 * x
+
+class CustomDense(keras.layers.Dense):
     def call(self, inputs):
-        return self.custom_dense(inputs)
+        original_kernel = self.kernel
+        with no_automatic_dependency_tracking_scope(self):
+            self.kernel = projection(self.kernel)
+        outputs = super().call(inputs)
+        with no_automatic_dependency_tracking_scope(self):
+            self.kernel = original_kernel
+        return outputs
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+model = keras.models.Sequential([CustomDense(32, input_shape=(32,))])
 
-def GetInput():
-    # Returns a random tensor input that matches the input expected by MyModel
-    # Batch size, height, width, channels are not specified; inferred shape is (batch, 32)
-    # Use batch size 4 as an example
-    return tf.random.uniform((4, 32), dtype=tf.float32)
-
+assert model.layers[0].kernel in model.layers[0].trainable_weights

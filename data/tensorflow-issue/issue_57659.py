@@ -1,83 +1,98 @@
-# tf.random.uniform((1, 224, 224, 3), dtype=tf.float32) ← Inferred input shape from original VGG19 model instantiation (BATCH_SIZE=1, IMG_SIZE=224, CHANNELS=3)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
+import os
+os.environ["TF_GPU_ALLOCATOR"] = "cuda_malloc_async"
 import tensorflow as tf
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Conv2D, MaxPooling2D, Dense, Flatten, Dropout
+from tensorflow.python.framework.ops import disable_eager_execution
 
-# Constants based on issue details
+disable_eager_execution()
+print(tf.config.optimizer.get_experimental_options())
+for gpu in tf.config.list_physical_devices('GPU'):
+    tf.config.experimental.set_memory_growth(gpu, True)
+
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Conv2D, MaxPooling2D
+from tensorflow.keras.layers import Dense, Flatten, Dropout
+import shutil
+
+import keras.backend
+import numpy as np
+import pandas
+import matplotlib
+from matplotlib import pyplot as plt
+matplotlib.use("svg")
+
 IMG_SIZE = 224
 CHANNELS = 3
 BATCH_SIZE = 1
 LR_2 = 0.003
 EPOCHS = 2
 
-# Number of output labels inferred from final Dense layer param count: 44
-LABELS = 44
-
-class MyModel(tf.keras.Model):
-    def __init__(self):
+class VGG19(Sequential):
+    def __init__(self, labels, input_shape):
         super().__init__()
-        # Emulate the original VGG19 Sequential architecture with same layers and parameters
-        self.model = Sequential([
-            Conv2D(64, kernel_size=(3, 3), padding='same', activation='relu', input_shape=(IMG_SIZE, IMG_SIZE, CHANNELS)),
-            Conv2D(64, kernel_size=(3, 3), padding='same', activation='relu'),
-            MaxPooling2D(pool_size=(2, 2), strides=(2, 2)),
-            
-            Conv2D(128, kernel_size=(3, 3), padding='same', activation='relu'),
-            Conv2D(128, kernel_size=(3, 3), padding='same', activation='relu'),
-            MaxPooling2D(pool_size=(2, 2), strides=(2, 2)),
-            
-            Conv2D(256, kernel_size=(3, 3), padding='same', activation='relu'),
-            Conv2D(256, kernel_size=(3, 3), padding='same', activation='relu'),
-            Conv2D(256, kernel_size=(3, 3), padding='same', activation='relu'),
-            Conv2D(256, kernel_size=(3, 3), padding='same', activation='relu'),
-            MaxPooling2D(pool_size=(2, 2), strides=(2, 2)),
-            
-            Conv2D(512, kernel_size=(3, 3), padding='same', activation='relu'),
-            Conv2D(512, kernel_size=(3, 3), padding='same', activation='relu'),
-            Conv2D(512, kernel_size=(3, 3), padding='same', activation='relu'),
-            Conv2D(512, kernel_size=(3, 3), padding='same', activation='relu'),
-            MaxPooling2D(pool_size=(2, 2), strides=(2, 2)),
-            
-            Conv2D(512, kernel_size=(3, 3), padding='same', activation='relu'),
-            Conv2D(512, kernel_size=(3, 3), padding='same', activation='relu'),
-            Conv2D(512, kernel_size=(3, 3), padding='same', activation='relu'),
-            Conv2D(512, kernel_size=(3, 3), padding='same', activation='relu'),
-            MaxPooling2D(pool_size=(2, 2), strides=(2, 2)),
 
-            Flatten(),
-            Dense(4096, activation='relu'),
-            Dropout(0.5),
-            Dense(4096, activation='relu'),
-            Dropout(0.5),
-            Dense(LABELS, activation='sigmoid'),
-        ])
+        self.add(Conv2D(64, kernel_size=(3, 3), padding='same',
+                        activation='relu', input_shape=input_shape))
+        self.add(Conv2D(64, kernel_size=(3, 3), padding='same',
+                        activation='relu'))
+        self.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
+        self.add(Conv2D(128, kernel_size=(3, 3), padding='same',
+                        activation='relu'))
+        self.add(Conv2D(128, kernel_size=(3, 3), padding='same',
+                        activation='relu'))
+        self.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
+        self.add(Conv2D(256, kernel_size=(3, 3), padding='same',
+                        activation='relu'))
+        self.add(Conv2D(256, kernel_size=(3, 3), padding='same',
+                        activation='relu'))
+        self.add(Conv2D(256, kernel_size=(3, 3), padding='same',
+                        activation='relu'))
+        self.add(Conv2D(256, kernel_size=(3, 3), padding='same',
+                        activation='relu'))
+        self.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
+        self.add(Conv2D(512, kernel_size=(3, 3), padding='same',
+                        activation='relu'))
+        self.add(Conv2D(512, kernel_size=(3, 3), padding='same',
+                        activation='relu'))
+        self.add(Conv2D(512, kernel_size=(3, 3), padding='same',
+                        activation='relu'))
+        self.add(Conv2D(512, kernel_size=(3, 3), padding='same',
+                        activation='relu'))
+        self.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
+        self.add(Conv2D(512, kernel_size=(3, 3), padding='same',
+                        activation='relu'))
+        self.add(Conv2D(512, kernel_size=(3, 3), padding='same',
+                        activation='relu'))
+        self.add(Conv2D(512, kernel_size=(3, 3), padding='same',
+                        activation='relu'))
+        self.add(Conv2D(512, kernel_size=(3, 3), padding='same',
+                        activation='relu'))
+        self.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
+        self.add(Flatten())
+        self.add(Dense(4096, activation='relu'))
+        self.add(Dropout(0.5))
+        self.add(Dense(4096, activation='relu'))
+        self.add(Dropout(0.5))
+        self.add(Dense(labels, activation='sigmoid'))
 
-        # Use Adam optimizer with given learning rate and decay per original code
-        # Decay = LR_2 / EPOCHS
-        self.optimizer = tf.keras.optimizers.Adam(learning_rate=LR_2, decay=LR_2 / EPOCHS)
-        self.loss_fn = tf.keras.losses.BinaryCrossentropy()
-        self.accuracy_metric = tf.keras.metrics.BinaryAccuracy()
+        self.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=LR_2, decay=LR_2 / EPOCHS),
+                     loss='binary_crossentropy',
+                     metrics=['accuracy'])
 
-    def call(self, inputs, training=False):
-        # Forward pass
-        x = self.model(inputs, training=training)
-        return x
+model = VGG19(labels, (IMG_SIZE, IMG_SIZE, CHANNELS))
+# training and validation is an assortment of images augmented by ImageDataGenerator
 
-    def compile(self, **kwargs):
-        # Override compile to set optimizer, loss, metrics
-        super().compile(optimizer=self.optimizer,
-                        loss=self.loss_fn,
-                        metrics=[self.accuracy_metric],
-                        **kwargs)
+H = model.fit(train_generator,
+              steps_per_epoch=STEP_SIZE_TRAIN,
+              validation_data=validate_generator,
+              validation_steps=STEP_SIZE_VALID,
+              epochs=classify.EPOCHS,
+              verbose=1
+              )
 
-def my_model_function():
-    # Return an instance of MyModel with compilation done as per original
-    model = MyModel()
-    model.compile()  # set optimizer, loss, metrics
-    return model
-
-def GetInput():
-    # Return a random tensor input that matches the model input shape (BATCH_SIZE, 224, 224, 3)
-    return tf.random.uniform((BATCH_SIZE, IMG_SIZE, IMG_SIZE, CHANNELS), dtype=tf.float32)
-
+model.save('data/model.h5', save_format="h5")

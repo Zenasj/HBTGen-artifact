@@ -1,9 +1,9 @@
-# torch.rand(16, 1, 8, dtype=torch.float32)  # Inferred input shape
+import torch.nn as nn
 
 import torch
 from torch import nn
 
-class MyModel(nn.Module):
+class PositionEmbedding1D(nn.Module):
     def __init__(self, dim=8, batch_axis=1, sequence_length=16):
         super().__init__()
         self.dim = dim
@@ -27,16 +27,13 @@ class MyModel(nn.Module):
 
         if self.batch_axis > -1:
             embedding = embedding.unsqueeze(self.batch_axis)
-            # Use repeat_interleave for dynamic input case
             embedding = embedding.repeat_interleave(x.size(self.batch_axis), self.batch_axis)
 
         return x + embedding, embedding
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(16, 1, 8, dtype=torch.float32)
+x = torch.rand(16, 1, 8)
 
+out, embd = pos_enc(x)
+
+torch.onnx.export(pos_enc, x, 'test.onnx', verbose=True, opset_version=11)

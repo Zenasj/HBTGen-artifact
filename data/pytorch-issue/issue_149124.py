@@ -1,24 +1,30 @@
-# torch.rand(10, dtype=torch.float32)  # Example input shape (vocab_size,)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self, num_neg_samples):
-        super().__init__()
+class SimpleDataset(IterableDataset):
+    def __init__(self, data, word2idx, window_size, num_neg_samples, neg_sampling_dist):
+        self.data = data
+        self.word2idx = word2idx
+        self.window_size = window_size
         self.num_neg_samples = num_neg_samples
+        # self.neg_sampling_dist = neg_sampling_dist.to("cuda")
+        self.neg_sampling_dist = neg_sampling_dist
 
-    def forward(self, dist):
-        # The problematic multinomial call that triggers CUDA assertion
-        return torch.multinomial(dist, self.num_neg_samples, replacement=True)
-
-def my_model_function():
-    # Uses num_neg_samples=2 as in the original issue's example
-    return MyModel(num_neg_samples=2)
-
-def GetInput():
-    # Generate a valid distribution tensor (sum to 1)
-    vocab_size = 10  # Inferred from the example's word2idx size
-    dist = torch.rand(vocab_size, dtype=torch.float32)
-    dist /= dist.sum()  # Normalize to a probability distribution
-    return dist
-
+    def __iter__(self):
+        for line in self.data:
+            tokens = nltk.word_tokenize(line)
+            token_ids = [
+                self.word2idx.get(token, self.word2idx["<unk>"]) for token in tokens
+            ]
+            neg_sampling_dist = self.neg_sampling_dist.to("cuda")
+            for i, center in enumerate(token_ids):
+                start = max(0, i - self.window_size)
+                end = min(len(token_ids), i + self.window_size + 1)
+                for j in range(start, end):
+                    if i != j:
+                        context = token_ids[j]
+                        negative_context = torch.multinomial(
+                            neg_sampling_dist,
+                            self.num_neg_samples,
+                            replacement=True,
+                        )
+                        yield center, context, negative_context

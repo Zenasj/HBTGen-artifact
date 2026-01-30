@@ -1,23 +1,49 @@
-# tf.random.uniform((100,), dtype=tf.float32) ← The input is a 1D tensor of length 100 as per input_signature
+import random
 
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
+
+class Tester(tf.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
-        # No traditional layers; the forward uses tf.signal.rfft with fft_length = 512
+        super(Tester, self).__init__()
 
-    @tf.function(jit_compile=True)
-    def call(self, x):
-        # x: [100], perform real FFT with fft_length=512 (padding internally by tf.signal.rfft)
-        # This matches the original test function behavior from the issue
-        return tf.signal.rfft(x, fft_length=[512])
+    @tf.function(input_signature=[tf.TensorSpec(shape=[100], dtype=tf.float32)])
+    def test(self, x):
+        # return tf.reshape(x, [10, -1])
+        return tf.signal.rfft(x, [512])
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
 
-def GetInput():
-    # Return a random tensor of shape [100], float32 dtype as expected by MyModel
-    return tf.random.uniform(shape=(100,), dtype=tf.float32)
+model = Tester()
+concrete_func = model.test.get_concrete_function()
+converter = tf.lite.TFLiteConverter.from_concrete_functions([concrete_func])
+# converter = tf.lite.TFLiteConverter.from_saved_model(saved_model_dir='saved_models/pb/model')
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.experimental_new_converter = True
+converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS, tf.lite.OpsSet.SELECT_TF_OPS]
+tflite = converter.convert()
 
+TFLITE_FILE_PATH = 'content/tester.tflite'
+with open(TFLITE_FILE_PATH, 'wb') as f:
+    f.write(tflite)
+
+# Load the TFLite model and allocate tensors.
+# interpreter = tf.lite.Interpreter(model_path="content/test_variable.tflite")
+interpreter = tf.lite.Interpreter(model_content=tflite)
+interpreter.allocate_tensors()
+
+# Get input and output tensors.
+input_details = interpreter.get_input_details()
+output_details = interpreter.get_output_details()
+
+# Test the model on random input data.
+input_shape = input_details[0]['shape']
+input_data = np.array(np.random.random_sample(input_shape), dtype=np.float32)
+interpreter.set_tensor(input_details[0]['index'], input_data)
+
+interpreter.invoke()
+
+# The function `get_tensor()` returns a copy of the tensor data.
+# Use `tensor()` in order to get a pointer to the tensor.
+output_data = interpreter.get_tensor(output_details[0]['index'])
+print(output_data)

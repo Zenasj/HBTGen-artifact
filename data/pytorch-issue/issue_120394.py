@@ -1,21 +1,17 @@
-# torch.randint(low=0, high=128, size=(1, 10), dtype=torch.long)  # Add a comment line at the top with the inferred input shape
-
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.embedding_bag = nn.EmbeddingBag(num_embeddings=128, embedding_dim=32)
+import torch
+embedding = torch.nn.EmbeddingBag(num_embeddings=128, embedding_dim=32)
 
-    def forward(self, inputs):
-        return self.embedding_bag(inputs)
+inputs = torch.randint(low=0, high=128, size=(1, 10))
+device = "cuda" if torch.cuda.is_available() else "cpu"
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+model = embedding.to(device=device)
+example_inputs = inputs.to(device)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randint(low=0, high=128, size=(1, 10), dtype=torch.long)
-
+# use c abi when 
+with torch._inductor.config.patch({"aot_inductor.abi_compatible": True}):
+    so_path = torch._export.aot_compile(
+        model,
+        (example_inputs, ),
+        options={"aot_inductor.output_path": r"/tmp/test_model.so"})

@@ -1,26 +1,17 @@
-# torch.rand(1, 512, 1245, dtype=torch.float32) ← Add a comment line at the top with the inferred input shape
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv_transpose1d = nn.ConvTranspose1d(512, 256, kernel_size=16, stride=8, padding=4, bias=True)
-    
-    def forward(self, x):
-        return self.conv_transpose1d(x)
+import torch
+import torch.nn.functional as F
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    model = MyModel()
-    # Initialize weights and biases to match the issue's random initialization
-    torch.manual_seed(1234)
-    model.conv_transpose1d.weight.data = torch.rand((512, 256, 16), dtype=torch.float32)
-    model.conv_transpose1d.bias.data = torch.rand((256), dtype=torch.float32)
-    return model
+torch.manual_seed(1234)
+tin = torch.rand((1, 512, 1245), dtype=torch.float32)
+tparams = torch.rand((512, 256, 16), dtype=torch.float32)
+tbias = torch.rand((256), dtype=torch.float32)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    torch.manual_seed(1234)
-    return torch.rand((1, 512, 1245), dtype=torch.float32)
+device = 'cpu'
+tcpu = F.conv_transpose1d(tin.to(device), tparams.to(device), tbias.to(device), stride=8, padding=4)
 
+device = 'mps'
+tgpu = F.conv_transpose1d(tin.to(device), tparams.to(device), tbias.to(device), stride=8, padding=4)
+
+torch.all(torch.isclose(tcpu, tgpu.cpu()))

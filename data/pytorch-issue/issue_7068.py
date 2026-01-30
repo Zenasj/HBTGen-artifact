@@ -1,33 +1,60 @@
-# torch.rand(B, 3, 32, 32, dtype=torch.float32)
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
+import torchvision
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.conv1 = nn.Conv2d(3, 32, kernel_size=3, padding=1)
-        self.pool = nn.MaxPool2d(2, 2)
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
-        self.fc1 = nn.Linear(64 * 8 * 8, 512)
-        self.fc2 = nn.Linear(512, 10)
+torch.manual_seed(0)
+torch.cuda.manual_seed(0)
+np.random.seed(0)
 
-    def forward(self, x):
-        x = F.relu(self.conv1(x))
-        x = self.pool(x)
-        x = F.relu(self.conv2(x))
-        x = self.pool(x)
-        x = x.view(x.size(0), -1)
-        x = F.relu(self.fc1(x))
-        x = self.fc2(x)
-        return x
+transform_train = transforms.Compose([
+    transforms.RandomCrop(32, padding=4),
+    transforms.RandomHorizontalFlip(),
+    transforms.ToTensor(),
+    transforms.Normalize((0.5, 0.5, 0.5), (1.0, 1.0, 1.0)),
+    #transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+])
 
-def my_model_function():
-    # Returns a deterministic model instance
-    model = MyModel()
-    return model
+transform_test = transforms.Compose([
+    transforms.ToTensor(),
+    transforms.Normalize((0.5, 0.5, 0.5), (1.0, 1.0, 1.0)),
+    #transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+])
 
-def GetInput():
-    # Generates a random input tensor matching CIFAR-10 dimensions
-    return torch.rand(4, 3, 32, 32, dtype=torch.float32)
 
+trainset = torchvision.datasets.CIFAR10(root='./data', train=True, transform=transform_train)
+trainloader = torch.utils.data.DataLoader(trainset, batch_size=args.batchsize, shuffle=True, num_workers=0)
+testset = torchvision.datasets.CIFAR10(root='./data', train=False, transform=transform_test)
+testloader = torch.utils.data.DataLoader(testset, batch_size=200, shuffle=False, num_workers=0)
+
+network = model.Cifar()
+network.cuda()
+
+import sys
+import random
+import datetime as dt
+
+import numpy as np
+import torch
+
+torch.manual_seed(42)
+torch.cuda.manual_seed(42)
+np.random.seed(42)
+random.seed(42)
+torch.backends.cudnn.deterministic = True
+
+features = torch.randn(2, 5)
+
+# Print stuff.
+fnp = features.view(-1).numpy()
+
+print("Time: {}".format(dt.datetime.now()))
+for el in fnp:
+    print("{:.20f}".format(el))
+
+print("Python: {}".format(sys.version))
+print("Numpy: {}".format(np.__version__))
+print("Pytorch: {}".format(torch.__version__))
+
+trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=num_workers,   pin_memory=True, worker_init_fn=_init_fn)
+
+torch.backends.cudnn.benchmark = False
+torch.backends.cudnn.deterministic = False

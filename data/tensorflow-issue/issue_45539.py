@@ -1,34 +1,23 @@
-# tf.random.uniform((B, 2), dtype=tf.float32) ← Input shape inferred as (batch_size, 2)
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
+from tensorflow.python.ops.parallel_for.gradients import batch_jacobian
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # No learnable parameters in this model; it just computes y=x^2 and its batch_jacobian dy/dx
-        # We use the public GradientTape.batch_jacobian to avoid the bug described
-        
-    @tf.function(jit_compile=True)
-    def call(self, x):
-        # Computes y = x^2 and dydx = batch jacobian of y wrt x
-        with tf.GradientTape() as tape:
-            tape.watch(x)
-            y = x ** 2
-        dydx = tape.batch_jacobian(y, x)
-        return y, dydx
+# Define function that computes f(x) = x^2 and its derivative df/dx = 2*x
+@tf.function
+def square(x):    
+    y = x**2
+    dydx = batch_jacobian(y, x)
+    return y, dydx
 
+# Create a model that uses the function
+x = tf.keras.backend.placeholder(shape=(None, 2), dtype=tf.float32)
+y, dydx = tf.keras.layers.Lambda(lambda c: square(c))(x)
+model = tf.keras.Model(x, [y, dydx])
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-
-def GetInput():
-    # Return a random input tensor matching shape (batch_size, 2), dtype float32
-    
-    # Use batch size 3 as per example in the issue for demonstration
-    batch_size = 3
-    input_shape = (batch_size, 2)
-    input_tensor = tf.random.uniform(input_shape, dtype=tf.float32)
-    return input_tensor
-
+# Test case: evaluate model with dummy input
+x_input = tf.constant([[1., 2.], [3., 4.], [5., 6.]])
+y_output, dydx_output = model(x_input)
+print(y_output)
+print(dydx_output)

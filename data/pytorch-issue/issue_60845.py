@@ -1,20 +1,11 @@
-# torch.rand(3, 4, 5, dtype=torch.float32)
+import random
+
 import torch
-from torch import nn
+a = torch.randn(3,4,5)
+b = torch.sum(a, dim=())
+assert a.shape == b.shape   # raises assertion error
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # PyTorch implementation (buggy behavior)
-        pt_sum = torch.sum(x, dim=())
-        # Numpy-like implementation (expected behavior: no reduction)
-        np_sum = x  # shape remains unchanged
-        # Compare if PyTorch's output matches numpy-like output's shape
-        shape_match = torch.tensor(pt_sum.shape == x.shape, dtype=torch.bool)
-        return shape_match
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(3, 4, 5)
-
+import numpy
+a = numpy.random.randn(3,4,5)
+b = numpy.sum(a, axis=())
+assert a.shape == b.shape   # passes

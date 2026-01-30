@@ -1,22 +1,22 @@
-# torch.rand(10, 1, 128, 66, dtype=torch.float32)
+import torch.nn as nn
+
 import torch
-from torch import nn
+torch.__version__
+# '2.0.1+rocm5.4.2'
+layer = torch.nn.Conv2d(1, 768, kernel_size=16, stride=10)
+x = torch.rand(10, 1, 128, 66)
+layer.to('cuda:0')(x.to('cuda:0')).sum()
+# tensor(10433.3145, device='cuda:0', grad_fn=<SumBackward0>)
+layer.to('cpu')(x.to('cpu')).sum()
+# tensor(1619.2983, grad_fn=<SumBackward0>)
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv = nn.Conv2d(1, 768, kernel_size=16, stride=10)
-
-    def forward(self, x):
-        return self.conv(x)
-
-def my_model_function():
-    model = MyModel()
-    # Initialize weights to match original test conditions
-    # (weights are initialized randomly by default, which matches the issue's setup)
-    return model
-
-def GetInput():
-    # Matches input shape from the issue's test case
-    return torch.rand(10, 1, 128, 66, dtype=torch.float32)
-
+import torch
+torch.__version__
+'2.0.0'
+layer = torch.nn.Conv2d(1, 768, kernel_size=16, stride=10)
+x = torch.rand(10, 1, 128, 66)
+layer.to('cuda:0')(x.to('cuda:0')).sum()
+# tensor(244.4510, device='cuda:0', grad_fn=<SumBackward0>)
+layer.to('cpu')(x.to('cpu')).sum()
+# tensor(244.4510, grad_fn=<SumBackward0>)
+# `torch.allclose` returns True

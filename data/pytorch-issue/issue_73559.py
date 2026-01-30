@@ -1,26 +1,36 @@
-# torch.IntTensor([[6]]) ← Add a comment line at the top with the inferred input shape
 import torch
 import torch.nn as nn
+import onnxruntime as ort
 
-class MyModel(nn.Module):
+class SimpleModule(nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
-    
+        super(SimpleModule, self).__init__()
     def forward(self, x):
-        return torch.linspace(-1.0, 1.0, x[0, 0])
+        return torch.linspace(-1.0, 1.0, x[0,0])
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+model = SimpleModule()
+model.eval()
+x = torch.IntTensor([[6]])
+torch_out = model(x)
+torch.onnx.export(model, x, "test.onnx",
+                  export_params=True,
+                  opset_version=11,
+                  do_constant_folding=True,
+                  input_names = ['input'],
+                  output_names = ['output'],
+                  dynamic_axes={'input' : {0 : 'batch_size'},
+                                'output' : {0 : 'batch_size'}})
+s = ort.InferenceSession("test.onnx")
+output = s.run(None, input_feed = {"input" : [[5]]})
+print(len(output[0]), output[0])
+output = s.run(None, input_feed = {"input" : [[6]]})
+print(len(output[0]), output[0])
+output = s.run(None, input_feed = {"input" : [[7]]})
+print(len(output[0]), output[0])
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.IntTensor([[6]])
-
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
-# print(output)
-
-# This code defines a `MyModel` class that encapsulates the `torch.linspace` functionality described in the issue. The `my_model_function` returns an instance of `MyModel`, and `GetInput` generates a valid input tensor for the model. The example usage is commented out to ensure the code can be copied as a single file.
+torch_output = model(torch.IntTensor([[5]]))
+print(len(torch_output), torch_output)
+torch_output = model(torch.IntTensor([[6]]))
+print(len(torch_output), torch_output)
+torch_output = model(torch.IntTensor([[7]]))
+print(len(torch_output), torch_output)

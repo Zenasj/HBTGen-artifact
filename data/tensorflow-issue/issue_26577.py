@@ -1,38 +1,57 @@
-# tf.random.uniform((B, 28, 28, 1), dtype=tf.float32)
+from tensorflow import keras
+
 import tensorflow as tf
+import tensorflow.keras.backend as K
+from tensorflow.keras import datasets, layers, models
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # A CNN model replicating the MNIST example from the issue
-        self.conv1 = tf.keras.layers.Conv2D(32, (3,3), activation='relu', input_shape=(28,28,1))
-        self.pool1 = tf.keras.layers.MaxPooling2D((2,2))
-        self.conv2 = tf.keras.layers.Conv2D(64, (3,3), activation='relu')
-        self.pool2 = tf.keras.layers.MaxPooling2D((2,2))
-        self.conv3 = tf.keras.layers.Conv2D(64, (3,3), activation='relu')
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(64, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(10, activation='softmax')
+(train_images, train_labels), (test_images, test_labels) = datasets.mnist.load_data()
 
-    def call(self, inputs):
-        # Forward pass
-        x = self.conv1(inputs)
-        x = self.pool1(x)
-        x = self.conv2(x)
-        x = self.pool2(x)
-        x = self.conv3(x)
-        x = self.flatten(x)
-        x = self.dense1(x)
-        out = self.dense2(x)
-        return out
+train_images = train_images.reshape((60000, 28, 28, 1))
+test_images = test_images.reshape((10000, 28, 28, 1))
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+# Normalize pixel values to be between 0 and 1
+train_images, test_images = train_images / 255.0, test_images / 255.0
 
-def GetInput():
-    # Return a random tensor input that matches the expected input shape of MyModel: (batch, 28, 28, 1)
-    # Use float32 dtype normalized as in the example (0 to 1 range)
-    batch_size = 32  # an arbitrary batch size
-    return tf.random.uniform((batch_size, 28, 28, 1), minval=0.0, maxval=1.0, dtype=tf.float32)
+def customLoss1():
+    return tf.keras.losses.sparse_categorical_crossentropy
+model = models.Sequential()
+model.add(layers.Conv2D(32, (3, 3), activation='relu', input_shape=(28, 28, 1)))
+model.add(layers.MaxPooling2D((2, 2)))
+model.add(layers.Conv2D(64, (3, 3), activation='relu'))
+model.add(layers.MaxPooling2D((2, 2)))
+model.add(layers.Conv2D(64, (3, 3), activation='relu'))
+model.add(layers.Flatten())
+model.add(layers.Dense(64, activation='relu'))
+model.add(layers.Dense(10, activation='softmax'))
 
+model.compile(loss=customLoss1(), optimizer='adam', metrics=['accuracy',])
+model.fit(train_images, train_labels, epochs=1)
+
+def customLoss2(y_true, y_pred):
+    return K.sparse_categorical_crossentropy(y_true, y_pred)
+
+model = models.Sequential()
+model.add(layers.Conv2D(32, (3, 3), activation='relu', input_shape=(28, 28, 1)))
+model.add(layers.MaxPooling2D((2, 2)))
+model.add(layers.Conv2D(64, (3, 3), activation='relu'))
+model.add(layers.MaxPooling2D((2, 2)))
+model.add(layers.Conv2D(64, (3, 3), activation='relu'))
+model.add(layers.Flatten())
+model.add(layers.Dense(64, activation='relu'))
+model.add(layers.Dense(10, activation='softmax'))
+
+model.compile(loss=customLoss2(), optimizer='adam', metrics=['accuracy',])
+model.fit(train_images, train_labels, epochs=1)
+
+model = models.Sequential()
+model.add(layers.Conv2D(32, (3, 3), activation='relu', input_shape=(28, 28, 1)))
+model.add(layers.MaxPooling2D((2, 2)))
+model.add(layers.Conv2D(64, (3, 3), activation='relu'))
+model.add(layers.MaxPooling2D((2, 2)))
+model.add(layers.Conv2D(64, (3, 3), activation='relu'))
+model.add(layers.Flatten())
+model.add(layers.Dense(64, activation='relu'))
+model.add(layers.Dense(10, activation='softmax'))
+
+model.compile(loss=customLossWorks(), optimizer='adam', metrics=['sparse_categorical_accuracy'])
+model.fit(train_images, train_labels, epochs=1)

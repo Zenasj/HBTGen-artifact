@@ -1,32 +1,71 @@
-# tf.random.uniform((1, 28, 28), dtype=tf.float32) ← Input batch size 1, 28 time steps, 28 features as per LSTM input shape
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
+# produce fused LSTM
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Underlying LSTM-based model as described
-        self.bidirectional_lstm = tf.keras.layers.Bidirectional(
-            tf.keras.layers.LSTM(20, return_sequences=True)
-        )
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense = tf.keras.layers.Dense(10, activation=tf.nn.softmax)
+model = tf.keras.models.Sequential([
+    tf.keras.layers.Input(shape=(28, 28), name='input'),
+    tf.keras.layers.Bidirectional(
+        tf.keras.layers.LSTM(20, return_sequences=True)),
+    tf.keras.layers.Flatten(),
+    tf.keras.layers.Dense(10, activation=tf.nn.softmax, name='output')
+])
+model.compile(optimizer='adam',
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
+model.summary()
 
-    def call(self, inputs, training=False):
-        x = self.bidirectional_lstm(inputs, training=training)
-        x = self.flatten(x)
-        output = self.dense(x)
-        return output
+run_model = tf.function(lambda x: model(x))
+# This is important, let's fix the input size.
+BATCH_SIZE = 1
+STEPS = 28
+INPUT_SIZE = 28
+concrete_func = run_model.get_concrete_function(
+    tf.TensorSpec([BATCH_SIZE, STEPS, INPUT_SIZE], model.inputs[0].dtype))
 
-def my_model_function():
-    # Return an instance of MyModel
-    model = MyModel()
-    # Optionally, set up a build call to initialize weights
-    dummy_input = tf.random.uniform([1, 28, 28], dtype=tf.float32)
-    model(dummy_input)  # Build model weights
-    return model
+# model directory.
+MODEL_DIR = "keras_lstm"
 
-def GetInput():
-    # Batch size 1, 28 time steps, 28 features, dtype matches model input (float32)
-    return tf.random.uniform((1, 28, 28), dtype=tf.float32)
+# converter = tf.lite.TFLiteConverter.from_concrete_functions([concrete_func])
+converter = tf.lite.TFLiteConverter.from_saved_model(MODEL_DIR)
+tflite_model = converter.convert()
 
+with tf.io.gfile.GFile('tflite_test.tflite', 'wb') as f:
+    f.write(tflite_model)
+
+# produce original LSTM
+import numpy as np
+import tensorflow as tf
+
+model = tf.keras.models.Sequential([
+    tf.keras.layers.Input(shape=(28, 28), name='input'),
+    tf.keras.layers.Bidirectional(
+        tf.keras.layers.LSTM(20, return_sequences=True)),
+    tf.keras.layers.Flatten(),
+    tf.keras.layers.Dense(10, activation=tf.nn.softmax, name='output')
+])
+model.compile(optimizer='adam',
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
+model.summary()
+
+run_model = tf.function(lambda x: model(x))
+# This is important, let's fix the input size.
+BATCH_SIZE = 1
+STEPS = 28
+INPUT_SIZE = 28
+concrete_func = run_model.get_concrete_function(
+    tf.TensorSpec([BATCH_SIZE, STEPS, INPUT_SIZE], model.inputs[0].dtype))
+
+# model directory.
+MODEL_DIR = "keras_lstm"
+
+converter = tf.lite.TFLiteConverter.from_concrete_functions([concrete_func])
+#converter = tf.lite.TFLiteConverter.from_saved_model(MODEL_DIR)
+tflite_model = converter.convert()
+
+with tf.io.gfile.GFile('tflite_test.tflite', 'wb') as f:
+    f.write(tflite_model)

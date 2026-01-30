@@ -1,53 +1,73 @@
-# tf.random.uniform((1, 3, 32, 32), dtype=tf.float32) ← Inferred input shape based on PyTorch example (N,C,H,W) rearranged to NHWC for TensorFlow
-
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
+converter = tf.lite.TFLiteConverter.from_saved_model(in_keras_path)
+converter.target_spec.supported_ops = [
+    tf.lite.OpsSet.TFLITE_BUILTINS,  # enable TensorFlow Lite ops.
+    tf.lite.OpsSet.SELECT_TF_OPS  # enable TensorFlow ops.
+]
+converter.target_spec.experimental_supported_backends = ["GPU"] # if empty, GPU is not enabled
+
+converter.experimental_new_converter = True
+
+converter.optimizations = [tf.lite.Optimize.DEFAULT] #8-bit quantization
+converter.allow_custom_ops = True
+
+tflite_quant_model = converter.convert()
+
+py
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+class MyModel(nn.Module):
     def __init__(self):
         super(MyModel, self).__init__()
-        # Conv2D layer mimicking the first conv from example: in_channels=3, out_channels=16, kernel_size=3, padding=1
-        # Padding=1 means 'same' padding in TF. Stride=1 dilation=1 here.
-        self.conv1 = tf.keras.layers.Conv2D(
-            filters=16, kernel_size=3, strides=1, padding='same', dilation_rate=1, activation='relu'
-        )
-        # The PyTorch example used batch norm and ReLU layers named batch_to_space and space_to_batch,
-        # presumably as placeholders or exemplars. Here we just replicate their effect with BatchNormalization and ReLU.
-        self.batch_norm = tf.keras.layers.BatchNormalization()
-        self.relu_after_bn = tf.keras.layers.Activation('relu')
+        
+  
+        self.conv1 = nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3, stride=1, padding=1)
+        self.batch_to_space = nn.BatchNorm2d(16)  # Example batch normalization layer
+        self.space_to_batch = nn.ReLU()  # Example activation layer
+        
+        self.conv2 = nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1)
+        
 
-        # Second conv layer similar: in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1
-        self.conv2 = tf.keras.layers.Conv2D(
-            filters=32, kernel_size=3, strides=1, padding='same', dilation_rate=1, activation='relu'
-        )
-        # Flatten before dense layers
-        self.flatten = tf.keras.layers.Flatten()
+        self.flatten = nn.Flatten()
+        
+       
+        self.fc1 = nn.Linear(32 * 32 * 32, 128)  # Adjust input size based on your data shape
+        self.fc2 = nn.Linear(128, 10)  # Output layer with 10 classes
 
-        # The input spatial size in example is 32x32 after conv2 (assuming same padding)
-        # So flatten size is 32*32*32 channels
-        self.fc1 = tf.keras.layers.Dense(128, activation='relu')
-        self.fc2 = tf.keras.layers.Dense(10)  # Output for 10 classes
-
-    def call(self, inputs, training=False):
-        x = self.conv1(inputs)
-        x = self.batch_norm(x, training=training)
-        x = self.relu_after_bn(x)
-
+    def forward(self, x):
+        
+        
+  
+        x = self.conv1(x)
+        x = F.relu(x)
+        
+  
+        x = self.batch_to_space(x)
+        
+       
+        x = self.space_to_batch(x)
+        
+     
         x = self.conv2(x)
+        x = F.relu(x)
+        
+     
         x = self.flatten(x)
+
         x = self.fc1(x)
+        x = F.relu(x)
         x = self.fc2(x)
+        
         return x
 
 
-def my_model_function():
-    # Return an instance of MyModel
-    model = MyModel()
-    # Model weights not initialized here; user can train or load weights as needed.
-    return model
+model = MyModel()
 
 
-def GetInput():
-    # Return a random input tensor matching expected input shape: Batch=1, Height=32, Width=32, Channels=3
-    # Using float32 as typical for TF models before quantization
-    return tf.random.uniform(shape=(1, 32, 32, 3), dtype=tf.float32)
+input_tensor = torch.randn(1, 3, 32, 32)
 
+edge_model = ai_edge_torch.convert(efficientnet_model.eval(), (input_tensor,))
+edge_model.export("simple_conv_.tflite")

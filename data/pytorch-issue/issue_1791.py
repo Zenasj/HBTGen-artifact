@@ -1,25 +1,23 @@
-# torch.rand(B, N, N, dtype=...)  # Add a comment line at the top with the inferred input shape
-
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # No specific parameters or submodules needed for this operation
+Pidx = type(LU_data)(range(sz)).repeat(nBatch, 1).long()
 
-    def forward(self, qVar):
-        B, N, _ = qVar.shape
-        ind = torch.triu(torch.ones(N, N, device=qVar.device)).expand(B, N, N)
-        return qVar * ind
+for i in range(sz):
+    k = LU_pivots[:, i] - 1
+    t = Pidx[:, i].clone()
+    Pidx[:, i] = torch.gather(Pidx, 1, k.unsqueeze(1).long())
+    Pidx.scatter_(1, k.unsqueeze(1).long(), t.unsqueeze(1))
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+P = type(LU_data)(nBatch, sz, sz).zero_()
+for i in range(nBatch):
+    P[i].scatter_(0, Pidx[i].unsqueeze(0), 1.0)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    B, N = 4, 10  # Example batch size and matrix size
-    qVar = torch.rand(B, N, N, dtype=torch.float32)
-    return qVar
+def apply(func, M):
+    tList = [func(m) for m in torch.unbind(M, dim=0)]
+    res = torch.stack(tList, dim=0)
+    return res 
 
+apply(torch.triu,  qVar)
+
+B, N = 4, 10
+qVar = torch.triu(torch.Tensor(N, N)).expand(B, N, N)

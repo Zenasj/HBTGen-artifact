@@ -1,21 +1,28 @@
-# torch.rand(1024, 20, 16, dtype=torch.float32)  # Inferred input shape
-
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+class Model(nn.Module):
     def __init__(self):
         super().__init__()
 
     def forward(self, x):
-        # Use torch.zeros_like instead of torch.empty_like to avoid the ONNX export issue
-        return torch.zeros_like(x)
+        return torch.empty_like(x)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+device = torch.device('cuda')
+model = Model().to(device)
+x = torch.rand(1024, 20, 16).to(device)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(1024, 20, 16, dtype=torch.float32)
-
+""""                                                                                                                                             
+Fails with:                                                                                                                                      
+## Exception summary                                                                                                                             
+                                                                                                                                                 
+<class 'TypeError'>: aten_empty_like() got an unexpected keyword argument 'pin_memory'                                                           
+⬆️                                                                                                                                                
+<class 'torch.onnx._internal.exporter._errors.GraphConstructionError'>: Error when calling function 'TracedOnnxFunction(<function aten_empty_lik\
+e at 0x74e67b83fb50>)' with args '[SymbolicTensor('x', type=Tensor(FLOAT), shape=[1024,20,16], producer=None, index=None)]' and kwargs '{'pin_me\
+mory': False}'                                                                                                                                   
+⬆️                                                                                                                                                
+<class 'torch.onnx._internal.exporter._errors.ConversionError'>: Error when translating node %empty_like : [num_users=1] = call_function[target=\
+torch.ops.aten.empty_like.default](args = (%x,), kwargs = {pin_memory: False}). See the stack trace for more information.                        
+"""
+onnx_program = torch.onnx.export(model, x, "sort.onnx", dynamo=True, fallback=False)

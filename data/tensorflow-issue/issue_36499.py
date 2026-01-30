@@ -1,30 +1,27 @@
-# tf.random.uniform((B, 1), dtype=tf.float32)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Lambda layer mimicking the intended tf.fill behavior but correctly using input shape and a workaround
-        # Note: tf.fill with dynamic shape from symbolic tensors inside Lambda causes errors,
-        # so we use tf.ones_like multiplied by the fill value instead as a workaround.
-        self.fill_layer = tf.keras.layers.Lambda(
-            lambda x: tf.ones_like(x) * 2.5,
-            name="fill_with_2.5"
-        )
+X = tf.keras.Input((1,))
+X2 = tf.keras.layers.Lambda(lambda x: tf.fill((tf.shape(X)[0],1),2.5))(X)
+model = tf.keras.Model(inputs=X,outputs=X2)
+model.predict(np.random.randn(10,1))
 
-    def call(self, inputs):
-        # Return a tensor of same shape as inputs, filled with 2.5 values
-        return self.fill_layer(inputs)
+X2 = tf.keras.layers.Lambda(lambda x: tf.random.uniform(tf.shape(x)))(X) 
+X2 = tf.keras.layers.Lambda(lambda x: tf.zeros_like(x))(X)
+X2 = tf.keras.layers.Lambda(lambda x: tf.ones_like(x)*3.5)(X)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+import tensorflow as tf
+import numpy as np
 
-def GetInput():
-    # Return a random tensor input with shape (batch_size=10, 1) matching the expected input shape
-    # dtype=tf.float32 is the default dtype used in TF
-    batch_size = 10
-    input_shape = (batch_size, 1)
-    return tf.random.uniform(input_shape, dtype=tf.float32)
+X = tf.keras.Input((1,))
+X2 = tf.keras.layers.Lambda(lambda x: tf.fill((tf.shape(X)[0],1),2.5))(X)
+model = tf.keras.Model(inputs=X,outputs=X2)
+model.predict(np.random.randn(10,1))
 
+X2 = tf.keras.layers.Lambda(lambda x: tf.fill((tf.shape(X)[0],1),2.5))(X)
+
+X2 = tf.keras.layers.Lambda(lambda x: tf.fill((tf.shape(x)[0],1),2.5))(X)

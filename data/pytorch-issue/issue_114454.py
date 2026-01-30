@@ -1,84 +1,83 @@
-# torch.rand(20, 200000, 500, dtype=torch.float32).to_sparse()  # Input shape for MyModel
+from functools import reduce
 
 import torch
-from functools import reduce
-from torch import nn
 
-def ainb(a, b):
-    """Gets mask for elements of a in b."""
-    mask = torch.zeros_like(a, dtype=torch.bool)
+def ainb(a,b):
+    """gets mask for elements of a in b"""
+    indices = torch.zeros_like(a, dtype = torch.uint8)
     for elem in b:
-        mask |= (a == elem)
-    return mask
+        indices = indices | (a == elem)
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        slices = [10, ":", ":"]  # Slicing pattern from the issue example
-        sliced = self.slice_torch_sparse_coo_tensor(x, slices)
-        return sliced.to_dense()
-    
-    def slice_torch_sparse_coo_tensor(self, t, slices):
-        new_shape = []
-        new_slices = []
-        is_range = []
-        for idx, s in enumerate(slices):
-            if s == ":":
-                is_range.append(True)
-                new_shape.append(t.shape[idx])
-                new_slices.append(torch.tensor(range(t.shape[idx])))
-            elif isinstance(s, int):
-                is_range.append(False)
-                new_slices.append(torch.tensor([s]))
-                new_shape.append(1)  # Corrected size for single-element slices
-            elif isinstance(s, list):
-                is_range.append(True)
-                new_slices.append(torch.tensor(s))
-                new_shape.append(len(s))
-            else:
-                raise NotImplementedError(f"Slicing with {s} is not supported")
-        
-        assert len(slices) == len(t.size())
-        
-        # Ensure slices are 1D tensors
-        for i in range(len(new_slices)):
-            if new_slices[i].ndim > 1:
-                new_slices[i] = torch.squeeze(new_slices[i])
-        
-        t = t.coalesce()
-        indices = t.indices()
-        values = t.values()
-        
-        for dim, slice_ in enumerate(new_slices):
-            if is_range[dim] and indices.shape[1] > 0:
-                low = max(torch.min(indices[dim]), torch.argmin(slice_)).item()
-                high = torch.max(indices[dim]).item()
-                mask = ainb(indices[dim], slice_[low:high+1])
-            else:
-                mask = ainb(indices[dim], slice_)
-            indices = indices[:, mask]
-            values = values[mask]
-        
-        # Adjust indices for integer slices (set to 0 in the dimension)
-        for dim in range(len(is_range)):
-            if not is_range[dim]:
-                indices[dim].fill_(0)  # Set indices to 0 for integer-sliced dimensions
-        
-        # Handle new_indices construction
-        if values.size(0) < reduce(lambda a, b: a * b, new_shape):
-            new_indices = indices
+    return indices.type(torch.bool)
+def slice_torch_sparse_coo_tensor(t, slices):
+    """
+    params:
+    -------
+    t: tensor to slice
+    slices: slice for each dimension
+
+    returns:
+    --------
+    t[slices[0], slices[1], ..., slices[n]]
+    """
+    new_shape = []
+    new_slices  = []
+    is_range = []
+    for idx,s in enumerate(slices):
+        if s == ":":
+            is_range.append(True)
+            new_shape.append(t.shape[idx])
+            new_slices.append(torch.tensor(range(t.shape[idx])))
+        elif isinstance(s, int):
+            is_range.append(False)
+            sl = torch.tensor([s])
+            new_slices.append(sl)
+            new_shape.append(sl.shape[-1])
+        elif isinstance( s, list):
+            is_range.append(True)
+            sl = torch.tensor(s)
+            new_slices.append(sl)
+            new_shape.append(sl.shape[-1])
         else:
-            # Generate full grid for dense-like cases (rare case)
-            grid = torch.where(torch.zeros(new_shape) == 0)
-            new_indices = torch.stack([g.flatten() for g in grid])
-        
-        return torch.sparse_coo_tensor(new_indices, values, new_shape).coalesce()
+            raise NotImplementedError(f"Slicing with{s} is not supported")
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    idx = torch.tensor([[10], [500], [1]])
-    values = torch.tensor([1.0], dtype=torch.float32)
-    shape = (20, 200000, 500)
-    return torch.sparse_coo_tensor(idx, values, shape, dtype=torch.float32)
+    assert len(slices) == len(t.size())
+    for i, slice in enumerate(new_slices):
+            if len(new_slices[i].shape) >1:
+                new_slices[i] = torch.squeeze(new_slices[i])
 
+    t = t.coalesce()
+    indices = t.indices()
+    values = t.values()
+    for dim, slice in enumerate(new_slices):
+        if is_range[dim] and indices[dim].shape[-1]>0:
+            low = max(torch.min(indices[dim]),torch.argmin(slice)).item()
+            high = torch.max(indices[dim]).item()
+            mask = ainb(indices[dim], slice[low:high+1])
+        else:
+            mask = ainb(indices[dim], slice)
+        indices = indices[:, mask]
+        values = values[mask]
+    if(values.size(0) < reduce(lambda a,b: a*b,new_shape)):
+        new_indices = indices
+    else:
+        new_indices = [t[None,:] for t in torch.where(torch.zeros(new_shape) == 0)]
+        new_indices = torch.concat(new_indices, dim=0)
+    return torch.sparse_coo_tensor(new_indices, values, new_shape).coalesce()
+
+idx = torch.tensor([[10], [500], [1]])
+sparse_m = torch.sparse_coo_tensor(idx, torch.tensor([1]), [20, 200000, 500])
+slice = slice_torch_sparse_coo_tensor(sparse_m, [10, ":", ":"])
+# res = slice.to_dense() #crashes
+shape = slice.shape
+wired_sigsev_fix = torch.empty([0, shape[1], shape[2]], layout=torch.sparse_coo)
+res = torch.concat([wired_sigsev_fix,slice], dim=0).to_dense()  # doesn't crash in debugger 
+print(res)
+assert res.shape[0] == slice.shape[0]
+assert res.shape[1] == slice.shape[1]
+assert res.shape[2] == slice.shape[2]
+
+def slice_torch_sparse_coo_tensor(t, slices):
+    ...
+    return torch.sparse_coo_tensor(new_indices, values, new_shape, check_invariants=True).coalesce()

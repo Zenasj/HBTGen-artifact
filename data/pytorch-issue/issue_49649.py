@@ -1,19 +1,13 @@
-# torch.rand(B, 3, 224, 224, dtype=torch.float32)  # Example input shape for image-like data
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.hardsigmoid = nn.Hardsigmoid()  # Core component from the issue context
-
-    def forward(self, x):
-        return self.hardsigmoid(x)
-
-def my_model_function():
-    return MyModel()  # Directly return the model instance
-
-def GetInput():
-    # Generate a random input tensor matching expected model input shape
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
-
+@parse_args('v')
+def hardsigmoid(g, self):
+    input_ = g.op("Div", self, g.op('Constant', value_t=torch.tensor(3, dtype=torch.float)))
+    hardsigmoid_ = sym_help._hardtanh_helper(
+        g,
+        input_,
+        g.op('Constant', value_t=torch.tensor(-1, dtype=torch.float)),
+        g.op('Constant', value_t=torch.tensor(1, dtype=torch.float))
+    )
+    hardsigmoid_ = g.op("Add", hardsigmoid_, g.op('Constant', value_t=torch.tensor(1, dtype=torch.float)))
+    return g.op("Div", hardsigmoid_, g.op('Constant', value_t=torch.tensor(2, dtype=torch.float)))

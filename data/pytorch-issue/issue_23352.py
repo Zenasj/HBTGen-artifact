@@ -1,77 +1,135 @@
-# torch.rand(B, C, H, W, dtype=...)  # Add a comment line at the top with the inferred input shape
 import torch
-from torch import nn
-from torch.nn import Parameter
+import torch.nn as nn
 
-INFER = object()
+EMBEDDING_DIM = 6
+HIDDEN_DIM = 6
 
-class UninitializedParameter(Parameter):
-    def __new__(cls, infer_size_fn, dtype=torch.float, requires_grad=True):
-        dummy_data = torch.tensor([], dtype=dtype)
-        return nn.Parameter.__new__(cls, dummy_data, requires_grad)
-    
-    def __init__(self, infer_size_fn, dtype=torch.long):
-        self.infer_size_fn = infer_size_fn
-        
-    def finalize(self, *args, **kwargs):
-        requires_grad, self.requires_grad = self.requires_grad, False
-        self.resize_(*self.infer_size_fn(*args, **kwargs))
-        delattr(self, "infer_size_fn")
-        self.requires_grad = requires_grad
+token_embedding = Embedding(num_embeddings=vocab.get_vocab_size('tokens'),
+embedding_dim=EMBEDDING_DIM)
+word_embeddings = BasicTextFieldEmbedder({"tokens": token_embedding})
+lstm = PytorchSeq2SeqWrapper(torch.nn.LSTM(EMBEDDING_DIM, HIDDEN_DIM, batch_first=True))
+model = LstmTagger(word_embeddings, lstm, vocab)
 
-class ModuleWithUninitialized(nn.Module):
-    def __init__(self):
+class MLP(nn.Module):
+    def __init__(self, dims: List[int], dropout: float = 0.):
         super().__init__()
-        self._finalize_handle = self.register_forward_pre_hook(self._finalize)
-        
-    def _finalize(self, *input):
-        for key, parameter in self._parameters.items():
-            if isinstance(parameter, UninitializedParameter):
-                parameter.finalize(*input)
-                self._parameters[key] = Parameter(parameter.data, parameter.requires_grad)
-        if hasattr(self, "reset_parameters"):
-            self.reset_parameters()
-        self._finalize_handle.remove()
-        delattr(self, "_finalize_handle")
+        layers = []
+        for in_dim, dim in zip([-1] + dims, dims):
+            layers.extend([
+                nn.Linear(in_dim, dim),
+                ReLU(),
+                nn.LayerNorm(dim),
+                nn.Dropout(dropout),
+            ])
+        self.layers = nn.Sequential(*layers)
 
-class LazyLinear(nn.Linear, ModuleWithUninitialized):
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        return self.layers(input)
+
+mlp1 = MLP([4, 5, 6])
+mlp2 = MLP([4, 5, 6])
+
+mlp1(torch.rand(2, 4))  # finalizes mlp1 as expecting input dimension 4
+mlp2(torch.rand(2, 5))  # finalizes mlp2 as expecting input dimension 5
+
+class Model(nn.Module):
+    def __init__(
+        self,
+        embedding = WordEmbedding(),
+        representation = BiLSTM(),
+        decoder = MLP([4, 5, 6]),
+    ):
+        self.embedding = embedding
+        self.representation = representation
+        self.decoder = decoder
+    
+    def forward(self, tokens):
+        embedded = self.embedding(tokens)
+        representation = self.representation(embedded)
+        return self.decoder(representation)
+        
+model1 = Model()
+model2 = Model(representation=DocNN())
+model3 = Model(
+    embedding=WordEmbedding(embedding_dim=200, vocab_size=10000),
+    decoder=MLP([2, 50, 10]),
+)
+
+from torch import nn
+
+# LazyModuleMeta re-implements the type construction semantics for objects to allow
+# a slight variant on syntax. Essentially anything with this metaclass can optionally
+# execute a single yield statement during its constructor (normal constructors also work fine).
+# If it does yield during construction, then a __lazy_init__ function is populated;
+# any code occurring before yield in the constuctor will be called as normal during object creation,
+# and any code after yield will instead be deferred to the first call of __lazy_init__.
+
+class LazyInitMeta(type):
+    def __call__(cls, *args, **kwargs):
+        if hasattr(cls, '__new__'):
+            obj = cls.__new__(cls, *args, **kwargs)
+        else:
+            obj = object.__new__(cls)
+        
+        def initialize(obj):
+            res = obj.__init__(*args, **kwargs)
+            if isinstance(res, types.GeneratorType):
+                next(res, None)
+                def lazy_init(call_args):
+                    try:
+                        res.send(call_args)
+                    except StopIteration:
+                        pass
+                    finally:
+                        obj.__lazy_init__ = None
+                obj.__lazy_init__ = lazy_init
+            else:
+                obj.__lazy_init__ = None
+            
+        if isinstance(obj, cls):
+            initialize(obj)
+        return obj
+        
+# Here's a Lazy nn.Module implementation using LazyInitMeta, calling __lazy_init__ before the first
+# forward pass.
+    
+class LazyModule(nn.Module, metaclass=LazyInitMeta):
+    def __init__(self):
+        nn.Module.__init__(self)
+    
+    def __call__(self, *args, **kwargs):
+        if self.__lazy_init__:
+            self.__lazy_init__(call_args=(args, kwargs))
+        return nn.Module.__call__(self, *args, **kwargs)
+        
+# Optionally lazy Linear module, based on the current torch implementation of nn.Linear.
+
+class Linear(nn.Linear, LazyModule):
     def __init__(self, in_features, out_features, bias=True):
-        ModuleWithUninitialized.__init__(self)
+        LazyModule.__init__(self)
         self.in_features = in_features
         self.out_features = out_features
         if bias:
-            self.bias = Parameter(torch.Tensor(out_features))
+            self.bias = nn.Parameter(torch.Tensor(out_features))
         else:
             self.register_parameter('bias', None)
             
-        if in_features is INFER:
-            self.weight = UninitializedParameter(self._resolve_inferred_input)
-        else:
-            self.weight = Parameter(torch.Tensor(out_features, in_features))
-            self.reset_parameters()
+        if in_features == -1:
+            self.register_parameter('weight', None)
+            ([input], _) = yield  # lazy init remainder
+            in_features = self.in_features = input.size()[-1]
             
-    @staticmethod
-    def _resolve_inferred_input(self, inputs):
-        (input,) = inputs
-        self.in_features = input.size()[-1]
-        return [self.out_features, self.in_features]
+        self.weight = nn.Parameter(torch.Tensor(out_features, in_features))
+        self.reset_parameters()
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.embedding = nn.Embedding(100, 10)  # Example embedding
-        self.representation = LazyLinear(INFER, 50)  # Lazy Linear layer
-        self.decoder = nn.Linear(50, 10)  # Decoder layer
+model = Model(...)
 
-    def forward(self, x):
-        embedded = self.embedding(x)
-        representation = self.representation(embedded)
-        return self.decoder(representation)
+# Should error out in `model.parameters()` if you execute this line, as it encounters UninitializedParameter
+optimizer = optim.SGD(model.parameters(), lr = 0.01)  # No error
 
-def my_model_function():
-    return MyModel()
+# finalize by sending an example input
+inp = torch.randn(10, 20)
+output = model(inp)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randint(0, 100, (8, 15))  # Example input
-
+# No error
+optimizer = optim.SGD(model.parameters(), lr = 0.01)

@@ -1,31 +1,52 @@
-# torch.rand(B, 3, 32, 32, dtype=torch.float32)
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(3, 6, 5)
-        self.pool = nn.MaxPool2d(2, 2)
-        self.conv2 = nn.Conv2d(6, 16, 5)
-        self.fc1 = nn.Linear(16 * 5 * 5, 120)
-        self.fc2 = nn.Linear(120, 84)
-        self.fc3 = nn.Linear(84, 10)
+ruby
+def collate_fn(batch):
+    batch = list(filter(lambda x: x is not None, batch))
+    return torch.utils.data.dataloader.default_collate(batch)
 
-    def forward(self, x):
-        x = self.pool(F.relu(self.conv1(x)))
-        x = self.pool(F.relu(self.conv2(x)))
-        x = torch.flatten(x, 1)
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = self.fc3(x)
-        return x
+ruby
+def default_collate(batch):
+    """Puts each data field into a tensor with outer dimension batch size"""
 
-def my_model_function():
-    return MyModel()
+    elem = batch[0]
+    elem_type = type(elem)
+    if isinstance(elem, torch.Tensor):
+        out = None
+        if torch.utils.data.get_worker_info() is not None:
+            # If we're in a background process, concatenate directly into a
+            # shared memory tensor to avoid an extra copy
+            numel = sum([x.numel() for x in batch])
+            storage = elem.storage()._new_shared(numel)
+            out = elem.new(storage)
+        return torch.stack(batch, 0, out=out)
+    elif elem_type.__module__ == 'numpy' and elem_type.__name__ != 'str_' \
+            and elem_type.__name__ != 'string_':
+        if elem_type.__name__ == 'ndarray' or elem_type.__name__ == 'memmap':
+            # array of string classes and object
+            if np_str_obj_array_pattern.search(elem.dtype.str) is not None:
+                raise TypeError(default_collate_err_msg_format.format(elem.dtype))
 
-def GetInput():
-    B = 4  # Example batch size (can be adjusted)
-    return torch.rand(B, 3, 32, 32, dtype=torch.float32)
+            return default_collate([torch.as_tensor(b) for b in batch])
+        elif elem.shape == ():  # scalars
+            return torch.as_tensor(batch)
+    elif isinstance(elem, float):
+        return torch.tensor(batch, dtype=torch.float64)
+    elif isinstance(elem, int):
+        return torch.tensor(batch)
+    elif isinstance(elem, string_classes):
+        return batch
+    elif isinstance(elem, collections.abc.Mapping):
+        return {key: default_collate([d[key] for d in batch]) for key in elem}
+    elif isinstance(elem, tuple) and hasattr(elem, '_fields'):  # namedtuple
+        return elem_type(*(default_collate(samples) for samples in zip(*batch)))
+    elif isinstance(elem, collections.abc.Sequence):
+        # check to make sure that the elements in batch have consistent size
+        it = iter(batch)
+        elem_size = len(next(it))
+        if not all(len(elem) == elem_size for elem in it):
+            raise RuntimeError('each element in list of batch should be of equal size')
+        transposed = zip(*batch)
+        return [default_collate(samples) for samples in transposed]
 
+    raise TypeError(default_collate_err_msg_format.format(elem_type))

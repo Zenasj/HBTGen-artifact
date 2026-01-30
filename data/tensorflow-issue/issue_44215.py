@@ -1,33 +1,80 @@
-# tf.random.uniform((1, 16384), dtype=tf.float32) ← Input shape inferred from provided code snippet (test_fingerprints reshaped to (1,16384))
-
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import models
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Assuming model input shape is (1, 16384) as per test_fingerprints
-        # Since original model structure is not provided, infer a simple MLP classifier to output 12 classes
-        # This is consistent with the output shape seen (1, 12)
-        # This is a placeholder that tries to replicate the last dense layer behavior
-        # The actual model likely involves Conv or TCN layers but cannot be inferred from the issue
-        
-        # For demonstration, a simple Dense model with one hidden layer
-        self.dense1 = tf.keras.layers.Dense(128, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(12)  # 12 classes output as in the issue
+import os
+import sys
+import absl.logging as logging
+import numpy as np
+import tensorflow.compat.v1 as tf
 
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        return x
+np.set_printoptions(threshold=sys.maxsize)
+tf.reset_default_graph()
+config = tf.ConfigProto()
+config.gpu_options.allow_growth = True
+sess = tf.Session(config=config)
+tf.keras.backend.set_session(sess)
+
+converter = tf.lite.TFLiteConverter.from_saved_model('best_model')
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS]
+converter.allow_custom_ops = True
+quant_best_model = converter.convert()
+with open('quant_best_model.tflite', 'wb') as w:
+  w.write(quant_best_model)
+
+import os
+import sys
+import absl.logging as logging
+import numpy as np
+import tensorflow.compat.v1 as tf
+
+np.set_printoptions(threshold=sys.maxsize)
+tf.reset_default_graph()
+config = tf.ConfigProto()
+config.gpu_options.allow_growth = True
+sess = tf.Session(config=config)
+tf.keras.backend.set_session(sess)
+
+read_fingerprints = np.loadtxt('./testbench/data.csv', delimiter=',')
+
+test_fingerprints = read_fingerprints.reshape(-1,16384).astype(np.float32)
+print('type(test_fingerprints):', type(test_fingerprints))
+print('shape(test_fingerprints):', test_fingerprints.shape)
+
+train_dir = 'tcn/kws_7x36_1'
+
+converter = tf.lite.TFLiteConverter.from_saved_model(train_dir + '/best_model')
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS]
+converter.allow_custom_ops = True
+quant_best_model = converter.convert()
+with open(train_dir + '/quant_best_model.tflite', 'wb') as w:
+  w.write(quant_best_model)
 
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+interpreter = tf.lite.Interpreter(model_path=os.path.join(train_dir + '/quant_best_model.tflite'))
+interpreter.allocate_tensors()
+input_details = interpreter.get_input_details()
+output_details = interpreter.get_output_details()
+inputs = []
+for s in range(len(input_details)):
+  inputs.append(np.zeros(input_details[s]['shape'], dtype=np.float32))
+  
+model = tf.keras.models.load_model(train_dir + '/best_model', custom_objects={'tf': tf})
+
+read_fingerprints = np.loadtxt('./testbench/data.csv', delimiter=',')
+test_fingerprints = read_fingerprints.reshape(1,16384)
+model.run_eagerly = True
+print('tf.executing_eagerly:',tf.executing_eagerly())
+print('model.run_eagerly:',model.run_eagerly)
+
+interpreter.set_tensor(input_details[0]['index'], test_fingerprints.astype(np.float32))
+interpreter.invoke()
+out_tflite = interpreter.get_tensor(output_details[0]['index'])
+print('out_tflite:',out_tflite)
 
 
-def GetInput():
-    # Return a random input tensor consistent with (1, 16384) float32
-    # This matches the 'test_fingerprints' reshaping from the user's example
-    return tf.random.uniform((1, 16384), dtype=tf.float32)
-
+intermediate_layer_model = tf.keras.Model(inputs=model.input, outputs=model.get_layer(index=len(model.layers)-1).output)
+intermediate_output = intermediate_layer_model(test_fingerprints)
+print('intermediate_output:',intermediate_output)

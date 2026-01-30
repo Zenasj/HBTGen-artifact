@@ -1,22 +1,22 @@
-# torch.randint(0, 2, (2,), dtype=torch.int64)
 import torch
-from torch import nn
+from torch import _dynamo as dynamo
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Initialize the buffer with the same shape as in the original example
-        self.register_buffer('stored_tensor', torch.rand(2, 2, 3))
 
-    def forward(self, t2):
-        mask = t2 < 1  # Create boolean mask from input
-        # Apply the mask to the stored tensor using __getitem__ (problematic operation)
-        return self.stored_tensor[mask]
+def func():
+    a = {"str": torch.rand([2, 2, 3])}
+    t2 = torch.tensor([0, 1], dtype=torch.int64)
 
-def my_model_function():
-    return MyModel()
+    def inner(t):
+        for k, v in a.items():
+            a[k] = v[t]
 
-def GetInput():
-    # Generate input tensor matching the original example's t2
-    return torch.randint(0, 2, (2,), dtype=torch.int64)
+    inner(t2 < 1)
 
+
+ex = dynamo.explain(func)[-1]
+print(ex)
+
+torch._logging.set_logs(dynamo=logging.DEBUG)
+
+dynamo.config.dynamic_shapes = True
+dynamo.config.capture_dynamic_output_shape_ops = True

@@ -1,19 +1,15 @@
-# torch.rand(5, 3, 224, 224, dtype=torch.float32)
-import torch
+import os
+
 import torchvision.models as models
-from torch import nn
+import torch
+from tqdm import tqdm
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.model = models.resnet18()  # Base model from torchvision
-    
-    def forward(self, x):
-        return self.model(x)
 
-def my_model_function():
-    return MyModel()  # Returns initialized ResNet18 model
+print(os.getpid())
 
-def GetInput():
-    return torch.randn(5, 3, 224, 224, dtype=torch.float32)  # Matches ResNet input requirements
+model = models.resnet18().to('mps')
+inputs = torch.randn(5, 3, 224, 224).to('mps')
 
+with torch.mps.profiler.profile(mode="interval", wait_until_completed=False):
+    for i in tqdm(range(1000)):
+        output = model(inputs)

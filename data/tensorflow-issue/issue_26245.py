@@ -1,33 +1,36 @@
-# tf.random.uniform((B, maxlen), dtype=tf.int32) ← Input is padded integer sequences of shape (batch_size, maxlen)
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
 import tensorflow as tf
+from tensorflow.keras.datasets import imdb
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, LSTM, Embedding
+from tensorflow.keras.utils import multi_gpu_model
 
-class MyModel(tf.keras.Model):
-    def __init__(self, vocab_size=20000, maxlen=80, embedding_dim=100, lstm_units=64):
-        super().__init__()
-        self.embedding = tf.keras.layers.Embedding(
-            input_dim=vocab_size, output_dim=embedding_dim, input_length=maxlen)
-        # Note: recurrent_dropout causes issues with multi-GPU and CuDNN; we omit it
-        self.lstm = tf.keras.layers.LSTM(
-            lstm_units, dropout=0.2, recurrent_dropout=0.0)
-        self.dense = tf.keras.layers.Dense(1, activation='sigmoid')
+vocab_size= 20000
+maxlen=80
 
-    def call(self, inputs, training=False):
-        x = self.embedding(inputs)
-        x = self.lstm(x, training=training)
-        return self.dense(x)
+(X_train, y_train), (X_test, y_test) = \
+    imdb.load_data(num_words=vocab_size)
 
-def my_model_function():
-    # Return an instance of MyModel with default parameters as in the original example
-    return MyModel()
+X_train_pad = pad_sequences(X_train, maxlen=maxlen)
+X_test_pad = pad_sequences(X_test, maxlen=maxlen)
 
-def GetInput():
-    # Return a batch of random integer sequences matching the input shape expected by MyModel:
-    # shape = (batch_size, maxlen), dtype = int32 for embedding inputs
-    batch_size = 32    # Typical smaller batch; original batch 2048 too large for example here
-    maxlen = 80        # Sequence length as per original code
-    vocab_size = 20000 # Vocabulary size as in the original example
-    
-    # Generate random integer sequences in [1, vocab_size) to simulate word indices
-    return tf.random.uniform(
-        shape=(batch_size, maxlen), minval=1, maxval=vocab_size, dtype=tf.int32)
+with tf.device('/cpu:0'):
+    model = Sequential([
+        Embedding(vocab_size, 100, input_length=maxlen),
+        LSTM(64, dropout=0.2, recurrent_dropout=0.2),
+        Dense(1, activation='sigmoid')
+    ])
 
+model = multi_gpu_model(model, 2)
+
+model.compile(loss='binary_crossentropy',
+              optimizer='rmsprop',
+              metrics=['accuracy'])
+
+model.fit(X_train_pad, y_train,
+          batch_size=2048,
+          epochs=2,
+          shuffle=True)

@@ -1,32 +1,42 @@
-# torch.rand(1, 1, 1, 1, dtype=torch.float32)  # Dummy input to satisfy API requirements
+import torch.nn as nn
+
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Initialize model parameters and layers
-        self.v4_0 = nn.Parameter(torch.randn([8, 1, 4, 1], dtype=torch.float32), requires_grad=True)
-        self.v5_0 = nn.Parameter(torch.randn([1, 1, 4, 1], dtype=torch.float32), requires_grad=True)  # Fixed initialization instead of empty
-        self.linear = nn.Linear(1, 43, bias=True)  # Randomly initialized weights/bias
-        self.maxpool = nn.MaxPool2d(kernel_size=(2, 42), stride=(2, 42), padding=0, dilation=1, ceil_mode=False)
-        self.batchnorm = nn.BatchNorm2d(1, eps=1e-5, momentum=0.1, affine=True, track_running_stats=True)
 
-    def forward(self, x):
-        # Process internal parameters (v4_0 and v5_0) and layers
-        v6_0 = torch.cat((self.v4_0, self.v5_0), dim=0)
-        v6_0_flat = v6_0.view(-1, 1)  # Flatten to (36, 1)
-        v2_0 = self.linear(v6_0_flat)  # Apply linear layer (output shape: [36, 43])
-        v2_0_unsqueezed = v2_0.unsqueeze(0).unsqueeze(0)  # Add batch and channel dims: [1, 1, 36, 43]
-        maxpool_out = self.maxpool(v2_0_unsqueezed)  # Output shape: [1, 1, 18, 1]
-        batchnorm_out = self.batchnorm(v2_0_unsqueezed)  # Output shape: [1, 1, 36, 43]
-        return maxpool_out, batchnorm_out
+def fn():
+    v4_0 = torch.nn.Parameter(torch.randn([8, 1, 4, 1], dtype=torch.float32), requires_grad=True)
+    v5_0 = torch.nn.Parameter(torch.empty([1, 1, 4, 1], dtype=torch.float32), requires_grad=True)
+    v6_0 = torch.cat((v4_0, v5_0), dim=0)
+    v6_0_flat = v6_0.view(-1, 1)  # 展平并调整形状
+    linear_layer = torch.nn.Linear(in_features=1, out_features=43, bias=True)
+    v2_0 = linear_layer(v6_0_flat)
+    v2_0_unsqueezed = v2_0.unsqueeze(0).unsqueeze(0)  # 添加批次和通道维度以满足 MaxPool2d 的输入要求
+    maxpool_layer = torch.nn.MaxPool2d(kernel_size=(2, 42), stride=2, padding=0, dilation=1, ceil_mode=False)
+    v1_0 = maxpool_layer(v2_0_unsqueezed)
+    batchnorm_layer = torch.nn.BatchNorm2d(1, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+    v0_0 = batchnorm_layer(v2_0_unsqueezed)
+    return v1_0, v0_0
 
-def my_model_function():
-    # Returns an instance of MyModel with all parameters initialized
-    return MyModel()
 
-def GetInput():
-    # Returns a dummy input tensor (unused by the model but required for API compatibility)
-    return torch.rand(1, 1, 1, 1, dtype=torch.float32)
+ret_eager = fn()
+compiled = torch.compile(fn)
+ret_compiled = compiled()
 
+# assert torch.allclose(ret_eager[0], ret_compiled[0]), '\n'.join(map(str, ["", ret_eager[0], ret_compiled[0]]))
+# assert torch.allclose(ret_eager[1], ret_compiled[1]), '\n'.join(map(str, ["", ret_eager[1], ret_compiled[1]]))
+
+torch.testing.assert_close(ret_eager[0], ret_compiled[0])
+# OUTPUT:
+# AssertionError: Tensor-likes are not close!
+#
+# Mismatched elements: 18 / 18 (100.0%)
+# Greatest absolute difference: nan at index (0, 0, 16, 0) (up to 1e-05 allowed)
+# Greatest relative difference: nan at index (0, 0, 16, 0) (up to 1.3e-06 allowed)
+
+torch.testing.assert_close(ret_eager[1], ret_compiled[1])
+# OUTPUT:
+# AssertionError: Tensor-likes are not close!
+#
+# Mismatched elements: 1548 / 1548 (100.0%)
+# Greatest absolute difference: nan at index (0, 0, 0, 0) (up to 1e-05 allowed)
+# Greatest relative difference: nan at index (0, 0, 0, 0) (up to 1.3e-06 allowed)

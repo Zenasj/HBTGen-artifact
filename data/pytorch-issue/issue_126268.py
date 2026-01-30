@@ -1,21 +1,49 @@
-# torch.rand(1, 3, 224, 224, dtype=torch.float32)
+import torchvision.models as models
 import torch
-import torch.nn as nn
-from torchvision import models
+from torch.utils.flop_counter import FlopCounterMode
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.model = models.resnet18()
+device = 'cuda'
 
-    def forward(self, x):
-        return self.model(x)
+inp = torch.randn(1, 3, 224, 224, device = device)
+mod = models.resnet18().to(device)
 
-def my_model_function():
-    # Returns a ResNet18 model instance
-    return MyModel()
+@torch.inference_mode(True)
+def run_batch(x):
+    flop_counter = FlopCounterMode(mod)
+    with flop_counter:
+        return mod(x).sum()
 
-def GetInput():
-    # Returns a random input tensor matching ResNet18's expected input shape
-    return torch.randn(1, 3, 224, 224, dtype=torch.float32)
+run_batch(inp)
 
+import torchvision.models as models
+import torch
+from torch.utils.flop_counter import FlopCounterMode
+
+device = 'cuda'
+
+inp = torch.randn(1, 3, 224, 224, device = device)
+mod = models.resnet18().to(device)
+
+@torch.no_grad()
+def run_batch(x):
+    flop_counter = FlopCounterMode(mod)
+    with flop_counter:
+        return mod(x).sum()
+
+run_batch(inp)
+
+import torchvision.models as models
+import torch
+from torch.utils.flop_counter import FlopCounterMode
+
+device = 'cuda'
+
+inp = torch.randn(1, 3, 224, 224, device = device)
+mod = models.resnet18().to(device)
+
+def run_batch(x):
+    flop_counter = FlopCounterMode(mod)
+    with flop_counter:
+        return mod(x).sum()
+
+run_batch(inp)

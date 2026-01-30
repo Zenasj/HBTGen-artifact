@@ -1,44 +1,36 @@
-# tf.random.uniform((batch_size, sequence_len, num_feature), dtype=tf.float32)
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Assumptions based on issue: input shape (sequence_len, num_feature) but sequence_len and num_feature unknown
-        # We'll use placeholder constants for their values to allow model construction and test
-        self.sequence_len = 20      # Assumed sequence length
-        self.num_feature = 10       # Assumed feature dimensionality
+gpus = tf.config.experimental.list_physical_devices('GPU')
+if gpus:
+	# Currently, memory growth needs to be the same across GPUs
+	try:
+		for gpu in gpus:
+			tf.config.experimental.set_memory_growth(gpu, True)
+	except RuntimeError as e:
+		print(e)
 
-        # Layers as described in the issue code snippet
-        self.masking = tf.keras.layers.Masking(mask_value=0., input_shape=(self.sequence_len, self.num_feature))
-        self.bilstm = tf.keras.layers.Bidirectional(
-            tf.keras.layers.LSTM(units=50, return_sequences=True), name='BiLSTM-1'
-        )
-        self.dense = tf.keras.layers.Dense(units=3, activation='softmax', name='Softmax')
+def gradient_descent(model, inputs, targets):
+	with tf.GradientTape() as tape:
+		# compute loss value
+		y_predict = model(inputs)
+		loss_value = tf.keras.losses.categorical_crossentropy(y_true = targets,
+		                                                      y_pred = y_predict)
+	return loss_value, tape.gradient(loss, model.trainable_variables)
 
-    def call(self, inputs, training=False):
-        x = self.masking(inputs)  # Masking zeros
-        x = self.bilstm(x)
-        out = self.dense(x)
-        return out
+with tf.device('/device:gpu:0'):
+    model = tf.keras.Sequential([
+		    tf.keras.Input(shape = (sequence_len, num_feature),
+		                   name = 'InputLayer'),
+		    tf.keras.layers.Masking(mask_value = 0.,
+		                            input_shape = (sequence_len, num_feature)),
+		    tf.keras.layers.Bidirectional(
+			    tf.keras.layers.LSTM(units = 50, return_sequences = True),
+			    name = 'BiLSTM-1'),
+		    tf.keras.layers.Dense(units = 3, activation = 'softmax',
+		                          name = 'Softmax')])
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Return a random input tensor matching model input shape: (batch_size, sequence_len, num_feature)
-    # The batch size can be arbitrary; we pick 32 here
-    batch_size = 32
-    sequence_len = 20  # Should match the model's assumption above
-    num_feature = 10   # Should match the model's assumption above
-
-    # Generate uniform random float32 tensor as plausible input sequence data
-    # To avoid triggering the masking layer masking entire sequence (all zeros),
-    # input will contain some nonzero values
-    import numpy as np
-    # generate random floats from 0 to 1, shape (batch_size, sequence_len, num_feature)
-    # ensure not all zeros to avoid the Masking layer masking all input too heavily
-    data = np.random.uniform(low=0.1, high=1.0, size=(batch_size, sequence_len, num_feature)).astype('float32')
-    return tf.convert_to_tensor(data)
-
+    train_x, train_y = train_dataset.next_batch()
+    loss_value, grads = gradient_descent(model, train_x, train_y)
+    optimizer.apply_gradients(zip(grads, model.trainable_variables))

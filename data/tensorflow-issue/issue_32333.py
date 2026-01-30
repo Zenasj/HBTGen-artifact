@@ -1,47 +1,103 @@
-# tf.random.uniform((BATCH_SIZE, 3, 5), dtype=tf.float32) ← inferred input shape from INPUT_SHAPE=[3,5] and batch size 7
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
+import numpy as np
+import pandas as pd
+import random
 import tensorflow as tf
+import time as tm
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # The core issue discussed in the issue is shape mismatch from dense layers without LSTM.
-        # The "working" version adds a small LSTM layer between Dense layers to produce correct shapes.
-        #
-        # INPUT_SHAPE = [3,5]: sequence length=3, feature dims=5
-        # The model expects inputs of shape (batch, 3, 5).
-        #
-        # The user showed:
-        #    Dense(100, activation='tanh', input_shape=(3, 5))
-        #    LSTM(1, activation='tanh', return_sequences=False)
-        #    Dense(3, activation='softmax')
-        #
-        # which gives output shape (batch, 3)
-        # and works correctly for SparseCategoricalCrossentropy with labels shape (batch,)
-        #
-        # We replicate this model here.
+INPUT_SHAPE=[3, 5]
+NUM_POINTS=20
+BATCH_SIZE=7
+EPOCHS=4
 
-        self.dense1 = tf.keras.layers.Dense(100, activation="tanh", input_shape=(3,5))
-        self.lstm = tf.keras.layers.LSTM(1, activation="tanh", return_sequences=False)
-        self.dense2 = tf.keras.layers.Dense(3, activation="softmax", kernel_regularizer=tf.keras.regularizers.l2(0.001))
+def data_gen(num, in_shape):
+    for i in range(num):
+        x = np.random.rand(in_shape[0], in_shape[1])
+        y = random.randint(0,2)
+        yield x, y
+        
+def data_gen_all(num, in_shape, num_labels):
+    x = np.zeros([num]+in_shape)
+    y = np.zeros([num]+[num_labels])
+    for i in range(num):
+        x[i,:,:]= np.random.rand(in_shape[0], in_shape[1])
+        y[i]= tf.one_hot(random.randint(0, num_labels), num_labels).numpy()
+    return x, y
 
-    @tf.function(jit_compile=True)
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.lstm(x)
-        x = self.dense2(x)
-        return x
+train = tf.data.Dataset.from_generator(
+    generator=data_gen,
+    output_types=(tf.float32, tf.int32),
+#     output_shapes=(tf.TensorShape([None, INPUT_SHAPE[1]]), tf.TensorShape(None)),
+#     output_shapes=(tf.TensorShape(INPUT_SHAPE), tf.TensorShape(())),
+    output_shapes=([None, INPUT_SHAPE[1]],()),
+    args=([NUM_POINTS, INPUT_SHAPE])
+)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+def create_model(input_shape):
+    model = tf.keras.models.Sequential([
+        tf.keras.layers.Dense(100, activation="tanh",input_shape=input_shape),        
+        tf.keras.layers.Dense(3, activation="softmax", kernel_regularizer= tf.keras.regularizers.l2(0.001))
+    ])
+    return model
 
-def GetInput():
-    # Generate input of correct shape and dtype to feed into MyModel
-    # batch size is 7 as per issue examples, input shape [3,5]
-    B = 7
-    H = 3
-    W = 5
-    # Input dtype float32 as stated in issue and code
-    return tf.random.uniform((B, H, W), dtype=tf.float32)
+model = create_model(input_shape=INPUT_SHAPE)
 
+model.compile(
+    optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4, clipvalue=1.0),
+    loss= tf.keras.losses.SparseCategoricalCrossentropy(),
+#     loss= tf.keras.losses.CategoricalCrossentropy()
+    )
+print(model.summary())
+model.fit(train.batch(BATCH_SIZE), epochs=EPOCHS, verbose=2)
+model.evaluate(train, steps=None, verbose=1)
+
+### CategoricalCrossentropy
+x,y = data_gen_all(num=20, in_shape=INPUT_SHAPE, num_labels=3)
+print(x.shape)
+model.fit(x=x, y=y, epochs=EPOCHS, verbose=2)
+
+import numpy as np
+import pandas as pd
+import random
+import tensorflow as tf
+import time as tm
+
+INPUT_SHAPE=[3, 5]
+NUM_POINTS=20
+BATCH_SIZE=7
+EPOCHS=4
+
+def data_gen(num, in_shape):
+    for i in range(num):
+        x = np.random.rand(in_shape[0], in_shape[1])
+        y = random.randint(0,2)
+        yield x, y
+
+train = tf.data.Dataset.from_generator(
+    generator=data_gen,
+    output_types=(tf.float32, tf.int32),
+    output_shapes=([None, INPUT_SHAPE[1]],()),
+    args=([NUM_POINTS, INPUT_SHAPE])
+)
+
+def create_model(input_shape):
+    model = tf.keras.models.Sequential([
+        tf.keras.layers.Dense(100, activation="tanh", input_shape=input_shape),   
+        tf.keras.layers.LSTM(1, activation="tanh"),
+        tf.keras.layers.Dense(3, activation="softmax")
+    ])
+    return model
+
+model = create_model(input_shape=INPUT_SHAPE)
+
+model.compile(
+    optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4, clipvalue=1.0),
+    loss= tf.keras.losses.SparseCategoricalCrossentropy()
+    )
+print(model.summary())
+model.fit(train.batch(BATCH_SIZE), epochs=EPOCHS, verbose=2)
+model.evaluate(train, steps=None, verbose=1)

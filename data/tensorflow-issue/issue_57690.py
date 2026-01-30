@@ -1,25 +1,40 @@
-# tf.random.uniform(()) ← The example generator yields scalar tensors (shape=())
+from typing import Generator
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    # This model is a placeholder to reflect the context of the issue:
-    # It does not consume input shape specifically, since the original issue was about tf.data.Dataset.from_generator,
-    # but to comply with requirements, this model just passes input through.
 
-    def __init__(self):
-        super().__init__()
-        # No layers needed, pass input directly
+class SomeObj:
+    def __init__(self, x):
+        self.x = x
 
-    def call(self, inputs):
-        # Just return the input tensor as is
-        return inputs
+    def __del__(self):
+        print("__del__ called!")
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    # The original generator yields scalars (shape=()), dtype float32.
-    # We'll generate a random scalar tensor matching that dtype and shape.
-    return tf.random.uniform(shape=(), dtype=tf.float32)
+def build_dataset(
+    obj: SomeObj,
+) -> tf.data.Dataset:
+    def _generator() -> Generator[tf.Tensor, None, None]:
+        while True:
+            yield tf.convert_to_tensor(obj.x, dtype=tf.float32)
 
+    return tf.data.Dataset.from_generator(
+        _generator,
+        output_signature=tf.TensorSpec(shape=(), dtype=tf.float32),
+    )
+
+
+def train_for_a_fold(fold):
+    dataset = build_dataset(SomeObj(fold))
+    for x in dataset.take(3):
+        print(x)
+
+
+def main():
+    train_for_a_fold(0)
+    train_for_a_fold(1)
+    train_for_a_fold(2)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,37 +1,20 @@
-# tf.random.uniform((B, 2, 5 or 6), dtype=tf.float32) ← Input shapes: two inputs [5], [6]
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
+from tensorflow import keras
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Layers corresponding to the "deep" input processing
-        self.dense1 = tf.keras.layers.Dense(30, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(30, activation='relu')
-        # Output layer after concatenation
-        self.output_layer = tf.keras.layers.Dense(1, name="output")
-    
-    def call(self, inputs, training=False):
-        # Expecting inputs as a tuple/list of two tensors: (input_A, input_B)
-        input_A, input_B = inputs  # input_A shape: [batch_size, 5], input_B shape: [batch_size, 6]
-        
-        hidden1 = self.dense1(input_B)
-        hidden2 = self.dense2(hidden1)
-        concat = tf.concat([input_A, hidden2], axis=-1)  # Concatenate on last axis
-        output = self.output_layer(concat)
-        return output
+input_A = keras.layers.Input(shape=[5], name="wide_input")
+input_B = keras.layers.Input(shape=[6], name="deep_input")
+hidden1 = keras.layers.Dense(30, activation="relu")(input_B)
+hidden2 = keras.layers.Dense(30, activation="relu")(hidden1)
+concat = keras.layers.concatenate([input_A, hidden2])
+output = keras.layers.Dense(1, name="output")(concat)
+model = keras.models.Model(inputs=[input_A, input_B], outputs=[output])
 
-def my_model_function():
-    # Return an instance of the model
-    return MyModel()
-
-def GetInput():
-    # Generate a tuple of two random tensors matching the model inputs:
-    # input_A: shape (batch_size, 5)
-    # input_B: shape (batch_size, 6)
-    # For example, batch size = 4 (arbitrary choice)
-    batch_size = 4
-    input_A = tf.random.uniform((batch_size, 5), dtype=tf.float32)
-    input_B = tf.random.uniform((batch_size, 6), dtype=tf.float32)
-    return (input_A, input_B)
-
+major_version = int(tf.__version__.split(".")[0])
+if major_version >= 2:
+   from tensorflow.python import _pywrap_util_port
+   print("MKL enabled:", _pywrap_util_port.IsMklEnabled())
+else:
+   print("MKL enabled:", tf.pywrap_tensorflow.IsMklEnabled())

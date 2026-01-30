@@ -1,46 +1,36 @@
-# tf.random.uniform((B, 2), dtype=tf.float32) ← Input shape inferred from train_features with 2 columns: 'a' and 'b'
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
+import numpy as np
+import pandas as pd
 import tensorflow as tf
-
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Normalization layer as in the original model
-        self.normalizer = tf.keras.layers.Normalization()
-        # Weights of the normalizer will be set by adapt() later
-        
-        # Dense layers following the example model
-        self.dense1 = tf.keras.layers.Dense(64, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(64, activation='relu')
-        self.output_layer = tf.keras.layers.Dense(1)
-
-    def adapt(self, data):
-        # Adapt the normalization layer with training data (numpy array or tensor)
-        self.normalizer.adapt(data)
-
-    def call(self, inputs, training=False):
-        x = self.normalizer(inputs)
-        x = self.dense1(x)
-        x = self.dense2(x)
-        return self.output_layer(x)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras.layers.experimental import preprocessing
 
 
-def my_model_function():
-    # Return an instance of MyModel
-    model = MyModel()
-    # Adapt the normalizer with a small sample of data for demo purposes
-    # In practice, adapt should be called with training data prior to training/saving
-    example_data = tf.constant([[20.0, 5.0], [20.0, 10.0]], dtype=tf.float32)
-    model.adapt(example_data)
-    return model
+data = [{"a": 20.0, "b": 5.0, "c": 0.2972786923202068}, {"a": 20.0, "b": 10.0, "c": 0.10673704592967688}]
+train_dataset = pd.DataFrame.from_dict(data)
+
+train_features = train_dataset.copy()
+train_labels = train_features.pop('c')
+
+normalizer = preprocessing.Normalization()
+normalizer.adapt(np.array(train_features))
+
+dnn_model = keras.Sequential([
+    normalizer,
+    layers.Dense(64, activation='relu'),
+    layers.Dense(64, activation='relu'),
+    layers.Dense(1)
+])
+
+dnn_model.compile(loss='mean_absolute_error', optimizer=tf.keras.optimizers.Adam(0.001))
+dnn_model.save('file.h5')
 
 
-def GetInput():
-    # Return a random tensor input that matches expected input shape for MyModel
-    # Since the input features are 'a' and 'b' only, shape=(batch_size, 2)
-    # We'll generate a batch of 4 samples with float32 values roughly in range [0, 30] (based on example data)
-    batch_size = 4
-    input_shape = (batch_size, 2)
-    # Uniformly sample between 0 and 30
-    return tf.random.uniform(input_shape, minval=0, maxval=30, dtype=tf.float32)
+# ValueError: Attempt to convert a value (None) with an unsupported type (<class 'NoneType'>) to a Tensor.
+new_model = tf.keras.models.load_model('file.h5')
 
+json_config = dnn_model.to_json()
+new_model = keras.models.model_from_json(json_config)

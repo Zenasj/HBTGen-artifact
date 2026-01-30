@@ -1,136 +1,162 @@
-# tf.random.uniform((B, 28, 28, 1), dtype=tf.float32)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
 
+from tensorflow.python.keras.datasets import mnist
+from tensorflow.python.keras.models import Model
+from tensorflow.python.keras.layers import Input, Conv2D, MaxPooling2D, Flatten, Dense, UpSampling2D
+
+
 class BatchCounter(tf.keras.layers.Layer):
-    """
-    A custom stateful metric layer that counts batches seen during training/validation.
 
-    This implements a variable counter that increments by 1 each batch.
-    Issues reported in tf.keras historically:
-    - Batch averages instead of counts due to updates involving variables
-    - Missing/overcounting batches (count off by 1 sometimes)
-    
-    This implementation attempts to fix those issues by using a tf.Variable,
-    increment in a tf.function context, with proper reset_states semantics.
+        def __init__(self, name='batch_counter', **kwargs):
+            super(BatchCounter, self).__init__(name=name, **kwargs)
+            self.stateful = True
+            self.batches = tf.keras.backend.variable(value=0, dtype='int32')
 
-    It's callable with signature (y_true, y_pred) for metric compatibility.
-    """
-    def __init__(self, name="batch_counter", **kwargs):
-        super().__init__(name=name, **kwargs)
-        # Use tf.Variable with int32 dtype and trainable=False
-        self.batches = tf.Variable(initial_value=0, trainable=False, dtype=tf.int32)
-        
-    def reset_states(self):
-        self.batches.assign(0)
+        def reset_states(self):
+            tf.keras.backend.set_value(self.batches, 0)
 
-    def __call__(self, y_true, y_pred):
-        # Increment batches by 1 each time __call__ is invoked
-        # Use tf.function to ensure graph compatibility
-        self.batches.assign_add(1)
-        # Return batch count as float32 to be compatible with metric display
-        return tf.cast(self.batches, tf.float32)
+        def __call__(self, y_true, y_pred):
+            updates = [tf.keras.backend.update_add(self.batches, tf.keras.backend.variable(value=1, dtype='int32'))]
+            self.add_update(updates)
+            return self.batches
 
-class MyModel(tf.keras.Model):
-    """
-    Fusion model to illustrate the BatchCounter stateful metric usage
-    and input shape for compatibility with the MNIST convolutional architecture shown.
 
-    This model replicates the encoder-classifier and decoder-autoencoder structure
-    from the MNIST example in the issue, integrating the BatchCounter metric usage scenario.
+batch_size = 100
+num_classes = 10
+epochs = 1
 
-    Outputs:
-        - softmax classification logits over 10 classes
-        - autoencoder reconstruction output
-    """
-    def __init__(self, input_shape=(28, 28, 1), num_classes=10):
-        super().__init__()
-        self.num_classes = num_classes
+# input image dimensions
+img_rows, img_cols = 28, 28
 
-        # Encoder
-        self.conv1 = tf.keras.layers.Conv2D(16, (3,3), activation='relu', padding='same')
-        self.pool1 = tf.keras.layers.MaxPooling2D(pool_size=(2, 2), padding='same')
-        self.conv2 = tf.keras.layers.Conv2D(8, (3,3), activation='relu', padding='same')
-        self.pool2 = tf.keras.layers.MaxPooling2D(pool_size=(2, 2), padding='same')
-        self.conv3 = tf.keras.layers.Conv2D(8, (3,3), activation='relu', padding='same')
-        self.pool3 = tf.keras.layers.MaxPooling2D(pool_size=(2, 2), padding='same')
+# Data
+(x_train, y_train), (x_test, y_test) = mnist.load_data()
+x_train = x_train.reshape(x_train.shape[0], img_rows, img_cols, 1).astype('float32') / 255
+x_test = x_test.reshape(x_test.shape[0], img_rows, img_cols, 1).astype('float32') / 255
+y_train = tf.keras.utils.to_categorical(y_train, num_classes)
+y_test = tf.keras.utils.to_categorical(y_test, num_classes)
 
-        # Classification head
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense_fc = tf.keras.layers.Dense(128, activation='relu')
-        self.classifier = tf.keras.layers.Dense(num_classes, activation='softmax', name='classification')
+# Convolutional Encoder
+input_img = Input(shape=(img_rows, img_cols, 1))
+conv_1 = Conv2D(16, (3, 3), activation='relu', padding='same')(input_img)
+pool_1 = MaxPooling2D((2, 2), padding='same')(conv_1)
+conv_2 = Conv2D(8, (3, 3), activation='relu', padding='same')(pool_1)
+pool_2 = MaxPooling2D((2, 2), padding='same')(conv_2)
+conv_3 = Conv2D(8, (3, 3), activation='relu', padding='same')(pool_2)
+encoded= MaxPooling2D((2, 2), padding='same')(conv_3)
 
-        # Decoder head
-        self.conv4 = tf.keras.layers.Conv2D(8, (3,3), activation='relu', padding='same')
-        self.up1 = tf.keras.layers.UpSampling2D((2,2))
-        self.conv5 = tf.keras.layers.Conv2D(8, (3,3), activation='relu', padding='same')
-        self.up2 = tf.keras.layers.UpSampling2D((2,2))
-        self.conv6 = tf.keras.layers.Conv2D(16, (3,3), activation='relu')
-        self.up3 = tf.keras.layers.UpSampling2D((2,2))
-        self.decoder_out = tf.keras.layers.Conv2D(1, (3,3), activation='sigmoid', padding='same', name='autoencoder')
+# Classification
+flatten = Flatten()(encoded)
+fc = Dense(128, activation='relu')(flatten)
+softmax = Dense(num_classes, activation='softmax', name='classification')(fc)
 
-        # Instantiate BatchCounter metric to mimic the metric incorporated per output
-        # In practice, metrics are usually separate objects
-        self.batch_counter_metric = BatchCounter(name='batch_counter')
+# Decoder
+conv_4 = Conv2D(8, (3, 3), activation='relu', padding='same')(encoded)
+up_1 = UpSampling2D((2, 2))(conv_4)
+conv_5 = Conv2D(8, (3, 3), activation='relu', padding='same')(up_1)
+up_2 = UpSampling2D((2, 2))(conv_5)
+conv_6 = Conv2D(16, (3, 3), activation='relu')(up_2)
+up_3 = UpSampling2D((2, 2))(conv_6)
+decoded = Conv2D(1, (3, 3), activation='sigmoid', padding='same', name='autoencoder')(up_3)
 
-    def call(self, inputs, training=False):
-        # Forward pass of model, returns outputs for classification and autoencoder
+model = Model(inputs=input_img, outputs=[softmax, decoded])
 
-        x = self.conv1(inputs)
-        x = self.pool1(x)
-        x = self.conv2(x)
-        x = self.pool2(x)
-        x = self.conv3(x)
-        encoded = self.pool3(x)
+model.compile(loss={'classification': 'categorical_crossentropy',
+                    'autoencoder': 'binary_crossentropy'},
+              loss_weights={'classification': 1.0,
+                            'autoencoder': 0.5},
+              optimizer='adam',
+              metrics={'classification': 'accuracy', 'autoencoder': BatchCounter()})
 
-        # classification branch
-        flat = self.flatten(encoded)
-        fc = self.dense_fc(flat)
-        classification = self.classifier(fc)
+history = model.fit(x_train,
+          {'classification': y_train, 'autoencoder': x_train},
+          batch_size=batch_size,
+          epochs=epochs,
+          validation_data= (x_test, {'classification': y_test, 'autoencoder': x_test}),
+          verbose=1)
 
-        # decoder branch
-        x = self.conv4(encoded)
-        x = self.up1(x)
-        x = self.conv5(x)
-        x = self.up2(x)
-        x = self.conv6(x)
-        x = self.up3(x)
-        decoded = self.decoder_out(x)
+import tensorflow as tf
+from tensorflow.python.keras.layers import Input, Dense
+from tensorflow.python.keras.models import Model
 
-        return {'classification': classification, 'autoencoder': decoded}
+import numpy as np
 
-def my_model_function():
-    """
-    Returns an instance of MyModel.
-    """
-    model = MyModel()
-    # Compile model with losses matching the example in the issue
-    model.compile(
-        optimizer='adam',
-        loss={
-            'classification': 'categorical_crossentropy',
-            'autoencoder': 'binary_crossentropy'
-        },
-        loss_weights={
-            'classification': 1.0,
-            'autoencoder': 0.5
-        },
-        metrics={
-            'classification': 'accuracy',
-            'autoencoder': BatchCounter()
-        }
-    )
-    return model
+class BatchCounter(tf.keras.layers.Layer):
 
-def GetInput():
-    """
-    Returns a random input tensor matching the input expected by MyModel.
-    Shape: (Batch, Height, Width, Channels) == (100, 28, 28, 1)
-    Values are floats in [0,1] range to simulate normalized MNIST images.
-    """
-    batch_size = 100
-    img_rows, img_cols = 28, 28
-    channels = 1
-    # Random uniform mimicking normalized grayscale images
-    return tf.random.uniform((batch_size, img_rows, img_cols, channels), dtype=tf.float32)
+        def __init__(self, name="batch_counter", **kwargs):
+            super(BatchCounter, self).__init__(name=name, **kwargs)
+            self.stateful = True
+            self.batches = tf.keras.backend.variable(value=0, dtype="int32")
 
+        def reset_states(self):
+            tf.keras.backend.set_value(self.batches, 0)
+
+        def __call__(self, y_true, y_pred):
+            updates = [
+                tf.keras.backend.update_add(
+                    self.batches, 
+                    tf.keras.backend.variable(value=1, dtype="int32"))]
+            self.add_update(updates)
+            return self.batches
+
+class DummyGenerator(object):
+    """ Dummy data generator. """
+
+    def run(self):
+        while True:
+            yield np.ones((10, 1)), np.zeros((10, 1))
+
+train_gen = DummyGenerator()
+val_gen = DummyGenerator()
+
+# Dummy model
+inputs = Input(shape=(1,))
+outputs = Dense(1)(inputs)
+model = Model(inputs=inputs, outputs=outputs)
+model.compile(loss="mse", optimizer="adam", metrics=[BatchCounter()])
+
+model.fit_generator(
+    train_gen.run(), 
+    steps_per_epoch=5, 
+    epochs=10, 
+    validation_data=val_gen.run(), 
+    validation_steps=5)
+
+import tensorflow as tf
+from tensorflow.python.keras.layers import Input, Dense
+from tensorflow.python.keras.models import Model
+
+import numpy as np
+
+class BatchCounter(tf.keras.layers.Layer):
+
+        def __init__(self, name="batch_counter", **kwargs):
+            super(BatchCounter, self).__init__(name=name, **kwargs)
+            self.stateful = True
+            self.batches = tf.keras.backend.variable(value=0, dtype="int32")
+
+        def reset_states(self):
+            tf.keras.backend.set_value(self.batches, 0)
+
+        def __call__(self, y_true, y_pred):
+            updates = [
+                tf.keras.backend.update_add(
+                    self.batches, 
+                    tf.keras.backend.variable(value=1, dtype="int32"))]
+            self.add_update(updates)
+            return self.batches
+
+# Dummy dataset
+X = np.ones((50, 1))
+y = np.zeros((50, 1))
+
+# Dummy model
+inputs = Input(shape=(1,))
+outputs = Dense(1)(inputs)
+model = Model(inputs=inputs, outputs=outputs)
+model.compile(loss="mse", optimizer="adam", metrics=[BatchCounter()])
+
+model.fit(X, y, batch_size=10, epochs=10, validation_data = (X, y))

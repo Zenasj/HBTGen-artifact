@@ -1,8 +1,8 @@
-# torch.rand(1, 3, 32, 32, dtype=torch.float32) ← Add a comment line at the top with the inferred input shape
-import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
+import torch
+
+class Model(torch.nn.Module):
     def __init__(self):
         super().__init__()
 
@@ -11,11 +11,11 @@ class MyModel(nn.Module):
         x = torch.inverse(x)
         return x
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+model = Model()
+inputs = torch.randn(1, 3, 32, 32)
+res = model(inputs)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(1, 3, 32, 32, dtype=torch.float32)
-
+compiled_model = torch.compile(model, backend='inductor')
+with torch.no_grad():
+    compiled_out = compiled_model(inputs)
+torch.testing.assert_close(res, compiled_out)

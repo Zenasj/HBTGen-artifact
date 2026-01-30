@@ -1,59 +1,167 @@
-# torch.rand(B, 1, 28, 28, dtype=torch.float)  # MNIST input shape (grayscale images)
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.layers = nn.Sequential(
-            nn.Linear(28*28, 128),
-            nn.ReLU(),
-            nn.Dropout(0.2),
-            nn.Linear(128, 128),
-            nn.ReLU(),
-            nn.Linear(128, 10, bias=False)
-        )
-    
-    def forward(self, x):
-        x = x.view(x.size(0), -1)  # Flatten the input tensor
-        return self.layers(x)
+import argparse
+import nvtx
+from typing import Tuple
+from tqdm import tqdm
 
-def my_model_function():
-    return MyModel()
+import torch
+from torch import nn, optim
+from torch.distributed import Backend
+from torch.nn.parallel.distributed import DistributedDataParallel
+from torch.utils.data import DataLoader, DistributedSampler
+from torchvision import datasets, transforms
 
-def GetInput():
-    # Generate random MNIST-like input tensor
-    return torch.rand(32, 1, 28, 28, dtype=torch.float)
 
-# Okay, let's tackle this problem. The user wants me to generate a complete Python code file based on the provided GitHub issue. The issue is about a PyTorch profiling bug where the profiler isn't initializing, leading to skipped steps and merged traces. The user's code includes a training loop with DistributedDataParallel and uses the torch profiler.
-# First, I need to extract the relevant parts from the issue. The main components are the model definition, the data loading functions, and the training loop. The model is a simple sequential network for MNIST classification. The data loaders use DistributedSampler for multi-GPU training. The main issue is with the profiler, but since the task is to generate the code without the bug, I should focus on the model and input structure.
-# The user's instructions require a single code file with specific functions: MyModel class, my_model_function, and GetInput. The model must be named MyModel, and the input function should generate compatible inputs. Also, if there are multiple models, they need to be fused into one, but in this case, there's only one model.
-# Looking at the provided code, the model is created via create_model() which is a Sequential with Linear layers. So I'll need to convert that into a MyModel class. The input shape for MNIST is 28x28, flattened to 784 features, so the input tensor should be (B, 1, 28, 28) since MNIST images are grayscale. Wait, in the code, the data is loaded with transforms.ToTensor() which converts to a tensor of shape (C, H, W) = (1,28,28). But in the model, the input is reshaped to (batch_size, -1) via x.view(x.shape[0], -1). So the input to the model is (B, 784). 
-# Therefore, the GetInput function should return a tensor of shape (B, 1, 28, 28). The comment at the top should mention that the input is Bx1x28x28, dtype float.
-# Now, the MyModel class needs to replicate the Sequential model. The original model has three Linear layers: 784->128, 128->128, 128->10. The last layer has no bias. So the code would be:
-# class MyModel(nn.Module):
-#     def __init__(self):
-#         super().__init__()
-#         self.layers = nn.Sequential(
-#             nn.Linear(28*28, 128),
-#             nn.ReLU(),
-#             nn.Dropout(0.2),
-#             nn.Linear(128, 128),
-#             nn.ReLU(),
-#             nn.Linear(128, 10, bias=False)
-#         )
-#     def forward(self, x):
-#         x = x.view(x.size(0), -1)
-#         return self.layers(x)
-# Wait, in the original code, the view is done before passing to the model. But in the model definition, the code uses model(x), where x is already flattened. So in the MyModel, the view is applied inside the forward method. That's correct.
-# The my_model_function should return an instance of MyModel. Since there's no need for weights here, just create and return it.
-# The GetInput function should generate a random tensor. The batch size can be arbitrary, say 32, but the shape must be (B, 1, 28, 28). So:
-# def GetInput():
-#     return torch.rand(32, 1, 28, 28, dtype=torch.float)
-# Wait, the original code uses batch_size 128, but the GetInput can be any batch size, as long as it's compatible. The dtype should be float, since MNIST is normalized and uses FloatTensors.
-# Now, check for any other requirements. The code shouldn't include test code or main blocks. Also, the model must be compatible with torch.compile. Since the model is a standard nn.Module, that should be okay.
-# The issue mentions that the user had a problem with the profiler, but the code itself is correct except for the profiler setup. Since the task is to generate the code without the bug, just the model and input functions are needed.
-# I should make sure that all parts are included. The model structure is correctly captured, input shape is correct, and functions are properly named. Also, the comments at the top of the input tensor must be present.
-# Possible edge cases: the original code uses DistributedDataParallel, but since the model is just the base model, MyModel should be the underlying model before wrapping in DDP. So the code is correct as is.
-# Final check: The code block must be a single Python code in a markdown block. Ensure no typos in the class name and function names. Also, the input comment should be exactly as specified.
-# </think>
+def create_data_loaders(rank: int,
+                        world_size: int,
+                        batch_size: int) -> Tuple[DataLoader, DataLoader]:
+    transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize((0.1307,), (0.3081,))
+    ])
+    dataset_loc = './mnist_data'
+
+    train_dataset = datasets.MNIST(dataset_loc,
+                                   download=True,
+                                   train=True,
+                                   transform=transform)
+    sampler = DistributedSampler(train_dataset,
+                                 num_replicas=world_size,  # Number of GPUs
+                                 rank=rank,  # GPU where process is running
+                                 shuffle=True,  # Shuffling is done by Sampler
+                                 seed=42)
+    train_loader = DataLoader(train_dataset,
+                              batch_size=batch_size,
+                              shuffle=False,  # This is mandatory to set this to False here, shuffling is done by Sampler
+                              num_workers=4,drop_last=True,
+                              sampler=sampler,
+                              pin_memory=True)
+
+    # This is not necessary to use distributed sampler for the test or validation sets.
+    test_dataset = datasets.MNIST(dataset_loc,
+                                  download=True,
+                                  train=False,
+                                  transform=transform)
+    test_loader = DataLoader(test_dataset,
+                             batch_size=batch_size,
+                             shuffle=True,
+                             num_workers=4,
+                             pin_memory=True)
+
+    return train_loader, test_loader
+
+
+def create_model():
+    # create model architecture
+    model = nn.Sequential(
+        nn.Linear(28*28, 128),  # MNIST images are 28x28 pixels
+        nn.ReLU(),
+        nn.Dropout(0.2),
+        nn.Linear(128, 128),
+        nn.ReLU(),
+        nn.Linear(128, 10, bias=False)  # 10 classes to predict
+    )
+    return model
+
+def main(rank: int,
+         epochs: int,
+         model: nn.Module,
+         train_loader: DataLoader,
+         test_loader: DataLoader) -> nn.Module:
+    device = torch.device(f'cuda:{rank}')
+    model = model.to(device)
+    model = DistributedDataParallel(model, device_ids=[rank], output_device=rank)
+
+    # initialize optimizer and loss function
+    optimizer = optim.SGD(model.parameters(), lr=0.01)
+    loss = nn.CrossEntropyLoss()
+
+    # train the model
+    for i in range(epochs):
+        if i >= 1: break
+        model.train()
+        train_loader.sampler.set_epoch(i)
+        nvtx.push_range("Epoch "+str(i))
+        with torch.profiler.profile(
+            activities=[
+                    torch.profiler.ProfilerActivity.CPU,
+                     torch.profiler.ProfilerActivity.CUDA,
+                ],
+            schedule=torch.profiler.schedule(wait=53, warmup=2, active=5),
+	    on_trace_ready=torch.profiler.tensorboard_trace_handler('./log',  use_gzip=True),
+            with_stack=True,record_shapes=True,profile_memory=True, with_flops=True,use_cuda=True
+        ) as profiler:
+            epoch_loss = 0
+            # train the model for one epoch
+            # pbar = tqdm(train_loader)
+
+            it = iter(train_loader)
+            for ii in range(len(train_loader)):
+                nvtx.push_range('Data loading'+str(ii),color='yellow')
+                x,y = next(it)
+                nvtx.pop_range()
+
+                with nvtx.annotate("Copy to device", color="purple"):
+                    x = x.to(device, non_blocking=True)
+                    y = y.to(device, non_blocking=True)
+                    x = x.view(x.shape[0], -1)
+
+                with nvtx.annotate("Forward pass", color="green"):
+                    optimizer.zero_grad()
+                    y_hat = model(x)
+
+                with nvtx.annotate("Backward pass", color="blue"):
+                    batch_loss = loss(y_hat, y)
+                    batch_loss.backward()
+                    optimizer.step()
+                profiler.step()
+                batch_loss_scalar = batch_loss.item()
+                epoch_loss += batch_loss_scalar / x.shape[0]
+                #pbar.set_description(f'training batch_loss={batch_loss_scalar:.4f}')
+
+        # calculate validation loss
+        with torch.no_grad():
+            model.eval()
+            val_loss = 0
+            pbar = tqdm(test_loader)
+            for x, y in pbar:
+                x = x.to(device, non_blocking=True)
+                y = y.to(device, non_blocking=True)
+                x = x.view(x.shape[0], -1)
+                y_hat = model(x)
+                batch_loss = loss(y_hat, y)
+                batch_loss_scalar = batch_loss.item()
+
+                val_loss += batch_loss_scalar / x.shape[0]
+                pbar.set_description(f'validation batch_loss={batch_loss_scalar:.4f}')
+
+        print(f"Epoch={i}, train_loss={epoch_loss:.4f}, val_loss={val_loss:.4f}")
+        nvtx.pop_range()
+    return model.module
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--local_rank", type=int)
+    args = parser.parse_args()
+
+    batch_size = 128
+    epochs = 10
+
+    rank = args.local_rank
+    world_size = torch.cuda.device_count()
+
+    torch.cuda.set_device(rank)
+    torch.distributed.init_process_group(backend=Backend.NCCL,
+                                         init_method='env://')
+
+    train_loader, test_loader = create_data_loaders(rank, world_size, batch_size)
+    model = main(rank=rank,
+                 epochs=epochs,
+                 model=create_model(),
+                 train_loader=train_loader,
+                 test_loader=test_loader)
+
+    if rank == 0:
+        torch.save(model.state_dict(), 'model.pt')

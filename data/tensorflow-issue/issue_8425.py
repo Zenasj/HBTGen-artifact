@@ -1,59 +1,40 @@
-# tf.random.uniform((B, H, W, C), dtype=...) ← Input shape is not specified in the issue, so we assume the model expects a generic input tensor. 
-# Since the issue centers on tf.train.SessionHook saver usage in TF1-style graph sessions rather than an actual model definition,
-# let's create a minimal compatible MyModel for demonstration.
-
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Minimal placeholder model: a single dense layer
-        # to allow input-output flow demonstration.
-        self.dense = tf.keras.layers.Dense(10)
+with tf.train.MonitoredTrainingSession(...) as sess:
+    ...
+    saver.save(sess, 'model.ckpt')
 
-    def call(self, inputs):
-        # Forward pass through the dense layer
-        return self.dense(inputs)
+saver.save(sess._sess._sess._sess._sess, 'model.ckpt')
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+def get_session(sess):
+    session = sess
+    while type(session).__name__ != 'Session':
+        #pylint: disable=W0212
+        session = session._sess
+    return session
 
-def GetInput():
-    # Since the model has a Dense layer with no fixed input shape,
-    # we'll assume a batch size of 4 and feature dimension of 20.
-    # This shape is arbitrary due to lack of explicit input shape info.
-    return tf.random.uniform((4, 20), dtype=tf.float32)
+saver.save(get_session(sess), 'model.ckpt')
 
+class SaveAtEnd(tf.train.SessionRunHook):
+    '''a training hook for saving the final variables'''
 
-# Additional artifact derived from issue: 
-# A TF1 style SessionRunHook to save variables at session end.
-# This doesn't directly integrate with MyModel class,
-# but reconstructs the logic from issue comments as a demonstration.
+    def __init__(self, filename, variables):
+        '''hook constructor
 
-class SaveAtEndHook(tf.train.SessionRunHook):
-    '''
-    Training hook for saving specified variables (or all variables) at session end in a MonitoredTrainingSession.
-    '''
-
-    def __init__(self, filename, variables=None):
-        '''
         Args:
-            filename: Path where the variables will be saved.
-            variables: List of tf.Variable to save. Saves all variables if None.
-        '''
+            filename: where the model will be saved
+            variables: the variables that will be saved'''
+
         self.filename = filename
         self.variables = variables
 
     def begin(self):
-        # Called once before using the session
-        # Create saver for provided variables or all variables if None
-        if self.variables is not None:
-            self._saver = tf.train.Saver(var_list=self.variables, sharded=True)
-        else:
-            self._saver = tf.train.Saver(sharded=True)
+        '''this will be run at session creation'''
+
+        #pylint: disable=W0201
+        self._saver = tf.train.Saver(self.variables, sharded=True)
 
     def end(self, session):
-        # Called at session close, save variables
-        self._saver.save(session, self.filename)
+        '''this will be run at session closing'''
 
+        self._saver.save(session, self.filename)

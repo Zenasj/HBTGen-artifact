@@ -1,15 +1,23 @@
-# torch.rand(3, 4, dtype=torch.float32)
 import torch
-from torch import nn
+from torch import _dynamo as dynamo
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        x.copy_(3)
-        return x
+@dynamo.optimize('eager')
+def func():
+    t = torch.rand(3,4)
+    t.copy_(3)
+    print(t)
 
-def my_model_function():
-    return MyModel()
+func()
 
-def GetInput():
-    return torch.rand(3, 4)
+import torch
 
+def func():
+    t = torch.rand(3,4)
+    t.copy_(3)
+    print(t)
+
+func()
+
+tensor([[3., 3., 3., 3.],
+        [3., 3., 3., 3.],
+        [3., 3., 3., 3.]])

@@ -1,42 +1,89 @@
-# tf.random.uniform((B, T, D), dtype=tf.float32)
-import tensorflow as tf
-from tensorflow.keras import layers
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Bidirectional, LSTM, TimeDistributed, Dense
+import random
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # The original code used a Sequential model with:
-        # - Bidirectional LSTM with 128 units, return_sequences=True
-        # - TimeDistributed Dense layer with 1 output and relu activation
-        #
-        # Input shape: (T, D) where T = time steps, D = feature dims
-        self.bidirectional_lstm = Bidirectional(LSTM(128, return_sequences=True))
-        self.time_distributed_dense = TimeDistributed(Dense(1, activation='relu'))
-
-    def call(self, inputs, training=False):
-        # Forward pass matching original model definition
-        x = self.bidirectional_lstm(inputs)
-        output = self.time_distributed_dense(x)
-        return output
+def create_model():
+    model = Sequential()
+    model.add(Bidirectional(LSTM(128, return_sequences=True), input_shape=(T, D)))
+    model.add(TimeDistributed(Dense(1, activation='relu')))
+    return model
 
 
-def my_model_function():
-    # Create and return an instance of MyModel
-    return MyModel()
+if __name__ == "__main__":
 
+    random.set_seed(1)
 
-def GetInput():
-    # From the original script, input shape is (batch_size, T, D)
-    # We do not know T and D specifically, but the training code infers them from data shape:
-    # e.g., (_, T, D) = X_train.shape
-    #
-    # For inference, we pick arbitrary reasonable values for T and D:
-    # Let's assume T=10 time steps, D=5 features to generate random input tensor
-    batch_size = 64  # The per replica batch size used in the original code
-    T = 10
-    D = 5
-    # Create a random float32 tensor matching input expected by the model
-    return tf.random.uniform(shape=(batch_size, T, D), dtype=tf.float32)
+    parser = argparse.ArgumentParser()
 
+    # inputs for setting environment variable
+    parser.add_argument('-node1', default=None, required=True, help='Node 1 IP and port')
+    parser.add_argument('-node2', default=None, required=True, help='Node 2 IP and port')
+    parser.add_argument('-type', default=None, required=True, help='Node type')
+    parser.add_argument('-index', default=None, required=True, help='Node number', type=int)
+
+    args = parser.parse_args()
+    node_1 = args.node1
+    node_2 = args.node2
+    worker_type = args.type
+    worker_index = args.index
+
+    # set environment variable
+    os.environ['TF_CONFIG'] = json.dumps({
+        'cluster': {
+            "worker": [node_1, node_2]
+        },
+        'task': {'type': worker_type, 'index': worker_index}
+    })
+
+    # load data
+    with open('data/X.json', 'rb') as f:
+        X = pickle.load(f)
+
+    with open('data/y.json', 'rb') as f:
+        y = pickle.load(f)
+
+    # split data, set random state (for replicability)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=1)
+    _, T, D = X_train.shape
+
+    # dynamic memory allocation
+    # gpu = config.experimental.list_physical_devices('GPU')
+    # config.experimental.set_memory_growth(gpu[0], True)
+
+    # set training strategy
+    strategy = distribute.MultiWorkerMirroredStrategy( )
+    print(f"Number of devices: {strategy.num_replicas_in_sync}")
+
+    num_epochs = 10000
+    batch_size_per_replica = 64
+    batch_size = batch_size_per_replica * strategy.num_replicas_in_sync
+
+    # create data structure
+    train_data = data.Dataset.from_tensor_slices((X_train, y_train))
+    val_data = data.Dataset.from_tensor_slices((X_test, y_test))
+
+    train_data = train_data.batch(batch_size, drop_remainder=True)
+    val_data = val_data.batch(batch_size, drop_remainder=True)
+
+    # Disable AutoShard.
+    # options = data.Options()
+    # options.experimental_distribute.auto_shard_policy = data.experimental.AutoShardPolicy.OFF
+    # train_data = train_data.with_options(options)
+    # val_data = val_data.with_options(options)
+
+    with strategy.scope():
+        model = create_model()
+        model.compile(
+            loss='mse',
+            optimizer='adam',
+            metrics=[metrics.RootMeanSquaredError()],
+        )
+
+    # fit
+    model.fit(
+        train_data,
+        epochs=num_epochs,
+        validation_data=val_data,
+        # callbacks=[cp_callback, es_callback, tbd_callback]
+    )
+
+    # save
+    # model.save('model/model.h5')

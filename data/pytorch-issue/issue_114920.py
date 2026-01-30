@@ -1,16 +1,11 @@
-# torch.rand(B, 1, 1, 2, dtype=torch.float32)
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Explicitly uses aten reshape with 'self' as a keyword argument
-        return torch.ops.aten.reshape.default(self=x, shape=(2,))
+OpOverloadPacket.__call__(self, {"self": ...})
 
-def my_model_function():
-    return MyModel()
+OpOverloadPacket.__call__(_self, {"self": ...})
 
-def GetInput():
-    # Matches the required input shape (B=1, C=1, H=1, W=2)
-    return torch.rand(1, 1, 1, 2, dtype=torch.float32)
+In [4]: [x.name for x in torch.ops.aten.reshape.default._schema.arguments]
+Out[4]: ['self', 'shape']
 
+In [3]: torch.ops.aten.reshape.default(self=torch.rand(1,2), shape=[2])
+Out[3]: tensor([0.5127, 0.3051])

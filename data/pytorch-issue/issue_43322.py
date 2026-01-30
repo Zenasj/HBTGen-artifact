@@ -1,23 +1,16 @@
-# torch.rand(B, 10, 10, dtype=torch.float32)
 import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size):
-        super(MyModel, self).__init__()
-        self.rnn = nn.LSTM(input_size, hidden_size, bidirectional=True, batch_first=True)
-        self.linear = nn.Linear(hidden_size * 2, output_size)
+model = BidirectionalLSTM(10, 10, 10).cuda()
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+input = torch.randn(16, 10, 10, device='cuda')
+loss_fn = nn.CrossEntropyLoss()
+target = torch.randint(0, 10, (16, 10), device='cuda')
+scaler = torch.cuda.amp.GradScaler()
 
-    def forward(self, input):
-        self.rnn.flatten_parameters()
-        recurrent, _ = self.rnn(input)
-        output = self.linear(recurrent)
-        return output
-
-def my_model_function():
-    return MyModel(10, 10, 10)
-
-def GetInput():
-    B = 2  # Arbitrary batch size (matches issue example's 16, but 2 is minimal)
-    return torch.rand(B, 10, 10, dtype=torch.float32)
-
+with torch.cuda.amp.autocast():
+    output = model(input)
+    loss = loss_fn(output, target)
+    scaler.scale(loss).backward()
+    scaler.step(optimizer)
+    scaler.update()

@@ -1,72 +1,50 @@
-# tf.random.uniform((B, 512), dtype=tf.int64) ← input is int64 tensor with shape (batch_size, 512)
-
 import tensorflow as tf
-from tensorflow.keras import layers, Model, Input
+from tensorflow import keras
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
-# Placeholder for TFBertModel from transformers library
-# In practice, replace this with the actual import:
-# from transformers import TFBertModel
+model.save()
 
-class DummyTFBertModel(tf.keras.layers.Layer):
-    """
-    This dummy layer simulates the output of a TFBertModel.
-    The real TFBertModel returns a tuple with first element
-    of shape (batch_size, seq_len, hidden_size).
-    Here seq_len=512 and hidden_size=768 to match the original model.
-    """
-    def __init__(self):
-        super().__init__()
-        self.seq_len = 512
-        self.hidden_size = 768
+input_layer = Input(shape = (512,), dtype='int64') 
+bert = TFBertModel.from_pretrained('bert-base-chinese')(input_layer)
+bert = bert[0]   
+dropout = Dropout(0.1)(bert)
+flat = Flatten()(dropout)
+classifier = Dense(units=5, activation="softmax")(flat)               
+model = Model(inputs=input_layer, outputs=classifier)
+model.summary()
 
-    def call(self, inputs):
-        batch_size = tf.shape(inputs)[0]
-        # Simulate output tensor: shape (batch_size, seq_len, hidden_size)
-        dummy_output = tf.zeros((batch_size, self.seq_len, self.hidden_size), dtype=tf.float32)
-        # The real TFBertModel outputs a tuple with at least the last hidden states as first element
-        return (dummy_output,)
+optimizer = tf.keras.optimizers.Adam(learning_rate=5e-6, epsilon=1e-08, clipnorm=1.0)
+loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+metric = tf.keras.metrics.SparseCategoricalAccuracy('accuracy')
+model.compile(optimizer=optimizer, loss=loss, metrics=[metric])
 
+model.save('model/my_model.h5')
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Input specification: shape=(512,), dtype=int64 required as in original
-        # Initialize a dummy/simulated BERT model to replicate structure
-        self.bert = DummyTFBertModel()
-        self.dropout = layers.Dropout(0.1)
-        self.flatten = layers.Flatten()
-        self.classifier = layers.Dense(units=5, activation="softmax")
+tf.keras.models.save_model()
 
-    def call(self, inputs, training=False):
-        # inputs: int64 tensor shape (batch_size, 512)
-        bert_outputs = self.bert(inputs)
-        # bert_outputs[0] expected shape: (batch_size, 512, 768)
-        x = bert_outputs[0]
-        x = self.dropout(x, training=training)
-        x = self.flatten(x)
-        x = self.classifier(x)
-        return x
+tf.keras.models.save_model(
+    model,
+    "model/model_bert_eland_softmax_2",
+    overwrite=True,
+    include_optimizer=True,
+)
 
+input_layer = Input(shape = (512,), dtype='int64')  
+load_model = tf.keras.models.load_model('model/model_bert_eland_softmax_2')(input_layer)
+new_model = Model(inputs=input_layer, outputs=load_model)
 
-def my_model_function():
-    # Return an instance of MyModel
-    model = MyModel()
+# Show the model architecture
+new_model.summary()
 
-    # Compile the model similar to original snippet
-    optimizer = tf.keras.optimizers.Adam(learning_rate=5e-6, epsilon=1e-08, clipnorm=1.0)
-    # Note: original loss uses from_logits=True but final layer is softmax,
-    # which is typically incompatible; replicating original however.
-    loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
-    metric = tf.keras.metrics.SparseCategoricalAccuracy('accuracy')
+tf.keras.models.save_model()
 
-    model.compile(optimizer=optimizer, loss=loss, metrics=[metric])
+model.save()
 
-    return model
+model.save("my_model",save_format='tf')
+loaded_model = tf.keras.models.load_model("my_model")
+loaded_model.summary()
 
-
-def GetInput():
-    # Return a random input tensor with shape (batch_size, 512) and dtype int64
-    # batch_size = 2 for example purposes
-    batch_size = 2
-    return tf.random.uniform(shape=(batch_size, 512), minval=0, maxval=1000, dtype=tf.int64)
-
+model.save("my_model",save_format='tf')
+loaded_model = tf.keras.models.load_model("my_model")
+loaded_model.summary()

@@ -1,40 +1,34 @@
-# tf.random.uniform((1, 10, 10, 10, 5), dtype=tf.float32)
+import random
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
+import numpy as np
 import tensorflow as tf
+print(tf.__version__)
+from tensorflow import keras
+from tensorflow.keras.layers import ConvLSTM2D, Bidirectional, LSTM
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Bidirectional ConvLSTM2D layer with filters=16, kernel_size=(1,1), 
-        # return_sequences=True and return_state=True as per original code.
-        self.lstm = tf.keras.layers.Bidirectional(
-            tf.keras.layers.ConvLSTM2D(
-                filters=16, 
-                kernel_size=(1, 1), 
-                return_sequences=True, 
-                return_state=True))
-        # Dense layers with units 16, 16, and 10 as in original hidden_units list
-        self.dense_layers = [
-            tf.keras.layers.Dense(16),
-            tf.keras.layers.Dense(16),
-            tf.keras.layers.Dense(10)
-        ]
+class CustomModel(keras.Model):
+  def __init__(self, hidden_units):
+    super(CustomModel, self).__init__()
+    self.lstm = Bidirectional(ConvLSTM2D(filters=16, kernel_size=(1, 1), return_sequences=True, return_state=True))
+    self.dense_layers = [keras.layers.Dense(u) for u in hidden_units]
 
-    def call(self, inputs, training=None, mask=None):
-        # Forward pass
-        # The Bidirectional ConvLSTM2D returns output and 4 states (h,c) for each direction.
-        # We'll only use the sequence output (x).
-        # The original code unpacks as: x, _, _, _, _ = self.lstm(x)
-        x, *_ = self.lstm(inputs)
-        for dense in self.dense_layers:
-            x = dense(x)
-        return x
+  def call(self, inputs, training=None, mask=None):
+    x = inputs
+    x, _, _, _, _ = self.lstm(x)
+    for layer in self.dense_layers:
+      x = layer(x)
+    return x
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+model = CustomModel([16, 16, 10])
+# Build the model by calling it
+input_arr = tf.random.uniform((1, 10, 10, 10, 5))
+outputs=model.predict(input_arr)
+model.save('my_model')
 
-def GetInput():
-    # Return a random tensor input matching the expected input shape of (batch, timesteps, height, width, channels)
-    # From original code: (1, 10, 10, 10, 5)
-    return tf.random.uniform((1, 10, 10, 10, 5), dtype=tf.float32)
+# Delete the custom-defined model class to ensure that the loader does not have
+# access to it.
+del CustomModel
 
+loaded = keras.models.load_model('my_model')

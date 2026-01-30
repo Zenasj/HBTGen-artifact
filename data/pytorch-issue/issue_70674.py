@@ -1,20 +1,11 @@
-# torch.rand(0, 3, dtype=torch.float32)
 import torch
-import torch.nn as nn
+a = torch.rand([0, 3])
+print(torch.amax(a))
+# tensor(-1.8891e+26)
+print(torch.amin(a))
+# tensor(9.1477e-41)
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        try:
-            amax_val = torch.amax(x)
-            max_val = torch.max(x)
-            return torch.allclose(amax_val, max_val).to(torch.int32)
-        except RuntimeError:
-            # Indicates inconsistency when max raises error (empty input)
-            return torch.tensor(0, dtype=torch.int32)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(0, 3, dtype=torch.float32)
-
+import torch
+a = torch.rand([0, 3])
+print(torch.max(a))
+# RuntimeError: max(): Expected reduction dim to be specified for input.numel() == 0. Specify the reduction dim with the 'dim' argument.

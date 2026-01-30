@@ -1,131 +1,105 @@
-# tf.random.uniform((M, M), dtype=tf.float64), tf.random.uniform((M, 1), dtype=tf.float64) ← M inferred as 2048 from issue context
-
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self, L=None):
-        """
-        Implements the fusion of discussed models ModelA, ModelA1, ModelB, ModelC and also
-        includes a custom (naive) triangular solve implementation 'my_triangular_solve' as a submodule.
+def trisolve(A, b):
+    """ Builds a graph. A is a lower-triangular MxM matrix, b is a Mx1 column vector """    
+    res = tf.linalg.triangular_solve(A, b, lower=True)    
+    return res
 
-        L: lower-triangular matrix input of shape [M,M] dtype tf.float64
-        """
-        super().__init__()
+M = 2048
+predict_fn = tf.function(trisolve,
+        input_signature=[tf.TensorSpec(shape=[M,M], dtype=tf.float64, name='A'),
+        tf.TensorSpec(shape=[M,1], dtype=tf.float64, name='b')], experimental_compile=False)
+    
+module_to_save = tf.Module()
+module_to_save.predict = predict_fn
+tf.saved_model.save(module_to_save, 'saved_model', signatures={'serving_default': module_to_save.predict})
 
-        self.M = None
-        if L is not None:
-            self.M = L.shape[-1]
+def triangular_solve(L,b):
+    """ Solves the equation Lx = b given that L is lower triangular
+    
+    Parameters:
+        - L: a tensor with dimensions [..., M, M]
+        - b: a tensor with dimensions [..., M, N]
+    """
+    # Make all matrices with unitary diagonal
+    d = tf.linalg.diag_part(L)
+    d = tf.expand_dims(tf.pow(d,-1), axis=-1)
+    b = b*d
+    L = L*d
 
-        # Save the input matrix L (lower triangular)
+    M = tf.shape(b)[-2]
+    x = tf.TensorArray(tf.float64, size=M, clear_after_read=False, dynamic_size=False)
+    
+    # Move last two axis in front    
+    b = tf.einsum("...ij->ij...", b)
+    L = tf.einsum("...ij->ij...", L)
+    
+    x = x.unstack(tf.zeros_like(b))                
+    L = tf.expand_dims(L, 2)
+
+    def body_fn(i, x):
+        coeffsum = tf.reduce_sum(tf.multiply(tf.gather_nd(L, [i]), x.stack()), axis=0)
+        x = x.write(i, tf.gather_nd(b, [i]) - coeffsum)
+        i = i+1
+        return i,x
+    
+    cond_fn = lambda i,*_: tf.less(i, M)
+    _,x = tf.while_loop(cond_fn, body_fn, (tf.constant(0), x))
+
+    return tf.einsum("ij...->...ij", x.stack())
+
+class ModelA():
+    def __init__(self, L):
+        """ L is a lower triangular MxM matrix """
         self.L = L
+        M = self.L.shape[-1]
+        self.invL = tf.linalg.triangular_solve(self.L, tf.eye(M, dtype=tf.float64), lower=True)    # Computes the inverse of L
+    
+    def predict(self, b):        
+        """ b is a Mx1 vector """                
+        return tf.matmul(self.invL, b)
 
-        # ModelA style precomputed inverse using triangular_solve once and cached
-        if L is not None:
-            self.invL_precomputed = tf.linalg.triangular_solve(L, tf.eye(self.M, dtype=tf.float64), lower=True)
-        else:
-            self.invL_precomputed = None
+class ModelA1():
+    def __init__(self, L):
+        """ L is a lower triangular MxM matrix """
+        self.L = L
+    
+    def predict(self, b):        
+        """ b is a Mx1 vector """                
+        M = self.L.shape[-1]
+        invL = tf.linalg.triangular_solve(self.L, tf.eye(M, dtype=tf.float64), lower=True)    # Computes the inverse of L
+        return tf.matmul(invL, b)
 
-    def call(self, inputs):
-        """
-        Forward method that:
-        - inputs: a tensor `b` of shape [M,1], dtype tf.float64
-        - computes:
-            * invL via triangular_solve computed inline (like ModelA1 and ModelC, uses tf.linalg.triangular_solve)
-            * invL_precomputed (cached from init) used like ModelA
-            * invL_inv computed via tf.linalg.inv (ModelB)
-            * solution with naive custom solve 'my_triangular_solve'
-        Finally compares the results of:
-         matmul(invL, b), matmul(invL_precomputed, b),
-         matmul(invL_inv, b), and naive triangular solve result,
-        returning a dictionary containing all results and boolean checks if all close within tolerance.
+class ModelB():
+    def __init__(self, L):
+        """ L is a lower triangular MxM matrix """
+        self.L = L
+    
+    def predict(self, b):        
+        """ b is a Mx1 vector """                
+        invL = tf.linalg.inv(self.L)    # Computes the inverse of L
+        return tf.matmul(invL, b)
 
-        This fused approach demonstrates the different ways and the comparisons discussed in the issue.
+import numpy as np
 
-        Assumptions:
-         - inputs is a 2D tensor of shape [M,1], float64 as per issue.
-         - self.L is set (otherwise raises error).
-        """
-        b = inputs
-        if self.L is None:
-            raise ValueError("Model requires lower-triangular matrix L set at init.")
+class ModelC():
+    def __init__(self, L):
+        """ L is a lower triangular MxM matrix """
+        self.L = L
+    
+    def predict(self, b):        
+        """ b is a Mx1 vector """                
+        M = self.L.shape[-1]
+        eye = tf.constant( np.eye(M) , dtype=tf.float64)   # Use numpy to generate an eye matrix
+        invL = tf.linalg.triangular_solve(self.L, eye, lower=True)    # Computes the inverse of L
+        return tf.matmul(invL, b)
 
-        M = self.M if self.M is not None else tf.shape(self.L)[-1]
+def my_triangular_solve(A, b):
+    S = tf.shape(A)[0]
+    ret = tf.zeros(S, dtype=tf.float64)
 
-        # 1. invL computed inline (ModelA1 and ModelC style)
-        # Use tf.eye with constant NumPy eye to trigger constant folding as per discussion
-        eye_np = tf.constant(tf.eye(M, dtype=tf.float64).numpy(), dtype=tf.float64)
-        invL_inline = tf.linalg.triangular_solve(self.L, eye_np, lower=True)
-
-        # 2. invL_precomputed (ModelA style), cached at init (if available)
-        if self.invL_precomputed is None:
-            invL_precomputed = tf.linalg.triangular_solve(self.L, eye_np, lower=True)
-        else:
-            invL_precomputed = self.invL_precomputed
-
-        # 3. invL_inv using explicit inverse (ModelB)
-        invL_inv = tf.linalg.inv(self.L)
-
-        # 4. Custom naive triangular solve (my_triangular_solve)
-        # This is a simplified loop implementation illustrating the naive solver from chunk 5.
-        def my_triangular_solve(A, b):
-            S = tf.shape(A)[0]
-            ret = tf.zeros(S, dtype=tf.float64)
-
-            # Iterate over rows i, accumulate sums for previous solved elements
-            for i in tf.range(S):
-                acc = tf.reduce_sum(A[i,:] * ret)
-                ret = tf.tensor_scatter_nd_update(ret, [[i]], (b[i, 0] - acc) / A[i,i])
-            return tf.reshape(ret, (S,1))
-
-        # Compute the naive solution vector (shape [M,1])
-        sol_naive = my_triangular_solve(self.L, b)
-
-        # Compute solutions by matmul with different inverses
-        sol_inline = tf.matmul(invL_inline, b)          # Using inline triangular_solve inverse
-        sol_precomputed = tf.matmul(invL_precomputed, b) # Using precomputed inverse at init
-        sol_inv = tf.matmul(invL_inv, b)                # Using full inverse
-
-        # Compare solutions pairwise within a tolerance
-        atol = 1e-8
-        rtol = 1e-5
-
-        def close(a, b):
-            return tf.reduce_all(tf.abs(a - b) <= atol + rtol * tf.abs(b))
-
-        inline_vs_precomputed = close(sol_inline, sol_precomputed)
-        precomputed_vs_inv = close(sol_precomputed, sol_inv)
-        inv_vs_naive = close(sol_inv, sol_naive)
-        all_close = inline_vs_precomputed & precomputed_vs_inv & inv_vs_naive
-
-        # Return a dictionary with results & comparisons
-        return {
-            "sol_inline": sol_inline,
-            "sol_precomputed": sol_precomputed,
-            "sol_inv": sol_inv,
-            "sol_naive": sol_naive,
-            "close_inline_precomputed": inline_vs_precomputed,
-            "close_precomputed_inv": precomputed_vs_inv,
-            "close_inv_naive": inv_vs_naive,
-            "all_close_tolerance": all_close,
-        }
-
-
-def my_model_function():
-    # To create an instance we need a lower triangular matrix L.
-    # For demo, create a random positive-definite matrix and take lower cholesky,
-    # Ensuring L is lower-triangular and invertible of shape [M,M] dtype float64
-    M = 2048
-    tf.random.set_seed(42)
-    A = tf.random.uniform((M, M), dtype=tf.float64)
-    A = tf.matmul(A, A, transpose_b=True) + tf.eye(M, dtype=tf.float64)  # Make positive definite
-    L = tf.linalg.cholesky(A)
-
-    return MyModel(L)
-
-
-def GetInput():
-    # Returns a compatible input matching b in MyModel, i.e. shape [M,1] float64
-    M = 2048
-    b = tf.random.uniform((M, 1), dtype=tf.float64)
-    return b
-
+    for i in tf.range(S):
+        acc = tf.reduce_sum(A[i,:] * ret)
+        ret = tf.tensor_scatter_nd_update(ret, [[i]], (b[i] - acc) / A[i,i])
+    
+    return tf.reshape(ret, (1,-1))

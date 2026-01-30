@@ -1,18 +1,43 @@
-# torch.rand(B, 128, dtype=torch.float32)
-import torch
+def forward(self, x):
+    # x: [batch, seq_len, dim]
+    seq_length = x.shape[1]
+    for i in range(seq_length):
+         nn.Linear(xx, yy)
+
+def forward(self, x):
+    # x: [batch, seq_len, dim]
+    y = torch.tensor(1, dtype = x.dtype)
+
+import torch 
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
+
+class SimpleModel(nn.Module):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)        
         self.linear = nn.Linear(128, 10)
-        
     def forward(self, x):
         return self.linear(x)
+    
+if __name__ == "__main__":
+    model = SimpleModel()
+    x = torch.randn(4, 128)
+    exported_model = torch.export.export(model, (x,))
+    print(exported_model)
 
-def my_model_function():
-    return MyModel()
+import torch 
+import torch.nn as nn
 
-def GetInput():
-    return torch.rand(4, 128, dtype=torch.float32)
-
+class SimpleModel(nn.Module):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)        
+        self.linear = nn.Linear(128, 10)
+    def forward(self, x):
+        return self.linear(x)
+    
+if __name__ == "__main__":
+    model = SimpleModel()
+    x = torch.randn(4, 128)
+    exported_model = torch.export.export(model, (x,))
+    gm = torch.fx.symbolic_trace(exported_model.module())
+    gm.to_folder('xxx', 'yyy')

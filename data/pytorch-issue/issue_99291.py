@@ -1,31 +1,20 @@
-# torch.rand(1, 10, dtype=torch.int64)  # Input shape: (batch_size, sequence_length) with integer tokens
+from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Minimal dummy layer to satisfy model structure
-        self.dummy_layer = nn.Linear(10, 10)  # Arbitrary dimensions for token embeddings
-        
-    def forward(self, input_ids):
-        # Dummy forward pass (not used in generate path but required for model structure)
-        return self.dummy_layer(input_ids.float())
+model_id = "EleutherAI/gpt-j-6B"
+model = AutoModelForCausalLM.from_pretrained(model_id)
+tokenizer = AutoTokenizer.from_pretrained(model_id)
+model = model.eval()
+model = model.to(memory_format=torch.channels_last)
+model.generate = torch.compile(model.generate, backend='inductor', dynamic=True)
+generate_kwargs = dict(do_sample=False, temperature=0.9, num_beams=4)
+prompt = "Once upon a time, there existed a little girl, who liked to have adventures." + \
+         " She wanted to go to places and meet new people, and have fun."
+input_ids = tokenizer(prompt, return_tensors="pt").input_ids
+gen_tokens = model.generate(input_ids, max_new_tokens=32, **generate_kwargs)
 
-    def generate(self, input_ids, num_beams=1, **kwargs):
-        # Reproduce the problematic isinstance check
-        if not isinstance(num_beams, int) or num_beams <= 1:
+if not isinstance(num_beams, int) or num_beams <= 1:
             raise ValueError(
-                f"`num_beams` has to be an integer >1, but is {num_beams}. Use greedy_search for num_beams=1"
+                f"`num_beams` has to be an integer strictly greater than 1, but is {num_beams}. For `num_beams` == 1,"
+                " one should make use of `greedy_search` instead."
             )
-        # Dummy generation logic (not executed due to error)
-        return input_ids
-
-def my_model_function():
-    # Returns a model instance with minimal configuration
-    return MyModel()
-
-def GetInput():
-    # Generate random input_ids tensor matching the model's expected input
-    return torch.randint(0, 100, (1, 10), dtype=torch.int64)
-

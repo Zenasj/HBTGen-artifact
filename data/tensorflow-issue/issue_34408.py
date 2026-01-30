@@ -1,27 +1,12 @@
-# tf.random.uniform((1, 2), dtype=tf.float32) ← inferred input shape from example in issue (input_shape=(1,2))
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
+from tensorflow.python.keras.testing_utils import layer_test
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # This model encapsulates the logic of the example MyCustomLayer
-        # which returns a list of tensors (duplicates input).
-        # Here we implement this behavior as part of the model call.
-    
-    def call(self, inputs):
-        # According to the issue, a layer/model that returns list/tuple of tensors is valid,
-        # but keras.testing_utils.layer_test expects single tensor output.
-        # Here we implement the call returning a tuple/list of the inputs as output,
-        # matching the MyCustomLayer from the issue.
-        return [inputs, inputs]
+# a dummy layer that just returns a list of input
+class MyCustomLayer(tf.keras.layers.Layer):
+  def call(self, input):
+    return [input, input]
 
-def my_model_function():
-    # Return an instance of the model, no special initialization needed here.
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor of shape (1, 2) matching the input_shape in the issue,
-    # dtype float32 as a reasonable default.
-    return tf.random.uniform((1, 2), dtype=tf.float32)
-
+layer_test(MyCustomLayer, input_shape=(1,2))

@@ -1,42 +1,22 @@
-# torch.rand(B, 8, dtype=torch.float32)  # Input shape inferred from the example's (128,8) input
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Parameters matching the issue's example (weight: (10,4), bias: (1))
-        self.weight = nn.Parameter(torch.rand(10, 4))
-        self.bias = nn.Parameter(torch.rand(1))
+import torch
+import torch.nn.functional as F
 
-    def forward(self, input):
-        # Compare CPU and GPU behaviors for linear layer
-        cpu_ok = False
-        try:
-            # CPU computation (must fail if input.shape[1] != weight.shape[1])
-            _ = torch.nn.functional.linear(input, self.weight, self.bias)
-            cpu_ok = True
-        except RuntimeError:
-            pass
+input = torch.rand(128, 8)
+weight = torch.rand(10, 4)
+bias = torch.rand(1)
 
-        gpu_ok = False
-        try:
-            # GPU computation (should fail only if dimensions match)
-            _ = torch.nn.functional.linear(
-                input.cuda(),
-                self.weight.cuda(),
-                self.bias.cuda()
-            )
-            gpu_ok = True
-        except RuntimeError:
-            pass
+def run_linear_cpu(input, weight, bias):
+    return F.linear(input, weight, bias)
 
-        # Return True if discrepancy exists (one succeeded, the other failed)
-        return torch.tensor([cpu_ok != gpu_ok], dtype=torch.bool)
+def run_linear_gpu(input, weight, bias):
+    return F.linear(input.cuda(), weight.cuda(), bias.cuda())
 
-def my_model_function():
-    return MyModel()
+print(f"input: {input.size()}; weight: {weight.size()}; bias: {bias.size()}")
 
-def GetInput():
-    return torch.rand(128, 8, dtype=torch.float32)  # Matches input shape from issue example
+# GPU version: (shouldn't have passed)
+print(f"gpu result: {run_linear_gpu(input, weight, bias).size()}")
 
+# CPU version: (fail as expected)
+print(f"cpu result: {run_linear_cpu(input, weight, bias).size()}")

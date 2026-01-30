@@ -1,60 +1,69 @@
-# tf.random.uniform((B, 224, 224, 3), dtype=tf.float32) ← input shape inferred from issue code input (224,224,3)
+from tensorflow import keras
 
 import tensorflow as tf
 from tensorflow.keras import layers
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Construct three sequential blocks as described in the issue with given layer names
-        self.seq_0 = tf.keras.Sequential(name='seq_0')
-        self.seq_0.add(layers.Conv2D(64, (3, 3), strides=2, padding='same', use_bias=False))
-        self.seq_0.add(layers.BatchNormalization(name='bn_0'))
-        self.seq_0.add(layers.GaussianNoise(stddev=1, name='noise_0'))
-        self.seq_0.add(layers.ReLU())
+def seq(k):
+    result = tf.keras.Sequential(name='seq'+str(k))
+    result.add(tf.keras.layers.Conv2D(64, (3, 3), strides=2, padding='same', use_bias=False))
+    result.add(tf.keras.layers.BatchNormalization(name='bn_'+str(k)))
+    result.add(tf.keras.layers.GaussianNoise(stddev=1, name='noise_'+str(k)))
+    result.add(tf.keras.layers.ReLU())
 
-        self.seq_1 = tf.keras.Sequential(name='seq_1')
-        self.seq_1.add(layers.Conv2D(64, (3, 3), strides=2, padding='same', use_bias=False))
-        self.seq_1.add(layers.BatchNormalization(name='bn_1'))
-        self.seq_1.add(layers.GaussianNoise(stddev=1, name='noise_1'))
-        self.seq_1.add(layers.ReLU())
+    return result
 
-        self.seq_2 = tf.keras.Sequential(name='seq_2')
-        self.seq_2.add(layers.Conv2D(64, (3, 3), strides=2, padding='same', use_bias=False))
-        self.seq_2.add(layers.BatchNormalization(name='bn_2'))
-        self.seq_2.add(layers.GaussianNoise(stddev=1, name='noise_2'))
-        self.seq_2.add(layers.ReLU())
 
-        # Subtract layer to compute output difference between noise and batch norm layers in the first seq block
-        self.subtract = layers.Subtract()
+def testModel():
+    input_layer = layers.Input(shape=(256, 256, 3))
+    l0 = seq(0)(input_layer)
+    l1 = seq(1)(l0)
+    l2 = seq(2)(l1)
+    model = tf.keras.Model(input_layer, l2)
+    return model
 
-    def call(self, inputs, training=False):
-        # Forward prop through seq_0, capturing intermediate outputs bn_0 and noise_0
-        x = inputs
-        # Because we can't easily grab interim layers directly in subclassing, 
-        # we manually forward through layers of seq_0 to get bn_0 and noise_0 outputs
 
-        # seq_0 layers: Conv2D, BatchNorm, GaussianNoise, ReLU
-        x_conv0 = self.seq_0.layers[0](x)
-        bn_0 = self.seq_0.layers[1](x_conv0, training=training)
-        noise_0 = self.seq_0.layers[2](bn_0, training=training)
-        relu_0 = self.seq_0.layers[3](noise_0)
+if __name__ == '__main__':
+    model = testModel()
+    model.summary()
+    seq0 = model.get_layer('seq_0')
+    bn0 = seq0.get_layer('bn_0').output
+    noise0 = seq0.get_layer('noise_0').output
 
-        # Forward pass seq_1 and seq_2 normally (training param passed to BN and GaussianNoise)
-        x = self.seq_1(relu_0, training=training)
-        x = self.seq_2(x, training=training)
+    sub0 = tf.keras.layers.Subtract()([noise0, bn0])
 
-        # Compute subtraction between noise_0 output and bn_0 output (both tensors)
-        sub_0 = self.subtract([noise_0, bn_0])
+    new_model = tf.keras.Model(model.input, [sub0, model.output])
 
-        # Return a tuple of the final output and the subtraction difference to reflect issue behavior
-        return (x, sub_0)
+    test_tensor = tf.ones(shape=(1, 256, 256, 3))
 
-def my_model_function():
-    # Return an instance of the model
-    return MyModel()
+    (out, z) = new_model(test_tensor)
 
-def GetInput():
-    # Return a sample input tensor matching the input shape (batch=1, 224x224 RGB image)
-    return tf.random.uniform((1, 224, 224, 3), dtype=tf.float32)
+import tensorflow as tf
+from tensorflow.keras import layers
 
+def seq_model(k):
+    model = tf.keras.Sequential(name='seq_'+str(k))
+    model.add(layers.Conv2D(64, (3, 3), strides=2, padding='same', use_bias=False))
+    model.add(layers.BatchNormalization(name='bn_'+str(k)))
+    model.add(layers.GaussianNoise(stddev=1, name='noise_'+str(k)))
+    model.add(layers.ReLU())
+
+    return model
+
+def mymodel():
+    input = tf.keras.Input(shape=(224, 224, 3))
+
+    s0 = seq_model(k=0)(input)
+    s1 = seq_model(k=1)(s0)
+    s2 = seq_model(k=2)(s1)
+
+    return tf.keras.Model(input, s2)
+
+model = mymodel()
+noise_0 = model.get_layer('seq_0').get_layer('noise_0').output
+bn_0 = model.get_layer('seq_0').get_layer('bn_0').output
+
+sub_0 = layers.Subtract()([noise_0, bn_0])
+new_model = tf.keras.Model(model.input, [model.output, sub_0])
+
+test_tensor = tf.zeros(shape=(1, 224, 224, 3))
+out_of_new_model = new_model(test_tensor, training=True)

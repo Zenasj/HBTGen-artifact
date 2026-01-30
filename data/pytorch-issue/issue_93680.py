@@ -1,69 +1,51 @@
-# torch.rand(4,512,768, dtype=torch.float), torch.rand(4,512,768, dtype=torch.float), torch.rand(768, dtype=torch.float), torch.rand(768, dtype=torch.float)
-import torch
-import torch.nn as nn
+def nvfuser_fusion_id7(fd : FusionDefinition) -> None :
+    T0 = fd.define_tensor(symbolic_sizes=[-1, -1, -1], contiguous=[True, True, True], dtype=DataType.Float)
+    T1 = fd.define_tensor(symbolic_sizes=[-1, -1, -1], contiguous=[True, True, True], dtype=DataType.Float)
+    T2 = fd.define_tensor(symbolic_sizes=[-1], contiguous=[True], dtype=DataType.Float)
+    T3 = fd.define_tensor(symbolic_sizes=[-1], contiguous=[True], dtype=DataType.Float)
+    T4 = fd.ops.add(T0, T1)
+    T5 = fd.ops.broadcast_in_dim(T2, output_shape=[4, 512, 768], broadcast_dims=[2])
+    T6 = fd.ops.broadcast_in_dim(T3, output_shape=[4, 512, 768], broadcast_dims=[2])
+    T7, T8 = fd.ops.var_mean(T4, axes=[2], correction=0, keepdim=False)
+    T9 = fd.ops.broadcast_in_dim(T7, output_shape=[4, 512, 1], broadcast_dims=[0, 1])
+    T10 = fd.ops.broadcast_in_dim(T8, output_shape=[4, 512, 1], broadcast_dims=[0, 1])
+    S11 = fd.define_constant(1.00000e-12)
+    T12 = fd.ops.add(T9, S11)
+    T13 = fd.ops.broadcast_in_dim(T10, output_shape=[4, 512, 768], broadcast_dims=[0, 1, 2])
+    T14 = fd.ops.rsqrt(T12)
+    T15 = fd.ops.sub(T4, T13)
+    T16 = fd.ops.broadcast_in_dim(T14, output_shape=[4, 512, 768], broadcast_dims=[0, 1, 2])
+    T17 = fd.ops.mul(T15, T16)
+    T18 = fd.ops.mul(T17, T5)
+    T19 = fd.ops.add(T18, T6)
+    T20 = fd.ops.cast(T19, dtype=DataType.Float)
+    fd.add_output(T4)
+    fd.add_output(T10)
+    fd.add_output(T14)
+    fd.add_output(T20)
 
-class Fusion7(nn.Module):
-    def forward(self, T0, T1, T2, T3):
-        T4 = T0 + T1
-        T5 = T2.unsqueeze(0).unsqueeze(0).expand(4, 512, -1)
-        T6 = T3.unsqueeze(0).unsqueeze(0).expand(4, 512, -1)
-        T7, T8 = torch.var_mean(T4, unbiased=False, dim=2, keepdim=False)
-        T9 = T7.unsqueeze(-1)
-        T10 = T8.unsqueeze(-1)
-        S11 = 1e-12
-        T12 = T9 + S11
-        T14 = torch.rsqrt(T12)
-        T13 = T10.expand(-1, -1, 768)
-        T15 = T4 - T13
-        T16 = T14.expand(-1, -1, 768)
-        T17 = T15 * T16
-        T18 = T17 * T5
-        T19 = T18 + T6
-        T20 = T19
-        return T4, T10, T14, T20
-
-class Fusion10(nn.Module):
-    def forward(self, T0, T1, T2, T3):
-        T4 = T0.unsqueeze(0).unsqueeze(0).expand(4,512,-1)
-        T5 = T1 + T2
-        T6 = T3.unsqueeze(0).unsqueeze(0).expand(4,512,-1)
-        T7, T8 = torch.var_mean(T5, unbiased=False, dim=2, keepdim=False)
-        T9 = T7.unsqueeze(-1)
-        T10 = T8.unsqueeze(-1)
-        S11 = 1e-12
-        T12 = T9 + S11
-        T14 = torch.rsqrt(T12)
-        T13 = T10.expand(-1, -1, 768)
-        T15 = T5 - T13
-        T16 = T14.expand(-1, -1, 768)
-        T17 = T15 * T16
-        T18 = T17 * T6
-        T19 = T18 + T4
-        T20 = T19
-        return T5, T10, T14, T20
-
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.fusion7 = Fusion7()
-        self.fusion10 = Fusion10()
-    
-    def forward(self, inputs):
-        a, b, c, d = inputs
-        outputs7 = self.fusion7(a, b, c, d)
-        outputs10 = self.fusion10(c, a, b, d)
-        for o7, o10 in zip(outputs7, outputs10):
-            if not torch.allclose(o7, o10, atol=1e-5, rtol=1e-5):
-                return torch.tensor(False, dtype=torch.bool)
-        return torch.tensor(True, dtype=torch.bool)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    a = torch.rand(4, 512, 768, dtype=torch.float)
-    b = torch.rand(4, 512, 768, dtype=torch.float)
-    c = torch.rand(768, dtype=torch.float)
-    d = torch.rand(768, dtype=torch.float)
-    return (a, b, c, d)
-
+def nvfuser_fusion_id10(fd : FusionDefinition) -> None :
+    T0 = fd.define_tensor(symbolic_sizes=[-1], contiguous=[True], dtype=DataType.Float)
+    T1 = fd.define_tensor(symbolic_sizes=[-1, -1, -1], contiguous=[True, True, True], dtype=DataType.Float)
+    T2 = fd.define_tensor(symbolic_sizes=[-1, -1, -1], contiguous=[True, True, True], dtype=DataType.Float)
+    T3 = fd.define_tensor(symbolic_sizes=[-1], contiguous=[True], dtype=DataType.Float)
+    T4 = fd.ops.broadcast_in_dim(T0, output_shape=[4, 512, 768], broadcast_dims=[2])
+    T5 = fd.ops.add(T1, T2)
+    T6 = fd.ops.broadcast_in_dim(T3, output_shape=[4, 512, 768], broadcast_dims=[2])
+    T7, T8 = fd.ops.var_mean(T5, axes=[2], correction=0, keepdim=False)
+    T9 = fd.ops.broadcast_in_dim(T7, output_shape=[4, 512, 1], broadcast_dims=[0, 1])
+    T10 = fd.ops.broadcast_in_dim(T8, output_shape=[4, 512, 1], broadcast_dims=[0, 1])
+    S11 = fd.define_constant(1.00000e-12)
+    T12 = fd.ops.add(T9, S11)
+    T13 = fd.ops.broadcast_in_dim(T10, output_shape=[4, 512, 768], broadcast_dims=[0, 1, 2])
+    T14 = fd.ops.rsqrt(T12)
+    T15 = fd.ops.sub(T5, T13)
+    T16 = fd.ops.broadcast_in_dim(T14, output_shape=[4, 512, 768], broadcast_dims=[0, 1, 2])
+    T17 = fd.ops.mul(T15, T16)
+    T18 = fd.ops.mul(T17, T6)
+    T19 = fd.ops.add(T18, T4)
+    T20 = fd.ops.cast(T19, dtype=DataType.Float)
+    fd.add_output(T5)
+    fd.add_output(T10)
+    fd.add_output(T14)
+    fd.add_output(T20)

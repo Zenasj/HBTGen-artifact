@@ -1,49 +1,36 @@
-# tf.random.normal((10, 9, 8), dtype=tf.float64) used to create inputs and subcomponents
+import random
 
 import tensorflow as tf
+import traceback
 
-class MyModel(tf.keras.Model):
+class Network(tf.Module):
     def __init__(self):
         super().__init__()
-        # No trainable parameters; this model just wraps the ops in one callable
-     
+
     @tf.function(jit_compile=True)
-    def call(self, x):
-        # x is a complex128 tensor with shape (10, 9, 8)
-        # Steps from the original code:
-        # 1) Apply tf.raw_ops.Acos to x (input complex128 tensor)
-        # 2) Create tensor = complex tensor from random normal distributions, shape (1, 10, 1, 1, 8), dtype complex128
-        # 3) Apply tf.raw_ops.Xlogy(y=x, x=tensor) 
-        # Return the result
-        
-        # Since `tensor` depends on a random normal, replicate the original behavior but using a fixed seed for determinism 
-        # may be good practice but since original code uses random, we keep it.
+    def __call__(self, x):
+      real_part = tf.random.normal([1, 10, 1, 1, 8], dtype=tf.float64)
+      imag_part = tf.random.normal([1, 10, 1, 1, 8], dtype=tf.float64)
+      tensor = tf.complex(real_part, imag_part)
+      tensor = tf.cast(tensor, dtype=tf.complex128)
+      x = tf.raw_ops.Acos(x=x, )        
+      x = tf.raw_ops.Xlogy(y=x, x=tensor)
+      return x
 
-        # Create the complex tensor as in the original snippet
-        real_part = tf.random.normal([1, 10, 1, 1, 8], dtype=tf.float64)
-        imag_part = tf.random.normal([1, 10, 1, 1, 8], dtype=tf.float64)
-        tensor = tf.complex(real_part, imag_part)
-        tensor = tf.cast(tensor, dtype=tf.complex128)
+m = Network()
+real_part = tf.random.normal([10, 9, 8], dtype=tf.float64)
+imag_part = tf.random.normal([10, 9, 8], dtype=tf.float64)
+tensor = tf.complex(real_part, imag_part)
+tensor = tf.cast(tensor, dtype=tf.complex128)
+inp = {
+    "x": tensor,
+}
 
-        # Apply Acos op on input x
-        acos_res = tf.raw_ops.Acos(x=x)
-        
-        # Apply Xlogy op with y=acos_res and x=tensor
-        result = tf.raw_ops.Xlogy(y=acos_res, x=tensor)
+with tf.device('/CPU:0'):
+    tf.config.run_functions_eagerly(True)
+    no_op_res = m(**inp)
+    tf.config.run_functions_eagerly(False)
+    with tf.device('/CPU:0'):
+        op_res = m(**inp)
 
-        return result
-
-def my_model_function():
-    # Instantiate MyModel
-    return MyModel()
-
-def GetInput():
-    # Generate the complex128 input tensor expected by MyModel.call()
-    # Based on the reproduction steps:
-    # Shape: (10, 9, 8) with dtype complex128 created from random normal real and imag parts of float64
-    real_part = tf.random.normal([10, 9, 8], dtype=tf.float64)
-    imag_part = tf.random.normal([10, 9, 8], dtype=tf.float64)
-    tensor = tf.complex(real_part, imag_part)
-    tensor = tf.cast(tensor, dtype=tf.complex128)
-    return tensor
-
+    tf.debugging.assert_near(tf.cast(no_op_res, tf.float64), tf.cast(op_res, tf.float64), atol=0.001, rtol=0.001)

@@ -1,43 +1,80 @@
-# tf.random.uniform((B, None), dtype=tf.int32) ← Input shape inferred as (batch_size, sequence_length)
+tf.config.experimental.list_physical_devices('GPU')
+
+[PhysicalDevice(name='/physical_device:GPU:0', device_type='GPU')]
+
+print(device_lib.list_local_devices())
+
+tf.config.list_physical_devices('GPU')
+
+[PhysicalDevice(name='/physical_device:GPU:0', device_type='GPU')]
+
+tf.test.is_gpu_available()
+
+True
+
+import pandas as pd
+import numpy as np
 import tensorflow as tf
+from tensorflow import keras
 from tensorflow.keras import layers
+from tensorflow.keras.preprocessing.text import Tokenizer
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        max_features = 1_000_000  # Vocabulary size from issue
-        embedding_dim = 128
-        lstm_units = 64
-        # Embedding layer: input_dim=max_features, output_dim=128
-        self.embedding = layers.Embedding(max_features, embedding_dim)
-        # Two Bidirectional LSTM layers. First returns sequences, second returns last output
-        self.bilstm1 = layers.Bidirectional(layers.LSTM(lstm_units, return_sequences=True))
-        self.bilstm2 = layers.Bidirectional(layers.LSTM(lstm_units))
-        # Final Dense layer with sigmoid for binary classification
-        self.classifier = layers.Dense(1, activation='sigmoid')
-        
-    def call(self, inputs, training=False):
-        x = self.embedding(inputs)
-        x = self.bilstm1(x)
-        x = self.bilstm2(x)
-        output = self.classifier(x)
-        return output
+for device in tf.config.experimental.list_physical_devices("GPU"):
+    tf.config.experimental.set_memory_growth(device, True)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+max_features = 1000000
+maxlen = 200
+train_size=442598
+updatedtrainsize = 5;
 
-def GetInput():
-    # Return a random tensor input of shape (batch_size=32, sequence_length=200)
-    # Note: sequences are integer token IDs from 1 to max_features (approx 1,000,000)
-    batch_size = 32
-    sequence_length = 200  # maxlen in the provided code
-    max_features = 1_000_000
-    # Generate integer token indices from 1 to max_features-1 (0 typically reserved for padding)
-    # Using dtype int32 as model expects int32 input shape=(None,)
-    return tf.random.uniform(
-        shape=(batch_size, sequence_length),
-        minval=1, maxval=max_features,
-        dtype=tf.int32
-    )
+my_data = pd.read_csv('mydata.csv')
+y = my_data["label"]
+x = my_data["url"]
+z = np.array(x)
+w = np.array(y)
+x_train = z[0:train_size]
+x_val = z[train_size:]
+y_train = w[0:train_size]
+y_val = w[train_size:]
 
+for x in range(len(y_train)): 
+  if "good" in y_train[x]:
+    y_train[x] = 0
+  else:
+    y_train[x] = 1
+
+for x in range(len(y_val)): 
+  if "good" in y_val[x]:
+    y_val[x] = 0
+  else:
+    y_val[x] = 1
+
+tokenizer = Tokenizer(filters='/-.+',
+                      lower=True,
+                      split=' ',
+                      char_level=False,
+                      oov_token='<OOV>')
+tokenizer.fit_on_texts(x_train)
+tokenizer.fit_on_texts(x_val)
+word_index = tokenizer.word_index
+
+x_train = tokenizer.texts_to_sequences(x_train)
+x_val = tokenizer.texts_to_sequences(x_val)
+x_train = keras.preprocessing.sequence.pad_sequences(x_train, maxlen=maxlen)
+x_val = keras.preprocessing.sequence.pad_sequences(x_val, maxlen=maxlen)
+x_train = np.array(x_train).astype('float32')
+x_val = np.array(x_val).astype('float32')
+y_train = np.array(y_train).astype('float32')
+y_val = np.array(y_val).astype('float32')
+
+inputs = keras.Input(shape=(None,), dtype="int32")
+x = layers.Embedding(max_features, 128)(inputs)
+x = layers.Bidirectional(layers.LSTM(64, return_sequences=True))(x)
+x = layers.Bidirectional(layers.LSTM(64))(x)
+outputs = layers.Dense(1, activation="sigmoid")(x)
+model = keras.Model(inputs, outputs)
+
+model.compile("adam", "binary_crossentropy", metrics=["accuracy"])
+
+# with tf.device("/GPU:0"):
+model.fit(x_train, y_train, batch_size=32, epochs=2, validation_data=(x_val, y_val))

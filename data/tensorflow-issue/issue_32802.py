@@ -1,95 +1,79 @@
-# tf.random.uniform((B, H, W, C), dtype=tf.float32) ← Assuming input images have shape (batch, height, width, 3 channels)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
+import keras
+import h5py
+import keras_efficientnets
+from custom_objects import EfficientNetConvInitializer
+from custom_objects import EfficientNetDenseInitializer
+from custom_objects import Swish, DropConnect
+if __name__ == "__main__":
+    debugger = EfficientNetConvInitializer()
+    converter = tf.contrib.lite.TFLiteConverter.from_keras_model_file("efficient_net_v1_190925.h5")
+    converter.optimizations = [tf.contrib.lite.Optimize.OPTIMIZE_FOR_SIZE]
+    tflite_model = converter.convert()
+    open("efficient_net_wrap_finger.tflite", "wb").write(tflite_model)
 
-# Minimal placeholder implementations of the custom objects frequently referenced in the issue.
-# These are simplified to make the model convertible to TFLite.
-# In reality, the user would use the full implementations from keras_efficientnets repository.
-class EfficientNetConvInitializer(tf.keras.initializers.Initializer):
-    def __call__(self, shape, dtype=None):
-        # Simplified initializer: use GlorotUniform as placeholder
-        return tf.keras.initializers.GlorotUniform()(shape, dtype=dtype)
+def _hard_swish(self, x):
+        """Hard swish
+        """
+        return x * K.relu(x + 3.0, max_value=6.0) / 6.0
 
-    def get_config(self):
-        return {}
+get_custom_objects().update({
+    'EfficientNetConvInitializer': EfficientNetConvInitializer,
+    'EfficientNetDenseInitializer': EfficientNetDenseInitializer,
+    'DropConnect': DropConnect,
+    'Swish': Swish,
+})
 
-class EfficientNetDenseInitializer(tf.keras.initializers.Initializer):
-    def __call__(self, shape, dtype=None):
-        # Simplified initializer: use GlorotUniform as placeholder
-        return tf.keras.initializers.GlorotUniform()(shape, dtype=dtype)
+import functools
+import keras
+import os
+from efficientnet import model
+from tensorflow.python.keras.utils import CustomObjectScope, get_custom_objects
 
-    def get_config(self):
-        return {}
+def inject_keras_modules(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        kwargs['backend'] = keras.backend
+        kwargs['layers'] = keras.layers
+        kwargs['models'] = keras.models
+        kwargs['utils'] = keras.utils
+        return func(*args, **kwargs)
 
-# Simplified Swish activation as a Layer to be serializable and convertible
-class Swish(tf.keras.layers.Layer):
-    def call(self, inputs):
-        return inputs * tf.nn.sigmoid(inputs)
+    return wrapper
+def init_keras_custom_objects():
+    custom_objects = {
+        'swish': inject_keras_modules(model.get_swish)(),
+        'FixedDropout': inject_keras_modules(model.get_dropout)()
+    }
 
-    def get_config(self):
-        base_config = super().get_config()
-        return dict(list(base_config.items()))
+    get_custom_objects().update(custom_objects)
 
-# Simplified DropConnect layer - here using Dropout as a proxy; DropConnect is a form of stochastic depth.
-class DropConnect(tf.keras.layers.Layer):
-    def __init__(self, drop_rate=0.2, **kwargs):
-        super(DropConnect, self).__init__(**kwargs)
-        self.drop_rate = drop_rate
+init_keras_custom_objects()
+keras_model_path = './some_model.h5'
+save_model = tf.keras.models.load_model(keras_model_path)
+export_dir='save'
+tf.saved_model.save(save_model, export_dir)
+new_model = tf.saved_model.load(export_dir)
 
-    def call(self, inputs, training=None):
-        def dropped_inputs():
-            # DropConnect would drop entire connections, but approximated here by dropout on inputs
-            return tf.nn.dropout(inputs, rate=self.drop_rate)
-        return tf.cond(tf.cast(training, tf.bool),
-                       true_fn=dropped_inputs,
-                       false_fn=lambda: inputs)
+IMAGE_WIDTH = 64 # example
+with CustomObjectScope({'swish': inject_keras_modules(model.get_swish)(),
+                        'FixedDropout': inject_keras_modules(model.get_dropout)()}):
+    concrete_func = new_model.signatures[
+        tf.saved_model.DEFAULT_SERVING_SIGNATURE_DEF_KEY]
+    concrete_func.inputs[0].set_shape([1, IMAGE_WIDTH, IMAGE_WIDTH, 3])
+    converter = tf.lite.TFLiteConverter.from_concrete_functions([concrete_func])
 
-    def get_config(self):
-        config = super().get_config()
-        config.update({"drop_rate": self.drop_rate})
-        return config
+concrete_func = new_model.signatures[
+        tf.saved_model.DEFAULT_SERVING_SIGNATURE_DEF_KEY]
+concrete_func.inputs[0].set_shape([1, IMAGE_WIDTH, IMAGE_WIDTH, 3])
+converter = tf.lite.TFLiteConverter.from_concrete_functions([concrete_func])
 
-# A minimal example model representing an EfficientNet-like structure,
-# using the above custom objects as initializers and activation.
-
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # We'll build a small model to illustrate
-        # Input shape assumed as (None, 64, 64, 3) - as referenced in the issue
-        
-        self.conv1 = tf.keras.layers.Conv2D(
-            filters=32,
-            kernel_size=3,
-            padding='same',
-            kernel_initializer=EfficientNetConvInitializer(),
-            activation=None)
-        
-        self.swish = Swish()
-        self.pool = tf.keras.layers.GlobalAveragePooling2D()
-        self.dense = tf.keras.layers.Dense(
-            units=10,
-            kernel_initializer=EfficientNetDenseInitializer(),
-            activation=self.swish.call)  # use swish activation
-
-        self.dropconnect = DropConnect(drop_rate=0.2)
-
-    def call(self, inputs, training=False):
-        x = self.conv1(inputs)
-        x = self.swish(x)
-        x = self.dropconnect(x, training=training)
-        x = self.pool(x)
-        x = self.dense(x)
-        return x
-
-
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-
-def GetInput():
-    # Return a random tensor input that matches input expected by MyModel:
-    # Batch size 1, image size 64x64, 3 channels (RGB)
-    return tf.random.uniform((1, 64, 64, 3), dtype=tf.float32)
-
+MODEL_OUTPUT_PATH = "efficient_net_b0.tflite"
+converter.optimizations = [tf.lite.Optimize.OPTIMIZE_FOR_SIZE]
+converter.allow_custom_ops = True
+tflite_model = converter.convert()
+open(MODEL_OUTPUT_PATH, "wb").write(tflite_model)

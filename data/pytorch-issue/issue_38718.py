@@ -1,16 +1,29 @@
-# torch.rand(5, 5, dtype=torch.float32)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # This triggers the JIT error when compiled with torch.compile
-        return torch.nonzero(x, as_tuple=True)
+# this function f is exported successfully
+@torch.jit.script 
+def f(x: Torch.Tensor):
+    return torch.nonzero(x)
 
-def my_model_function():
-    return MyModel()
+@torch.jit.script 
+def f(x: Torch.Tensor):
+    return torch.nonzero(x, as_tuple=True)
 
-def GetInput():
-    # Generates a 2D input tensor (shape 5x5) as a common test case
-    return torch.rand(5, 5, dtype=torch.float32)
+@torch.jit._overload_method
+def nonzero_(self, input: torch.Tensor, out: Optional[torch.Tensor] = None, as_tuple: bool = False) -> torch.Tensor:
+    pass
 
+@torch.jit._overload_method
+def nonzero_(self, input: torch.Tensor, out: Optional[torch.Tensor] = None, as_tuple: bool = False) -> List[torch.Tensor]:
+    pass
+
+def nonzero_(self, input: torch.Tensor, out: Optional[torch.Tensor] = None, as_tuple: bool = False):
+    if not as_tuple:
+        if out is not None:
+            return torch.nonzero(input, out=out)
+        else:
+            return torch.nonzero(input)
+    else:
+        if input.dim() == 0:
+            return input.unsqueeze(0).nonzero().unbind(1)
+        return input.nonzero().unbind(1)

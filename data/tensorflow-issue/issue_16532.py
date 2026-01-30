@@ -1,50 +1,145 @@
-# tf.random.uniform((32, 400), dtype=tf.int32) ← inferred input shape and type from imdb dataset (batch_size=32, sequence length=400)
-
-import tensorflow as tf
 from tensorflow.keras import layers
+from tensorflow.keras import models
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Parameters inferred from original example
-        self.max_features = 20000  # vocab size
-        self.embedding_dims = 50
-        self.maxlen = 400
+'''This example demonstrates the use of fasttext for text classification
 
-        # Embedding layer that maps vocab indices to embedding vectors
-        self.embedding = layers.Embedding(input_dim=self.max_features, output_dim=self.embedding_dims, input_length=self.maxlen)
+Based on Joulin et al's paper:
 
-        # Global average pooling over sequence length dimension
-        self.global_avg_pool = layers.GlobalAveragePooling1D()
+Bags of Tricks for Efficient Text Classification
+https://arxiv.org/abs/1607.01759
 
-        # Final classification layer with sigmoid output for binary classification
-        self.output_dense = layers.Dense(1, activation='sigmoid')
+Results on IMDB datasets with uni and bi-gram embeddings:
+    Uni-gram: 0.8813 test accuracy after 5 epochs. 8s/epoch on i7 cpu.
+    Bi-gram : 0.9056 test accuracy after 5 epochs. 2s/epoch on GTx 980M gpu.
+'''
 
-    def call(self, inputs, training=False):
-        """
-        inputs: a batch of sequences of shape (batch_size, maxlen)
-        """
-        x = self.embedding(inputs)
-        x = self.global_avg_pool(x)
-        x = self.output_dense(x)
-        return x
+from __future__ import print_function
+import numpy as np
 
+# Changed from keras to tensorflow.python.keras
+from tensorflow.python.keras.preprocessing import sequence
+from tensorflow.python.keras.models import Sequential
+from tensorflow.python.keras.layers import Dense
+from tensorflow.python.keras.layers import Embedding
+from tensorflow.python.keras.layers import GlobalAveragePooling1D
+from tensorflow.python.keras.callbacks import TensorBoard
+# Followings are workaround for https://github.com/tensorflow/tensorflow/issues/16358
+from keras.datasets import imdb
 
-def my_model_function():
+def create_ngram_set(input_list, ngram_value=2):
     """
-    Returns an instance of the MyModel class.
+    Extract a set of n-grams from a list of integers.
+
+    >>> create_ngram_set([1, 4, 9, 4, 1, 4], ngram_value=2)
+    {(4, 9), (4, 1), (1, 4), (9, 4)}
+
+    >>> create_ngram_set([1, 4, 9, 4, 1, 4], ngram_value=3)
+    [(1, 4, 9), (4, 9, 4), (9, 4, 1), (4, 1, 4)]
     """
-    return MyModel()
+    return set(zip(*[input_list[i:] for i in range(ngram_value)]))
 
 
-def GetInput():
+def add_ngram(sequences, token_indice, ngram_range=2):
     """
-    Returns a random integer tensor of shape (batch_size=32, sequence_length=400),
-    that represents a batch of token indices appropriate for the MyModel input.
-    Values are in range [0, max_features-1].
-    """
-    batch_size = 32
-    maxlen = 400
-    max_features = 20000
-    return tf.random.uniform(shape=(batch_size, maxlen), minval=0, maxval=max_features, dtype=tf.int32)
+    Augment the input list of list (sequences) by appending n-grams values.
 
+    Example: adding bi-gram
+    >>> sequences = [[1, 3, 4, 5], [1, 3, 7, 9, 2]]
+    >>> token_indice = {(1, 3): 1337, (9, 2): 42, (4, 5): 2017}
+    >>> add_ngram(sequences, token_indice, ngram_range=2)
+    [[1, 3, 4, 5, 1337, 2017], [1, 3, 7, 9, 2, 1337, 42]]
+
+    Example: adding tri-gram
+    >>> sequences = [[1, 3, 4, 5], [1, 3, 7, 9, 2]]
+    >>> token_indice = {(1, 3): 1337, (9, 2): 42, (4, 5): 2017, (7, 9, 2): 2018}
+    >>> add_ngram(sequences, token_indice, ngram_range=3)
+    [[1, 3, 4, 5, 1337], [1, 3, 7, 9, 2, 1337, 2018]]
+    """
+    new_sequences = []
+    for input_list in sequences:
+        new_list = input_list[:]
+        for i in range(len(new_list) - ngram_range + 1):
+            for ngram_value in range(2, ngram_range + 1):
+                ngram = tuple(new_list[i:i + ngram_value])
+                if ngram in token_indice:
+                    new_list.append(token_indice[ngram])
+        new_sequences.append(new_list)
+
+    return new_sequences
+
+# Set parameters:
+# ngram_range = 2 will add bi-grams features
+ngram_range = 1
+max_features = 20000
+maxlen = 400
+batch_size = 32
+embedding_dims = 50
+epochs = 5
+
+print('Loading data...')
+(x_train, y_train), (x_test, y_test) = imdb.load_data(num_words=max_features)
+print(len(x_train), 'train sequences')
+print(len(x_test), 'test sequences')
+print('Average train sequence length: {}'.format(np.mean(list(map(len, x_train)), dtype=int)))
+print('Average test sequence length: {}'.format(np.mean(list(map(len, x_test)), dtype=int)))
+
+if ngram_range > 1:
+    print('Adding {}-gram features'.format(ngram_range))
+    # Create set of unique n-gram from the training set.
+    ngram_set = set()
+    for input_list in x_train:
+        for i in range(2, ngram_range + 1):
+            set_of_ngram = create_ngram_set(input_list, ngram_value=i)
+            ngram_set.update(set_of_ngram)
+
+    # Dictionary mapping n-gram token to a unique integer.
+    # Integer values are greater than max_features in order
+    # to avoid collision with existing features.
+    start_index = max_features + 1
+    token_indice = {v: k + start_index for k, v in enumerate(ngram_set)}
+    indice_token = {token_indice[k]: k for k in token_indice}
+
+    # max_features is the highest integer that could be found in the dataset.
+    max_features = np.max(list(indice_token.keys())) + 1
+
+    # Augmenting x_train and x_test with n-grams features
+    x_train = add_ngram(x_train, token_indice, ngram_range)
+    x_test = add_ngram(x_test, token_indice, ngram_range)
+    print('Average train sequence length: {}'.format(np.mean(list(map(len, x_train)), dtype=int)))
+    print('Average test sequence length: {}'.format(np.mean(list(map(len, x_test)), dtype=int)))
+
+print('Pad sequences (samples x time)')
+x_train = sequence.pad_sequences(x_train, maxlen=maxlen)
+x_test = sequence.pad_sequences(x_test, maxlen=maxlen)
+print('x_train shape:', x_train.shape)
+print('x_test shape:', x_test.shape)
+
+print('Build model...')
+model = Sequential()
+
+# we start off with an efficient embedding layer which maps
+# our vocab indices into embedding_dims dimensions
+model.add(Embedding(max_features,
+                    embedding_dims,
+                    input_length=maxlen))
+
+# we add a GlobalAveragePooling1D, which will average the embeddings
+# of all words in the document
+model.add(GlobalAveragePooling1D())
+
+# We project onto a single unit output layer, and squash it with a sigmoid:
+model.add(Dense(1, activation='sigmoid'))
+
+model.compile(loss='binary_crossentropy',
+              optimizer='adam',
+              metrics=['accuracy'])
+embeddingsMetadata = {'embedding': 'metadata.tsv'}
+model.fit(x_train, y_train,
+          batch_size=batch_size,
+          epochs=epochs,
+          validation_data=(x_test, y_test),
+# problem occured here!!!
+          callbacks=[TensorBoard(log_dir=".", histogram_freq=1, embeddings_freq=1,
+                                 embeddings_metadata= embeddingsMetadata
+                                ),
+          ])

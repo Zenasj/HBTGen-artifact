@@ -1,23 +1,15 @@
-# torch.rand(1000, 10, dtype=torch.float32, device='cuda')  # Add a comment line at the top with the inferred input shape
+import torch.nn as nn
 
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.linear = nn.Linear(10, 20)
+from torch.nn.functional import linear
 
-    def forward(self, x):
-        return self.linear(x)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
+# Creating the customized function
 class MyLinear(torch.autograd.Function):
     @staticmethod
     def forward(ctx, i, w):
+
         if ctx.needs_input_grad[1]:
             ctx.save_for_backward(w, i)
         else:
@@ -29,19 +21,40 @@ class MyLinear(torch.autograd.Function):
         saved = ctx.saved_tensors
         return grad_output.mm(saved[0]), grad_output.t().mm(saved[1]) if ctx.needs_input_grad[1] else None
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(1000, 10, dtype=torch.float32, device='cuda').requires_grad_()
+# Input requiring gradient
+x = torch.rand(1000, 10).cuda().requires_grad_()
 
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
-# output.backward()
+# Weights NOT requiring gradient
+weight = torch.rand(20, 10).cuda()
 
-# ### Explanation:
-# - **MyModel**: A simple `nn.Module` that contains a single linear layer. This is a minimal example to demonstrate the issue.
-# - **my_model_function**: Returns an instance of `MyModel`.
-# - **MyLinear**: A custom autograd function that mimics the behavior of `torch.nn.functional.linear` but optimizes memory usage by not saving unnecessary tensors when the weight does not require gradients.
-# - **GetInput**: Generates a random tensor input that matches the input expected by `MyModel`.
-# This code is designed to be used as a drop-in replacement for the original `linear` function and can be compiled with `torch.compile` for further optimization.
+
+# This function performs some operations using the function f and keeps track of the
+# allocated gpu memory within the function.
+def test(f, x, weight):
+    s = torch.cuda.memory_allocated()
+    x = x + 2
+    x = f(x, weight)
+    print(f"Allocated memory: {torch.cuda.memory_allocated() - s}")
+    return x
+
+
+# I report the amount of allocated memory by torch.nn.functional
+print("Test Pytorch linear")
+y1 = test(linear, x, weight)
+
+# I report the amount of allocated memory by the customized implementation
+print("\nTest MyLinear")
+y2 = test(MyLinear.apply, x, weight)
+
+# Check that the obtained outputs agree
+print(f"\nSame output? {y1.allclose(y2)}")
+
+y1.norm().backward()
+z1 = x.grad.clone()
+
+x.grad.zero_()
+y2.norm().backward()
+z2 = x.grad.clone()
+
+# Check that the gradient wrt input agrees.
+print(f"Same gradient? {z1.allclose(z2)}")

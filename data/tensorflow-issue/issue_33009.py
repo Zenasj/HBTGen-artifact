@@ -1,31 +1,33 @@
-# tf.random.uniform((1, 10), dtype=tf.float32) ← inferred input shape and dtype from issue example input
+import random
+from tensorflow.keras import layers
 
-import tensorflow as tf
+from tensorflow.keras import Input, Model
+from tensorflow.keras.layers import Dense
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Reconstructing the minimal architecture described in issue:
-        # Input shape = (10,), Dense(32), Dense(2)
-        self.dense1 = tf.keras.layers.Dense(32)
-        self.dense2 = tf.keras.layers.Dense(2)
-    
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        out = self.dense2(x)
-        return out
+# Build model
+In = Input(shape=(10,))
+x = Dense(32)(In)
+Out = Dense(2)(x)
 
-def my_model_function():
-    # Return an instance of MyModel with weights randomly initialized
-    model = MyModel()
-    # Build the model by running a dummy input through it once
-    dummy_input = tf.zeros((1, 10), dtype=tf.float32)
-    # This makes sure weights are created (build is called)
-    model(dummy_input)
-    return model
+# Compile
+model = Model(inputs=In, outputs=Out)
+model.compile(optimizer='adam', loss='mse')        
 
-def GetInput():
-    # Return a random tensor input matching the expected shape of MyModel (1, 10)
-    # Use float32 since original code uses np.random.uniform → float32 is default TF float dtype
-    return tf.random.uniform((1, 10), dtype=tf.float32)
+# Create dummy input data
+fake_data = np.random.uniform(low=0, high=1.0, size=(1, 10, ))
 
+while True:
+    # Repeatedly predict:
+    model.predict(fake_data) # No memory leak if this line is replaced with "pass"
+
+# custom batched prediction loop to avoid memory leak issues for now in the model.predict call
+y_pred_probs = np.empty([len(X_test), VOCAB_SIZE], dtype=np.float32)  # pre-allocate required memory for array for efficiency
+
+BATCH_INDICES = np.arange(start=0, stop=len(X_test), step=BATCH_SIZE)  # row indices of batches
+BATCH_INDICES = np.append(BATCH_INDICES, len(X_test))  # add final batch_end row
+
+for index in np.arange(len(BATCH_INDICES) - 1):
+    batch_start = BATCH_INDICES[index]  # first row of the batch
+    batch_end = BATCH_INDICES[index + 1]  # last row of the batch
+    y_pred_probs[batch_start:batch_end] = model.predict_on_batch(X_test[batch_start:batch_end])

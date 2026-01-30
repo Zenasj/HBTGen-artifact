@@ -1,22 +1,26 @@
-# torch.rand(1, 1, 1, dtype=torch.float32) ← Add a comment line at the top with the inferred input shape
-
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+class CustomModel(nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
+        super(CustomModel, self).__init__()
         self.layer1 = nn.ZeroPad1d(padding=2)
 
     def forward(self, x):
         x = self.layer1(x)
         return x
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+# Compilation settings
+compile_setting = {'mode': None, 'fullgraph': False, 'dynamic': False}
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand([1, 1, 1], dtype=torch.float32)
+# Input tensor
+input_tensor = torch.rand([1, 1, 1])  # Assuming the input shape is [batch_size, channels]
 
+# Create the model
+mymodel = CustomModel()
+
+# Forward pass
+output = mymodel(input_tensor)
+
+# Attempting to compile
+op_output = torch.compile(mymodel, **compile_setting)(input_tensor)  # This triggers the error

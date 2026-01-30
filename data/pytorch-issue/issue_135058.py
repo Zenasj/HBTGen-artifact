@@ -1,26 +1,27 @@
-# torch.rand(B, 4096, dtype=torch.float32)
+import torch.nn as nn
+
 import torch
-from torch import nn
-import torch.ao.quantization as quant
 
-class MyModel(nn.Module):
-    def __init__(self):
+DIM = 4096
+INPUT_SIZE1 = 32
+INPUT_SIZE2 = 16
+
+class LinearNet(torch.nn.Module):
+   def __init__(self):
         super().__init__()
-        # Base linear layer with dynamic quantization applied
-        self.original_layer = nn.Linear(4096, 4096, bias=False)
-        # Wrap with quantized version as submodule
-        self.quantized_model = quant.quantize_dynamic(self.original_layer, {nn.Linear})
+        self.fc1 = torch.nn.Linear(DIM, DIM, bias=False)
 
-    def forward(self, x):
-        # Forward through quantized model
-        return self.quantized_model(x)
+   def forward(self, x):
+        x = self.fc1(x)
+        return x
 
-def my_model_function():
-    # Returns quantized model instance
-    return MyModel()
+input1 = torch.randn(size=(INPUT_SIZE1, DIM))
+input2 = torch.randn(size=(INPUT_SIZE2, DIM))
 
-def GetInput():
-    # Matches input shape (BATCH, 4096) with float32 dtype
-    # Example uses BATCH sizes 32 and 16, so B=32 is safe default
-    return torch.rand(32, 4096, dtype=torch.float32)
-
+with torch.no_grad():
+    model = LinearNet()
+    model =  torch.ao.quantization.quantize_dynamic(model,{torch.nn.Linear})
+    
+    model(input1)   # this goes to ACL lowp_gemm
+    print("="*50)
+    model(input2)   # this goes to gemm:jit without this PR, and to ACL with this PR

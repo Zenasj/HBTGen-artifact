@@ -1,97 +1,81 @@
-# tf.random.uniform((batch_size, 1), dtype=tf.string) ← Inputs are string tensors of shape (batch_size, 1)
+import random
+from tensorflow.keras import layers
 
+import numpy as np
 import tensorflow as tf
+from tensorflow import keras
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Vocabulary list based on example in the issue
-        vocab_list = ["1", "2", "3", "cat", "dog", "mouse"]
-        
-        # String lookup layers convert string inputs to integer indices
-        self.lookup_a = tf.keras.layers.StringLookup(
-            vocabulary=vocab_list, mask_token=None, num_oov_indices=0, name='lookup_a')
-        self.lookup_b = tf.keras.layers.StringLookup(
-            vocabulary=vocab_list, mask_token=None, num_oov_indices=0, name='lookup_b')
-        self.lookup_c = tf.keras.layers.StringLookup(
-            vocabulary=vocab_list, mask_token=None, num_oov_indices=0, name='lookup_c')
+print(f"TensorFlow Version: {tf.__version__}")
 
-        self.num_bins_crossing = 1000
-        
-        # HashedCrossing layers for crossing features
-        self.cross_ab = tf.keras.layers.HashedCrossing(
-            num_bins=self.num_bins_crossing, name='cross_ab')
-        self.cross_abc = tf.keras.layers.HashedCrossing(
-            num_bins=self.num_bins_crossing, name='cross_abc')
+# Optional: Test with eager execution
+# tf.config.run_functions_eagerly(True)
 
-        # Embedding and output layers
-        self.embedding_dim = 8
-        self.embedding = tf.keras.layers.Embedding(
-            input_dim=self.num_bins_crossing, output_dim=self.embedding_dim, name='embedding')
-        self.flatten = tf.keras.layers.Flatten(name='flatten')
-        self.output_layer = tf.keras.layers.Dense(1, activation='sigmoid', name='output')
+# 1. Define Model Inputs (all initially with symbolic batch_size=None)
+vocab_list = ["1", "2", "3", "cat", "dog", "mouse"] # Example vocabulary
+input_a = keras.Input(shape=(1,), dtype=tf.string, name='feature_a')
+input_b = keras.Input(shape=(1,), dtype=tf.string, name='feature_b')
+input_c = keras.Input(shape=(1,), dtype=tf.string, name='feature_c')
 
-    def call(self, inputs):
-        # inputs: list or tuple of three tensors: [feature_a, feature_b, feature_c]
-        feature_a, feature_b, feature_c = inputs
+# 2. StringLookup for each feature
+lookup_a = keras.layers.StringLookup(vocabulary=vocab_list, mask_token=None, num_oov_indices=0, name='lookup_a')(input_a)
+lookup_b = keras.layers.StringLookup(vocabulary=vocab_list, mask_token=None, num_oov_indices=0, name='lookup_b')(input_b)
+lookup_c = keras.layers.StringLookup(vocabulary=vocab_list, mask_token=None, num_oov_indices=0, name='lookup_c')(input_c)
 
-        # Apply string lookup (output shape: (batch_size, 1), dtype=int64)
-        idx_a = self.lookup_a(feature_a)
-        idx_b = self.lookup_b(feature_b)
-        idx_c = self.lookup_c(feature_c)
+print(f"Initial shape of lookup_a: {lookup_a.shape}")
+print(f"Initial shape of lookup_b: {lookup_b.shape}")
+print(f"Initial shape of lookup_c: {lookup_c.shape}")
 
-        # HashedCrossing requires all inputs to have same shape, 
-        # but the issue is that the first cross output shape is (None, 1) symbolic
-        # while idx_c often resolves to (batch_size,1) concretely during fit.
-        # To avoid shape mismatch, explicitly set shape of cross_ab:
-        cross_ab_out = self.cross_ab([idx_a, idx_b])
-        cross_ab_out = tf.ensure_shape(cross_ab_out, [None, 1])  # ensure symbolic shape with batch dim None
+# 3. Chained HashedCrossing
+num_bins_crossing = 1000
+# First cross (A x B)
+cross_ab = keras.layers.HashedCrossing(num_bins=num_bins_crossing, name='cross_ab')([lookup_a, lookup_b])
+print(f"Shape of cross_ab: {cross_ab.shape}")
 
-        # Second cross: cross (A x B) with C
-        cross_abc_out = self.cross_abc([cross_ab_out, idx_c])
-
-        # Embedding and prediction
-        x = self.embedding(cross_abc_out)
-        x = self.flatten(x)
-        output = self.output_layer(x)
-
-        return output
+# Second cross ((A x B) x C) - This is where the error is expected during model.fit()
+# due to shape mismatch between cross_ab and lookup_c
+cross_abc = keras.layers.HashedCrossing(num_bins=num_bins_crossing, name='cross_abc')([cross_ab, lookup_c])
+print(f"Shape of cross_abc: {cross_abc.shape}")
 
 
-def my_model_function():
-    # Create inputs mimicking the Functional API inputs from the issue for clarity
-    input_a = tf.keras.Input(shape=(1,), dtype=tf.string, name='feature_a')
-    input_b = tf.keras.Input(shape=(1,), dtype=tf.string, name='feature_b')
-    input_c = tf.keras.Input(shape=(1,), dtype=tf.string, name='feature_c')
+# 4. Embedding and Output layers
+embedding_dim = 8
+embedding = keras.layers.Embedding(input_dim=num_bins_crossing, output_dim=embedding_dim, name='embedding')(cross_abc)
+flatten = keras.layers.Flatten(name='flatten')(embedding)
+output = keras.layers.Dense(1, activation='sigmoid', name='output')(flatten)
 
-    # Instantiate MyModel and call on inputs
-    model_instance = MyModel()
-    outputs = model_instance([input_a, input_b, input_c])
+# 5. Create and Compile Model
+model = keras.Model(inputs=[input_a, input_b, input_c], outputs=output)
+model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+model.summary()
 
-    # Create functional model to keep API consistent if needed downstream
-    # but we return the subclass instance as required by the task
-    # (Functional model here is for completeness; return subclass instance)
-    return model_instance
+# 6. Create Dummy Data
+num_samples = 200
+batch_s = 10 # Using a batch size that will appear in the error
 
+dummy_a_np = np.random.choice(vocab_list, size=(num_samples, 1))
+dummy_b_np = np.random.choice(vocab_list, size=(num_samples, 1))
+dummy_c_np = np.random.choice(vocab_list, size=(num_samples, 1))
 
-def GetInput():
-    import numpy as np
+# Ensure input arrays are of dtype=object for robust tf.string conversion
+dummy_a = dummy_a_np.astype(object)
+dummy_b = dummy_b_np.astype(object)
+dummy_c = dummy_c_np.astype(object)
 
-    # Vocabulary list consistent with model initialization
-    vocab_list = ["1", "2", "3", "cat", "dog", "mouse"]
-    
-    batch_size = 10  # typical batch size used in the issue example
-    shape = (batch_size, 1)
+dummy_labels = np.random.randint(0, 2, size=(num_samples, 1)).astype(np.float32)
 
-    # Generate random string inputs consistent with vocab and shape
-    dummy_a_np = np.random.choice(vocab_list, size=shape).astype(object)
-    dummy_b_np = np.random.choice(vocab_list, size=shape).astype(object)
-    dummy_c_np = np.random.choice(vocab_list, size=shape).astype(object)
+print(f"\nFeeding data with batch_size = {batch_s}")
+# 7. Fit the model - Error is expected here
+try:
+    model.fit(
+        [dummy_a, dummy_b, dummy_c],
+        dummy_labels,
+        batch_size=batch_s,
+        epochs=1,
+        verbose=2
+    )
+except ValueError as e:
+    print(f"\nCaught expected ValueError: {e}")
+    import traceback
+    traceback.print_exc()
 
-    # Return tuple of tf.Tensor inputs of dtype string
-    inp_a = tf.convert_to_tensor(dummy_a_np, dtype=tf.string)
-    inp_b = tf.convert_to_tensor(dummy_b_np, dtype=tf.string)
-    inp_c = tf.convert_to_tensor(dummy_c_np, dtype=tf.string)
-
-    return (inp_a, inp_b, inp_c)
-
+print("\nScript finished.")

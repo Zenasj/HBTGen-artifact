@@ -1,11 +1,22 @@
-# torch.rand(B, 1, 28, 28, dtype=torch.float32)
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.optim as optim
+from torchvision import datasets, transforms
+from torch.autograd import Variable
+from data_parallel import DataParallel
 
-class MyModel(nn.Module):
+train_loader = torch.utils.data.DataLoader(
+    datasets.MNIST('../data', train=True, download=True,
+                   transform=transforms.Compose([
+                       transforms.ToTensor(),
+                       transforms.Normalize((0.1307,), (0.3081,))
+                   ])),
+    batch_size=256, shuffle=True, num_workers=2, pin_memory=True)
+
+class Net(nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
+        super(Net, self).__init__()
         self.conv1 = nn.Conv2d(1, 10, kernel_size=5)
         self.conv2 = nn.Conv2d(10, 20, kernel_size=5)
         self.fc1 = nn.Linear(320, 50)
@@ -17,11 +28,30 @@ class MyModel(nn.Module):
         x = x.view(-1, 320)
         x = F.relu(self.fc1(x))
         x = self.fc2(x)
-        return F.log_softmax(x, dim=1)
+        return F.log_softmax(x)
 
-def my_model_function():
-    return MyModel()
+model = DataParallel(Net())
+model.cuda()
 
-def GetInput():
-    return torch.rand(1, 1, 28, 28, dtype=torch.float32)
+optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
+criterion = nn.NLLLoss().cuda()
 
+model.train()
+for batch_idx, (data, target) in enumerate(train_loader):
+    input_var = Variable(data.cuda())
+    target_var = Variable(target.cuda())
+
+    print('Getting model output')
+    output = model(input_var)
+    print('Got model output')
+
+    loss = criterion(output, target_var)
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+
+print('Finished')
+
+from data_parallel import DataParallel
+...
+model = DataParallel(Net())

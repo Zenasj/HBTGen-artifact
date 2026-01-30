@@ -1,60 +1,51 @@
-# tf.random.normal((batch_size, input_features), dtype=tf.float32) ← Input will be a 2D float tensor, assuming input features=3 here
-
+import random
 import tensorflow as tf
 
-class FlexibleDenseModule(tf.keras.layers.Layer):
-    # Adapted from tf.Module example to tf.keras.layers.Layer for better TF2 compatibility and easier usage
-    def __init__(self, out_features, **kwargs):
-        super().__init__(**kwargs)
-        self.out_features = out_features
+class FlexibleDenseModule(tf.Module):
+    # Note: No need for `in_features`
+    def __init__(self, out_features, name=None):
+        super().__init__(name=name)
         self.is_built = False
+        self.out_features = out_features
 
-    def build(self, input_shape):
-        # Create variables once input shape is known (on build)
-        in_features = input_shape[-1]
-        self.w = self.add_weight(
-            shape=(in_features, self.out_features),
-            initializer='random_normal',
-            trainable=True,
-            name='w'
-        )
-        self.b = self.add_weight(
-            shape=(self.out_features,),
-            initializer='zeros',
-            trainable=True,
-            name='b'
-        )
-        self.is_built = True
-        super().build(input_shape)
-
-    def call(self, inputs):
-        # If not built, build now with shape inference (some keras functions can do this)
+    def __call__(self, x):
+        # Create variables on first call.
         if not self.is_built:
-            self.build(inputs.shape)
-        y = tf.matmul(inputs, self.w) + self.b
+            self.w = tf.Variable(
+                tf.random.normal([x.shape[-1], self.out_features]), 
+                name='w'
+            )
+            self.b = tf.Variable(tf.zeros([self.out_features]), name='b')
+            self.is_built = True
+
+        y = tf.matmul(x, self.w) + self.b
         return tf.nn.relu(y)
 
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Composed of two FlexibleDenseModules like the original composite module 
+class MySequentialModule(tf.Module):
+    def __init__(self, name=None):
+        super().__init__(name=name)
         self.dense_1 = FlexibleDenseModule(out_features=3)
         self.dense_2 = FlexibleDenseModule(out_features=2)
 
-    def call(self, x):
+    def __call__(self, x):
         x = self.dense_1(x)
-        x = self.dense_2(x)
-        return x
+        return self.dense_2(x)
 
 
-def my_model_function():
-    # Instantiate and return MyModel
-    return MyModel()
+my_model = MySequentialModule(name="flexible")
+result = my_model(tf.constant([[2.0, 2.0, 2.0]]))
+chkp_path = "my_checkpoint"
+checkpoint = tf.train.Checkpoint(model=my_model)
+checkpoint.write(chkp_path)
+print(my_model.variables)
 
 
-def GetInput():
-    # Return a random tensor input compatible with FlexibleDenseModule expecting input feature dimension = 3
-    # Batch size = 1 for simplicity (can be any positive integer)
-    return tf.random.uniform(shape=(1, 3), dtype=tf.float32)
+new_model = MySequentialModule(name="new")
+new_checkpoint = tf.train.Checkpoint(model=new_model)
+new_checkpoint.restore("my_checkpoint")
+print(new_model.variables)   # shows ()
 
+
+new_model(tf.constant([[2.0, 2.0, 2.0]]))
+print(new_model.variables)   # shows the loaded weights

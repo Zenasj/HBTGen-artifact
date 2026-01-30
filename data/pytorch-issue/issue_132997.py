@@ -1,30 +1,22 @@
-# torch.rand(1, 3, 224, 224, dtype=torch.float32)
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # First BatchNorm2d (initialized with inferred parameters)
-        self.bn1 = nn.BatchNorm2d(3)  # Assuming input has 3 channels
-        # Conv2d layer (common configuration for demonstration)
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1)
-        # Second BatchNorm2d (output channels from conv1)
-        self.bn2 = nn.BatchNorm2d(64)
-    
-    def forward(self, x):
-        x = self.bn1(x)
-        x = F.relu(x)
-        x = self.conv1(x)
-        x = self.bn2(x)
-        return x
+import torch.nn.functional as f
+import torch
 
-def my_model_function():
-    # Returns the model instance with default-initialized parameters
-    return MyModel()
+# Precision error is calculated based on the Chebyshev distance.
 
-def GetInput():
-    # Returns a random input tensor matching the expected shape
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
+args = torch.load('batch_norm.pt')
 
+output = f.batch_norm(args['parameter:0'], args['parameter:1'], args['parameter:2'], args['parameter:3'], args['parameter:4'], args['parameter:5'], args['parameter:6'], args['parameter:7'])
+
+args = torch.load('relu.pt')
+
+output = f.relu(output)
+
+args = torch.load('conv2d.pt')
+
+output = f.conv2d(output, args['parameter:1'], args['parameter:2'], args['parameter:3'], args['parameter:4'], args['parameter:5'], args['parameter:6'])
+
+args = torch.load('batch_norm_last.pt')
+
+output = f.batch_norm(output, args['parameter:1'], args['parameter:2'], args['parameter:3'], args['parameter:4'], args['parameter:5'], args['parameter:6'], args['parameter:7'])

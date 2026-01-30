@@ -1,19 +1,14 @@
-# torch.rand(B, C, H, W, dtype=torch.bfloat16)
 import torch
-from torch import nn
+import timeit
+import numpy
+device="cpu"
+torch.set_num_threads(1)
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        
-    def forward(self, x):
-        # Performs reduction with BF16 input and FP32 accumulation (as per PR's intent)
-        return x.sum()
+def fn(input, dim):
+    return input.sum(dim=dim)
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Matches shape and dtype from benchmark examples
-    return torch.rand(1, 500, 500, 4, dtype=torch.bfloat16)
-
+sizes = [[500,500,4], [128,128,128]]
+for size in sizes:
+    input_ = torch.randn(*size, device=device)
+    for dim in range(3):
+        print('Size ', size, 'dim ', dim, 'time:', timeit.timeit('fn(input_, dim)', number=100, globals=globals()))

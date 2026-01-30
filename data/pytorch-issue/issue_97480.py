@@ -1,17 +1,28 @@
 import torch
-from torch import nn
 
-# torch.rand(B, C, H, W, dtype=torch.float32)
-class MyModel(nn.Module):
-    def forward(self, x):
-        # The problematic getattr call that triggers Dynamo's error
-        val = getattr(None, 'arg', 3)
-        return x + val  # Example operation to integrate val into computation
+def f():
+    getattr(None, 'arg', 3)
 
-def my_model_function():
-    return MyModel()
+import logging
 
-def GetInput():
-    # Random tensor matching expected input shape (B=1, C=3, H=224, W=224)
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
+from torch._dynamo import config, explain
 
+config.verbose = True
+config.log_level = logging.DEBUG
+
+config.repro_after = "dynamo"
+config.repro_level = 3
+
+config.output_code = True
+config.output_graph_code = True
+config.print_graph_breaks = True
+
+
+def f():
+    getattr(None, 'arg', 3)
+
+##### fails
+explain(f)
+
+##### also fails
+torch.compile()(f)()

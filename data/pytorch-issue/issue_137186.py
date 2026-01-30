@@ -1,33 +1,24 @@
-# torch.rand(1)  # Dummy input, not used in forward
+import torch.nn as nn
+
 import torch
 from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.transformer = nn.Transformer()  # Original model with the bug
+torch.set_default_device(device='cuda')
+torch.set_default_dtype(d=torch.float64)
 
-    def forward(self, x):
-        sz = 3  # Fixed size as in the issue example
-        # Generate mask using the problematic method (original implementation)
-        original_mask = self.transformer.generate_square_subsequent_mask(sz=sz)
-        
-        # Generate corrected mask using current default device/dtype
-        corrected_mask = torch.triu(
-            torch.ones(sz, sz,
-                      dtype=torch.get_default_dtype(),
-                      device=torch.device(torch.get_default_device())),
-            diagonal=1
-        ) * float('-inf')
-        
-        # Compare device and dtype between original and corrected masks
-        device_ok = (original_mask.device == corrected_mask.device) and \
-                    (original_mask.dtype == corrected_mask.dtype)
-        return torch.tensor([device_ok], dtype=torch.bool)  # Return as tensor
+tran = nn.Transformer().generate_square_subsequent_mask(sz=3)
+tran.device, tran.dtype
+# (device(type='cpu'), torch.float32) # Here
 
-def my_model_function():
-    return MyModel()
+import torch
 
-def GetInput():
-    return torch.rand(1)  # Dummy input (unused), ensuring compatibility
+torch.set_default_device(device='cuda')
+torch.set_default_dtype(d=torch.float64)
 
+my_tensor = torch.tensor([0., 1., 2.])
+my_tensor.device, my_tensor.dtype
+# (device(type='cuda', index=0), torch.float64)
+
+import torch
+
+torch.__version__ # 2.4.1+cu121

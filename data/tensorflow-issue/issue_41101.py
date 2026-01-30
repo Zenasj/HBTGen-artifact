@@ -1,52 +1,54 @@
-# tf.random.uniform((B, 28, 28), dtype=tf.float32)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
+
 import tensorflow as tf
 import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define the CNN model per the Keras tutorial example for MNIST
-        self.reshape_layer = tf.keras.layers.Reshape(target_shape=(28, 28, 1))
-        self.conv2d = tf.keras.layers.Conv2D(32, 3, activation='relu')
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(128, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(10)  # logits output
+def mnist_dataset(batch_size):
+  (x_train, y_train), _ = tf.keras.datasets.mnist.load_data()
+  x_train = x_train / np.float32(255)
+  y_train = y_train.astype(np.int64)
+  train_dataset = tf.data.Dataset.from_tensor_slices(
+      (x_train, y_train)).shuffle(60000).repeat().batch(batch_size)
+  return train_dataset
 
-    def call(self, inputs, training=False):
-        x = inputs
-        x = self.reshape_layer(x)
-        x = self.conv2d(x)
-        x = self.flatten(x)
-        x = self.dense1(x)
-        logits = self.dense2(x)
-        return logits
-
-
-def my_model_function():
-    """
-    Creates and compiles an instance of MyModel following the referenced example:
-    - Loss: SparseCategoricalCrossentropy(from_logits=True)
-    - Optimizer: SGD with learning_rate=0.001
-    - Metrics: accuracy
-    """
-    model = MyModel()
-    model.compile(
-        loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
-        optimizer=tf.keras.optimizers.SGD(learning_rate=0.001),
-        metrics=['accuracy']
-    )
-    return model
+def build_and_compile_cnn_model():
+  model = tf.keras.Sequential([
+      tf.keras.Input(shape=(28, 28)),
+      tf.keras.layers.Reshape(target_shape=(28, 28, 1)),
+      tf.keras.layers.Conv2D(32, 3, activation='relu'),
+      tf.keras.layers.Flatten(),
+      tf.keras.layers.Dense(128, activation='relu'),
+      tf.keras.layers.Dense(10)
+  ])
+  model.compile(
+      loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+      optimizer=tf.keras.optimizers.SGD(learning_rate=0.001),
+      metrics=['accuracy'])
+  return model
 
 
-def GetInput():
-    """
-    Return a random batch input tensor consistent with expected input of MyModel:
-    Shape (batch_size, 28, 28), dtype float32 with normalized pixel values [0,1].
-    Here batch_size is set to the global batch size used in the multi-worker example:
-    per_worker_batch_size=512, num_workers=2 => global_batch_size=1024
-    This choice is to match the original multi-worker dataset batching.
-    """
-    batch_size = 1024
-    # Random values in [0,1], shape (batch_size, 28, 28)
-    return tf.random.uniform((batch_size, 28, 28), dtype=tf.float32)
+strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
 
+per_worker_batch_size = 512
+num_workers = 2
+
+global_batch_size = per_worker_batch_size * num_workers
+multi_worker_dataset = mnist_dataset(global_batch_size)
+
+with strategy.scope():
+  multi_worker_model = build_and_compile_cnn_model()
+
+multi_worker_model.fit(multi_worker_dataset, epochs=60, steps_per_epoch=60)
+
+options = tf.data.Options()
+options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.OFF
+dataset_no_auto_shard = multi_worker_dataset.with_options(options)
+
+GRPC_TRACE=all
+GRPC_VERBOSITY=DEBUG
+GRPC_GO_LOG_SEVERITY_LEVEL=info
+GRPC_GO_LOG_VERBOSITY_LEVEL=2
+CGO_ENABLED=1
+NCCL_DEBUG=INFO

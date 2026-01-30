@@ -1,43 +1,30 @@
-# tf.random.uniform((B, 331, 331, 3), dtype=tf.float32)
+import random
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
-import tensorflow as tf
-
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Dense expects input shape (None, 331, 331, 3)
-        # The first Dense layer is applied per spatial location (applied to last dimension only)
-        # This matches the example from the issue.
-        self.dense1 = tf.keras.layers.Dense(10, activation="relu")
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense2 = tf.keras.layers.Dense(10, activation="sigmoid")
-
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)   # shape: (B, 331, 331, 10)
-        x = self.flatten(x)       # shape: (B, 331*331*10=1095610)
-        x = self.dense2(x)        # shape: (B, 10)
-        return x
+import numpy as np
+from tensorflow.keras.models import load_model, Sequential
+from tensorflow.keras.layers import Flatten, Dense
+from tensorflow.keras.optimizers import Adam
 
 def cmetrics(y_true, y_pred):
-    # Custom metric always returns zero scalar.
-    # Matches the minimal metric from the issue.
-    return tf.constant(0, dtype=tf.float32)
+	return(0)
 
-def my_model_function():
-    # Return an instance of MyModel with compiled loss, optimizer, and metric
-    model = MyModel()
-    model.compile(
-        loss='binary_crossentropy',
-        optimizer=tf.keras.optimizers.Adam(),
-        metrics=[cmetrics]
-    )
-    return model
+model = Sequential()
+model.add(Dense(10,activation="relu", input_shape=(331, 331, 3)))
+model.add(Flatten())
+model.add(Dense(10, activation='sigmoid'))
+model.compile(loss='binary_crossentropy',
+	optimizer=Adam(),
+	metrics=[cmetrics])
+model.summary()
+xdata = np.random.rand(100,331,331,3)
+ydata = np.random.rand(100,10)
+history = model.fit(x=xdata, y=ydata)
+model.save('test.h5', save_format='h5')
+model = load_model('test.h5', custom_objects={'cmetrics': cmetrics,})
+history = model.fit(x=xdata,y=ydata)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel:
-    # Shape: (batch_size, 331, 331, 3),
-    # dtype: float32 (standard for images)
-    batch_size = 4  # A reasonably small batch size matching the example runs
-    x = tf.random.uniform(shape=(batch_size, 331, 331, 3), dtype=tf.float32)
-    return x
-
+model = load_model("mymodel_best.h5", custom_objects={"mymetric":mymetric}, compile=True)
+model.compile(loss=model.loss, optimizer=model.optimizer, metrics=[mymetric])

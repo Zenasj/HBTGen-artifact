@@ -1,17 +1,17 @@
-# torch.rand(1, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
-
 import torch
-import torch.nn as nn
+import torchdynamo
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return x + x.item()
+torchdynamo.config.capture_scalar_outputs = True
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+def foo(x):
+    return x + x.item()
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(1, dtype=torch.float32)
+gm, guards = torchdynamo.export(foo, torch.tensor(1), aten_graph=True)
 
+graph, guards = torchdynamo.export(
+    foo,
+    (torch.randn(1)),
+)
+print(graph)
+make_fx_graph = make_fx(graph)(torch.randn(1))
+print(make_fx_graph)

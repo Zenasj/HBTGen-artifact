@@ -1,48 +1,66 @@
-# tf.random.uniform((B,), dtype=tf.float32) ← Based on the issue, inputs are 1D float tensors of arbitrary length (potentially empty)
+from unittest import TestCase
 
-import tensorflow as tf
-
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # No trainable layers needed, this model mimics MeanAbsoluteError metric with fix for empty tensors
-
-    @tf.function
-    def call(self, inputs):
-        """
-        inputs: tuple of (y_true, y_pred)
-          both are 1D float tensors, possibly empty
-        Returns:
-          The mean absolute error as scalar tensor (float32).
-          If input tensors are empty, returns 0.0 (instead of NaN).
-        """
-
-        y_true, y_pred = inputs
-
-        # Compute number of elements
-        n = tf.size(y_true)
-
-        # If empty, return 0.0 directly to avoid NaN
-        def empty_case():
-            return tf.constant(0.0, dtype=tf.float32)
-
-        # Else compute MAE normally
-        def non_empty_case():
-            return tf.reduce_mean(tf.abs(y_true - y_pred))
-
-        return tf.cond(n > 0, non_empty_case, empty_case)
+from tensorflow import constant, float32, reduce_mean
+from tensorflow import ragged
+from tensorflow.python.keras.metrics import MeanAbsoluteError
 
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+class TestEmptyTensorMetrics(TestCase):
+    def test_no_data(self):
+        metric = MeanAbsoluteError()
 
+        result = metric.result()
 
-def GetInput():
-    # Generate a random input tuple (y_true, y_pred) of 1D float tensors
-    # Random size between 0 and 10 elements to potentially test empty case
-    size = tf.random.uniform(shape=(), minval=0, maxval=11, dtype=tf.int32)
-    y_true = tf.random.uniform((size,), minval=0, maxval=100, dtype=tf.float32)
-    y_pred = tf.random.uniform((size,), minval=0, maxval=100, dtype=tf.float32)
-    return (y_true, y_pred)
+        expected = constant(0.0)
+        self.assertEqual(expected, result)
 
+    def test_empty_array(self):
+        metric = MeanAbsoluteError()
+        y_true = constant([])
+        y_pred = constant([])
+
+        metric.update_state(y_true, y_pred)
+        result = metric.result()
+
+        expected = constant(0.0)
+        self.assertEqual(expected, result)
+
+    def test_multiple_batches(self):
+        metric = MeanAbsoluteError()
+        y_true_batches = constant([
+            [39, 22, 73],
+            [22, 50, 23]
+        ], dtype=float32)
+        y_pred_batches = constant([
+            [80, 59, 52],
+            [87, 8, 38],
+        ], dtype=float32)
+
+        for y_true, y_pred in zip(y_true_batches, y_pred_batches):
+            metric.update_state(y_true, y_pred)
+        result = metric.result()
+
+        expected = reduce_mean(abs(y_true_batches - y_pred_batches))
+        self.assertAlmostEqual(expected.numpy(), result.numpy(), 5)
+
+    def test_multiple_batches_with_empty_array(self):
+        metric = MeanAbsoluteError()
+        y_true_batches = ragged.constant([
+            [39, 22, 73],
+            [],
+            [22, 50, 23]
+        ], dtype=float32)
+        y_pred_batches = ragged.constant([
+            [80, 59, 52],
+            [],
+            [87, 8, 38],
+        ], dtype=float32)
+
+        for y_true, y_pred in zip(y_true_batches, y_pred_batches):
+            metric.update_state(y_true, y_pred)
+        result = metric.result()
+
+        expected = reduce_mean(abs(y_true_batches - y_pred_batches).flat_values)
+        self.assertAlmostEqual(expected.numpy(), result.numpy(), 5)
+
+### Relevant log output

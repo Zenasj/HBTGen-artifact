@@ -1,22 +1,11 @@
-# torch.rand(16, 960, 4, 4, dtype=torch.float32) ← Add a comment line at the top with the inferred input shape
-
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Using a valid output size for AdaptiveAvgPool2d
-        self.adaptive_avg_pool = nn.AdaptiveAvgPool2d((4, 4))
-
-    def forward(self, x):
-        return self.adaptive_avg_pool(x)
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(16, 960, 4, 4, dtype=torch.float32)
-
+import torch
+results={}
+arg_1_0 = 576460752303423488
+arg_1_1 = -274877906944
+arg_1 = [arg_1_0,arg_1_1,]
+arg_class = torch.nn.AdaptiveAvgPool2d(arg_1,)
+arg_2_0 = torch.rand([16, 960, 4, 4], dtype=torch.float32)
+arg_2 = [arg_2_0,]
+results['res'] = arg_class(*arg_2)

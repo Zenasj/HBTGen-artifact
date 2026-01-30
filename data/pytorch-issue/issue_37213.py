@@ -1,12 +1,15 @@
-# torch.rand(1, 3, 32, 32, dtype=torch.float32)  # Inferred input shape (batch_size, channels, height, width)
-
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class MyModel(nn.Module):
+py
+import torch
+from torch import nn
+
+torch.save(torch.tensor([1, 2, 3]), "tensor.pt", _use_new_zipfile_serialization=True)
+
+class TheModelClass(nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
+        super(TheModelClass, self).__init__()
         self.conv1 = nn.Conv2d(3, 6, 5)
         self.pool = nn.MaxPool2d(2, 2)
         self.conv2 = nn.Conv2d(6, 16, 5)
@@ -23,11 +26,6 @@ class MyModel(nn.Module):
         x = self.fc3(x)
         return x
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+model = TheModelClass()
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(1, 3, 32, 32, dtype=torch.float32)
-
+torch.save(model.state_dict(), "model.pt", _use_new_zipfile_serialization=True)

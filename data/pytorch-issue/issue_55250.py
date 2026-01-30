@@ -1,41 +1,15 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Inferred input shape: (batch_size, channels, height, width)
-
 import torch
-import torch.nn as nn
+from typing import Tuple
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3, stride=1, padding=1)
-        self.relu = nn.ReLU()
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
-        self.fc = nn.Linear(16 * 16 * 16, 10)  # Assuming input size is 32x32
+def fn(a: Tuple[int, float], b: Tuple[int]):
+    return a + b
 
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.relu(x)
-        x = self.pool(x)
-        x = x.view(x.size(0), -1)
-        x = self.fc(x)
-        return x
+a = (1, 2.0)
+b = (3,)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+print(f"Python: {fn(a, b)}")
+scripted = torch.jit.script(fn)
+print(f"TorchScript: {scripted(a, b)}")
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    batch_size = 4
-    channels = 3
-    height = 32
-    width = 32
-    return torch.rand(batch_size, channels, height, width, dtype=torch.float32)
-
-# The provided issue is about a TorchScript limitation when concatenating heterogeneous tuples. However, the issue does not describe a PyTorch model or any specific neural network architecture. Since the goal is to generate a complete Python code file with a `MyModel` class and a `GetInput` function, I will create a simple example that demonstrates a basic PyTorch model and input generation.
-# Given the lack of specific model details, I will create a simple convolutional neural network (CNN) as an example. The input shape will be inferred as `(B, C, H, W)` where `B` is the batch size, `C` is the number of channels, `H` is the height, and `W` is the width.
-# Here is the complete Python code:
-# ### Explanation:
-# - **MyModel**: A simple CNN with one convolutional layer, ReLU activation, max pooling, and a fully connected layer.
-# - **my_model_function**: Returns an instance of `MyModel`.
-# - **GetInput**: Generates a random tensor with the shape `(4, 3, 32, 32)`, which is a common input shape for image classification tasks.
-# This code can be used directly with `torch.compile(MyModel())(GetInput())` without errors.
+Python: (1, 2.0, 3)
+TorchScript: (1, 2.0, 3)

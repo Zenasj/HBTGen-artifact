@@ -1,18 +1,11 @@
-# torch.rand(5)  # Inferred input shape as a 1D tensor
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-    
-    def forward(self, x):
-        return torch.atleast_2d(x)
+torch.atleast_2d() # ()
 
-def my_model_function():
-    return MyModel()
+import torch
 
-def GetInput():
-    # Generate a random 1D tensor as input
-    return torch.rand(5)
+torch.atleast_2d(7) # Error
 
+import torch
+
+torch.__version__ # 2.3.0+cu121

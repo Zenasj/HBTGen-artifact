@@ -1,37 +1,33 @@
-# tf.random.uniform((B, 5), dtype=tf.float32)
+from tensorflow import keras
+from tensorflow.keras import layers
+
+import sys
+
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define the dividers to slice the input tensor
-        self.dividers = [0, 2, 5]
-        # Sizes correspond to slice widths: [2, 3]
-        self.sizes = [end - start for start, end in zip(self.dividers[:-1], self.dividers[1:] )]
-        
-        # Create Lambda layers to slice input into pieces
-        # Store as a list of layers for submodules
-        self.slice_layers = []
-        for start, end in zip(self.dividers[:-1], self.dividers[1:]):
-            # Each layer slices x[..., start:end]
-            self.slice_layers.append(
-                tf.keras.layers.Lambda(lambda x, s=start, e=end: x[..., s:e],
-                                       name=f'slice_{start}_{end}')
-            )
+print(f"{tf.version.VERSION=} {tf.version.GIT_VERSION=} {tf.version.COMPILER_VERSION=}")
+print(f"{sys.version=}")
 
-    def call(self, inputs):
-        # Apply slice layers to input, produce list of sliced tensors
-        outputs = [layer(inputs) for layer in self.slice_layers]
-        return outputs
+dividers = [0, 2, 5]
 
-def my_model_function():
-    # Return an instance of MyModel. This matches the original usage.
-    return MyModel()
+assert all(divider >= 0 for divider in dividers)
+sizes = [end - start for start, end in zip(dividers[:-1], dividers[1:])]
+assert all(size > 0 for size in sizes)
+channels = dividers[-1]
 
-def GetInput():
-    # Return a random tensor matching the input shape expected by MyModel: (batch, channels)
-    # Here channels = 5 based on dividers above.
-    batch_size = 1  # reasonable default batch size
-    channels = 5
-    return tf.random.uniform((batch_size, channels), dtype=tf.float32)
-
+i = tf.keras.layers.Input((channels,), name='i')
+o = [
+    tf.keras.layers.Lambda(lambda x: x[..., start:end],
+                           name=f'slice_{start}_{end}')(i)
+    for start, end in zip(dividers[:-1], dividers[1:])
+]
+m = tf.keras.Model(i, o, name='m')
+m.build((channels,))
+m.summary()
+print(f"{m.input_shape=}")
+print(f"{m.output_shape=}")
+print(f"{m.compute_output_shape(m.input_shape)=}")
+x = tf.zeros((1, channels))
+print(f"{[y.shape for y in m(x)]=}")
+print(f"{[y.shape for y in m.predict(x)]=}")
+assert m.output_shape == m.compute_output_shape(m.input_shape)

@@ -1,21 +1,20 @@
-# torch.randint(0, 2, (B,), dtype=torch.long)
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def __init__(self, weight):
-        super().__init__()
-        self.register_buffer('weight', weight)  # Stores LongTensor as non-trainable buffer
-    
-    def forward(self, input):
-        return torch.nn.functional.embedding(input, self.weight)
+input = torch.LongTensor([1])
+weight = torch.FloatTensor([[1, 2.3, 3], [4, 5.1, 6.3]])
 
-def my_model_function():
-    # Initialize with LongTensor weight to demonstrate scenario
-    weight = torch.LongTensor([[1, 2, 3], [4, 5, 6]])  # Matches example's 2x3 structure
-    return MyModel(weight)
+embedding = nn.Embedding.from_pretrained(weight)  # this is ok 
+out = embedding(input)
 
-def GetInput():
-    # Returns random indices within valid range (0-1 for 2 embeddings)
-    return torch.randint(0, 2, (1,), dtype=torch.long)
+out = F.embedding(input, weight).squeeze(-1)  # this is ok   
 
+weight = torch.LongTensor([[1, 2.3, 3], [4, 5.1, 6.3]])
+
+embedding = nn.Embedding.from_pretrained(weight) # this will fail, 
+# RuntimeError: Only Tensors of floating point and complex dtype can require gradients
+
+out = embedding(input)
+
+out = F.embedding(input, weight).squeeze(-1)  # this is ok

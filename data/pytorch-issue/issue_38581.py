@@ -1,18 +1,50 @@
-# torch.rand(B, 3, dtype=torch.float32)
-import torch
 import torch.nn as nn
+import torch
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.layer = nn.Linear(3, 2)  # Matches the original Linear layer in the issue
+from torch.utils.data import DataLoader, RandomSampler
+
+# Hook class
+class ActiveGradsHook:
+    def __init__(self, name):
+        self.name = name # Runnable on 1.5
+
+    def __call__(self, grad):
+        try:
+            return torch.zeros(grad.shape)
+        except Exception as e:
+            print(e)
+
+def train_new_neurons(model):
+    # Generate hooks for each layer
+    for name, param in model.named_parameters():
+        hook = ActiveGradsHook(name)
+        param.register_hook(hook)
+
+    # Train simply
+    train(model)
+
+
+def train(model):
+    initial_weights = model.weight.clone()
+
+    optimizer = torch.optim.SGD(model.parameters(), lr=1, momentum=0, weight_decay=1)
     
-    def forward(self, x):
-        return self.layer(x)
+    inputs = torch.rand(2, 3)
+    action_target = torch.rand(2, 2)
 
-def my_model_function():
-    return MyModel()
+    action_output = model(inputs)
+    
+    loss = nn.MSELoss()(action_target, action_output)
 
-def GetInput():
-    return torch.rand(2, 3, dtype=torch.float32)  # Matches input shape from the issue's example
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
 
+    print(model.weight)
+    print(initial_weights)
+
+    assert initial_weights[0][0] == model.weight[0][0] # This fails
+
+if __name__ == "__main__":
+    model = nn.Linear(3, 2)
+    train_new_neurons(model)

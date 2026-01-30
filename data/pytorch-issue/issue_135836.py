@@ -1,22 +1,6 @@
-# torch.rand(2, 4, dtype=torch.float32)  # Inferred input shape from the issue
-
+import numpy as np
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Define a simple model for demonstration purposes
-        self.linear = nn.Linear(4, 2)
-
-    def forward(self, x):
-        return self.linear(x)
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(2, 4, dtype=torch.float32)
-
+x = np.array([[1, 2, 3, 4], [5, 6, 7, 8]], dtype=np.float32)
+y = torch.from_numpy(x)

@@ -1,100 +1,99 @@
-# tf.random.uniform((1, 28, 28, 1), dtype=tf.float32) ← Based on input shape [1, 1, 28, 28] transposed to NHWC (1, 28, 28, 1)
+import math
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
 import numpy as np
+import os
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Layers correspond to the original model's architecture described
 
-        # Conv2DTranspose layer with 6 filters, kernel 5x5, stride 1, bias enabled
-        self.conv1 = tf.keras.layers.Conv2DTranspose(
-            filters=6, kernel_size=(5, 5), strides=(1, 1), padding="valid",
-            use_bias=True, name="conv1_mutated")
+os.environ['CUDA_VISIBLE_DEVICES'] = ''
 
-        # MaxPooling2D layers with pool size and strides 2x2
-        self.pool1 = tf.keras.layers.MaxPooling2D(pool_size=(2, 2), strides=(2, 2), padding="valid", name="pool1")
-        self.pool2 = tf.keras.layers.MaxPooling2D(pool_size=(2, 2), strides=(2, 2), padding="valid", name="pool2")
+def Model_VlysjQxB81qtaIXsA_VkCXmPGmE7aDNP(input):
+    input = tf.keras.Input(shape=input)
+    _zeropadding_input = tf.keras.layers.ZeroPadding2D(padding=((0, 0), (0, 0)))(input)
+    conv1_output = tf.keras.layers.Conv2DTranspose(filters=6, kernel_size=(5, 5), strides=(1, 1), padding="valid", output_padding=(0, 0), data_format="channels_last", dilation_rate=(1, 1), use_bias=True, name="conv1_mutated")(input)
+    relu1_output = tf.nn.relu(conv1_output)
+    _zeropadding_relu1_output = tf.keras.layers.ZeroPadding2D(padding=((0, 0), (0, 0)))(relu1_output)
+    maxpool1_output = tf.keras.layers.MaxPooling2D(pool_size=(2, 2), strides=(2, 2), padding="valid", data_format="channels_last", name="pool1")(_zeropadding_relu1_output)
+    _zeropadding_maxpool1_output = tf.keras.layers.ZeroPadding2D(padding=((0, 0), (0, 0)))(maxpool1_output)
+    conv2_output = tf.keras.layers.Conv2D(filters=16, kernel_size=(6, 8), strides=(1, 1), padding="valid", data_format="channels_last", dilation_rate=(1, 1), groups=1, use_bias=True, name="conv2_mutated")(_zeropadding_maxpool1_output)
+    relu2_output = tf.math.softsign(conv2_output)
+    _zeropadding_relu2_output = tf.keras.layers.ZeroPadding2D(padding=((0, 0), (0, 0)))(relu2_output)
+    maxpool2_output = tf.keras.layers.MaxPooling2D(pool_size=(2, 2), strides=(2, 2), padding="valid", data_format="channels_last", name="pool2")(_zeropadding_relu2_output)
+    output_transpose = [(0), (0, 1), (0, 2, 1), (0, 3, 1, 2), (0, 4, 1, 2, 3)]
+    maxpool2_output = tf.transpose(maxpool2_output, list(output_transpose[(len(maxpool2_output.shape) - 1)]))
+    flatten_output = tf.keras.layers.Flatten(data_format="channels_last", name="flatten")(maxpool2_output)
+    fc1_output = tf.keras.layers.Dense(units=120, use_bias=True, name="linear1")(flatten_output)
+    relu3_output = tf.keras.layers.ThresholdedReLU(theta=0.1, name="relu3_mutated")(fc1_output)
+    fc2_output = tf.keras.layers.Dense(units=84, use_bias=True, name="linear2_mutated")(relu3_output)
+    relu4_output = tf.math.erf(fc2_output)
+    fc3_output = tf.keras.layers.Dense(units=10, use_bias=True, name="linear3_mutated")(relu4_output)
+    output_transpose = [(0), (0, 1), (0, 2, 1), (0, 3, 1, 2), (0, 4, 1, 2, 3)]
+    fc3_output = tf.transpose(fc3_output, list(output_transpose[(len(fc3_output.shape) - 1)]))
+    tail_flatten_output = tf.keras.layers.Flatten(data_format="channels_last", name="tail_flatten")(fc3_output)
+    tail_fc_output = tf.keras.layers.Dense(units=10, use_bias=True, name="tail_fc")(tail_flatten_output)
 
-        # Conv2D layer with 16 filters, kernel size 6x8, stride 1, bias enabled
-        self.conv2 = tf.keras.layers.Conv2D(
-            filters=16, kernel_size=(6, 8), strides=(1, 1), padding="valid", use_bias=True, name="conv2_mutated")
-
-        # Flatten layer
-        self.flatten = tf.keras.layers.Flatten(name="flatten")
-
-        # Dense layers for fully connected part
-        self.fc1 = tf.keras.layers.Dense(units=120, use_bias=True, name="linear1")
-        self.relu3 = tf.keras.layers.ThresholdedReLU(theta=0.1, name="relu3_mutated")
-        self.fc2 = tf.keras.layers.Dense(units=84, use_bias=True, name="linear2_mutated")
-        # Activation after fc2 is erf
-        # Last Dense layers
-        self.fc3 = tf.keras.layers.Dense(units=10, use_bias=True, name="linear3_mutated")
-        self.flatten_tail = tf.keras.layers.Flatten(name="tail_flatten")
-        self.tail_fc = tf.keras.layers.Dense(units=10, use_bias=True, name="tail_fc")
-
-    def call(self, inputs):
-        # inputs shape expected NHWC format
-
-        # First convolutonal transpose layer + relu
-        x = self.conv1(inputs)
-        x = tf.nn.relu(x)
-
-        # Zero padding with ((0,0),(0,0)) means no padding, effectively a no-op, so omitted
-
-        # Max Pooling layer 1
-        x = self.pool1(x)
-
-        # Zero padding no-op omitted
-
-        # Conv2 layer followed by softsign activation
-        x = self.conv2(x)
-        x = tf.math.softsign(x)
-
-        # Zero padding no-op omitted
-
-        # Max Pooling layer 2
-        x = self.pool2(x)
-
-        # The original code transposes maxpool2 output depending on rank;
-        # For 4D tensor NHWC, perm = (0,3,1,2) effectively changing axis:
-        # Original shape (batch, h, w, c) -> (batch, c, h, w)
-        # This transposition is critical before flattening
-        # Confirming shape len(x.shape) = 4, so use perm (0,3,1,2)
-        x = tf.transpose(x, perm=[0,3,1,2])
-
-        # Flatten before FC
-        x = self.flatten(x)
-
-        # FC layers with nonlinearities as described
-        x = self.fc1(x)
-        x = self.relu3(x)
-        x = self.fc2(x)
-        x = tf.math.erf(x)
-        x = self.fc3(x)
-
-        # Transpose fc3_output similarly by rank; fc3 is 2D (batch, 10) so no transpose needed?
-        # According to original code, for 2D output shape (batch,10), len=2 -> perm=(0,1) no change
-        # To keep consistent, apply transpose with perm=(0,1), which does nothing
-        x = tf.transpose(x, perm=[0,1])
-
-        # Flatten and final dense layer
-        x = self.flatten_tail(x)
-        x = self.tail_fc(x)
-
-        return x
-
-def my_model_function():
-    # Return an instance of MyModel, with no weights initialization here
-    model = MyModel()
-    # Build the model by calling once to create variables (optional but helpful for TF functions)
-    dummy_input = GetInput()
-    _ = model(dummy_input)
+    tail_fc_output = tail_fc_output
+    model = tf.keras.models.Model(inputs=input, outputs=tail_fc_output)
     return model
 
-def GetInput():
-    # Return a random tensor input that matches the expected input: batch =1, height=28, width=28, channels=1
-    # dtype float32 to align with original code
-    return tf.random.uniform(shape=(1, 28, 28, 1), dtype=tf.float32)
 
+def go():
+    with tf.device('/CPU:0'):
+        try:
+            shape = [1, 1, 28, 28]
+            _numpy = np.random.random(shape).astype(np.float32)
+            tf_input = tf.convert_to_tensor(_numpy.transpose(0, 2, 3, 1), dtype=tf.float32)
+            tf_model = Model_VlysjQxB81qtaIXsA_VkCXmPGmE7aDNP(tf_input.shape[1:])
+            tf_output = tf_model(tf_input)
+            flag = True
+        except Exception:
+            flag = False
+        return flag
+
+
+def initialize(model):
+    module_dir = os.path.dirname(__file__)
+    gradient_transpose = [(0,), (1, 0), (2, 1, 0), (2, 3, 1, 0), (2, 3, 4, 1, 0)]
+    for layer in model.layers:
+        matrix_path = module_dir + '/../initializer/' + layer.name
+        if hasattr(layer, 'kernel_initializer'):
+            weight_init_path = matrix_path + '/weight.npz'
+            weight_init = np.load(weight_init_path)
+            weight_init = weight_init['matrix']
+            tf_weight = tf.convert_to_tensor(weight_init, dtype=tf.float32)
+            tf_weight = tf.transpose(tf_weight, gradient_transpose[len(tf_weight.shape) - 1])
+            layer.kernel.assign(tf.keras.initializers.Constant(tf_weight)(layer.kernel.shape))
+        if hasattr(layer, 'bias_initializer') and layer.use_bias:
+            bias_init_path = matrix_path + '/bias.npz'
+            bias_init = np.load(bias_init_path)
+            bias_init = bias_init['matrix']
+            tf_bias = tf.convert_to_tensor(bias_init, dtype=tf.float32)
+            tf_bias = tf.transpose(tf_bias, gradient_transpose[len(tf_bias.shape) - 1])
+            layer.bias.assign(tf.keras.initializers.Constant(tf_bias)(layer.bias.shape))
+
+def train(inp, label):
+    with tf.device('/CPU:0'):
+        shape = inp.shape
+        tf_input = tf.convert_to_tensor(inp.transpose(0, 2, 3, 1), dtype=tf.float32)
+        tf_model = Model_VlysjQxB81qtaIXsA_VkCXmPGmE7aDNP(tf_input.shape[1:])
+
+        initialize(tf_model)
+        tf_output = tf_model(tf_input)
+        output_transpose = [(0), (0, 1), (0, 2, 1), (0, 3, 1, 2), (0, 4, 1, 2, 3)]
+        tf_output_trans = tf.transpose(tf_output, list(output_transpose[(len(tf_output.shape) - 1)])).numpy()
+
+        tf_targets = tf.convert_to_tensor(label)
+        with tf.GradientTape() as tape:
+            tf_predictions = tf_model(tf_input)
+            tf_loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)(tf_targets, tf_predictions)
+        tf_gradients = tape.gradient(tf_loss, tf_model.trainable_variables)
+        tf_gradients_dic = {}
+        for var, gradient in zip(tf_model.trainable_variables, tf_gradients):
+            gradient_transpose = [(0, ), (1, 0), (2, 0, 1), (3, 2, 0, 1), (4, 3, 0, 1, 2)]
+            tf_gradient = tf.transpose(gradient, list(gradient_transpose[len(gradient.shape) - 1])).numpy()
+            tf_gradients_dic.setdefault(var.name.replace('/', '.')[:-2], tf_gradient)
+        return tf_gradients_dic, float(tf_loss.numpy()), tf_output_trans

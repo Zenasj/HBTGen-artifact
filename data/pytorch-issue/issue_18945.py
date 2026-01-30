@@ -1,20 +1,13 @@
-# torch.rand(10, 4, dtype=torch.float32), torch.rand(10,4, dtype=torch.float32)  # input (x, y)
 import torch
-from torch import nn
+import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        x, y = inputs
-        # Custom implementation of binary_cross_entropy with double-backward support
-        loss = -(x.log() * y + (1 - x).log() * (1 - y)).mean()
-        return loss
+x = torch.rand(10, 4, requires_grad=True)
+y = torch.rand((10, 4))
+loss = F.binary_cross_entropy(x, y)
+loss2 = torch.autograd.grad(loss, x, create_graph=True)
 
-def my_model_function():
-    return MyModel()
+loss2[0].sum().backward()
 
-def GetInput():
-    B, C = 10, 4
-    x = torch.rand(B, C, dtype=torch.float32, requires_grad=True)
-    y = torch.rand(B, C, dtype=torch.float32)
-    return (x, y)
-
+def binary_cross_entropy(x, y):
+    loss = -(x.log() * y + (1 - x).log() * (1 - y))
+    return loss.mean()

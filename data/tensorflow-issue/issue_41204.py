@@ -1,87 +1,111 @@
-# tf.random.uniform((BATCH_SIZE, MAX_SEQUENCE_LENGTH), dtype=tf.int32) ← BATCH_SIZE and MAX_SEQUENCE_LENGTH assumed typical batch/sequence sizes
-import tensorflow as tf
-from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
-MAX_SEQUENCE_LENGTH = 255  # from chunk 2, typical BERT sequence length used
-BATCH_SIZE = 32  # from chunk 2, batch size used
+df = pd.DataFrame({'text': ['SOME ANGRY TEXT!!!', 'Some friendly text :)'], 'label': [1, 0]})
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Since original code depends on transformers library's TFBertModel,
-        # but here we must reconstruct self-contained code,
-        # we provide placeholders and document assumptions.
-        #
-        # We simulate a BERT-like model block with minimal structure:
-        # - Inputs: input_ids, attention_mask, token_type_ids (all int32, shape (batch, seq_len))
-        # - Output: pooled_output analogous to BERT's CLS token embedding
-        # 
-        # Real transformer weights and pretrained embeddings are not included here.
-        # The pooled output is simulated by a simple embedding + global pooling + dense layer.
-
-        self.embedding_dim = 768  # typical BERT hidden size
-
-        # Token embedding simulation (vocab_size assumed 30522, typical BERT vocab)
-        self.token_embedding = layers.Embedding(input_dim=30522, output_dim=self.embedding_dim)
-
-        # Simple representation of attention/pooling using GlobalAveragePooling1D as placeholder
-        self.pool = layers.GlobalAveragePooling1D()
-
-        # Dropout and final sigmoid classification dense layer as per original model
-        self.dropout = layers.Dropout(rate=0.1)
-        self.classifier = layers.Dense(1, activation='sigmoid')
-
-    def call(self, inputs, training=False):
-        # inputs expected as dict: {'input_ids': ..., 'attention_mask': ..., 'token_type_ids': ...}
-        input_ids = inputs['input_ids']    # shape (batch, seq_len), dtype int32
-        # attention_mask and token_type_ids are not used in this placeholder implementation
-        # but provided in inputs for API consistency
-
-        # Embed input tokens
-        x = self.token_embedding(input_ids)  # (batch, seq_len, embedding_dim)
-
-        # Simulate pooled_output by averaging token embeddings
-        pooled_output = self.pool(x)  # (batch, embedding_dim)
-
-        # Apply dropout during training
-        x = self.dropout(pooled_output, training=training)
-
-        # Final classification score
-        x = self.classifier(x)  # (batch, 1) with sigmoid activation
-
-        return x
-
-def my_model_function():
-    # Returns an instance of MyModel
-    model = MyModel()
-    # It's typical to build the model by calling it on sample input to create weights
-    sample_input = {
-        'input_ids': tf.zeros((BATCH_SIZE, MAX_SEQUENCE_LENGTH), dtype=tf.int32),
-        'attention_mask': tf.ones((BATCH_SIZE, MAX_SEQUENCE_LENGTH), dtype=tf.int32),
-        'token_type_ids': tf.zeros((BATCH_SIZE, MAX_SEQUENCE_LENGTH), dtype=tf.int32)
-    }
-    _ = model(sample_input, training=False)
+def create_model():
+    bert_model = transformers.TFBertModel.from_pretrained("bert-base-cased")
+    
+    input_ids = tf.keras.layers.Input(shape=(10,), dtype=tf.int32, name='input_ids')
+    token_type_ids = tf.keras.layers.Input((10,), dtype=tf.int32, name='token_type_ids')
+    attention_mask = tf.keras.layers.Input((10,), dtype=tf.int32, name='attention_mask')
+    
+    # Use pooled_output(hidden states of [CLS]) as sentence level embedding
+    pooled_output = bert_model({'input_ids': input_ids, 'attention_mask': attention_mask, 'token_type_ids': token_type_ids})[1]
+    x = tf.keras.layers.Dropout(rate=0.1)(pooled_output)
+    x = tf.keras.layers.Dense(1, activation='sigmoid')(x)
+    model = tf.keras.models.Model(inputs={'input_ids': input_ids, 'attention_mask': attention_mask, 'token_type_ids': token_type_ids}, outputs=x)
     return model
 
-def GetInput():
-    # Return a random input dictionary matching expected inputs:
-    # input_ids: int32 token ids between 0 and vocab size-1 (simulate typical BERT vocab size 30522)
-    # attention_mask: binary mask (0 or 1)
-    # token_type_ids: typically 0 or 1 segments for BERT
+bert_model = create_model()
+bert_tokenizer = transformers.BertTokenizer.from_pretrained("bert-base-cased")
 
-    vocab_size = 30522
-    batch_size = BATCH_SIZE
-    seq_len = MAX_SEQUENCE_LENGTH
+x = bert_tokenizer.batch_encode_plus(
+    df.text.values,
+    max_length=10,
+    pad_to_max_length=True, 
+    return_tensors='tf'
+)
 
-    input_ids = tf.random.uniform(
-        shape=(batch_size, seq_len), minval=0, maxval=vocab_size, dtype=tf.int32
-    )
-    attention_mask = tf.ones((batch_size, seq_len), dtype=tf.int32)  # assume all tokens attended
-    token_type_ids = tf.zeros((batch_size, seq_len), dtype=tf.int32)  # assume single segment
+bert_model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['Accuracy'])
 
-    return {
-        'input_ids': input_ids,
-        'attention_mask': attention_mask,
-        'token_type_ids': token_type_ids
-    }
+bert_history = bert_model.fit(
+    x=x,
+    y=df.label.values
+)
 
+# This Python 3 environment comes with many helpful analytics libraries installed
+# It is defined by the kaggle/python docker image: https://github.com/kaggle/docker-python
+# For example, here's several helpful packages to load in 
+
+import numpy as np # linear algebra
+import pandas as pd # data processing, CSV file I/O (e.g. pd.read_csv)
+
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report
+from tqdm.notebook import tqdm
+
+import tensorflow as tf
+from tensorflow import keras
+import tensorflow.keras.backend as K
+from tensorflow.keras import layers
+from tensorflow.keras.utils import plot_model
+from transformers import (
+    BertTokenizer,
+    TFBertForSequenceClassification,
+    TFBertModel,
+    BertConfig,
+)
+tf.__version__
+
+MAX_SEQUENCE_LENGTH = 255
+PRETRAINED_MODEL_NAME = 'bert-base-uncased'
+BATCH_SIZE = 32
+
+df = pd.read_csv('train.csv')
+
+df.head()
+
+df['target'].value_counts()
+
+df.isnull().sum()
+
+data = df['text'].values
+targets = df['target'].values
+
+def create_model():
+    bert_model = TFBertModel.from_pretrained(PRETRAINED_MODEL_NAME)
+    
+    input_ids = layers.Input(shape=(MAX_SEQUENCE_LENGTH,), dtype=tf.int32, name='input_ids')
+    token_type_ids = layers.Input((MAX_SEQUENCE_LENGTH,), dtype=tf.int32, name='token_type_ids')
+    attention_mask = layers.Input((MAX_SEQUENCE_LENGTH,), dtype=tf.int32, name='attention_mask')
+    
+    # Use pooled_output(hidden states of [CLS]) as sentence level embedding
+    pooled_output = bert_model({'input_ids': input_ids, 'attention_mask': attention_mask, 'token_type_ids': token_type_ids})[1]
+    x = layers.Dropout(rate=0.1)(pooled_output)
+    x = layers.Dense(1, activation='sigmoid')(x)
+    model = keras.models.Model(inputs={'input_ids': input_ids, 'attention_mask': attention_mask, 'token_type_ids': token_type_ids}, outputs=x)
+    return model
+
+tokenizer = BertTokenizer.from_pretrained(PRETRAINED_MODEL_NAME)
+model = create_model()
+
+model.summary()
+
+plot_model(model, to_file='model.png', expand_nested=True, show_shapes=True)
+
+opt = tf.keras.optimizers.Adam(learning_rate=3e-5)
+model.compile(optimizer=opt, loss='binary_crossentropy', metrics=['accuracy'])
+
+X_train, X_val, y_train, y_val = train_test_split(data, targets, test_size=0.33, random_state=42, stratify=targets)
+
+X_train = tokenizer.batch_encode_plus(X_train, max_length=MAX_SEQUENCE_LENGTH, pad_to_max_length=True, return_tensors='tf')
+X_val = tokenizer.batch_encode_plus(X_val, max_length=MAX_SEQUENCE_LENGTH, pad_to_max_length=True, return_tensors='tf')
+
+history = model.fit(
+    x=X_train,
+    y=y_train,
+    validation_data=(X_val, y_val),
+    epochs=3,
+    batch_size=BATCH_SIZE
+)

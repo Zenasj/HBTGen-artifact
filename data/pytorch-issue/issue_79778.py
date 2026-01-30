@@ -1,33 +1,30 @@
-# torch.rand(B, L, dtype=torch.float)
-import torch
-import torch.nn as nn
+import random
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        
-    def forward(self, x):
-        stft = torch.stft(
-            x,
-            n_fft=1024,
-            hop_length=256,
-            win_length=1024,
-            center=False,
-            return_complex=True
-        )
-        output = torch.istft(
-            stft,
-            n_fft=1024,
-            hop_length=256,
-            center=False
-        )
-        input_length = x.shape[-1]
-        output_length = output.shape[-1]
-        return torch.tensor(output_length == input_length, dtype=torch.bool)
+import numpy as np
 
-def my_model_function():
-    return MyModel()
+import torch 
+import torchaudio
+import librosa
 
-def GetInput():
-    return torch.randn(1, 25600)
+print(f"torch version: {torch.__version__}")
+print(f"librosa version: {librosa.__version__}")
 
+center = False
+
+### librosa
+my_audio = np.random.randn(25600)
+my_stft  = librosa.stft(my_audio, win_length=1024, hop_length=256, n_fft=1024, center=center)
+my_reconstructued_audio = librosa.istft(my_stft, hop_length=256, center=center)
+print("-----------------")
+print("librosa:")
+print(my_audio.shape)
+print(my_reconstructued_audio.shape)
+
+### pytorch
+my_audio = torch.randn(1, 25600)
+my_stft  = torch.stft(my_audio, win_length=1024, hop_length=256, n_fft=1024, center=center, return_complex=True)
+my_reconstructued_audio = torch.istft(my_stft, n_fft=1024, hop_length=256, center=center)
+print("-----------------")
+print("pytorch:")
+print(my_audio.shape)
+print(my_reconstructued_audio.shape)

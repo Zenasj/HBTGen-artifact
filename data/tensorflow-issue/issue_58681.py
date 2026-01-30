@@ -1,30 +1,34 @@
-# tf.random.uniform((B, 28, 28), dtype=tf.float32) ← inferred from the MNIST input shape in the example
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
+model = tf.keras.models.Sequential([
+  tf.keras.layers.Flatten(input_shape=(28, 28)),
+  tf.keras.layers.Dense(128, activation='relu'),
+  tf.keras.layers.Dropout(0.2),
+  tf.keras.layers.Dense(10, activation='softmax')
+])
+model.compile(optimizer='adam',
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
+model.fit(x_train, y_train, epochs=5) #fails here
 
 import tensorflow as tf
+mnist = tf.keras.datasets.mnist
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # This model replicates the MNIST example used in the issue.
-        self.flatten = tf.keras.layers.Flatten(input_shape=(28, 28))
-        self.dense1 = tf.keras.layers.Dense(128, activation='relu')
-        self.dropout = tf.keras.layers.Dropout(0.2)
-        self.dense2 = tf.keras.layers.Dense(10, activation='softmax')
+(x_train, y_train),(x_test, y_test) = mnist.load_data()
+x_train, x_test = x_train / 255.0, x_test / 255.0
 
-    def call(self, inputs, training=False):
-        x = self.flatten(inputs)
-        x = self.dense1(x)
-        if training:
-            x = self.dropout(x, training=training)
-        return self.dense2(x)
+model = tf.keras.models.Sequential([
+  tf.keras.layers.Flatten(input_shape=(28, 28)),
+  tf.keras.layers.Dense(128, activation='relu'),
+  tf.keras.layers.Dropout(0.2),
+  tf.keras.layers.Dense(10, activation='softmax')
+])
 
-def my_model_function():
-    # Return an instance of MyModel, no special initializations beyond default
-    return MyModel()
+model.compile(optimizer='adam',
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
 
-def GetInput():
-    # Return a random input tensor shaped like an MNIST batch example (batch size arbitrarily chosen as 32)
-    # dtype tf.float32 matches the expected input dtype for model layers
-    batch_size = 32
-    return tf.random.uniform((batch_size, 28, 28), dtype=tf.float32)
-
+model.fit(x_train, y_train, epochs=5)
+model.evaluate(x_test, y_test)

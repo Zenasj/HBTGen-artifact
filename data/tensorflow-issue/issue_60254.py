@@ -1,83 +1,91 @@
-# tf.random.uniform((B,), dtype=tf.string) ← The model input is a batch of variable-length strings (text samples)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
+from tensorflow.python.client import device_lib
+import numpy as np
+print(tf.__version__)
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Vocabulary size limit
-        self.VOCAB_SIZE = 20000
+print(f"Tensor Flow Version: {tf.__version__}")
+print(f"Keras Version: {tf.keras.__version__}")
+print()
+gpu = len(tf.config.list_physical_devices('GPU'))>0
+print("GPU is", "available" if gpu else "NOT AVAILABLE")
 
-        # Text vectorization layer: standardizes text to lowercase, tokenizes, and creates integer sequences
-        # Note: adapted later on some dataset input in __init__ for minimal reproduction here
-        self.encoder = tf.keras.layers.TextVectorization(
-            standardize='lower',
-            max_tokens=self.VOCAB_SIZE,
-            output_mode='int',  # output integer indices
-            output_sequence_length=None  # variable length, uses masking downstream
-        )
-        # Set up embedding layer with mask_zero=True to handle padding/masked tokens
-        self.embedding = tf.keras.layers.Embedding(
-            input_dim=self.VOCAB_SIZE + 2,  # +2 to safely include vocab size + oov + padding tokens
-            output_dim=64,
-            mask_zero=True
-        )
-        # Bi-directional LSTM layer with 128 units each direction
-        self.bi_lstm = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(128))
-        # Dense layers
-        self.dense1 = tf.keras.layers.Dense(64, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(1)
-        
-    def adapt_encoder(self, text_dataset):
-        # Adapt the text vectorization layer on the training text
-        self.encoder.adapt(text_dataset)
-        # Update embedding input_dim to match encoder vocabulary size (+2)
-        vocab_len = len(self.encoder.get_vocabulary())
-        self.embedding = tf.keras.layers.Embedding(
-            input_dim=vocab_len,
-            output_dim=64,
-            mask_zero=True
-        )
-    
-    def call(self, inputs, training=False):
-        # inputs: batch of strings shape=(batch_size,)
-        x = self.encoder(inputs)  # shape (batch_size, sequence_length), int indices
-        x = self.embedding(x)     # (batch_size, seq_len, 64)
-        x = self.bi_lstm(x)       # (batch_size, 256)
-        x = self.dense1(x)        # (batch_size, 64)
-        output = self.dense2(x)   # (batch_size, 1), logits for binary classification
-        return output
+samples = np.array([
+    [u'Россия', 0],
+    [u'Вчера смотрел в кино - потрясающий фильм! Актёры высшие, невероятные декорации, безудержный драйв на протяжении всего фильма. Давно не испытывал такого восторга от просмотра! 10/10', 1],
+    [u'Норм фильм,в своём стиле не понимаю что другие ожидали))одно смутило когда сцена в клубе все танчили пока бойня была типо ниче не замечая а как картежника завалили все с истериками побежали,типа хуясе тут все в настаящую))))да и пёсель зачетный))', 1],
+    [u'Да пипец блин, меня хватило на 10 минут. Это днище', 0],
+    [u'Бредовый фильм не советую', 0],
+])
 
-def my_model_function():
-    # Instantiate model and adapt encoder on minimal example training text dataset
-    model = MyModel()
-    # For the sake of a self-contained example, we create a minimal dataset
-    # Assumption: The model expects input strings similar to the example dataset in the issue.
-    example_texts = tf.data.Dataset.from_tensor_slices([
-        'Россия',
-        'Вчера смотрел в кино - потрясающий фильм! Актёры высшие, невероятные декорации, безудержный драйв на протяжении всего фильма. Давно не испытывал такого восторга от просмотра! 10/10',
-        'Норм фильм,в своём стиле не понимаю что другие ожидали))одно смутило когда сцена в клубе все танчили пока бойня была типо ниче не замечая а как картежника завалили все с истериками побежали,типа хуясе тут все в настаящую))))да и пёсель зачетный))',
-        'Да пипец блин, меня хватило на 10 минут. Это днище',
-        'Бредовый фильм не советую'
-    ])
-    model.adapt_encoder(example_texts.batch(2))
-    # Compile model for binary classification
-    model.compile(
-        loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
-        optimizer=tf.keras.optimizers.Adam(1e-4),
-        metrics=['accuracy']
-    )
-    return model
+test = np.array([
+    [u'Фильм говно', 0],
+    [u'Классный фильм', 1],
+    [u'Не советую к просмотру', 0],
+    [u'Тупой фильм', 0],
+])
 
-def GetInput():
-    # Return a random batch of strings similar in style to the training data
-    # Batch size chosen arbitrarily as 4 for demonstration; can be tuned.
-    sample_texts = [
-        'меня хватило на 10 минут',
-        'Классный фильм',
-        'Фильм говно',
-        'Не советую к просмотру'
-    ]
-    # Convert to tf.Tensor dtype string, shape (4,)
-    return tf.constant(sample_texts)
+train_text = []
+train_label = []
 
+test_text = []
+test_label = []
+
+for sample in samples:
+    train_text.append(sample[0])
+    train_label.append(float(sample[1]))
+
+for tst in test:
+    test_text.append(tst[0])
+    test_label.append(float(tst[1]))
+
+dataset = {'train': 0, 'test': 0}
+
+dataset['train'] = tf.data.Dataset.from_tensor_slices((train_text, train_label))
+dataset['test'] = tf.data.Dataset.from_tensor_slices((test_text, test_label))
+
+train_dataset, test_dataset = dataset['train'], dataset['test']
+
+for text, lable in train_dataset.take(2):
+    print(text)
+
+BUFFER_SIZE = 10000
+BATCH_SIZE = 128
+
+train_dataset = train_dataset.shuffle(BUFFER_SIZE).batch(BATCH_SIZE).prefetch(tf.data.AUTOTUNE)
+test_dataset = test_dataset.batch(BATCH_SIZE).prefetch(tf.data.AUTOTUNE)
+
+VOCAB_SIZE = 20000
+encoder = tf.keras.layers.TextVectorization(
+    standardize='lower',
+    max_tokens=VOCAB_SIZE,
+    encoding='utf-8')
+encoder.adapt(train_dataset.map(lambda text, label: text))
+
+
+model = tf.keras.Sequential([
+    encoder,
+    tf.keras.layers.Embedding(
+        input_dim=len(encoder.get_vocabulary()),
+        output_dim=64,
+        # Use masking to handle the variable sequence lengths
+        mask_zero=True),
+    tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(128)),
+    tf.keras.layers.Dense(64, activation='relu'),
+    tf.keras.layers.Dense(1)
+])
+
+model.compile(loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
+              optimizer=tf.keras.optimizers.Adam(1e-4),
+              metrics=['accuracy'])
+
+history = model.fit(train_dataset, epochs=250,
+                    validation_data=test_dataset)
+                
+
+sample_text = 'меня хватило на 10 минут'
+predictions = model.predict(np.array([sample_text]))
+print(predictions)

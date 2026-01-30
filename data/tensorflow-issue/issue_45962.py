@@ -1,38 +1,63 @@
-# tf.random.uniform((B, 360, 640, C), dtype=...)  ← input shape inferred from DataGenerator dim=(360,640) mostly typical for image sizes
-
-import tensorflow as tf
 import numpy as np
+import random
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Minimal example model which would accept inputs of shape (B, 360, 640, C)
-        # Since original issue only shows generator and training setup, we build a simple conv net here.
-        # Assume 3 channel input (e.g. RGB images) as a placeholder.
-        self.conv1 = tf.keras.layers.Conv2D(16, (3,3), activation='relu', padding='same')
-        self.pool = tf.keras.layers.MaxPooling2D((2,2))
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense = tf.keras.layers.Dense(10, activation='softmax')
+def on_epoch_end(self):
+        'Updates indices after each epoch'
 
-    def call(self, inputs, training=False):
-        x = self.conv1(inputs)
-        x = self.pool(x)
-        x = self.flatten(x)
-        x = self.dense(x)
-        return x
+        #My parameter should be updated here
 
-def my_model_function():
-    # Return an instance of the model
-    return MyModel()
+        print("counted", self.counter, self.genMode)
+        self.counter += 1
 
-def GetInput():
-    # Return a random tensor consistent with what the original DataGenerator would produce.
-    # The original generator uses dim=(360,640) and batchSize=32 by default
-    # We don't know channels exactly; let's assume 3 as typical RGB.
-    batch_size = 32
-    height = 360
-    width = 640
-    channels = 3
-    # For simplicity, just produce float32 in [0, 1)
-    return tf.random.uniform((batch_size, height, width, channels), dtype=tf.float32)
+        self.indexes = np.arange(len(self.imageID))
+        if self.shuffle == True:
+            np.random.shuffle(self.indexes)
 
+from tensorflow.keras.utils import Sequence
+
+class DataGenerator(Sequence):
+    def __init__(self, augParams, genMode, batchSize=32, dim=(360,640), shuffle=True):
+          self.genMode = genMode
+          self.counter = 1
+  
+
+    def __len__(self):
+        'Denotes the number of batches per epoch'
+        return int(np.floor(len(self.imageID) / self.batchSize))
+
+    
+    def __getitem__(self, index):
+        'Generate one batch of data'
+        # Generate indexes of the batch
+        indexes = self.indexes[index*self.batchSize:(index+1)*self.batchSize]
+
+        # Find list of IDs
+        imageIDtemp = [self.imageID[k] for k in indexes]
+        annoIDtemp = [self.annoID[k] for k in indexes]
+
+        # Generate data
+        X, Y = self.__data_generation(imageIDtemp, annoIDtemp)
+        return X, Y
+    
+    def on_epoch_end(self):
+        'Updates indices after each epoch'
+        #My parameter should be updated here
+
+        print("counted", self.counter, self.genMode)
+        self.counter += 1
+
+        self.indexes = np.arange(len(self.imageID))
+        if self.shuffle == True:
+            np.random.shuffle(self.indexes)
+
+def on_epoch_end(self):
+        'Updates indices after each epoch'
+        traceback.print_stack()
+        #My parameter should be updated here
+
+        print("counted", self.counter, self.genMode)
+        self.counter += 1
+
+        self.indexes = np.arange(len(self.imageID))
+        if self.shuffle == True:
+            np.random.shuffle(self.indexes)

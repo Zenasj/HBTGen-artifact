@@ -1,22 +1,21 @@
-# torch.rand(10, 10, dtype=torch.float32)
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.weight = nn.Parameter(torch.rand(10, 10, requires_grad=True))
-        self.b1 = nn.Parameter(torch.rand(10, 10, requires_grad=True))
-        self.b2 = nn.Parameter(torch.rand(10, 10, requires_grad=True))
+cpp
+import torch
 
-    def forward(self, x):
-        bias = self.b1 * self.b2
-        return F.linear(x, self.weight, bias)
+@torch.jit.script
+def method1(x, weight, b1, b2):
+    bias = b1 * b2
+    return torch.nn.functional.linear(x, weight, bias)
 
-def my_model_function():
-    return MyModel()
+M = 10
+K = 10
+N = 10
 
-def GetInput():
-    return torch.rand(10, 10, requires_grad=True)
+x = torch.rand(M, K, requires_grad=True)
+weight = torch.rand(K, N, requires_grad=True)
+b1 = torch.rand(M, N, requires_grad=True)
+b2 = torch.rand(M, N, requires_grad=True)
 
+method1(x, weight, b1, b2)
+method1(x, weight, b1, b2)

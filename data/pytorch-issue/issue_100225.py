@@ -1,24 +1,32 @@
-# torch.rand(1, 3, 28, 28, dtype=torch.float32) ← Add a comment line at the top with the inferred input shape
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+py
+import torch
+
+torch.manual_seed(420)
+
+x = torch.randn(1, 3, 28, 28)
+
+class Model(torch.nn.Module):
+
     def __init__(self):
         super().__init__()
-        # The original issue describes a ConvTranspose2d layer with invalid output padding.
-        # Here, we use a valid configuration for output padding.
-        self.conv_transpose = nn.ConvTranspose2d(3, 6, 3, stride=2, padding=1, output_padding=1)
+        self.conv_transpose = torch.nn.ConvTranspose2d(3, 6, 3, stride=1, padding=1, output_padding=1)
 
     def forward(self, input_tensor):
         x = self.conv_transpose(input_tensor)
         output = torch.tanh(x)
         return output
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+func = Model().to('cpu')
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(1, 3, 28, 28, dtype=torch.float32)
 
+with torch.no_grad():
+    func.train(False)
+    jit_func = torch.compile(func)
+    res2 = jit_func(x)
+    print(res2)
+    # Success
+
+    res1 = func(x)
+    # RuntimeError: output padding must be smaller than either stride or dilation, but got output_padding_height: 1 output_padding_width: 1 stride_height: 1 stride_width: 1 dilation_height: 1 dilation_width: 1

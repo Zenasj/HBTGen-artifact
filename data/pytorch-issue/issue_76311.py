@@ -1,0 +1,6 @@
+aten._fused_dropout.default
+aten.cudnn_batch_norm.default
+aten.native_dropout.default
+aten.native_dropout_backward.default
+aten.clamp_max.default
+aten.cudnn_batch_norm_backward.default

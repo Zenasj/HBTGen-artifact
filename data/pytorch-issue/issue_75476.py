@@ -1,15 +1,16 @@
-# torch.rand(2, 2, dtype=torch.half, device="cuda")
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, p):
-        p = torch.sigmoid(p)
-        return p ** 2.0  # Matches gamma=2.0 from original function
+def foo(p: torch.Tensor, gamma: float = 2.0) -> torch.Tensor:
+    p = torch.sigmoid(p)
+    result = p ** gamma
+    return result
 
-def my_model_function():
-    return MyModel()
+script_foo = torch.jit.script(foo)
+dtype = torch.half # No error if this is torch.float32
 
-def GetInput():
-    return torch.rand(2, 2, dtype=torch.half, device="cuda")
+a = torch.rand((2,2), dtype=dtype, device="cuda") # Only error in gpu
 
+print(script_foo(a)) # This call succeed
+print("-----  FIRST CALL SUCCESS! ------")
+print(script_foo(a)) # This call failed!
+print("----- SECOND CALL FAILED! YOU WILL NOT SEE THIS! ------")

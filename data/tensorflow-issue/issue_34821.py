@@ -1,43 +1,71 @@
-# tf.random.uniform((BATCH_SIZE * NUM_WORKERS, 28, 28, 1), dtype=tf.float32)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
+
+import tensorflow_datasets as tfds
 import tensorflow as tf
+from absl import app, flags
+import os
+import json
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define the layers as in build_and_compile_cnn_model
-        self.conv2d = tf.keras.layers.Conv2D(32, 3, activation='relu', input_shape=(28, 28, 1))
-        self.maxpool = tf.keras.layers.MaxPooling2D()
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense_relu = tf.keras.layers.Dense(64, activation='relu')
-        self.dense_softmax = tf.keras.layers.Dense(10, activation='softmax')
+tfds.disable_progress_bar()
+FLAGS = flags.FLAGS
 
-    def call(self, inputs, training=False):
-        x = self.conv2d(inputs)
-        x = self.maxpool(x)
-        x = self.flatten(x)
-        x = self.dense_relu(x)
-        return self.dense_softmax(x)
+flags.DEFINE_string('input_data_path', default='hdfs://30.78.5.52:9000/data/public/dataset/tensorflow_datasets', help='HDFS Input data path')
+flags.DEFINE_string('checkpoint_dir', default=None, help='HDFS checkpoint dir')
 
+BUFFER_SIZE = 10000
+BATCH_SIZE = 64
 
-def my_model_function():
-    # Create an instance of MyModel and compile it as per original code
-    model = MyModel()
-    # Compile with sparse categorical crossentropy loss and SGD optimizer with lr=0.001
-    model.compile(
-        loss=tf.keras.losses.SparseCategoricalCrossentropy(),
-        optimizer=tf.keras.optimizers.SGD(learning_rate=0.001),
-        metrics=['accuracy'])
-    return model
+def make_datasets_unbatched():
+  # Scaling MNIST data from (0, 255] to (0., 1.]
+  def scale(image, label):
+    image = tf.cast(image, tf.float32)
+    image /= 255
+    return image, label
+
+  datasets, info = tfds.load(name='mnist',
+                            with_info=True,
+                            as_supervised=True,
+                            download=False,
+                            data_dir=FLAGS.input_data_path)
+
+  return datasets['train'].map(scale).cache().shuffle(BUFFER_SIZE)
 
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # Based on the issue, the batch size is GLOBAL_BATCH_SIZE = 64 * NUM_WORKERS (assumed NUM_WORKERS=2)
-    BATCH_SIZE = 64
-    NUM_WORKERS = 2
-    global_batch_size = BATCH_SIZE * NUM_WORKERS
-    # Input shape = (batch_size, 28, 28, 1), float32 scaled 0..1
-    # Use uniform distribution to simulate scaled pixel data
-    return tf.random.uniform(
-        shape=(global_batch_size, 28, 28, 1), minval=0, maxval=1, dtype=tf.float32)
+def build_and_compile_cnn_model():
+  model = tf.keras.Sequential([
+      tf.keras.layers.Conv2D(32, 3, activation='relu', input_shape=(28, 28, 1)),
+      tf.keras.layers.MaxPooling2D(),
+      tf.keras.layers.Flatten(),
+      tf.keras.layers.Dense(64, activation='relu'),
+      tf.keras.layers.Dense(10, activation='softmax')
+  ])
+  model.compile(
+      loss=tf.keras.losses.sparse_categorical_crossentropy,
+      optimizer=tf.keras.optimizers.SGD(learning_rate=0.001),
+      metrics=['accuracy'])
+  return model
 
+def main(argv):
+  strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
+
+  NUM_WORKERS = 2
+  # Here the batch size scales up by number of workers since
+  # `tf.data.Dataset.batch` expects the global batch size. Previously we used 64,
+  # and now this becomes 128.
+  GLOBAL_BATCH_SIZE = 64 * NUM_WORKERS
+  # Replace the `filepath` argument with a path in the file system
+  # accessible by all workers.
+  callbacks = [tf.keras.callbacks.ModelCheckpoint(filepath=FLAGS.checkpoint_dir)]
+  with strategy.scope():
+    # Creation of dataset, and model building/compiling need to be within
+    # `strategy.scope()`.
+    train_datasets = make_datasets_unbatched().batch(GLOBAL_BATCH_SIZE)
+    multi_worker_model = build_and_compile_cnn_model()
+  multi_worker_model.fit(x=train_datasets, epochs=2, callbacks=callbacks)
+
+
+
+if __name__ == '__main__':
+  app.run(main)

@@ -1,32 +1,36 @@
-# tf.random.uniform((1, 4, 2), dtype=tf.float32) ← Input shape inferred from the example: batch_size=1, shape=[4,2]
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
 
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # No trainable layers needed, just a lambda layer performing batched matmul with transpose of second input
-        # This replicates the example from the issue demonstrating tf.linalg.matmul behavior
-        self.matmul_layer = tf.keras.layers.Lambda(
-            lambda x: tf.linalg.matmul(x[0][0], x[1][0], transpose_b=True)
-        )
-    
-    def call(self, inputs):
-        # inputs is expected to be a list or tuple: [input1, input2]
-        # input shape: input1: (1, 4, 2), input2: (1, 4, 2)
-        # We select the zeroth batch element as per the example ([0]) and do matmul with transpose
-        return self.matmul_layer(inputs)
+input_shape = [4, 2]
+input1 = tf.keras.Input(shape=input_shape, batch_size=1)
+input2 = tf.keras.Input(shape=input_shape, batch_size=1)
+output = tf.keras.layers.Lambda(lambda x: tf.linalg.matmul(
+                                   x[0][0], x[1][0], transpose_b=True)
+                                )([input1, input2])
+model = tf.keras.Model(inputs=[input1, input2], outputs=output)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
 
-def GetInput():
-    # Return two tensors each shaped (1, 4, 2) of float32 matching input1, input2
-    # Use tf.random.uniform to generate random values for testing.
-    # The example uses np.random.rand(1,4,2) cast to float32, so we follow same shape and dtype.
-    input_shape = (1, 4, 2)
-    input1 = tf.random.uniform(input_shape, dtype=tf.float32)
-    input2 = tf.random.uniform(input_shape, dtype=tf.float32)
-    return [input1, input2]
+def get_rand_date():
+    return np.random.rand(1, *input_shape).astype(np.float32)
 
+def representative_data_gen():
+    yield [get_rand_date(), get_rand_date()]
+
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+converter.representative_dataset = representative_data_gen
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.target_spec.supported_ops = [
+    tf.lite.OpsSet.EXPERIMENTAL_TFLITE_BUILTINS_ACTIVATIONS_INT16_WEIGHTS_INT8]
+
+tflite_model = converter.convert()
+interpreter = tf.lite.Interpreter(model_content=tflite_model)
+interpreter.allocate_tensors()
+interpreter.set_tensor(interpreter.get_input_details()[0]["index"],
+                       get_rand_date())
+interpreter.set_tensor(interpreter.get_input_details()[1]["index"],
+                       get_rand_date())
+interpreter.invoke()

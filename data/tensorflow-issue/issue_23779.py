@@ -1,41 +1,29 @@
-# tf.random.uniform((B, 28, 28), dtype=tf.float32) ← Input shape is (batch_size, 28, 28) grayscale images from MNIST
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
 import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Flatten input 28x28 → 784
-        self.flatten = tf.keras.layers.Flatten(input_shape=(28, 28))
-        # Dense layer with 512 units and ReLU activation
-        self.dense1 = tf.keras.layers.Dense(512, activation=tf.nn.relu)
-        # Dropout with rate 0.2
-        self.dropout1 = tf.keras.layers.Dropout(0.2)
-        # Dense layer with 128 units and ReLU activation
-        self.dense2 = tf.keras.layers.Dense(128, activation=tf.nn.relu)
-        # Dropout with rate 0.2
-        self.dropout2 = tf.keras.layers.Dropout(0.2)
-        # Final output layer with 10 units and softmax activation for classification
-        self.out = tf.keras.layers.Dense(10, activation=tf.nn.softmax)
+tf.enable_eager_execution()
 
-    def call(self, inputs, training=False):
-        x = self.flatten(inputs)
-        x = self.dense1(x)
-        x = self.dropout1(x, training=training)
-        x = self.dense2(x)
-        x = self.dropout2(x, training=training)
-        x = self.out(x)
-        return x
+mnist = tf.keras.datasets.mnist
+(train_images, train_labels), (test_images, test_labels) = mnist.load_data()
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+train_images = train_images / 255.0
+test_images = test_images / 255.0
 
-def GetInput():
-    # Return a random float32 tensor shaped (batch_size, 28, 28)
-    # Batch size is arbitrarily chosen as 32 for demonstration.
-    # Values normalized roughly as MNIST pixel values scaled in [0,1].
-    batch_size = 32
-    return tf.random.uniform((batch_size, 28, 28), dtype=tf.float32)
+model = tf.keras.models.Sequential([
+  tf.keras.layers.Flatten(input_shape=(28,28)),
+  tf.keras.layers.Dense(512, activation=tf.nn.relu),
+  tf.keras.layers.Dropout(0.2),
+  tf.keras.layers.Dense(128, activation=tf.nn.relu),
+  tf.keras.layers.Dropout(0.2),
+  tf.keras.layers.Dense(10, activation=tf.nn.softmax)
+])
 
+model.compile(optimizer = tf.train.AdamOptimizer(0.001),loss='sparse_categorical_crossentropy',metrics=['accuracy'])
+
+model.summary()
+
+history = model.fit(x = train_images,y = train_labels,validation_split=0.1,batch_size = 256,verbose=2,shuffle = True,epochs=10)

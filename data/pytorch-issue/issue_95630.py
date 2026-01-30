@@ -1,26 +1,33 @@
-# torch.rand(B, C, H, W, dtype=...)  # Add a comment line at the top with the inferred input shape
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.layer = nn.Linear(32, 2)
+import torch
 
-    def forward(self, x):
-        return self.layer(x)
+from lightning.pytorch import Trainer
+from lightning.pytorch.demos.boring_classes import BoringModel
 
-    def training_step(self, x):
-        output = self.forward(x)
-        return output
+import torch._dynamo as dynamo
+dynamo.config.verbose = True
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+model = BoringModel()
+compiled_model = torch.compile(model)
+trainer = Trainer(fast_dev_run=True)
+trainer.fit(compiled_model)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    batch_size = 10
-    input_features = 32
-    return torch.rand(batch_size, input_features)
+import torch
 
+
+class MyModel(torch.nn.Module):
+    def forward(self):
+        ...
+
+    def training_step(self):
+        self()
+
+
+model = MyModel()
+compiled_model = torch.compile(model)
+
+model.forward = compiled_model.dynamo_ctx(model.forward)
+model.training_step = compiled_model.dynamo_ctx(model.training_step)
+
+model.training_step()

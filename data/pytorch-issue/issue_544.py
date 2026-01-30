@@ -1,21 +1,21 @@
-# torch.rand(1, 256, 120, 192, dtype=torch.float32).cuda()  # Inferred input shape from the issue's bad_sizes[2]
-
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv = nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1)
-    
-    def forward(self, x):
-        return self.conv(x)
+import torch
 
-def my_model_function():
-    model = MyModel()
-    model.cuda()  # Place model on CUDA to trigger the reported error
-    return model
+dtype = torch.cuda.FloatTensor
 
-def GetInput():
-    return torch.randn(1, 256, 120, 192, dtype=torch.float32).cuda()
+bad_sizes = [
+  (1, 256, 109, 175),
+  (1, 256, 80, 128),
+  (1, 256, 120, 192),
+]
 
+x = torch.randn(*bad_sizes[2]).type(dtype)
+x_var = torch.autograd.Variable(x)
+print('x.size() = ', x.size())
+
+conv = torch.nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1)
+conv.type(dtype)
+
+y = conv(x_var)
+print(y.size())

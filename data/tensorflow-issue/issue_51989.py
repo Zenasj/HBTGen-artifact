@@ -1,68 +1,73 @@
-# tf.random.uniform((B, 28, 28, 1), dtype=tf.float32) ← Input shape inferred from MNIST data preprocessing
+from tensorflow import keras
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
+from tensorflow.keras import backend as K
+from tensorflow.keras.layers import ReLU
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras import layers
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Simplest model described in the issue: Flatten -> Dense(100) + ReLU -> Dense(120) + ReLU -> Dense(10)
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(100)
-        self.relu1 = tf.keras.layers.ReLU()
-        self.dense2 = tf.keras.layers.Dense(120)
-        self.relu2 = tf.keras.layers.ReLU()
-        self.dense3 = tf.keras.layers.Dense(10)  # logits output for 10 classes
 
-        # Loss and metrics defined in the original example
-        self.loss_fn = tf.keras.losses.CategoricalCrossentropy(from_logits=True)
-        self.accuracy = tf.keras.metrics.CategoricalAccuracy(name='accuracy')
+physical_devices = tf.config.experimental.list_physical_devices('GPU')
+tf.config.experimental.set_memory_growth(physical_devices[0], True)
 
-    def call(self, inputs, training=False):
-        x = self.flatten(inputs)
-        x = self.dense1(x)
-        x = self.relu1(x)
-        x = self.dense2(x)
-        x = self.relu2(x)
-        logits = self.dense3(x)
-        return logits
 
-    def compute_loss(self, x, y):
-        logits = self.call(x, training=True)
-        loss = self.loss_fn(y, logits)
-        return loss, logits
+from tensorflow.keras.datasets import mnist
+(x_train, y_train), (x_test, y_test) = mnist.load_data()
 
-    # This method is not requested but can be handy to replicate full behavior
-    def get_metrics(self):
-        return [self.accuracy]
 
-def my_model_function():
-    """
-    Return an instance of MyModel, compiled with optimizer and loss to match the example.
-    """
-    model = MyModel()
-    # Compile to ensure metrics etc. are correctly setup (matches example code)
-    optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
-    model.compile(
-        optimizer=optimizer,
-        loss=tf.keras.losses.CategoricalCrossentropy(from_logits=True),
-        metrics=['accuracy'],
-    )
-    return model
+def prepare_data(x, y):
+    x=x.astype('float32')
+    y=y.astype('int32')
+    # convert from range int[0,255] to float32[-1,1]
+    x/=255
+    x = 2*x -1
+    x=x.reshape((-1,28,28,1))
+    y=tf.keras.utils.to_categorical(y,num_classes=10)
+    return x, y
 
-def GetInput():
-    """
-    Return random input tensor shaped (batch, height, width, channels) like MNIST preprocessed data:
-    batch size: 32 (arbitrary chosen for example)
-    height & width: 28x28
-    channels: 1 (grayscale)
-    Input range preprocessed in example: float32 in range [-1, 1]
-    """
-    batch_size = 32
-    x = tf.random.uniform(
-        (batch_size, 28, 28, 1),
-        minval=-1.0,
-        maxval=1.0,
-        dtype=tf.float32,
-    )
-    return x
+# prepare the data
+x_train, y_train = prepare_data(x_train, y_train)
+x_test, y_test = prepare_data(x_test, y_test)
 
+
+epochs = 2 #200
+batch_size = 256
+
+##simplest model
+K.clear_session()
+model = tf.keras.Sequential([
+    layers.Flatten(),
+    layers.Dense(100),
+    layers.ReLU(),
+    layers.Dense(120),
+    layers.ReLU(),
+    layers.Dense(10)
+]
+)
+
+loss_function = tf.losses.CategoricalCrossentropy(from_logits=True)
+optimizer = Adam(lr=0.001)
+model.compile(loss=loss_function,optimizer=optimizer, metrics=['acc'])
+
+
+model.fit(x_train,y_train,batch_size=batch_size,epochs=epochs,validation_data=(x_test,y_test))
+
+
+print("Run evaluate on test dataset")
+test_ds = tf.data.Dataset.from_tensor_slices((x_test, y_test)).batch(batch_size)
+results = model.evaluate(test_ds)
+print(results)
+
+##---------------------------
+print("Cpy model ")
+model_copy= tf.keras.models.clone_model(model)
+model_copy.build((None, 28,28,1)) # replace 10 with number of variables in input layer
+model_copy.compile(loss=loss_function,optimizer=optimizer, metrics=["accuracy"])
+model_copy.set_weights(model.get_weights())
+
+print("Run evaluate with dataset on copied model")
+test_ds2 = tf.data.Dataset.from_tensor_slices((x_test, y_test)).batch(batch_size)
+results = model_copy.evaluate(test_ds2)
+print(results)

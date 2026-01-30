@@ -1,25 +1,37 @@
-# torch.rand(4096, 1024, dtype=torch.float32)  # Inferred input shape for MyModel
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.original_softmax = nn.Softmax(dim=-1)  # PyTorch's standard implementation
-        # Improved implementation stub (CUDA kernel not available here, using placeholder)
-        self.improved_softmax = nn.Softmax(dim=-1)  # Represents optimized kernel logic
-        
-    def forward(self, x):
-        orig_out = self.original_softmax(x)
-        imp_out = self.improved_softmax(x)
-        # Return both outputs for external performance/accuracy comparison
-        return orig_out, imp_out
+DEVICE=torch.device('cuda')
 
-def my_model_function():
-    # Returns model with both implementations as submodules
-    return MyModel()
+# Time cost for near 1024
+for cnt in range(1020, 1030):
+    x = torch.randn(4096, cnt, device=DEVICE, dtype=torch.float32)
+    #x = torch.randn(M, N, device=DEVICE, dtype=torch.float32)
 
-def GetInput():
-    # Generates input matching the model's expected shape (B=4096, N=1024)
-    return torch.randn(4096, 1024, device='cuda', dtype=torch.float32)
+    #warm up
+    need_warmup = True
+    round = 5
+    if need_warmup:
+        for _ in range(round):
+            output = torch.softmax(x, dim=-1)
 
+    torch.cuda.synchronize()
+    start_time = torch.cuda.Event(enable_timing=True)
+    end_time = torch.cuda.Event(enable_timing=True)
+
+    # Start time
+    start_time.record()
+
+    # Apply softmax
+    for _ in range(round):
+        output = torch.softmax(x, dim=-1)
+
+    # End time
+    end_time.record()
+
+    torch.cuda.synchronize()
+
+    # Calculate elapsed time
+    elapsed_time_ms = start_time.elapsed_time(end_time)
+    # print(f"CUDA Time: {elapsed_time_ms:.6f} ms")
+    gbps = lambda ms: round * 2 * x.numel() * x.element_size() * 1e-9 / (ms * 1e-3)
+    print(f"n as {cnt} of softmax: {gbps(elapsed_time_ms):.6f} gb/s")

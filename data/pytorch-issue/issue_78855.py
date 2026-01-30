@@ -1,20 +1,15 @@
-# torch.rand(2, 63, dtype=torch.float32)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        a, b = x[0], x[1]
-        return torch.fmod(a, b)
+def check_fmod(n, dtype = torch.float32, device = 'cpu'): 
+    a = torch.randn(n, device = device, dtype = dtype)
+    b = torch.randn(n, device = device, dtype = dtype)
 
-def my_model_function():
-    return MyModel()
+    random_index = torch.randint(0, n, size = (1,)).item()
+    a[random_index] = torch.tensor(8.0, device = device, dtype = dtype)
+    b[random_index] = torch.tensor(2.0e-38, device = device, dtype = dtype) 
 
-def GetInput():
-    N = 63  # Maximum n from the original test loop
-    a = torch.randn(N, dtype=torch.float32)
-    b = torch.randn(N, dtype=torch.float32)
-    a[0] = 8.0  # Fixed index 0 for reproducibility
-    b[0] = 2.0e-38
-    return torch.stack([a, b])  # Returns a tensor of shape (2, 63)
+    res1 = torch.fmod(a, b)
+    print(n, res1[random_index])
 
+for n in range(1, 64):
+    check_fmod(n, dtype = torch.float32, device = 'cpu')

@@ -1,79 +1,73 @@
-# tf.RaggedTensor input with outer dimension (batch), variable inner dimensions (ragged), and feature shape (10, 10, 3)
-# The model in the issue accepts two ragged tensor inputs of shape (None, None, 10, 10, 3),
-# which means ragged batch, then ragged second dim, then fixed spatial dims and channels.
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
 import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Two ragged tensor inputs expected
-        # We'll implement the model similar to basic_ragged_graph from the issue
-        
-        # A Lambda to sum over the two ragged dimensions (axis 1 and 2)
-        self.sum_layer = tf.keras.layers.Lambda(lambda x: tf.reduce_sum(x, axis=(1, 2)))
-        # Dense layer after flattening concatenated sums
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense = tf.keras.layers.Dense(units=2, activation=None)
-        
-    def call(self, inputs, training=False):
-        # inputs: tuple of two ragged tensors, each with shape (batch, ragged, ragged, 10, 10, 3)
-        # For each input, apply sum_layer which reduces over ragged dims (1, 2),
-        # resulting in shape (batch, 10, 10, 3)
-        summed = [self.sum_layer(inp) for inp in inputs]
-        # Concatenate along last axis (channels/features)
-        concat = tf.concat(summed, axis=-1)  # shape: (batch, 10, 10, 6)
-        flat = self.flatten(concat)          # shape: (batch, 10*10*6)
-        logits = self.dense(flat)            # shape: (batch, 2)
-        return logits
+def turn_into_ragged(x):
+    return tf.RaggedTensor.from_row_lengths(tf.concat(
+        [tf.RaggedTensor.from_row_lengths(np.concatenate(sample, axis=0), list(map(len, sample))) for sample in x],
+        axis=0), list(map(len, x)))
 
-def my_model_function():
-    return MyModel()
+def get_batches_m(x,y,batch_size=10,random=False):
+    """ Return a generator that yields batches from vars. """
+    #batch_size = len(x) // n_batches
+    if len(x[0]) % batch_size == 0:
+        n_batches = (len(x[0]) // batch_size)
+    else:
+        n_batches = (len(x[0]) // batch_size) + 1
 
-def GetInput():
-    # Generate a batch size of 4 for ragged inputs matching the model's expected input
-    batch_size = 4
-    # For simplicity, create synthetic data with ragged outer two dims
-    
-    # Create random ragged lengths for dims 1 and 2
-    # For each sample in batch, randomly decide number of "outer ragged rows" and "inner ragged rows"
-    outer_lengths = np.random.randint(low=1, high=5, size=batch_size)
-    inner_lengths_per_outer = [np.random.randint(low=1, high=5, size=outer) for outer in outer_lengths]
-    
-    # Fixed shape for each innermost tile (10,10,3)
-    tile_shape = (10, 10, 3)
-    
-    ragged_tensors = []
-    for idx in range(2):  # two inputs
-        samples = []
-        for b in range(batch_size):
-            # For each batch element, create variable ragged dimension 1 = outer_lengths[b]
-            outer_len = outer_lengths[b]
-            inner_raggeds = []
-            for inner_len in inner_lengths_per_outer[b]:
-                # Create a (inner_len, 10, 10, 3) tensor with random values
-                inner_raggeds.append(np.random.uniform(size=(inner_len,) + tile_shape).astype(np.float32))
-            # inner_raggeds is list of arrays with variable length first dims
-            # concatenate along axis=0 (concatenate all inner ragged rows for this batch elem outer rows)
-            if len(inner_raggeds) > 0:
-                concat_inner = np.concatenate(inner_raggeds, axis=0)
-            else:
-                concat_inner = np.empty((0,) + tile_shape, dtype=np.float32)
-            samples.append(concat_inner)
-        # Now create ragged tensor from row_lengths
-        # First level ragged dimension: len=samples (batch size)
-        # Each sample is 2D ragged: outer ragged dim lengths = outer_lengths, inner ragged dim lengths = inner_lengths_per_outer
-        # For simplicity, flatten intermediate ragged dims into a single ragged dimension
-        # We'll approximate by concatenating all inner raggeds per batch element and providing total row lengths
-        
-        # Flatten samples into single 2D ragged tensor with row lengths = sum of inner ragged lengths per batch element
-        flat_values = np.concatenate(samples, axis=0)
-        # row_lengths first correspond to batch elements, need total rows per batch elem
-        row_lengths = [sample.shape[0] for sample in samples]
-        
-        ragged_tensor = tf.RaggedTensor.from_row_lengths(flat_values, row_lengths)
-        ragged_tensors.append(ragged_tensor)
-    
-    return tuple(ragged_tensors)
+    sel = np.asarray(list(range(x[0].shape[0])))
+    if random is True:
+        np.random.shuffle(sel)
 
+    for ii in range(0, n_batches * batch_size, batch_size):
+        # If we're not on the last batch, grab data with size batch_size
+        if ii != (n_batches - 1) * batch_size:
+            sel_ind=sel[ii: ii + batch_size]
+        else:
+            sel_ind = sel[ii:]
+
+        x_out = [turn_into_ragged(var[sel_ind]) for var in x]
+        y_out = [var[sel_ind] for var in y]
+
+        yield tuple(x_out),tuple(y_out)
+
+def generate_syn_data(n_i=2000, n_s=30, n_t=200, shape=(10, 10, 3)):
+    values = np.random.uniform(0, 1, (n_i, ) + shape).astype(np.float32)
+    idx_t = np.random.choice(n_t, n_i)
+    _, l = np.unique(idx_t, return_counts=True)
+    rt0 = tf.RaggedTensor.from_row_lengths(values, l)
+    idx_s = np.random.choice(n_s, n_t)
+    _, l = np.unique(idx_s, return_counts=True)
+    rt1 = tf.RaggedTensor.from_row_lengths(rt0, l)
+    y = tf.constant(np.eye(2)[np.random.choice(2, n_s)].astype(np.float32))
+    return  rt1, y
+
+def basic_ragged_graph(input_shapes):
+    ragged_inputs = [tf.keras.layers.Input(shape=(None, None) + shape, dtype=tf.float32, ragged=True) for shape in input_shapes]
+    sample_aggregation = tf.concat([tf.keras.layers.Lambda(lambda x: tf.reduce_sum(x, axis=(1, 2)))(ragged_input) for ragged_input in ragged_inputs], axis=1)
+    logits = tf.keras.layers.Dense(units=2, activation=None)(tf.keras.layers.Flatten()(sample_aggregation))
+    return tf.keras.Model(inputs=ragged_inputs, outputs=[logits])
+
+#create simple model that takes 2 ragged inputs and returns 1 output
+tile_shape = (10, 10, 3)
+model = basic_ragged_graph([tile_shape,tile_shape])
+model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
+              loss=tf.keras.losses.CategoricalCrossentropy(from_logits=True))
+
+#generate synthetic data for inputs and outputs
+x1,x2 = generate_syn_data()[0].numpy(),generate_syn_data()[0].numpy()
+y = generate_syn_data()[1].numpy()
+
+#create generator objeect to batch and convert data to tf raggged
+train_gen = get_batches_m([x1,x2],[y],batch_size=5,random=True)
+#this method uses generator and outputs x_train,y_train that work
+for x_train, y_train in train_gen:
+    model.fit(x_train, y_train)
+
+#however, when one provides this generator to the model.fit, the model will not train
+train_gen = get_batches_m([x1,x2],[y],batch_size=5,random=True)
+model.fit(train_gen)

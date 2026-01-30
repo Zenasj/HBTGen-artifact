@@ -1,21 +1,19 @@
 import torch
-import torch.nn as nn
+from torch.testing._internal.common_utils import TestCase
 
-# torch.rand(B, 2, 3, 1, dtype=torch.float32)  # Inferred input shape based on test parameter dimensions
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Matches the parameter shape used in the test case (2x3 tensor)
-        self.weight = nn.Parameter(torch.randn(2, 3))
-    
-    def forward(self, x):
-        # Example usage of the parameter to ensure it's part of the model's computation
-        return x + self.weight.view(1, 2, 3, 1).expand_as(x)
+param = torch.rand(2, 3, dtype=torch.float, device='cuda:0', requires_grad=True)
+param.grad = torch.rand_like(param)
 
-def my_model_function():
-    return MyModel()
+lr = torch.tensor(.001, device='cuda:0')
+opt = torch.optim.Adam([param], lr=lr, fused=True)
 
-def GetInput():
-    # Returns a 4D tensor matching the inferred input shape (B=1, C=2, H=3, W=1)
-    return torch.rand(1, 2, 3, 1, dtype=torch.float32)
+with torch.profiler.profile(
+    activities=[
+        torch.profiler.ProfilerActivity.CPU,
+        torch.profiler.ProfilerActivity.CUDA,
+    ]
+) as p:
+    for _ in range(1000):
+        opt.step()
 
+print(p.key_averages().table(sort_by="cpu_time_total"))

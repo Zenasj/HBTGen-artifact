@@ -1,39 +1,28 @@
-# tf.random.uniform((1, 224, 224, 3), dtype=tf.float32) ← Input shape from model input (batch size 1 assumed)
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
+from  tensorflow.keras import models
+from tensorflow.keras import layers
+from tensorflow.keras.optimizers import SGD, Adam
+#-----------------------------------------------------##
+model = models.Sequential()
+model.add(layers.Conv2D(32, (3, 3), padding='same', input_shape=(224, 224, 3)))
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Define layers according to the original Sequential model:
-        # Conv2D(32, (3,3), padding='same', input_shape=(224,224,3))
-        self.conv1 = tf.keras.layers.Conv2D(32, (3, 3), padding='same')
-        self.conv2 = tf.keras.layers.Conv2D(32, (3, 3), padding='same')
-        self.activation = tf.keras.layers.Activation('relu')
-        self.maxpool = tf.keras.layers.MaxPooling2D((2, 2))
-        # As of TF 2.2.0, UpSampling2D interpolation='nearest' is unsupported in TFLite.
-        # To maintain compatibility with TFLite, we'll omit 'interpolation' argument,
-        # which defaults to 'nearest'.
-        self.upsample = tf.keras.layers.UpSampling2D((2, 2))  
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense = tf.keras.layers.Dense(1, activation='sigmoid')
+model.add(layers.Conv2D(32, (3, 3), padding='same'))
+#model.add(layers.BatchNormalization())
+model.add(layers.Activation('relu'))
+model.add(layers.MaxPooling2D((2, 2)))
 
-    def call(self, inputs, training=False):
-        x = self.conv1(inputs)
-        x = self.conv2(x)
-        x = self.activation(x)
-        x = self.maxpool(x)
-        x = self.upsample(x)
-        x = self.flatten(x)
-        x = self.dense(x)
-        return x
+model.add(layers.UpSampling2D((2, 2), interpolation='nearest'))
+model.add(layers.Flatten())
+model.add(layers.Dense(1, activation='sigmoid'))
 
-def my_model_function():
-    # Return an instance of the MyModel class.
-    return MyModel()
+model.summary()
 
-def GetInput():
-    # Generate a random tensor input compatible with MyModel:
-    # Shape: (batch_size=1, height=224, width=224, channels=3), dtype float32
-    return tf.random.uniform((1, 224, 224, 3), dtype=tf.float32)
+model_dir = '/home/nymble'
+nymble_model = models.load_model(os.path.join(model_dir,'sample_model.h5'))
+print("Model loaded")
 
+converter = tf.lite.TFLiteConverter.from_keras_model(nymble_model)
+#converter.optimizations = [tf.lite.Optimize.OPTIMIZE_FOR_SIZE]
+tflmodel = converter.convert()

@@ -1,37 +1,35 @@
-# tf.random.uniform((B, 2), dtype=tf.float32) ← The model expects input shape (batch_size, 2)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
+import pickle
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Reconstruct the model from the issue's example:
-        # - 3 Dense layers with relu for first two, no activation for last
-        # - First layer input shape 2
-        self.dense1 = tf.keras.layers.Dense(2, activation='relu')  
-        self.dense2 = tf.keras.layers.Dense(2, activation='relu')
-        self.dense3 = tf.keras.layers.Dense(1)
+tf.random.set_seed(42)
 
-    def call(self, inputs):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        x = self.dense3(x)
-        return x
+input_x = np.random.randint(0, 50000, (10000,1))
+input_y = np.random.randint(0, 50000, (10000,1))
+output = input_x + input_y
+input = np.concatenate((input_x, input_y), axis=1)
 
-def my_model_function():
-    # Create and return an instance of MyModel;
-    # weights are uninitialized here, since the issue shows training is needed before usage.
-    # Weights can be loaded/assigned externally if desired.
-    return MyModel()
+model = tf.keras.Sequential([
+    tf.keras.layers.Dense(2, activation = tf.keras.activations.relu, input_shape=[2]),   
+    tf.keras.layers.Dense(2, activation = tf.keras.activations.relu),
+    tf.keras.layers.Dense(1),
+])
 
-def GetInput():
-    # Return a random batch of input matching input shape (batch_size, 2)
-    # Based on the issue, inputs are 2D integer values in range ~0 to 50000.
-    # The original model input was fed numpy int arrays. We'll generate float32 tensors,
-    # since Keras typically expects float inputs. Alternatively, cast int to float.
-    import numpy as np
-    batch_size = 10
-    # Generate 2 int features per sample similar to issue inputs:
-    np_input = np.random.randint(0, 50000, size=(batch_size, 2)).astype('float32')
-    return tf.convert_to_tensor(np_input)
+model.compile(loss = tf.keras.losses.mae,
+              optimizer=tf.optimizers.Adam(learning_rate=0.00001),
+              metrics = ['mse'])
+              
+model.fit(input, output, epochs = 100)
 
+fl = open('D:/tf/tf.pkl', 'wb')
+pickle.dump(model, fl)
+fl.close()
+
+fl = open('D:/tf/tf.pkl', 'rb')
+model = pickle.load(fl)
+print(model.predict([[2.2, 5.1]]))
+fl.close()

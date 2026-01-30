@@ -1,23 +1,26 @@
-# Input shapes: A (10000, 10000), B (10000,), C (10000,) all with dtype=torch.float32
+import numpy as np
+import random
+
 import torch
-from torch import nn
+for device, dtype in [('cuda:0', torch.float16), ('cuda:0', torch.float32), ('cpu', torch.float32)]:
+        A = torch.randn(10_000, 10_000, dtype=dtype).to(device)
+        B = torch.randn(10_000, dtype=dtype).to(device)
+        C = torch.randn(10_000, dtype=dtype).to(device)
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-    
-    def forward(self, inputs):
-        A, B, C = inputs
-        result1 = A @ B + A @ C  # Compute A@B + A@C
-        result2 = A @ (B + C)    # Compute A@(B + C)
-        return result1 - result2  # Return difference between the two results
+        result_1 = A @ B + A @ C
+        result_2 = A @ (B + C)
 
-def my_model_function():
-    return MyModel()
+        print(f'Device: {device}, dtype: {dtype}')
+        print(f'Are all values close: {torch.allclose(result_1, result_2)}')
+        print(f'The norm of the difference is: {(result_1 - result_2).norm()}')
+        print('=' * 20)
 
-def GetInput():
-    A = torch.randn(10000, 10000, dtype=torch.float32)
-    B = torch.randn(10000, dtype=torch.float32)
-    C = torch.randn(10000, dtype=torch.float32)
-    return (A, B, C)
+A = np.random.randn(10_000, 10_000)
+B = np.random.randn(10_000)
+C = np.random.randn(10_000)
 
+result_1 = A @ B + A @ C
+result_2 = A @ (B + C)
+
+print(f'Are all values close: {np.allclose(result_1, result_2)}')
+print(f'The norm of the difference is: {np.linalg.norm(result_1 - result_2)}')

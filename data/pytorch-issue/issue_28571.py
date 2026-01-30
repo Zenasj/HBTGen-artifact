@@ -1,14 +1,5 @@
-# torch.rand(2, 2, dtype=torch.bool)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return ~x
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.BoolTensor(2, 2)
-
+mask = torch.BoolTensor(2, 2)
+print(mask.shape, mask.dtype)
+# (torch.Size([2, 2]), torch.bool)

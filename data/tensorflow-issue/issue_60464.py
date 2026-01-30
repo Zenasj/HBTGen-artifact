@@ -1,36 +1,42 @@
-# tf.random.uniform((B, 32), dtype=tf.float32)  ← Input shape inferred from model input_shape=(32,)
+from tensorflow import keras
+from tensorflow.keras import layers
+
+from osgeo import gdal
 
 import tensorflow as tf
+from tensorflow.keras import Sequential
+from tensorflow.keras.layers import Dense
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Build the model sequentially like the example:
-        # Dense(64, relu) -> Dense(10, linear)
-        self.dense1 = tf.keras.layers.Dense(64, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(10)  # linear activation by default
+# Create a simple model
+model = Sequential([
+    Dense(64, activation='relu', input_shape=(32,)),
+    Dense(10)
+])
 
-    def call(self, inputs):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        return x
+# Compile the model
+model.compile(optimizer='adam',
+              loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+              metrics=['accuracy'])
 
-def my_model_function():
-    # Return an instance of MyModel with initialized weights.
-    model = MyModel()
+# Print the model summary
+model.summary()
 
-    # Build the model by calling with a dummy input
-    dummy_input = tf.random.uniform((1, 32), dtype=tf.float32)
-    model(dummy_input)  # builds weights
+# Save the initial weights to a file
+model.save_weights('my_model_weights.h5')
 
-    # Compile the model as per example (optional but included for completeness)
-    model.compile(optimizer='adam',
-                  loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
-                  metrics=['accuracy'])
-    return model
+# Change the weights of the model
+for layer in model.layers:
+    weights = layer.get_weights()  # list of numpy arrays
+    weights = [weight * 0 for weight in weights]
+    layer.set_weights(weights)
 
-def GetInput():
-    # Return a random tensor input matching shape (batch_size, 32)
-    # Using batch_size=4 arbitrarily for a reasonable batch input
-    return tf.random.uniform((4, 32), dtype=tf.float32)
+# Check that weights have been changed
+print('Weights after resetting:')
+print(model.layers[0].get_weights())
 
+# Load the initial weights from the file
+model.load_weights('my_model_weights.h5')
+
+# Check that weights have been loaded
+print('Weights after loading from file:')
+print(model.layers[0].get_weights())

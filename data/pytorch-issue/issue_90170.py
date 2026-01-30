@@ -1,20 +1,17 @@
-# torch.rand(16, 3, 224, 224, dtype=torch.float32).cuda()  # Input shape for MyModel
 import torch
 import torchvision.models as models
 
-class MyModel(torch.nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.model = models.resnet18()
+model = models.resnet18().cuda()
+optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+compiled_model = torch.compile(model)
 
-    def forward(self, x):
-        return self.model(x)
+x = torch.randn(16, 3, 224, 224).cuda()
+optimizer.zero_grad()
+out = compiled_model(x)
+out.sum().backward()
+optimizer.step()
 
-def my_model_function():
-    model = MyModel()
-    model.cuda()  # Move model to CUDA device
-    return model
+compiled_model = torch.compile(model, fullgraph=True, backend='nvprims_aten')
 
-def GetInput():
-    return torch.rand(16, 3, 224, 224, dtype=torch.float32).cuda()  # Random input matching ResNet18 requirements
-
+import torch._dynamo as dynamo
+print(dynamo.list_backends())

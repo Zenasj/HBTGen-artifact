@@ -1,23 +1,30 @@
-# torch.randint(0, 30522, (64, 7), dtype=torch.long)
+# MPS Version
+from transformers import AutoTokenizer, BertForSequenceClassification
+import timeit
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.embedding = nn.Embedding(30522, 768)  # BERT vocab size and hidden size
-        self.classifier = nn.Linear(768, 2)  # Sequence classification head
+tokenizer = AutoTokenizer.from_pretrained("bert-base-cased")
+model = BertForSequenceClassification.from_pretrained("bert-base-cased").to(torch.device("mps"))
 
-    def forward(self, input_ids):
-        # Simplified BERT forward pass (embedding + mean pooling + classifier)
-        embeddings = self.embedding(input_ids)
-        pooled = embeddings.mean(dim=1)  # Pool across sequence length
-        return self.classifier(pooled)
+tokens = tokenizer.tokenize("Hello world, this is michael!")
+tids = tokenizer.convert_tokens_to_ids(tokens)
+with torch.no_grad():
+    t_tids = torch.tensor([tids]*64, device=torch.device("mps"))
+    res = timeit.timeit(lambda: model(input_ids=t_tids), number=100)
+print(res)
 
-def my_model_function():
-    return MyModel()
+a_cpu = torch.rand(1000, device='cpu')
+b_cpu = torch.rand((1000, 1000), device='cpu')
+a_mps = torch.rand(1000, device='mps')
+b_mps = torch.rand((1000, 1000), device='mps')
 
-def GetInput():
-    # Generate random input matching BERT input requirements
-    return torch.randint(0, 30522, (64, 7), dtype=torch.long)
+print('cpu', timeit.timeit(lambda: a_cpu @ b_cpu, number=100_000))
+print('mps', timeit.timeit(lambda: a_mps @ b_mps, number=100_000))
 
+a_cpu = torch.rand(250, device='cpu')
+b_cpu = torch.rand((250, 250), device='cpu')
+a_mps = torch.rand(250, device='mps')
+b_mps = torch.rand((250, 250), device='mps')
+
+print('cpu', timeit.timeit(lambda: a_cpu @ b_cpu, number=100_000))
+print('mps', timeit.timeit(lambda: a_mps @ b_mps, number=100_000))

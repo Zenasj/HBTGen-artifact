@@ -1,39 +1,76 @@
-# tf.random.uniform((batch_size, 20), dtype=tf.float32) ← input shape inferred from model input_shape=(20,)
+import random
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
+# import tensorflow as tf
+# import tensorflow.keras
+import keras
+import tensorflow as tf
+import tensorflow.keras as k2
+
+print("CPU LIST:", tf.config.list_physical_devices("CPU"))
+print("GPU LIST:", tf.config.list_physical_devices("GPU"))
+print("Deprecated AVAILABLE:", tf.test.is_gpu_available())  # Deprecated
+print("Deprecated AVAILABLE:", tf.test.is_gpu_available(cuda_only=False))  # Deprecated
+print("BUILD WITH CUDA:", tf.test.is_built_with_cuda())  # Installed non gpu package
 
 import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense
+from tensorflow.keras.layers import LSTM, Flatten
+from tensorflow.keras.layers import ConvLSTM2D
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define layers similar to original Sequential model in the issue
-        self.dense1 = tf.keras.layers.Dense(50, activation=None)
-        self.dense2 = tf.keras.layers.Dense(60, activation=None)
-        self.dense3 = tf.keras.layers.Dense(60, activation=None)
-        self.dense4 = tf.keras.layers.Dense(60, activation=None)
-        self.dense5 = tf.keras.layers.Dense(60, activation=None)
-        self.dense6 = tf.keras.layers.Dense(1, activation=None)
-        
-    def call(self, inputs, training=False):
-        # Forward pass similar to Sequential model
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        x = self.dense3(x)
-        x = self.dense4(x)
-        x = self.dense5(x)
-        x = self.dense6(x)
-        return x
+import numpy as np
 
-def my_model_function():
-    # Instantiate and return the model
-    model = MyModel()
-    # Compile model to align with the example in the issue and enable usage similar to original code
+import keras
+
+
+# tf.compat.v1.InteractiveSession() #3-4ms
+# with tf.compat.v1.Session():
+# None
+
+N = int(3e4)
+X = np.random.random((N, 20))
+Y = np.random.random(N)
+
+#######
+"Here I tried to setup some config to make it work with `InteractiveSession`, but no results"
+# gpus = tf.config.experimental.list_physical_devices('GPU')
+# gpu_conf = tf.config.experimental.set_virtual_device_configuration(
+#         gpus[0],
+#         [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=4000)])
+# logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+# print(f"Logical: {logical_gpus}")
+# 
+# config = tf.compat.v1.ConfigProto(gpu_options=gpu_conf)
+session = tf.compat.v1.InteractiveSession()
+
+####################
+"Tested this with interactive session and wihout, same result 4ms"
+model = Sequential()
+model.add(Dense(50, input_shape=(20,)))
+model.add(Dense(60))
+model.add(Dense(60))
+model.add(Dense(60))
+model.add(Dense(60))
+model.add(Dense(1))
+model.compile(optimizer='adam', loss='mean_squared_error', metrics=['accuracy'])
+
+model.fit(X, Y, verbose=True, epochs=1)
+model.predict(X)
+
+####################
+"Session 70-110us which is notable difference"
+with tf.compat.v1.Session():
+    model = Sequential()
+    model.add(Dense(50, input_shape=(20,)))
+    model.add(Dense(60))
+    model.add(Dense(60))
+    model.add(Dense(60))
+    model.add(Dense(60))
+    model.add(Dense(1))
     model.compile(optimizer='adam', loss='mean_squared_error', metrics=['accuracy'])
-    return model
 
-def GetInput():
-    # Return a random batch input tensor compatible with model input shape
-    # Assuming batch size of 32 for general testing purpose
-    batch_size = 32
-    input_tensor = tf.random.uniform((batch_size, 20), dtype=tf.float32)
-    return input_tensor
+    model.fit(X, Y, verbose=True, epochs=1)
 
+    model.predict(X)

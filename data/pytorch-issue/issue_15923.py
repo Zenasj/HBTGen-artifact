@@ -1,28 +1,31 @@
-# torch.rand(6, 1, dtype=torch.float32)
+import time
 import torch
-from torch import nn
+import numpy as np
+from torch.autograd import Variable
 
-class MyModel(nn.Module):
-    def __init__(self, jac_t, state, dt):
-        super().__init__()
-        self.register_buffer('jac_t', jac_t)  # Fixed parameter (6, n_actions)
-        self.register_buffer('state', state)   # Fixed parameter (6, 1)
-        self.dt = dt
-        self.q_dot = nn.Parameter(torch.randn(jac_t.shape[1], 1))  # Learnable parameter (n_actions, 1)
 
-    def forward(self, target):
-        next_state = torch.matmul(self.jac_t, self.q_dot) * self.dt + self.state
-        loss = torch.pow(next_state - target, 2).sum()
-        return loss
+n_actions = 22
+dt = 0.01
 
-def my_model_function():
-    n_actions = 22  # From Python example
-    dt = 0.01
-    jac_t = torch.randn(6, n_actions)  # Matches Python example's jac_t shape
-    state = torch.randn(6, 1)
-    return MyModel(jac_t, state, dt)
+jac_t = torch.randn(6, n_actions)
+state = torch.randn(6, 1)
+target = torch.matmul(jac_t, torch.randn(n_actions, 1)) * dt + state
 
-def GetInput():
-    # Returns a random tensor matching target shape (6,1) from Python example
-    return torch.randn(6, 1, dtype=torch.float32)
+print("target:", target)
 
+t0 = time.perf_counter()
+q_dot = Variable(torch.randn(n_actions, 1), requires_grad=True)
+v = [q_dot]
+optimizer = torch.optim.LBFGS(v)#, lr=0.1)
+for i in range(0, 10):
+    def cost():
+        optimizer.zero_grad()
+        next_state = torch.matmul(jac_t, q_dot) * dt + state
+        d = torch.pow(next_state - target, 2).sum()
+        d.backward()
+        return d
+    optimizer.step(cost)
+    d = cost()
+    if d < 1e-3:
+        break
+print(time.perf_counter() - t0, " s")

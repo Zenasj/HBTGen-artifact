@@ -1,16 +1,11 @@
-import torch
-from torch import nn
+import torch.nn as nn
 
-# torch.rand(B, C, H, W, dtype=torch.float32)
-class MyModel(nn.Module):
+batch_norm = nn.BatchNorm2d
+if dont_use_batch_norm:
+    batch_norm = Identity
+
+class Identity(nn.Module):
     def __init__(self, *args, **kwargs):
         super().__init__()
     def forward(self, x):
         return x
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(1, 3, 32, 32, dtype=torch.float32)
-

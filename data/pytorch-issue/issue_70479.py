@@ -1,22 +1,38 @@
-# torch.rand(B, 10, dtype=torch.float32)  # Inferred input shape based on example range(10) data
-import torch
-from torch import nn
+source_dp = IterableWrapper(range(10))
+it1 = iter(source_dp)
+list(it1)  # [0, 1, ..., 9]
+it1 = iter(source_dp)
+next(it1)  # 0
+it2 = iter(source_dp)  
+next(it2)  # returns 0
+next(it1)  # returns 1
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Placeholder model structure (assumed linear layer for simplicity)
-        self.fc = nn.Linear(10, 1)
-    
-    def forward(self, x):
-        return self.fc(x)
+source_dp = IterableWrapper(range(10))
+it1 = iter(source_dp)
+list(it1)  # [0, 1, ..., 9]
+it1 = iter(source_dp)  # This doesn't raise any warning or error
+next(it1)  # 0, works because it is a new iterator
+it2 = iter(source_dp)
+next(it2) # returns 0, invalidates `it1`
+next(it1)  # This raises an error
 
-def my_model_function():
-    # Returns a simple linear model instance
-    return MyModel()
+source_dp = IterableWrapper(range(10))
+zip_dp = source_dp.zip(source_dp)
+list(zip_dp)  # [(0, 0), ..., (9, 9)]
 
-def GetInput():
-    # Generates random input tensor matching the expected shape
-    batch_size = 32  # Arbitrary batch size choice
-    return torch.rand(batch_size, 10, dtype=torch.float32)
+source_dp = IterableWrapper(range(10))
+zip_dp = source_dp.zip(source_dp)
+list(zip_dp)  # This raises an error because there are multiple references to `source_dp`
 
+source_dp = IterableWrapper(range(10))
+dp1, dp2 = source_dp.fork(2)
+zip_dp = dp1.zip(dp2)
+list(zip_dp)  # [(0, 0), ..., (9, 9)]
+
+dp = IterableWrapper(range(10))
+it1 = iter(dp)
+it2 = iter(dp)  # Only this one will work
+
+# Assuming some `dp` was previously defined in another cell
+it1 = iter(dp)  # Unless it just returns `self`, this will raise an error in re-runs (if we disallow creation of multiple iterators)
+# And if it does return `self`, then the users need to call something else to reset the DataPipe to read from the beginning instead.

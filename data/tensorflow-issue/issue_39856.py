@@ -1,18 +1,69 @@
-# tf.random.uniform((B, 10), dtype=tf.float32) ← Input shape inferred from model input: (None, 10)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
+#%%
+import numpy as np
 import tensorflow as tf
+print(tf.__version__)
 
-class MyModel(tf.keras.Model):
+#%% 
+class Composite(tf.keras.Model):
     def __init__(self, *args, **kwargs):
-        super(MyModel, self).__init__(*args, **kwargs)
-        # A simple Dense layer as used in the example
-        self.dense = tf.keras.layers.Dense(1)
 
-    def call(self, inputs, training=False):
-        return self.dense(inputs)
+        super(Composite, self).__init__(*args, **kwargs)
+
+    def train_step(self, data):
+
+        data_adapter = tf.python.keras.engine.data_adapter
+        data = data_adapter.expand_1d(data)
+        x, y, sample_weight = data_adapter.unpack_x_y_sample_weight(data)
+
+        tf.print("HIHI! I'm in function train_step!")
+
+        with tf.GradientTape() as tape:
+            y_pred = self(x, training=True)
+            loss = self.compiled_loss(
+                y, y_pred, sample_weight, regularization_losses=self.losses)
+
+        _minimize = tf.python.keras.engine.training._minimize
+        _minimize(self.distribute_strategy, tape, self.optimizer, loss,
+                self.trainable_variables)
+
+        self.compiled_metrics.update_state(y, y_pred, sample_weight)
+        return {m.name: m.result() for m in self.metrics}
+
+in_ = tf.keras.layers.Input(shape=(10, ) )
+x = tf.keras.layers.Dense(1)(in_)
+model = Composite(inputs=in_, outputs=x)
+model.compile(loss='binary_crossentropy',optimizer='SGD', metrics=['accuracy'])
+
+X = np.zeros((10,10))
+Y = np.zeros((10,1))
+model.fit(X,Y,verbose=2)
+
+# %%
+new_model = tf.keras.models.clone_model(model)
+new_model.compile(loss='binary_crossentropy',optimizer='SGD', metrics=['accuracy'])
+new_model.fit(X,Y,verbose=2)
+
+wrap_model = Composite(inputs=new_model.input, outputs=new_model.output) 
+wrap_model.compile(loss='binary_crossentropy',optimizer='SGD', metrics=['accuracy'])
+wrap_model.fit(X,Y,verbose=2)
+
+#%%
+import numpy as np
+import tensorflow as tf
+print(tf.__version__)
+
+#%% 
+class Composite(tf.keras.Model):
+    def __init__(self, *args, **kwargs):
+
+        super(Composite, self).__init__(*args, **kwargs)
 
     def unpack_x_y_sample_weight(self, data):
-        """Unpacks user-provided data tuple to x, y, and sample_weight."""
+        """Unpacks user-provided data tuple."""
         if not isinstance(data, tuple):
             return (data, None, None)
         elif len(data) == 1:
@@ -23,9 +74,9 @@ class MyModel(tf.keras.Model):
             return (data[0], data[1], data[2])
 
     def train_step(self, data):
+
         x, y, sample_weight = self.unpack_x_y_sample_weight(data)
 
-        # Custom print to verify execution of custom train_step
         tf.print("HIHI! I'm in function train_step!")
 
         with tf.GradientTape() as tape:
@@ -33,22 +84,26 @@ class MyModel(tf.keras.Model):
             loss = self.compiled_loss(
                 y, y_pred, sample_weight, regularization_losses=self.losses)
 
-        # Minimize loss using optimizer and tracked trainable variables
         self.optimizer.minimize(loss, self.trainable_variables, tape=tape)
-
         self.compiled_metrics.update_state(y, y_pred, sample_weight)
         return {m.name: m.result() for m in self.metrics}
 
-def my_model_function():
-    # Create an input layer with shape (10,)
-    inputs = tf.keras.layers.Input(shape=(10,))
-    # Build the MyModel network around inputs and outputs
-    model = MyModel(inputs=inputs, outputs=MyModel().dense(inputs))
-    return model
+in_ = tf.keras.layers.Input(shape=(10, ) )
+x = tf.keras.layers.Dense(1)(in_)
+model = Composite(inputs=in_, outputs=x)
+model.compile(loss='binary_crossentropy',optimizer='SGD', metrics=['accuracy'])
 
-def GetInput():
-    # Return a batch of random inputs matching input shape (batch=8 assumed)
-    # Using float32 dtype consistent with typical TensorFlow default
-    batch_size = 8
-    return tf.random.uniform((batch_size, 10), dtype=tf.float32)
+X = np.zeros((10,10))
+Y = np.zeros((10,1))
 
+print("the original model")
+model.fit(X,Y,verbose=2)
+
+# %%
+print("cloned model")
+new_model = tf.keras.models.clone_model(model)
+new_model.compile(loss='binary_crossentropy',optimizer='SGD', metrics=['accuracy'])
+new_model.fit(X,Y,verbose=2)
+
+print("the original model again")
+model.fit(X,Y,verbose=2)

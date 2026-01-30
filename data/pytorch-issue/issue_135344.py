@@ -1,28 +1,43 @@
-# torch.rand(B, C, H, W, dtype=...)  # This line is a placeholder and not used in this specific context
+import torch.distributions
 
-import torch
-import torch.nn as nn
-from torch.distributions import Categorical
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
+logits = torch.randn(10)
+def make_categorical(logits):
+    return torch.distributions.Categorical(logits=logits).sample()
+torch.compile(make_categorical, fullgraph=True)(logits)
 
-    def forward(self, logits):
-        return Categorical(logits=logits).sample()
+value = property.__get__
+isinstance(
+        value,
+        (
+            # set up by PyGetSetDef
+            types.GetSetDescriptorType,
+            # set by PyMethodDef, e.g. list.append
+            types.MethodDescriptorType,
+            # slots - list.__add__
+            types.WrapperDescriptorType,
+            # set up by PyMemberDef
+            types.MemberDescriptorType,
+            # wrapper over C functions
+            types.MethodWrapperType,
+        ),
+    )
+Out[6]: True
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(10)
-
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
-# compiled_model = torch.compile(model, fullgraph=True)
-# compiled_output = compiled_model(input_tensor)
-
+value = lazy_property.__get__
+isinstance(
+        value,
+        (
+            # set up by PyGetSetDef
+            types.GetSetDescriptorType,
+            # set by PyMethodDef, e.g. list.append
+            types.MethodDescriptorType,
+            # slots - list.__add__
+            types.WrapperDescriptorType,
+            # set up by PyMemberDef
+            types.MemberDescriptorType,
+            # wrapper over C functions
+            types.MethodWrapperType,
+        ),
+    )
+Out[8]: False

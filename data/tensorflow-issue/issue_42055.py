@@ -1,33 +1,44 @@
-# tf.random.uniform((B, 28, 28), dtype=tf.float32)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
 import tensorflow as tf
+mnist = tf.keras.datasets.mnist
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define layers roughly matching the MNIST example discussed
-        self.flatten = tf.keras.layers.Flatten(input_shape=(28, 28))
-        self.dense1 = tf.keras.layers.Dense(128, activation='relu')
-        self.dropout = tf.keras.layers.Dropout(0.2)
-        self.dense2 = tf.keras.layers.Dense(10)  # logits for 10 classes
-        
-    def call(self, inputs, training=False):
-        x = self.flatten(inputs)
-        x = self.dense1(x)
-        x = self.dropout(x, training=training)
-        x = self.dense2(x)
-        return x
+(x_train, y_train), (x_test, y_test) = mnist.load_data()
+x_train, x_test = x_train / 255.0, x_test / 255.0
+# print('\n\n')
+model = tf.keras.models.Sequential([
+  tf.keras.layers.Flatten(input_shape=(28, 28)),
+  tf.keras.layers.Dense(128, activation='relu'),
+  tf.keras.layers.Dropout(0.2),
+  tf.keras.layers.Dense(10)
+])
+loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+model.compile(optimizer='adam',
+              loss=loss_fn,
+              metrics=['accuracy'])
+model.fit(x_train, y_train, epochs=5)
+model.evaluate(x_test,  y_test, verbose=2)
 
-def my_model_function():
-    # Return an instance of MyModel with default initialization.
-    # Matches the small MNIST classifier that was used in the issue discussion.
-    return MyModel()
-
-def GetInput():
-    # Return a random float32 tensor shaped as MNIST images:
-    # (batch size, height, width)
-    # Assumption: batch size 32 for reasonable default input
-    batch_size = 32
-    height, width = 28, 28
-    # Values normalized to [0,1], matching input preprocessing of the MNIST data
-    return tf.random.uniform((batch_size, height, width), minval=0.0, maxval=1.0, dtype=tf.float32)
-
+import tensorflow as tf
+print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
+# tf.debugging.set_log_device_placement(True)
+with tf.device('/GPU:0'):
+  # tf.config.experimental.set_visible_devices([], 'GPU')
+  mnist = tf.keras.datasets.mnist
+  (x_train, y_train), (x_test, y_test) = mnist.load_data()
+  x_train, x_test = x_train / 255.0, x_test / 255.0
+  # print('\n\n')
+  model = tf.keras.models.Sequential([
+    tf.keras.layers.Flatten(input_shape=(28, 28)),
+    tf.keras.layers.Dense(128, activation='relu'),
+    tf.keras.layers.Dropout(0.2),
+    tf.keras.layers.Dense(10)
+  ])
+  loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+  model.compile(optimizer='adam',
+                loss=loss_fn,
+                metrics=['accuracy'])
+  model.fit(x_train, y_train, epochs=5)
+  model.evaluate(x_test,  y_test, verbose=2)

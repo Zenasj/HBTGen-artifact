@@ -1,11 +1,10 @@
-# torch.rand(B, C, L, dtype=torch.float32, device='cuda')
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 
 def torch_conv(x, weight):
     _, d_model, L = x.shape
     kernel_size = weight.shape[-1]
+    print(f"torch_conv: {x.requires_grad=}, {weight.requires_grad=}")
     y = F.conv1d(
         x,
         weight,
@@ -14,47 +13,19 @@ def torch_conv(x, weight):
         padding=kernel_size - 1,
         groups=d_model,
     )
+    print(f"conv out: {y.requires_grad=}")
     y = y[..., :L]
+    print(f"conv out sliced: {y.requires_grad=}")
+    
     return y
 
-class MyCustomFunction(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, x, weight):
-        with torch.enable_grad():  # Critical fix to enable grad tracking
-            y = torch_conv(x, weight)
-        ctx.save_for_backward(x, weight, y)
-        return y
+bs = 1
+np = 1
+hn = 768
+seqlen = 8192
+dtype = torch.float32
+device = "cuda"
 
-    @staticmethod
-    def backward(ctx, grad_output):
-        x, weight, y = ctx.saved_tensors
-        # Use autograd to compute gradients automatically
-        grad_x, grad_weight = torch.autograd.grad(
-            y, (x, weight),
-            grad_outputs=grad_output,
-            create_graph=True,
-            retain_graph=True,
-        )
-        return grad_x, grad_weight
-
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Kernel size inferred as 3 (hl=3) based on padding logic
-        self.weight = nn.Parameter(torch.randn(768, 1, 3, 
-                                              dtype=torch.float32, 
-                                              device='cuda'))
-
-    def forward(self, x):
-        return MyCustomFunction.apply(x, self.weight)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    B, C, L = 1, 768, 8192
-    return torch.randn(B, C, L, 
-                      dtype=torch.float32, 
-                      device='cuda', 
-                      requires_grad=True)
-
+x = torch.randn(bs, np * hn, seqlen, dtype=dtype, device=device).requires_grad_()
+w = torch.randn(d, 1, hl, dtype=dtype, device=device).requires_grad_()
+out = torch_conv(x, w)

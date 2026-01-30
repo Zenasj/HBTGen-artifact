@@ -1,26 +1,41 @@
-# tf.random.uniform((3,), dtype=tf.float32) ← Input shape inferred from SIZE=3 and tf.TensorSpec(shape=(SIZE,), dtype=tf.float32)
+from tensorflow import keras
 
 import tensorflow as tf
+from tensorflow.python.pywrap_mlir import import_graphdef
+
+SIZE = 3
 
 class MyModel(tf.keras.Model):
     def build(self, input_shape):
-        # Weight vector of shape (3,)
-        self.w = self.add_weight(shape=(3,), trainable=True, initializer="zeros")
+        self.w = self.add_weight(shape=(SIZE,), trainable=True)
 
-    @tf.function(jit_compile=True)
     def call(self, input):
-        # Increment internal weight by input tensor (in-place mutation via assign_add)
-        # This matches original behavior: self.w.assign_add(input)
         self.w.assign_add(input)
-        # Return input unmodified as in original call method
         return input
 
-def my_model_function():
-    # Return an instance of MyModel, initialized with zeros
-    return MyModel()
+if __name__ == "__main__":
+    model = MyModel()
 
-def GetInput():
-    # Return a random float32 tensor of shape (3,) matching expected input
-    # Use tf.random.uniform to generate values in [0,1)
-    return tf.random.uniform((3,), dtype=tf.float32)
+    func = tf.function(model)
+    concrete_func = func.get_concrete_function(
+        tf.TensorSpec(shape=(SIZE,), dtype=tf.float32)
+    )
+    graph = concrete_func.graph
 
+    mlir_tf = import_graphdef(
+        graph.as_graph_def(add_shapes=True),
+        "tf-standard-pipeline",
+        False,
+        input_names=[t.name for t in graph.inputs],
+        input_data_types=["DT_FLOAT", "DT_RESOURCE"],
+        input_data_shapes=[",".join(str(d) for d in t.shape) for t in graph.inputs],
+        output_names=[t.name for t in graph.outputs],
+    )
+    print(mlir_tf)
+
+    with open("model.mlir", "w") as f:
+        f.write(mlir_tf)
+
+input_data_types=["DT_FLOAT", "DT_RESOURCE<tensor<3xf32>>"],
+
+input_data_types=["DT_FLOAT", "DT_RESOURCE(3:DT_FLOAT)"],

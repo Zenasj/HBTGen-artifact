@@ -1,22 +1,9 @@
-# torch.rand(354298880, dtype=torch.float32)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-    
-    def forward(self, x):
-        # Compute norms in different dtypes and return their differences
-        norm_float = x.norm()
-        norm_double = x.double().norm()
-        norm_half = x.half().norm()
-        # Return the three norms for comparison
-        return (norm_float, norm_double, norm_half)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.randn(354298880, dtype=torch.float32)
-
+v1 = torch.randn(354298880)
+v1.norm()
+# Output: tensor(17666.5586)
+v1.double().norm()
+# Output: tensor(18823.4125, dtype=torch.float64)
+v1.half().norm()
+# Output: tensor(18752., dtype=torch.float16)

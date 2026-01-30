@@ -1,21 +1,25 @@
+python
 import torch
-from transformers import BertModel
 
-# torch.randint(0, 30522, (1, 128), dtype=torch.long, device='cuda')  # Input shape (batch, sequence_length)
-class MyModel(torch.nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.bert = BertModel.from_pretrained('bert-base-uncased')
+import onnx
+from transformers import BertTokenizer, BertModel
 
-    def forward(self, input_ids):
-        return self.bert(input_ids)[0]  # Return last_hidden_state for compatibility with ONNX export
+device = torch.device("cuda:0")
+tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+model = BertModel.from_pretrained('bert-base-uncased')
+model = model.to(device)
 
-def my_model_function():
-    model = MyModel()
-    model = model.to('cuda')  # Match original code's device placement
-    return model
+text = "Replace me by any text you'd like."
+encoded_input = tokenizer(text, return_tensors='pt').to(device="cuda:0")
 
-def GetInput():
-    # Generate input_ids matching BERT's vocabulary size (30522) and typical sequence length
-    return torch.randint(0, 30522, (1, 128), dtype=torch.long, device='cuda')
 
+opt_model = torch.compile(model, mode='max-autotune', fullgraph=True)
+torch.onnx.export(opt_model, tuple(encoded_input.values()), 
+						f='bert_triton.onnx',  
+						input_names=['input_ids'], 
+						output_names=['logits'], 
+						dynamic_axes={'input_ids': {0: 'batch_size', 1: 'sequence'}, 
+						  			'logits': {0: 'batch_size', 1: 'sequence'}}, 
+						do_constant_folding=True, 
+						opset_version=13, 
+				)

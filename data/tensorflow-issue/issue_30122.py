@@ -1,39 +1,46 @@
-# tf.random.uniform((B, None), dtype=tf.float32) ← input shape guessed as (batch, sequence_length) with 2 inputs, each (batch, None)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
 
+mymodel.fit(x = {'input_0' : train_data_type_0, 'input_1':  train_data_type_1}, y = train_labels, 
+         validation_data = ({'input_0' : val_data_type_0, 'input_1':  val_data_type_1}, val_labels) )
+
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
+print(tf.__version__)
+
+train_input_0 = np.random.rand(1000, 1)
+train_input_1 = np.random.rand(1000, 1)
+train_labels  = np.random.rand(1000, 1)
+
+val_input_0 = np.random.rand(1000, 1)
+val_input_1 = np.random.rand(1000, 1)
+val_labels  = np.random.rand(1000, 1)
+
+input_0 = tf.keras.Input(shape=(None,), name='input_0')
+input_1 = tf.keras.Input(shape=(None,), name='input_1')
+
+class my_model(tf.keras.Model):
     def __init__(self):
-        super(MyModel, self).__init__()
-        # Two separate dense layers for each input
+        super(my_model, self).__init__(self)
         self.hidden_layer_0 = tf.keras.layers.Dense(100, activation=tf.nn.relu)
         self.hidden_layer_1 = tf.keras.layers.Dense(100, activation=tf.nn.relu)
-        self.concat = tf.keras.layers.Concatenate()
-        self.out_layer = tf.keras.layers.Dense(1, activation=tf.nn.sigmoid)
+        self.concat         = tf.keras.layers.Concatenate()
 
-    def call(self, inputs):
-        """
-        inputs: dict with keys 'input_0' and 'input_1'
-        Each input tensor shape: (batch_size, sequence_length) with sequence_length = None (variable)
-        """
+        self.out_layer    = tf.keras.layers.Dense(1, activation=tf.nn.sigmoid)
+
+    def call(self, inputs =  [input_0, input_1]):
         activation_0 = self.hidden_layer_0(inputs['input_0'])
         activation_1 = self.hidden_layer_1(inputs['input_1'])
-        concat = self.concat([activation_0, activation_1])
+        concat       = self.concat([activation_0, activation_1])
+      
         return self.out_layer(concat)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+model = my_model()
+opt = tf.optimizers.Adam()
+loss = tf.keras.losses.MeanAbsoluteError()
+model.compile(opt, loss)
 
-def GetInput():
-    # Generate random inputs matching the input expected by MyModel.
-    # Assumptions:
-    # - Batch size = 32
-    # - Sequence length = 10 (arbitrarily chosen fixed length for testing)
-    # - Inputs are float32 tensors shaped (batch, seq_len)
-    batch_size = 32
-    seq_len = 10
-    input_0 = tf.random.uniform((batch_size, seq_len), dtype=tf.float32)
-    input_1 = tf.random.uniform((batch_size, seq_len), dtype=tf.float32)
-    return {'input_0': input_0, 'input_1': input_1}
-
+model.fit(x = {'input_0' : train_input_0, 'input_1':  train_input_1}, y = train_labels, 
+         validation_data = ({'input_0' : val_input_0, 'input_1':  val_input_1}, val_labels) )

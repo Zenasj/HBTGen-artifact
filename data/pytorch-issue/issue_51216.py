@@ -1,49 +1,89 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Input shape (4, 1, 4, 4) as per original example
-import torch
 import torch.nn as nn
-from collections import OrderedDict
 
-class MyModel(nn.Module):
+# This is all from the doc: https://pytorch.org/docs/stable/quantization.html#static-quantization
+import torch
+
+# define a floating point model where some layers could be statically quantized
+class M(torch.nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
+        super(M, self).__init__()
+        # QuantStub converts tensors from floating point to quantized
         self.quant = torch.quantization.QuantStub()
         self.conv = torch.nn.Conv2d(1, 1, 1)
         self.relu = torch.nn.ReLU()
+        # DeQuantStub converts tensors from quantized to floating point
         self.dequant = torch.quantization.DeQuantStub()
 
     def forward(self, x):
+        # manually specify where tensors will be converted from floating
+        # point to quantized in the quantized model
         x = self.quant(x)
         x = self.conv(x)
         x = self.relu(x)
+        # manually specify where tensors will be converted from quantized
+        # to floating point in the quantized model
         x = self.dequant(x)
         return x
 
-    # Fix for pickling issue: initialize missing hooks
-    def __setstate__(self, state):
+# create a model instance
+model_fp32 = M()
+
+# model must be set to eval mode for static quantization logic to work
+model_fp32.eval()
+
+# attach a global qconfig, which contains information about what kind
+# of observers to attach. Use 'fbgemm' for server inference and
+# 'qnnpack' for mobile inference. Other quantization configurations such
+# as selecting symmetric or assymetric quantization and MinMax or L2Norm
+# calibration techniques can be specified here.
+model_fp32.qconfig = torch.quantization.get_default_qconfig('fbgemm')
+
+# Fuse the activations to preceding layers, where applicable.
+# This needs to be done manually depending on the model architecture.
+# Common fusions include `conv + relu` and `conv + batchnorm + relu`
+model_fp32_fused = torch.quantization.fuse_modules(model_fp32, [['conv', 'relu']])
+
+# Prepare the model for static quantization. This inserts observers in
+# the model that will observe activation tensors during calibration.
+model_fp32_prepared = torch.quantization.prepare(model_fp32_fused)
+
+# calibrate the prepared model to determine quantization parameters for activations
+# in a real world setting, the calibration would be done with a representative dataset
+input_fp32 = torch.randn(4, 1, 4, 4)
+model_fp32_prepared(input_fp32)
+
+# Convert the observed model to a quantized model. This does several things:
+# quantizes the weights, computes and stores the scale and bias value to be
+# used with each activation tensor, and replaces key operators with quantized
+# implementations.
+model_int8 = torch.quantization.convert(model_fp32_prepared)
+
+# run the model, relevant calculations will happen in int8
+res = model_int8(input_fp32)
+
+## Extra step for the bug: save with torch and load before evaluating.
+torch.save(model_int8, 'plop.th')
+model = torch.load('plop.th')
+model(input_fp32)
+
+def __setstate__(self, state):
         super().__setstate__(state)
         mods = list(self._modules.values())
+        from collections import OrderedDict
         while mods:
             mod = mods.pop(0)
-            for attr in [
-                '_forward_pre_hooks',
-                '_forward_hooks',
-                '_backward_hooks',
-                '_state_dict_hooks',
-                '_load_state_dict_pre_hooks',
-                '_non_persistent_buffers_set',
-                '_modules'
-            ]:
-                if not hasattr(mod, attr):
-                    setattr(mod, attr, 
-                        OrderedDict() if attr.endswith('hooks') else set() if attr.endswith('set') else OrderedDict()
-                    )
-            mods += list(getattr(mod, '_modules', {}).values())
-
-def my_model_function():
-    model = MyModel()
-    model.eval()  # Required for quantization preparation
-    return model
-
-def GetInput():
-    return torch.rand(4, 1, 4, 4, dtype=torch.float32)
-
+            if '_forward_pre_hooks' not in mod.__dict__:
+                mod._forward_pre_hooks = OrderedDict()
+            if '_forward_hooks' not in mod.__dict__:
+                mod._forward_hooks = OrderedDict()
+            if '_backward_hooks' not in mod.__dict__:
+                mod._backward_hooks = OrderedDict()
+            if '_state_dict_hooks' not in mod.__dict__:
+                mod._state_dict_hooks = OrderedDict()
+            if '_load_state_dict_pre_hooks' not in mod.__dict__:
+                mod._load_state_dict_pre_hooks = OrderedDict()
+            if '_non_persistent_buffers_set' not in mod.__dict__:
+                mod._non_persistent_buffers_set = set()
+            if '_modules' not in mod.__dict__:
+                mod._modules = OrderedDict()
+            mods += list(mod._modules.values())

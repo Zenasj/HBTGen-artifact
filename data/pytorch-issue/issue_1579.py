@@ -1,19 +1,54 @@
-# torch.rand(B, 16000, dtype=torch.float32)  # Inferred input shape from librosa.load(sr=16000)
 import torch
-import torch.nn as nn
+import torchvision
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.linear = nn.Linear(16000, 10)  # Example layer matching audio sample length
+import sys
+from urllib.request import urlopen
+from urllib.error import URLError
+from torchvision.datasets import ImageFolder
+from torch.utils.data import DataLoader
+import librosa
 
-    def forward(self, x):
-        return self.linear(x)
+# I am using the ImageFolder dataset to load audio data.
+# To do this, I rename all my WAV files to end in .jpg
+# so ImageFolder will think they are images and then
+# load them with librosa.  Note: it is important that there
+# are no actual image files under ./data!
 
-def my_model_function():
-    return MyModel()
+# The program hangs after printing 
+#
+#    trying to load ./data/foo/file.jpg
+#
+# However, if bug_condition is set to False, or if either
+# fixes_bug1 or fixes_bug2 is set to True, then it does
+# not hang.
 
-def GetInput():
-    B = 4  # Example batch size
-    return torch.rand(B, 16000, dtype=torch.float32)
+bug_condition = True
+fixes_bug1 = False
+fixes_bug2 = False
 
+if bug_condition:
+    try:
+        urlopen('http://localhost:8097')
+    except URLError:
+        pass
+    else:
+        sys.exit('please retry without a server running on port 8097')
+
+if fixes_bug1:
+    # Note: ./data/foo/file.jpg must be a valid WAV file.
+    librosa.load('./data/foo/file.jpg')
+
+def audio_loader(filename):
+    print('trying to load', filename)
+    audio = librosa.load(filename, sr=16000)[0]
+    print('loaded', filename)
+    return audio
+
+data = ImageFolder(root='./data', loader=audio_loader)
+loader = DataLoader(data, num_workers=(0 if fixes_bug2 else 1))
+
+for x, y in loader:
+    print('OK')
+
+if bug_condition:
+    urlopen('http://www.stackoverflow.com')

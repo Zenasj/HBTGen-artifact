@@ -1,38 +1,58 @@
-# tf.random.uniform((B, 1), dtype=tf.float64) ← The input is a batch of sequences with shape (batch_size, 1), dtype=tf.float64
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
 
+import numpy as np
 import tensorflow as tf
+import os
+import matplotlib.pyplot as plt
+import psutil
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # No trainable weights are defined; the model computes tf.linalg.expm of inputs' gram matrix
+
+def memory():
+    pid = os.getpid()
+    py = psutil.Process(pid)
+    memory_use = py.memory_info()[0] / 2. ** 30
+    return memory_use
+
+class TestLayer(tf.keras.layers.Layer):
+
+    def __init__(self, **kwargs):
         
+        super(TestLayer, self).__init__(**kwargs)
+
+    def build(self, input_shape):
+        self.s = input_shape
+
     @tf.function
     def call(self, inputs, training=None):
-        """
-        inputs: Tensor of shape (batch_size, 1), dtype=tf.float64 (or compatible float dtype)
         
-        The model calculates X = inputs^T @ inputs (gram matrix), then outputs matrix exponential expm(X).
-        """
-        # Compute gram matrix of inputs: shape (1, 1) if inputs shape is (batch_size, 1)
-        # Because inputs is (batch_size, 1), tf.transpose(inputs) is (1, batch_size)
-        X = tf.matmul(tf.transpose(inputs), inputs)
+        X = tf.matmul(tf.transpose(inputs),inputs)
         
-        # Compute matrix exponential of X
-        out = tf.linalg.expm(X)
-        return out
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    """
-    Generate input tensor suitable for MyModel.
+        return tf.linalg.expm(X)
     
-    - Batch size chosen randomly between 100 and 300 (to mimic the original code's dynamic size).
-    - Shape is (batch_size, 1).
-    - Use dtype=tf.float64 due to original example.
-    """
-    batch_size = tf.random.uniform([], minval=100, maxval=300, dtype=tf.int32)
-    return tf.ones((batch_size, 1), dtype=tf.float64)
 
+
+S = tf.keras.Input(shape=(1,), name="sequence", dtype=tf.float64)
+T = TestLayer()(S)
+model = tf.keras.Model(inputs=S,outputs=T)
+dataset = tf.data.Dataset.from_tensors(tf.constant(1)).repeat().map(lambda x: tf.ones([tf.random.uniform([1], minval=100, maxval=3000, dtype=tf.int32)[0],1],dtype=tf.float64))
+
+memory_usage = []
+
+i = 0
+for data in dataset:
+    s = model(data)
+    
+    memory_usage.append(memory())
+
+    if i == 1000:
+        break
+        
+    i = i+1
+    
+plt.figure()
+plt.plot(memory_usage)
+plt.xlabel("iterations")
+plt.ylabel("memory usage")
+plt.show()

@@ -1,27 +1,35 @@
-# tf.random.uniform((None,), dtype=tf.float32) ← inferred input shape: 1D tensor with dynamic length based on placeholder usage in original code
-
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # No trainable parameters; the logic replicates the cond_v2.cond_v2 usage in original code.
-        # The model outputs y if condition is True, else y + 1.
-        # Here condition is hardcoded to True, matching original example.
-    
-    def call(self, inputs, training=False):
-        # inputs: a tensor of floats, shape (None,), mimicking placeholder shape=None
-        # Using tf.cond to reflect the conditional logic from the original example.
-        y = inputs
-        return tf.cond(tf.constant(True), lambda: y, lambda: y + 1)
+from tensorflow.python.eager import context
+from tensorflow.python.eager import function
+from tensorflow.python.framework import constant_op
+from tensorflow.python.framework import dtypes
+from tensorflow.python.framework import test_util
+from tensorflow.python.framework.ops import disable_eager_execution
+from tensorflow.python.ops import array_ops
+from tensorflow.python.ops import cond_v2
+from tensorflow.python.platform import test
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+disable_eager_execution()
+tf.config.threading.set_inter_op_parallelism_threads(num_threads=1)  # pass if set 2
 
-def GetInput():
-    # Return a random float tensor matching model's expected input shape.
-    # Since original placeholder shape=None (unknown shape), assume vector shape=(5,) for example purposes.
-    # dtype=tf.float32 to match original placeholder dtype.
-    return tf.random.uniform((5,), dtype=tf.float32)
 
+class ThreadHangTest(test_util.TensorFlowTestCase):
+    """reproduce thread hang when setting inter_op=1."""
+
+    def testLoweringDisabledWithSingleThreadedExecutorContext(self):
+        with self.session() as sess:
+            @function.defun
+            def _add_cond(y):
+                return cond_v2.cond_v2(constant_op.constant(True, name="pred"),
+                                       lambda: y,
+                                       lambda: y + 1)
+
+            x = array_ops.placeholder(shape=None, dtype=dtypes.float32)
+            with context.function_executor_type("SINGLE_THREADED_EXECUTOR"):
+                out_cond = _add_cond(x)
+            sess.run(out_cond, feed_dict={x: 1.0})
+            
+ 
+if __name__ == '__main__':
+    test.main()

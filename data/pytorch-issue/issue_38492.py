@@ -1,19 +1,38 @@
-# torch.rand(B, 3, dtype=torch.float)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.fc = nn.Linear(3, 10)  # Matches input shape from dataset's "foo" tensor
-    
-    def forward(self, x):
-        return self.fc(x)
+default_collate
 
-def my_model_function():
-    return MyModel()
+from torch.utils.data import Dataset
+from torch.utils.data import DataLoader
+import numpy as np
 
-def GetInput():
-    B = 2  # Example batch size (matches original issue's batch_size=2)
-    return torch.rand(B, 3, dtype=torch.float)
+class CustomDataset(Dataset):
+    def __len__(self):
+        return 2
 
+    def __getitem__(self, idx):
+        tmp = {
+            "foo": np.array([1, 2, 3]),
+            "bar": ["X"] * (idx+1),
+        }
+
+        return tmp
+
+training = CustomDataset()
+
+for batch in DataLoader(training, batch_size=2):
+    print(batch)
+
+{
+  'foo': tensor(
+    [
+      [1, 2, 3],
+      [1, 2, 3]
+    ]
+  ),
+  'bar': [
+      ('X', 'X'),
+    ]
+}
+
+torch.stack

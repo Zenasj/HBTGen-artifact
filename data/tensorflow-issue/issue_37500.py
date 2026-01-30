@@ -1,24 +1,32 @@
-# tf.random.uniform((B, 1), dtype=tf.float32) ← Based on input shape of model Input((1,))
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
-
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Single Dense layer as per the example model
-        self.dense = tf.keras.layers.Dense(1)
-
-    def call(self, inputs, training=False):
-        return self.dense(inputs)
+import numpy as np
 
 
-def my_model_function():
-    # Return an instance of MyModel with initialized weights
-    return MyModel()
+class TestSequence(tf.keras.utils.Sequence):
 
+    def __init__(self, x, y, batch_size):
+        self.x, self.y = x, y
+        self.batch_size = batch_size
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # Assuming a batch size of 4 for demonstration, 1 feature per input as per example
-    return tf.random.uniform((4, 1), dtype=tf.float32)
+    def __len__(self):
+        return len(self.x) // self.batch_size
 
+    def __getitem__(self, idx):
+        batch_x = self.x[idx * self.batch_size:(idx + 1) *
+        self.batch_size]
+        batch_y = self.y[idx * self.batch_size:(idx + 1) *
+        self.batch_size]
+
+        return batch_x, batch_y
+    
+
+seq = TestSequence(np.ones(10), np.ones(10), 2)
+
+x_in = tf.keras.layers.Input((1,))
+x_out = tf.keras.layers.Dense(1)(x_in)
+model = tf.keras.Model(x_in, x_out)
+model.compile(loss='binary_crossentropy', optimizer='adam')
+model.fit(seq)

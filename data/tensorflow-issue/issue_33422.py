@@ -1,42 +1,40 @@
-# tf.random.uniform((B, 10, 5), dtype=tf.float32) ← input shape inferred from Input((10, 5), sparse=True)
-
 import tensorflow as tf
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
-class ToDenseLayer(tf.keras.layers.Layer):
-    def __init__(self, out_dim):
+from tensorflow.keras.layers import Input, Dense, Lambda
+from tensorflow.keras.models import Model
+from tensorflow.keras.backend import to_dense
+
+test_input = Input((10, 5), sparse=True)
+dense_net = Lambda(to_dense, output_shape=(10, 5))(test_input)
+test_net = Dense(50)(dense_net)
+
+from tensorflow.keras.layers import Input, Dense, Lambda, Layer, Reshape
+from tensorflow.keras.models import Model
+from tensorflow.keras.backend import to_dense
+
+test_input = Input((10, 5), sparse=True)
+dense_net = Lambda(to_dense)(test_input)
+reshape_net = Reshape((10, 5))(dense_net)
+test_net = Dense(50)(reshape_net)
+
+class ToDenseLayer(Layer):
+    def __init__(self, out_shape):
         super(ToDenseLayer, self).__init__()
-        self.out_dim = out_dim  # expected last dimension size, e.g., 5
+        self.out_shape = out_shape
 
     def call(self, inputs, **kwargs):
-        # Convert sparse input to dense tensor
+        return tf.sparse.to_dense(inputs)
+
+    def compute_output_shape(self, input_shape):
+        return None, None, self.out_shape
+
+class ToDenseLayer(Layer):
+    def __init__(self, out_shape):
+        super(ToDenseLayer, self).__init__()
+        self.out_shape = out_shape
+
+    def call(self, inputs, **kwargs):
         dense_tensor = tf.sparse.to_dense(inputs)
-        # Ensure tensor shape is properly set (None=batch, None=sequence length, out_dim=feature dim)
-        return tf.ensure_shape(dense_tensor, [None, None, self.out_dim])
-
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Custom to_dense conversion layer to handle sparse input and provide proper shape info
-        self.to_dense_layer = ToDenseLayer(out_dim=5)
-        # Following Dense layer that requires known last dimension in input shape
-        self.dense = tf.keras.layers.Dense(50)
-
-    def call(self, inputs):
-        x = self.to_dense_layer(inputs)
-        x = self.dense(x)
-        return x
-
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Return a sparse tensor input that matches the model's expected input shape: (batch, 10, 5)
-    # Since tf.sparse.to_dense expects a SparseTensor input, simulate a sparse tensor.
-    # For demonstration, we'll create dense tensor and convert to sparse
-    batch_size = 4  # arbitrary batch size
-    dense_input = tf.random.uniform((batch_size, 10, 5), dtype=tf.float32)
-    # Convert dense tensor to sparse tensor
-    sparse_input = tf.sparse.from_dense(dense_input)
-    return sparse_input
-
+        return tf.ensure_shape(dense_tensor, [None, None, self.out_shape])

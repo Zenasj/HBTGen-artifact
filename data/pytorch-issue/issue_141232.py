@@ -1,20 +1,26 @@
 import torch
+from torch.utils._contextlib import _DecoratorContextManager
 from torch.distributions import Normal, TransformedDistribution, AffineTransform, TanhTransform, ComposeTransform
+from torchrl.modules import TanhNormal
 
-# torch.rand(3, dtype=torch.float32)
-class MyModel(torch.nn.Module):
-    def forward(self, a):
-        base_dist = Normal(a, 1.0)  # Mean from input, fixed std=1
-        transforms = [TanhTransform(cache_size=1), AffineTransform(loc=2, scale=2)]  # Apply Tanh then Affine
-        transform = ComposeTransform(transforms)
-        d = TransformedDistribution(base_dist, transform)
-        samples = d.rsample(sample_shape=torch.Size([10]))  # Sample shape (10,)
-        log_probs = d.log_prob(samples)  # Triggers expand in log_abs_det_jacobian
-        return log_probs
+torch.set_default_device("cpu")
 
-def my_model_function():
-    return MyModel()
+if __name__ == "__main__":
+    @torch.compile(fullgraph=True)
+    def func(a):
+        # 1. Breaks with Unsupported: Graph break due to unsupported builtin _C.expand
+        d = TransformedDistribution(Normal(a, 1), ComposeTransform([TanhTransform(), AffineTransform(2, 2)]))
+        b = d.log_prob(d.rsample((10,)))
+        return b
 
-def GetInput():
-    return torch.rand(3, dtype=torch.float32)  # Matches input shape (3,)
+        # 2. Breaks with call_method UserDefinedObjectVariable(instancemethod) __call__ [TensorVariable(), TupleVariable(length=2)] {}
+        # return a.expand((10, 3))
 
+        # 3. works
+        # return torch.expand_copy(a, (10, 3))
+
+        # 4. AttributeError: 'method_descriptor' object has no attribute '__module__'
+        # expand = torch._C.TensorBase.expand
+        # return expand(a, (10, 3))
+
+    func(torch.randn(3))

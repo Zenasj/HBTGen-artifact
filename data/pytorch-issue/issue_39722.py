@@ -1,25 +1,30 @@
-# torch.rand(2, 3, 32, 32, dtype=torch.float32)  # Inferred input shape based on 2-GPU setup
+"""pytorch test code"""
+import os
+import argparse
+import time
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Simplified model structure to align with distributed training context
-        self.conv = nn.Conv2d(3, 16, kernel_size=3, stride=1, padding=1)
-        self.pool = nn.MaxPool2d(2, 2)
-        self.fc = nn.Linear(16 * 16 * 16, 10)  # Matches 32x32 input after pooling
+world_size = 2
 
-    def forward(self, x):
-        x = self.pool(torch.relu(self.conv(x)))
-        x = torch.flatten(x, 1)
-        return self.fc(x)
+def build_model(gpu):
+    os.environ['MASTER_ADDR'] = '127.0.0.1'
+    os.environ['MASTER_PORT'] = '29500'
+    torch.cuda.set_device(gpu)
+    print(f"rank = {gpu}")
 
-def my_model_function():
-    # Returns a simple model instance for distributed testing
-    return MyModel()
+    torch.distributed.init_process_group(
+        backend='nccl',
+        init_method='env://',
+        world_size=world_size,
+        rank=gpu)
 
-def GetInput():
-    # Generates input matching model's expected dimensions
-    return torch.rand(2, 3, 32, 32, dtype=torch.float32).cuda()  # Matches 2-GPU setup
+    print(f"BARRIER UP -> GPU:{gpu}")
+    torch.distributed.barrier()
+    print(f"BARRIER DOWN -> GPU:{gpu}")
 
+def main():
+    torch.multiprocessing.spawn(build_model, nprocs=world_size, join=True)
+
+
+if __name__ == '__main__':
+    main()

@@ -1,21 +1,17 @@
-# torch.rand(5, dtype=torch.float32, device='cuda')
+import torchvision
 
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.register_buffer('indices', torch.tensor([1, 3], dtype=torch.long))
+torch.use_deterministic_algorithms(True)
 
-    def forward(self, x):
-        # Operation that triggers the indexing error under deterministic mode
-        x[self.indices] = 2  # Assign scalar to multiple indices
-        return x
+from torchvision.models.detection.faster_rcnn import fasterrcnn_resnet50_fpn
 
-def my_model_function():
-    return MyModel().cuda()
+model = fasterrcnn_resnet50_fpn(pretrained=False, pretrained_backbone=False).cuda()
 
-def GetInput():
-    return torch.rand(5, dtype=torch.float32, device='cuda')
+model(
+    torch.zeros(1, 3, 800, 800).cuda(), [{
+        'boxes': torch.tensor([[100, 200, 300, 400]]).cuda(), 
+        'labels': torch.tensor([1]).cuda(),
+    }])
 
+x[torch.tensor([1, 3]).cuda()] = torch.tensor([2,2]).cuda()

@@ -1,54 +1,46 @@
-# torch.rand(B, 2)  # Inferred input shape: (batch_size, 2)
-import torch
-import torch.nn as nn
+def test_torch():
+    import torch
+    import torch.nn as nn
+    from torch.utils import data
+    from torch.utils.data import dataloader
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.model = nn.Sequential(
-            nn.Linear(2, 10),
-            nn.ReLU(),
-            nn.Linear(10, 10), 
-            nn.ReLU(),
-            nn.Linear(10, 10), 
-            nn.ReLU(),
-            nn.Linear(10, 10), 
-            nn.ReLU(),
-            nn.Linear(10, 10), 
-            nn.ReLU(),
-            nn.Linear(10, 10), 
-            nn.ReLU(),
-            nn.Linear(10, 10), 
-            nn.ReLU(),
-            nn.Linear(10, 1)
-        )
+    data = torch.randn(100000, 2)
+    y = torch.sin(data[:, 0]*data[:, 1]).unsqueeze(1)
+    print(y.shape)
+    data = torch.cat([data, y], dim=1)
 
-    def forward(self, x):
-        return self.model(x)
+    model = nn.Sequential(
+        nn.Linear(2, 10),
+        nn.ReLU(),
+        nn.Linear(10, 10), 
+        nn.ReLU(),
+        nn.Linear(10, 10), 
+        nn.ReLU(),
+        nn.Linear(10, 10), 
+        nn.ReLU(),
+        nn.Linear(10, 10), 
+        nn.ReLU(),
+        nn.Linear(10, 10), 
+        nn.ReLU(),
+        nn.Linear(10, 10), 
+        nn.ReLU(),
+        nn.Linear(10, 1)
+    )
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+    for p in model.parameters():
+        print(p.shape, p.requires_grad)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    batch_size = 500  # Using the same batch size as in the original code
-    input_data = torch.randn(batch_size, 2)
-    return input_data
+    criterion = torch.nn.L1Loss()
+    opt = torch.optim.SGD(model.parameters(), 0.001)
 
-# Example usage:
-# model = my_model_function()
-# input_data = GetInput()
-# output = model(input_data)
-# print(output)
-
-# ### Explanation:
-# 1. **Class Name**: The class name is `MyModel` as required.
-# 2. **Model Structure**: The model structure is based on the provided `nn.Sequential` model in the issue.
-# 3. **GetInput Function**: Generates a random tensor with the shape `(batch_size, 2)` to match the input expected by the model.
-# 4. **Initialization and Weights**: The model is initialized with the default parameters, and no additional weights are set.
-# 5. **Usage**: The model can be used with `torch.compile(MyModel())(GetInput())` without errors.
-# ### Assumptions:
-# - The input shape is inferred from the original code, which uses a batch size of 500 and input features of size 2.
-# - The model structure is directly translated from the provided `nn.Sequential` model.
-# - No specific initialization or weights are required for this simple model.
+    dl = dataloader.DataLoader(data, batch_size=500)
+    for epoch in range(100):
+        for d in dl:
+            pred = model(d[:, :2])
+            loss = criterion(pred, d[:, 2])
+            opt.zero_grad()
+            loss.backward()
+            opt.step()
+            print("epoch:[{}], loss: {}".format(epoch, loss.item()))
+if __name__ == "__main__":
+    test_torch()

@@ -1,14 +1,9 @@
-# torch.rand(1, dtype=torch.float32)
-import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
+import torch
+class RoundLayer(torch.nn.Module):
     def forward(self, x):
         return torch.round(x)
+torch.onnx.export(RoundLayer(), torch.rand(1), 'round.onnx')
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(1)
-
+torch.onnx.export(RoundLayer(), torch.rand(1), 'round.onnx', opset_version=11)

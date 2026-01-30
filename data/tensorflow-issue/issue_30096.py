@@ -1,53 +1,73 @@
-# tf.random.uniform((B, 28, 28, 1), dtype=tf.float32) ← Input shape inferred from MNIST dataset preprocessing
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
+tf.compat.v1.disable_eager_execution()
 
-        # Replicating the model architecture from the issue
-        # Note: BatchNormalization axis=3 for channels last, matching input shape (28,28,1)
-        self.zero_padding = tf.keras.layers.ZeroPadding2D(padding=(3, 3), name='initial_padding')
-        self.conv = tf.keras.layers.Conv2D(
-            filters=16,
-            kernel_size=8,
-            padding='same',
-            name='conv_layer'
-        )
-        self.bn = tf.keras.layers.BatchNormalization(axis=3, name='bn_layer')
-        self.activation = tf.keras.layers.Activation('relu', name='activation_layer')
-        self.max_pool = tf.keras.layers.MaxPooling2D(pool_size=(3, 3), strides=(2, 2))
-        self.flatten = tf.keras.layers.Flatten(name='flatten_layer')
-        self.dense1 = tf.keras.layers.Dense(64, activation='relu', name='dense_layer')
-        self.dropout = tf.keras.layers.Dropout(0.2, name='dropout_layer')
-        self.dense2 = tf.keras.layers.Dense(10, activation='softmax', name='predictions')
+## model architecture
+input_layer = tf.keras.Input(shape=(28, 28, 1), name='image_input')
+layer = tf.keras.layers.ZeroPadding2D(padding=(3, 3), name='initial_padding')(input_layer)
+# add convolutional layer
+layer = tf.keras.layers.Conv2D(
+    filters=16,
+    kernel_size=8,
+    padding='same',
+    name='conv_layer'
+)(layer)
+# batch normalization
+layer = tf.keras.layers.BatchNormalization(axis=3, name='bn_layer')(layer)
+# activation
+layer = tf.keras.layers.Activation('relu', name='activation_layer')(layer)
+# down sample
+net = tf.keras.layers.MaxPooling2D(pool_size=(3, 3), strides=(2, 2))(layer)
+# flatten
+net = tf.keras.layers.Flatten(name='flatten_layer')(net)
+# dense layer with ReLU-activation.
+net = tf.keras.layers.Dense(64, activation='relu', name='dense_layer')(net)
+# dropout layer
+net = tf.keras.layers.Dropout(0.2, name='dropout_layer')(net)
+# last fully-connected / dense layer with softmax-activation so it can be used for classification.
+output_layer = tf.keras.layers.Dense(10, activation='softmax', name='predictions')(net)
+# creating the model
+model = tf.keras.Model(inputs=input_layer, outputs=output_layer, name='test1')
 
-    def call(self, inputs, training=False):
-        x = self.zero_padding(inputs)
-        x = self.conv(x)
-        x = self.bn(x, training=training)
-        x = self.activation(x)
-        x = self.max_pool(x)
-        x = self.flatten(x)
-        x = self.dense1(x)
-        x = self.dropout(x, training=training)
-        output = self.dense2(x)
-        return output
+# loading data
+(x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
+# add channel to x; also divide by 255 to normalize the data
+x_train = x_train.reshape(60000, 28, 28, 1)#.astype('float32') / 255
+x_test = x_test.reshape(10000, 28, 28, 1)#.astype('float32') / 255
 
-def my_model_function():
-    # Return an instance of MyModel
-    model = MyModel()
-    # Compile the model similarly as in the issue
-    model.compile(
-        loss='sparse_categorical_crossentropy',
-        optimizer='rmsprop',
-        metrics=['accuracy']
-    )
-    return model
+# create the training dataset
+train_dataset = tf.data.Dataset.from_tensor_slices((x_train, y_train))
+# shuffle, batch and prefetch for optimizing io reads
+train_dataset = train_dataset.shuffle(buffer_size=1024).batch(64).prefetch(1024)
+# create the validation dataset.
+val_dataset = tf.data.Dataset.from_tensor_slices((x_test, y_test))
+# batch and prefetch for optimizing io reads
+val_dataset = val_dataset.batch(64).prefetch(1024)
 
-def GetInput():
-    # Return a random tensor input matching model input shape (batch_size, 28, 28, 1)
-    # We use batch_size = 32 as a reasonable default
-    return tf.random.uniform(shape=(32, 28, 28, 1), dtype=tf.float32)
+# compile the model
+model.compile(
+    loss='sparse_categorical_crossentropy',
+    optimizer='rmsprop',
+    metrics=['accuracy']
+)
 
+# fit the model
+history = model.fit(
+    train_dataset,
+    validation_data=val_dataset,
+    epochs=2,
+    steps_per_epoch=50
+)
+
+# the returned "history" object holds a record of the loss values and metric values during training
+print('\nhistory dict:', history.history)
+
+model.save('mnist_model')
+
+del model
+# recreate the exact same model purely from the file:
+model = tf.keras.models.load_model('mnist_model')

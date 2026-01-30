@@ -1,22 +1,17 @@
-# torch.rand(2, 10, dtype=torch.float32)
-import torch
-from torch import nn
+from torch import tensor
+a = tensor([[ -16.9397,   74.5907, -245.5731,   57.9282,  -59.7757,   26.2957,
+          -27.3786,   71.2639,   57.6391,   54.0626],
+        [ -13.8363,   62.5153, -206.0240,   48.6378,  -51.2763,   21.7313,
+          -22.6663,   59.4996,   47.2677,   47.7668]], device='mps:0')
+print(a.log_softmax(dim=-1))
+print(a.cpu().log_softmax(dim=-1))
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Compute original MPS log_softmax (problematic implementation)
-        original = x.log_softmax(dim=-1)
-        # Compute custom numerically stable log_softmax
-        c = x.max(dim=-1, keepdim=True).values
-        logsumexp = torch.log(torch.exp(x - c).sum(dim=-1, keepdim=True))
-        custom = x - c - logsumexp
-        # Compare outputs using 5e-5 threshold from issue's validation
-        diff = torch.abs(original - custom)
-        return torch.all(diff < 5e-5)  # Returns boolean tensor indicating if all elements are within tolerance
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(2, 10, dtype=torch.float32)
-
+tensor([[       -inf,     -0.0353,        -inf,    -16.6978,        -inf,
+            -48.3303,        -inf,     -3.3621,    -16.9869,    -20.5634],
+        [   -76.3995,     -0.0478,        -inf,    -13.9254,        -inf,
+            -40.8318,    -85.2295,     -3.0636,    -15.2955,    -14.7963]],
+       device='mps:0')
+tensor([[   -91.5657,     -0.0353,   -320.1991,    -16.6978,   -134.4017,
+            -48.3303,   -102.0046,     -3.3621,    -16.9869,    -20.5634],
+        [   -76.3995,     -0.0478,   -268.5872,    -13.9254,   -113.8394,
+            -40.8319,    -85.2295,     -3.0636,    -15.2955,    -14.7964]])

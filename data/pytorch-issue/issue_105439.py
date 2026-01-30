@@ -1,24 +1,21 @@
-# torch.rand(512, 512, dtype=torch.bool)  # Input shape and dtype
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Fixed tensors for indices (y) and values (z) used in index_put_
-        self.register_buffer('y', torch.arange(512, dtype=torch.int64))
-        self.register_buffer('z', torch.ones((512, 512), dtype=torch.bool))
+def fn(x, y, z):
+    x = torch.zeros_like(x)
+    return x.index_put_([y], z, True)
+    # return x + 1
 
-    def forward(self, x):
-        # Replicates the problematic index_put_ operation with accumulate=True
-        temp = torch.zeros_like(x)
-        return temp.index_put_([self.y], self.z, accumulate=True)
+x = torch.zeros((512, 512), dtype=torch.bool, device='cuda')
+y = torch.arange(512, dtype=torch.int64, device='cuda')
+z = torch.ones((512, 512), dtype=torch.bool, device='cuda')
 
-def my_model_function():
-    # Returns the model instance with predefined y/z buffers
-    return MyModel()
+s = torch.cuda.Stream()
+s.wait_stream(torch.cuda.current_stream())
+with torch.cuda.stream(s):
+    for i in range(3):
+        fn(x, y, z)
+torch.cuda.current_stream().wait_stream(s)
 
-def GetInput():
-    # Generates a random boolean tensor matching the required input shape
-    return torch.randint(0, 2, (512, 512), dtype=torch.bool)
-
+g = torch.cuda.CUDAGraph()
+with torch.cuda.graph(g):
+    fn(x, y, z)

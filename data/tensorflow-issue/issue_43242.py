@@ -1,24 +1,18 @@
-# tf.random.uniform((1, 6, 3), dtype=tf.float32) ← inferred input shape from the original model input batch_input_shape=(1,6,3)
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Flatten input of shape (1, 6, 3) -> (1, 18)
-        self.flatten = tf.keras.layers.Flatten()
-        # Dense with 1 neuron, ReLU activation as per user's original model
-        self.dense = tf.keras.layers.Dense(1, activation='relu')
-        
-    def call(self, inputs):
-        x = self.flatten(inputs)
-        output = self.dense(x)
-        return output
+n_epoch = 1
+n_batch = 1
+n_neurons= 25
+time_ev = 6
 
-def my_model_function():
-    # Returns an instance of MyModel - weights are randomly initialized as in the original model (no saved weights provided)
-    return MyModel()
+# design network
+model = Sequential()
+model.add(tf.keras.layers.Input(batch_input_shape=(n_batch,time_ev, 3), name='input')) # nbatch, num_feature, time
+model.add(tf.keras.layers.Flatten())
+model.add(Dense(1, activation=tf.keras.activations.relu))
+model.compile(loss='mean_squared_error', optimizer='adam')
 
-def GetInput():
-    # Return a random tensor input matching expected input: batch size = 1, time steps = 6, features =3, dtype float32
-    return tf.random.uniform((1, 6, 3), dtype=tf.float32)
-
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+tflite_model = converter.convert()

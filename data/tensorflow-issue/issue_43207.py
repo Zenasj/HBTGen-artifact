@@ -1,140 +1,183 @@
-# tf.random.uniform((1, 288, 224, 3), dtype=tf.float32) ← Assumed input shape and dtype from the model definition
+import numpy as np
+
+def representative_data_gen():
+    dataset_list = os.listdir(data_dir)
+    num_calibration_images = 100
+    norm_factor = 255.0
+    for i in range(num_calibration_images):
+        image_name = next(iter(dataset_list))
+ 
+        image = cv2.imread(os.path.join(data_dir, image_name), 1)
+        image = image.astype(np.float32)
+        image = image/norm_factor
+
+        image = tf.expand_dims(image, 0)
+        yield [image]
+
+
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.representative_dataset = representative_data_gen
+converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
+converter.target_spec.supported_types = [tf.int8]
+
+# These set the input and output tensors to uint8 (added in r2.3)
+converter.inference_input_type = tf.uint8
+converter.inference_output_type = tf.uint8
+
+converter.allow_custom_ops = True
+tflite_model = converter.convert()
 
 import tensorflow as tf
+from tensorflow import keras
 from tensorflow.keras import layers
 
-class MyModel(tf.keras.Model):
-    def __init__(self, nClasses=25, input_height=288, input_width=224, n_filters=64, dropout=0.2,
-                 batchnorm=True, activation=True):
-        super().__init__()
-        self.nClasses = nClasses
-        self.input_height = input_height
-        self.input_width = input_width
-        self.n_filters = n_filters
-        self.dropout = dropout
-        self.batchnorm = batchnorm
-        self.activation = activation
+def conv2d_block_3layers(input_tensor, n_filters, kernel_size=3, dropout=0.2, 
+                         batchnorm=True, activation=True):
+    # first layer
+    x = layers.Conv2D(filters = n_filters, kernel_size = (kernel_size, kernel_size),
+                      padding = 'same')(input_tensor)
+    if batchnorm:
+        x = layers.BatchNormalization()(x)
+    if activation:
+        x = layers.Activation('relu')(x)
+    x = layers.Dropout(dropout)(x)
+    # second layer
+    x = layers.Conv2D(filters = n_filters, kernel_size = (kernel_size, kernel_size),
+                      padding = 'same')(x)
+    if batchnorm:
+        x = layers.BatchNormalization()(x)
+    if activation:
+        x = layers.Activation('relu')(x)
+    x = layers.Dropout(dropout)(x)
+    # third layer
+    x = layers.Conv2D(filters = n_filters, kernel_size = (kernel_size, kernel_size),
+                      padding = 'same')(x)
+    if batchnorm:
+        x = layers.BatchNormalization()(x)
+    if activation:
+        x = layers.Activation('relu')(x)
+    return x
 
-        # Define the conv2d_block_3layers as layers since subclassing
-        def conv2d_block_3layers():
-            block = tf.keras.Sequential()
-            for _ in range(3):
-                block.add(layers.Conv2D(filters=n_filters, kernel_size=(3, 3), padding='same'))
-                if batchnorm:
-                    block.add(layers.BatchNormalization())
-                if activation:
-                    block.add(layers.Activation('relu'))
-                # Dropout after first two conv layers but not last could be debated.
-                # Following original code, Dropout after first and second conv layer, no dropout after last.
-                # However, original fn adds dropout after first and second Conv2Ds but not after the third, here simplified.
-                block.add(layers.Dropout(dropout))
-            return block
+def UNET_v2(nClasses=25, input_height=288, input_width=224, n_filters=64, dropout=0.2, 
+            batchnorm=True, activation=True):
+  
+    img_input = layers.Input(shape=(input_height, input_width, 3))  
 
-        # We'll define conv2d_block_3layers as a method for modularity 
-        # (but here keeping as Sequential for simplicity)
-        # But due to the dropout placement differences, manually unrolling to match original per layer pattern is best.
+    c1 = conv2d_block_3layers(img_input, n_filters * 1, kernel_size=3, batchnorm = batchnorm, activation=activation)
+    p1 = layers.MaxPooling2D((2, 2))(c1) 
 
-        # Build layers
+    c2 = conv2d_block_3layers(p1, n_filters * 2, kernel_size=3, batchnorm = batchnorm,  activation=activation)
+    p2 = layers.MaxPooling2D((2, 2))(c2) 
 
-        # Because conv2d_block_3layers applies dropout only on the first and second conv, 
-        # we'll rebuild conv2d_block_3layers with exact layers.
+    c3 = conv2d_block_3layers(p2, n_filters * 4, kernel_size=3, batchnorm = batchnorm,  activation=activation)
+    p3 = layers.MaxPooling2D((2, 2))(c3) 
 
-        def conv_block(n_filters):
-            layers_list = []
-            # Conv 1
-            layers_list.append(layers.Conv2D(filters=n_filters, kernel_size=(3,3), padding='same'))
-            if batchnorm:
-                layers_list.append(layers.BatchNormalization())
-            if activation:
-                layers_list.append(layers.Activation('relu'))
-            layers_list.append(layers.Dropout(dropout))
-            # Conv 2
-            layers_list.append(layers.Conv2D(filters=n_filters, kernel_size=(3,3), padding='same'))
-            if batchnorm:
-                layers_list.append(layers.BatchNormalization())
-            if activation:
-                layers_list.append(layers.Activation('relu'))
-            layers_list.append(layers.Dropout(dropout))
-            # Conv 3
-            layers_list.append(layers.Conv2D(filters=n_filters, kernel_size=(3,3), padding='same'))
-            if batchnorm:
-                layers_list.append(layers.BatchNormalization())
-            if activation:
-                layers_list.append(layers.Activation('relu'))
-            return tf.keras.Sequential(layers_list)
+    c4 = conv2d_block_3layers(p3, n_filters * 4, kernel_size=3, batchnorm = batchnorm,  activation=activation)
+    p4 = layers.MaxPooling2D((2, 2))(c4) 
 
-        self.conv_block1 = conv_block(n_filters * 1)
-        self.conv_block2 = conv_block(n_filters * 2)
-        self.conv_block3 = conv_block(n_filters * 4)
-        self.conv_block4 = conv_block(n_filters * 4)
-        self.conv_block5 = conv_block(n_filters * 8)
-        self.dropout_p5 = layers.Dropout(dropout)
+    c5 = conv2d_block_3layers(p4, n_filters = n_filters * 8, kernel_size=3, batchnorm = batchnorm, activation=activation)
+    p5 = layers.Dropout(dropout)(c5) 
 
-        self.pool = layers.MaxPooling2D((2, 2))
+    up6  = layers.Conv2DTranspose(n_filters * 4, kernel_size=(3,3), strides=(2,2), padding="same")(p5)
+    # up6  = layers.UpSampling2D()(p5) 
+    m6 = layers.Concatenate(axis=3)([up6, c4])
+    c6 = conv2d_block_3layers(m6, n_filters * 4, kernel_size = 3, batchnorm = batchnorm, activation=activation)
 
-        # Upsampling blocks
-        self.up6 = layers.Conv2DTranspose(n_filters * 4, kernel_size=(3,3), strides=(2,2), padding="same")
-        self.conv_block6 = conv_block(n_filters * 4)
+    up7 = layers.Conv2DTranspose(n_filters * 4, kernel_size=(3,3), strides=(2,2), padding="same")(c6)
+    # up7  = layers.UpSampling2D()(c6) 
+    m7 = layers.Concatenate(axis=3)([up7, c3])
+    c7 = conv2d_block_3layers(m7, n_filters * 4, kernel_size = 3, batchnorm = batchnorm, activation=activation)
 
-        self.up7 = layers.Conv2DTranspose(n_filters * 4, kernel_size=(3,3), strides=(2,2), padding="same")
-        self.conv_block7 = conv_block(n_filters * 4)
+    up8 = layers.Conv2DTranspose(n_filters * 2, kernel_size=(3,3), strides=(2,2), padding="same")(c7)
+    # up8  = layers.UpSampling2D()(c7) 
+    m8  = layers.Concatenate(axis=3)([up8, c2])
+    c8 = conv2d_block_3layers(m8, n_filters * 2, kernel_size = 3, batchnorm = batchnorm, activation=activation)
 
-        self.up8 = layers.Conv2DTranspose(n_filters * 2, kernel_size=(3,3), strides=(2,2), padding="same")
-        self.conv_block8 = conv_block(n_filters * 2)
+    up9 = layers.Conv2DTranspose(n_filters * 1, kernel_size=(3,3), strides=(2,2), padding="same")(c8)
+    # up9  = layers.UpSampling2D()(c8) 
+    m9 = layers.Concatenate(axis=3)([up9, c1])
+    c9 = conv2d_block_3layers(m9, n_filters * 1, kernel_size = 3, batchnorm = batchnorm, activation=activation)
 
-        self.up9 = layers.Conv2DTranspose(n_filters * 1, kernel_size=(3,3), strides=(2,2), padding="same")
-        self.conv_block9 = conv_block(n_filters * 1)
+    outputlayer = tf.keras.layers.Conv2D(filters=nClasses, kernel_size=1, activation="softmax")(c9)
+    
+    model = tf.keras.Model(inputs=img_input, outputs=outputlayer)
+    model.summary(line_length=124)
+    return model
 
-        self.concat = layers.Concatenate(axis=3)
-        self.output_conv = layers.Conv2D(filters=nClasses, kernel_size=1, activation="softmax")
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
 
-    def call(self, inputs, training=False):
-        # Encoder path
-        c1 = self.conv_block1(inputs, training=training)
-        p1 = self.pool(c1)
+def conv2d_block_3layers(input_tensor, n_filters, kernel_size=3, dropout=0.2, 
+                         batchnorm=True, activation=True):
+    # first layer
+    x = layers.Conv2D(filters = n_filters, kernel_size = (kernel_size, kernel_size),
+                      padding = 'same')(input_tensor)
+    if batchnorm:
+        x = layers.BatchNormalization()(x)
+    if activation:
+        x = layers.Activation('relu')(x)
+    x = layers.Dropout(dropout)(x)
+    # second layer
+    x = layers.Conv2D(filters = n_filters, kernel_size = (kernel_size, kernel_size),
+                      padding = 'same')(x)
+    if batchnorm:
+        x = layers.BatchNormalization()(x)
+    if activation:
+        x = layers.Activation('relu')(x)
+    x = layers.Dropout(dropout)(x)
+    # third layer
+    x = layers.Conv2D(filters = n_filters, kernel_size = (kernel_size, kernel_size),
+                      padding = 'same')(x)
+    if batchnorm:
+        x = layers.BatchNormalization()(x)
+    if activation:
+        x = layers.Activation('relu')(x)
+    return x
 
-        c2 = self.conv_block2(p1, training=training)
-        p2 = self.pool(c2)
+def UNET_v2(nClasses=25, input_height=288, input_width=224, n_filters=64, dropout=0.2, 
+            batchnorm=True, activation=True):
+  
+    img_input = layers.Input(shape=(input_height, input_width, 3))  
 
-        c3 = self.conv_block3(p2, training=training)
-        p3 = self.pool(c3)
+    c1 = conv2d_block_3layers(img_input, n_filters * 1, kernel_size=3, batchnorm = batchnorm, activation=activation)
+    p1 = layers.MaxPooling2D((2, 2))(c1) 
 
-        c4 = self.conv_block4(p3, training=training)
-        p4 = self.pool(c4)
+    c2 = conv2d_block_3layers(p1, n_filters * 2, kernel_size=3, batchnorm = batchnorm,  activation=activation)
+    p2 = layers.MaxPooling2D((2, 2))(c2) 
 
-        c5 = self.conv_block5(p4, training=training)
-        p5 = self.dropout_p5(c5, training=training)
+    c3 = conv2d_block_3layers(p2, n_filters * 4, kernel_size=3, batchnorm = batchnorm,  activation=activation)
+    p3 = layers.MaxPooling2D((2, 2))(c3) 
 
-        # Decoder path
-        up6 = self.up6(p5)
-        m6 = self.concat([up6, c4])
-        c6 = self.conv_block6(m6, training=training)
+    c4 = conv2d_block_3layers(p3, n_filters * 4, kernel_size=3, batchnorm = batchnorm,  activation=activation)
+    p4 = layers.MaxPooling2D((2, 2))(c4) 
 
-        up7 = self.up7(c6)
-        m7 = self.concat([up7, c3])
-        c7 = self.conv_block7(m7, training=training)
+    c5 = conv2d_block_3layers(p4, n_filters = n_filters * 8, kernel_size=3, batchnorm = batchnorm, activation=activation)
+    p5 = layers.Dropout(dropout)(c5) 
 
-        up8 = self.up8(c7)
-        m8 = self.concat([up8, c2])
-        c8 = self.conv_block8(m8, training=training)
+    up6  = layers.Conv2DTranspose(n_filters * 4, kernel_size=(3,3), strides=(2,2), padding="same")(p5)
+    # up6  = layers.UpSampling2D()(p5) 
+    m6 = layers.Concatenate(axis=3)([up6, c4])
+    c6 = conv2d_block_3layers(m6, n_filters * 4, kernel_size = 3, batchnorm = batchnorm, activation=activation)
 
-        up9 = self.up9(c8)
-        m9 = self.concat([up9, c1])
-        c9 = self.conv_block9(m9, training=training)
+    up7 = layers.Conv2DTranspose(n_filters * 4, kernel_size=(3,3), strides=(2,2), padding="same")(c6)
+    # up7  = layers.UpSampling2D()(c6) 
+    m7 = layers.Concatenate(axis=3)([up7, c3])
+    c7 = conv2d_block_3layers(m7, n_filters * 4, kernel_size = 3, batchnorm = batchnorm, activation=activation)
 
-        output = self.output_conv(c9)
-        return output
+    up8 = layers.Conv2DTranspose(n_filters * 2, kernel_size=(3,3), strides=(2,2), padding="same")(c7)
+    # up8  = layers.UpSampling2D()(c7) 
+    m8  = layers.Concatenate(axis=3)([up8, c2])
+    c8 = conv2d_block_3layers(m8, n_filters * 2, kernel_size = 3, batchnorm = batchnorm, activation=activation)
 
+    up9 = layers.Conv2DTranspose(n_filters * 1, kernel_size=(3,3), strides=(2,2), padding="same")(c8)
+    # up9  = layers.UpSampling2D()(c8) 
+    m9 = layers.Concatenate(axis=3)([up9, c1])
+    c9 = conv2d_block_3layers(m9, n_filters * 1, kernel_size = 3, batchnorm = batchnorm, activation=activation)
 
-def my_model_function():
-    # Instantiate the model with default parameters matching the original example
-    return MyModel()
-
-
-def GetInput():
-    # Generate a random tensor input matching expected input size and channels:
-    # input shape: (batch=1, height=288, width=224, channels=3)
-    # dtype: float32, values in range [0,1] similar to normalized images in the original representative dataset generator.
-    input_tensor = tf.random.uniform((1, 288, 224, 3), dtype=tf.float32)
-    return input_tensor
-
+    outputlayer = tf.keras.layers.Conv2D(filters=nClasses, kernel_size=1, activation="softmax")(c9)
+    
+    model = tf.keras.Model(inputs=img_input, outputs=outputlayer)
+    model.summary(line_length=124)
+    return model

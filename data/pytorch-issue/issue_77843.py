@@ -1,25 +1,12 @@
-# torch.rand(B, 8, 64, dtype=torch.float32)
 import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv = nn.Conv1d(
-            in_channels=8,
-            out_channels=128,
-            kernel_size=3,
-            padding=1,
-            padding_mode='circular',
-            bias=False
-        )
-    
-    def forward(self, x):
-        return self.conv(x)
+def test_conv1d_circular_padding(self):
+        y_cpu = torch.randn(32, 8, 64)
+        conv_cpu = nn.Conv1d(8, 128, kernel_size=3, padding=1, padding_mode='circular', bias=False)
+        conv_gpu = copy.deepcopy(conv_cpu).to(device='mps')
+        x_cpu = conv_cpu(y_cpu)
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(32, 8, 64, dtype=torch.float32)
-
+        y_gpu = y_cpu.to(device='mps')
+        x_gpu = conv_gpu(y_gpu)
+        self.assertEqual(x_cpu, x_gpu.cpu())

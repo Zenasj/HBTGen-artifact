@@ -1,20 +1,29 @@
-# torch.rand(1, 1024, dtype=torch.float32) ← Add a comment line at the top with the inferred input shape
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
+import torch
+from torch.onnx import register_custom_op_symbolic
+
+class Model(torch.nn.Module):
+
     def forward(self, x):
-        # Perform FFT and return the result
         return torch.fft.fft(x)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+def fft(g, self, n, dim, norm):
+    return g.op("com.microsoft.experimental::DFT", self)
+register_custom_op_symbolic("::fft_fft", fft, 1)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(1, 1024)
 
+model = Model()
+ts_model = torch.jit.script(model)
+
+data = torch.randn(1, 1024)
+y = ts_model(data)
+
+torch.onnx.export(
+    ts_model,
+    (data,),
+    "tmp.onnx",
+    opset_version=13,
+    verbose=True,
+    example_outputs=(y,),
+)

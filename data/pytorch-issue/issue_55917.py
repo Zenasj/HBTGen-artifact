@@ -1,0 +1,1 @@
+print("Y_dense_cpu, Y_dense_gpu  :", compare(Y_dense_cpu, Y_dense_cpu))  # Description doesn't match comparison

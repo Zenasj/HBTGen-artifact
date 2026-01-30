@@ -1,26 +1,42 @@
-# torch.rand(1, 1, 10, 10, dtype=torch.float32)  # Inferred input shape
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class MyModel(nn.Module):
+class Net(torch.jit.ScriptModule):
+
     def __init__(self):
-        super(MyModel, self).__init__()
+        super(Net, self).__init__()
+
         self.conv = nn.Conv2d(1, 1, 1)
+
         self.lin = nn.Linear(100, 1)
 
+    @torch.jit.script_method
     def forward(self, x):
         x = F.relu(self.conv(x))
         x = x.view(x.shape[0], -1)
         x = F.relu(self.lin(x))
+
         return x
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+m = Net()
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.ones((1, 1, 10, 10))
+x = torch.ones((1, 1, 10, 10))
 
+for i in range(1000000):
+    m(x)
+
+import torch
+import torch.nn.functional as F
+import time
+
+weight = torch.ones([1,1,1,1])
+x = torch.ones((1, 1, 10, 10))
+
+oo = (1, 1)
+zz = (0, 0)
+
+start = time.time()
+with torch.no_grad():
+    while time.time() - start < 10:
+        F.conv2d(x, weight, None, oo, zz, oo, 1)

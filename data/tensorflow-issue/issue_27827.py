@@ -1,128 +1,200 @@
-# tf.random.uniform((B, 84, 84, 4), dtype=tf.float32) ← Input shape inferred from keras/eager models (batch, height, width, channels)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
+
+from keras.layers import *
+from keras.models import Model
+from keras.optimizers import Adam
+import tensorflow as tf
+
+
+class KerasTest:
+    def __init__(self, state_space, action_space, lr):
+        self.state_space = state_space
+        self.action_space = action_space
+        self.lr = lr
+
+        inputs = Input(shape=(84, 84, 4))
+        rewards = Input(shape=(1,))
+
+        x = Conv2D(32, kernel_size=[8, 8], padding='valid', strides=[4, 4], activation=None)(inputs)
+        x = BatchNormalization(trainable=True, epsilon=1e-5)(x)
+        x = Activation('relu')(x)
+        x = Conv2D(64, kernel_size=[4, 4], padding='valid', strides=[2, 2], activation=None)(x)
+        x = BatchNormalization(trainable=True, epsilon=1e-5)(x)
+        x = Activation('relu')(x)
+        x = Conv2D(64, kernel_size=(4, 4), padding='valid', strides=(2, 2), activation=None)(x)
+        x = BatchNormalization(trainable=True, epsilon=1e-5)(x)
+        x = Activation('relu')(x)
+        x = Flatten()(x)
+        x = Dense(512, activation='relu')(x)
+        x = Dropout(0.5)(x)
+        x = Dense(256, activation='relu')(x)
+        x = Dropout(0.3)(x)
+        x = Dense(128, activation='relu')(x)
+        x = Dropout(0.05)(x)
+        logits = Dense(self.action_space, activation=None)(x)
+
+        self.model = Model(inputs=[inputs, rewards], outputs=logits)
+
+        def policy_loss(r):
+            def loss(labels, logits):
+                policy = tf.nn.softmax(logits)
+                entropy = tf.nn.softmax_cross_entropy_with_logits_v2(labels=policy, logits=logits)
+                log = tf.nn.softmax_cross_entropy_with_logits_v2(labels=labels, logits=logits)
+                p_loss = log * tf.stop_gradient(r)
+                p_loss = p_loss - 0.01 * entropy
+                total_loss = tf.reduce_mean(p_loss)
+                return total_loss
+
+            return loss
+
+        self.model.compile(optimizer=Adam(lr=lr), loss=policy_loss(rewards))
+        self.model.summary()
+
+    def get_probs(self, s):
+        s = s[np.newaxis, :]
+        probs = self.model.predict([s, np.array([1])])
+        probs = probs.squeeze()
+        probs = self.softmax(probs)
+        return probs
+
+    def softmax(self, x):
+        e_x = np.exp(x - np.max(x))
+        return e_x / e_x.sum(axis=0)
+
+    def update_policy(self, s, r, a):
+        self.model.train_on_batch([s, r], a)
 
 import tensorflow as tf
+from tensorflow.python.keras.layers import *
 import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self, action_space):
-        super().__init__()
+tf.enable_eager_execution()
+print(tf.executing_eagerly())
+
+
+class EagerTest:
+    def __init__(self, state_space, action_space, lr):
+        self.action_space = action_space
+        self.lr = lr
+
+        inputs = Input(shape=(84, 84, 4))
+        rewards = Input(shape=(1,))
+
+        x = Conv2D(32, kernel_size=[8, 8], padding='valid', strides=[4, 4], activation=None)(inputs)
+        x = BatchNormalization(trainable=True, epsilon=1e-5)(x)
+        x = Activation('relu')(x)
+        x = Conv2D(64, kernel_size=[4, 4], padding='valid', strides=[2, 2], activation=None)(x)
+        x = BatchNormalization(trainable=True, epsilon=1e-5)(x)
+        x = Activation('relu')(x)
+        x = Conv2D(64, kernel_size=(4, 4), padding='valid', strides=(2, 2), activation=None)(x)
+        x = BatchNormalization(trainable=True, epsilon=1e-5)(x)
+        x = Activation('relu')(x)
+        x = Flatten()(x)
+        x = Dense(512, activation='relu')(x)
+        x = Dropout(0.5)(x)
+        x = Dense(256, activation='relu')(x)
+        x = Dropout(0.3)(x)
+        x = Dense(128, activation='relu')(x)
+        x = Dropout(0.05)(x)
+        logits = Dense(self.action_space, activation=None)(x)
+
+        self.model = tf.keras.Model(inputs=[inputs, rewards], outputs=logits)
+
+        def policy_loss(r):
+            def loss(labels, logits):
+                policy = tf.nn.softmax(logits)
+                entropy = tf.nn.softmax_cross_entropy_with_logits_v2(labels=policy, logits=logits)
+                log = tf.nn.softmax_cross_entropy_with_logits_v2(labels=labels, logits=logits)
+                p_loss = log * tf.stop_gradient(r)
+                p_loss = p_loss - 0.01 * entropy
+                total_loss = tf.reduce_mean(p_loss)
+                return total_loss
+
+            return loss
+
+        self.model.compile(optimizer=tf.train.AdamOptimizer(lr), loss=policy_loss(rewards))
+        self.model.summary()
+
+    def get_probs(self, s):
+        s = s[np.newaxis, :]
+        probs = self.model([s, np.array([1])]).numpy()
+        probs = probs.squeeze()
+        probs = self.softmax(probs)
+        return probs
+
+    def softmax(self, x):
+        e_x = np.exp(x - np.max(x))
+        return e_x / e_x.sum(axis=0)
+
+    def update_policy(self, s, r, a):
+        self.model.train_on_batch([s, r], a)
+
+import tensorflow as tf
+from tensorflow.python.keras.layers import *
+
+import numpy as np
+
+tf.enable_eager_execution()
+print(tf.executing_eagerly())
+
+
+class EagerSeqTest:
+    def __init__(self, state_space, action_space, lr):
+        self.state_space = state_space
         self.action_space = action_space
 
-        # Conv layers with BatchNorm and ReLU
-        self.conv1 = tf.keras.layers.Conv2D(32, kernel_size=8, strides=4, padding='valid', activation=None)
-        self.bn1 = tf.keras.layers.BatchNormalization(trainable=True, epsilon=1e-5)
-        self.act1 = tf.keras.layers.Activation('relu')
+        self.model = tf.keras.Sequential()
 
-        self.conv2 = tf.keras.layers.Conv2D(64, kernel_size=4, strides=2, padding='valid', activation=None)
-        self.bn2 = tf.keras.layers.BatchNormalization(trainable=True, epsilon=1e-5)
-        self.act2 = tf.keras.layers.Activation('relu')
+        self.model.add(InputLayer(input_shape=(84, 84, 4)))
 
-        self.conv3 = tf.keras.layers.Conv2D(64, kernel_size=4, strides=2, padding='valid', activation=None)
-        self.bn3 = tf.keras.layers.BatchNormalization(trainable=True, epsilon=1e-5)
-        self.act3 = tf.keras.layers.Activation('relu')
+        # Conv
+        self.model.add(Conv2D(filters=32, kernel_size=(8, 8), strides=(4, 4), name='conv1'))
+        self.model.add(BatchNormalization(trainable=True, epsilon=1e-5, name='batch_norm1'))
+        self.model.add(ReLU(name='conv_1_out'))
 
-        self.flatten = tf.keras.layers.Flatten()
+        self.model.add(Conv2D(filters=64, kernel_size=(4, 4), strides=(2, 2), name='conv2'))
+        self.model.add(BatchNormalization(trainable=True, epsilon=1e-5, name='batch_norm2'))
+        self.model.add(ReLU(name='conv_2_out'))
 
-        # Dense layers with ReLU and Dropout as per original keras model
-        self.dense1 = tf.keras.layers.Dense(512, activation='relu')
-        self.dropout1 = tf.keras.layers.Dropout(0.5)
-        self.dense2 = tf.keras.layers.Dense(256, activation='relu')
-        self.dropout2 = tf.keras.layers.Dropout(0.3)
-        self.dense3 = tf.keras.layers.Dense(128, activation='relu')
-        self.dropout3 = tf.keras.layers.Dropout(0.05)
+        self.model.add(Conv2D(filters=64, kernel_size=(4, 4), strides=(2, 2), name='conv3'))
+        self.model.add(BatchNormalization(trainable=True, epsilon=1e-5, name='batch_norm3'))
+        self.model.add(ReLU(name='conv_3_out'))
 
-        # Final logits layer (no activation)
-        self.logits_layer = tf.keras.layers.Dense(self.action_space, activation=None)
+        self.model.add(Flatten(name='flatten'))
 
-    def call(self, inputs, training=False):
-        # Expecting inputs as tuple/list: (images, rewards)
-        x, r = inputs  # images: [B, 84, 84, 4], r: [B, 1] or scalar reward tensor
+        # Fully connected
+        self.model.add(Dense(units=512, activation='relu', name='fc1'))
+        self.model.add(Dropout(rate=0.4, name='dr1'))
+        self.model.add(Dense(units=256, activation='relu', name='fc2'))
+        self.model.add(Dropout(rate=0.3, name='dr2'))
+        self.model.add(Dense(units=64, activation='relu', name='fc3'))
+        self.model.add(Dropout(rate=0.03, name='dr3'))
 
-        x = self.conv1(x)
-        x = self.bn1(x, training=training)
-        x = self.act1(x)
+        # Logits
+        self.model.add(Dense(units=self.action_space, activation='linear', name='logits'))
 
-        x = self.conv2(x)
-        x = self.bn2(x, training=training)
-        x = self.act2(x)
+        self.model.summary()
 
-        x = self.conv3(x)
-        x = self.bn3(x, training=training)
-        x = self.act3(x)
+        # Optimizer
+        self.optimizer = tf.train.AdamOptimizer(learning_rate=lr)
 
-        x = self.flatten(x)
+    def get_probs(self, s):
+        s = s[np.newaxis, :]
+        logits = self.model(s)
+        probs = tf.nn.softmax(logits).numpy().squeeze()
+        return probs
 
-        x = self.dense1(x)
-        x = self.dropout1(x, training=training)
-        x = self.dense2(x)
-        x = self.dropout2(x, training=training)
-        x = self.dense3(x)
-        x = self.dropout3(x, training=training)
+    def update_policy(self, s, r, a):
+        with tf.GradientTape() as tape:
+            loss = self.calc_loss(s, r, a)
+        grads = tape.gradient(loss, self.model.trainable_variables)
+        self.optimizer.apply_gradients(zip(grads, self.model.trainable_variables))
 
-        logits = self.logits_layer(x)  # [B, action_space]
-        return logits
-
-    @staticmethod
-    def policy_loss(r):
-        # r: tensor with shape [B, 1] or [B], advantage or reward signal
-
-        def loss(labels, logits):
-            # labels: one-hot or probability distribution for actions, logits: model output logits
-            policy = tf.nn.softmax(logits)
-            entropy = tf.nn.softmax_cross_entropy_with_logits(labels=policy, logits=logits)  # note: cross_entropy for entropy calculation
-            log_prob = tf.nn.softmax_cross_entropy_with_logits(labels=labels, logits=logits)
-            # p_loss = log * stop_gradient(r) - 0.01*entropy
-            p_loss = log_prob * tf.stop_gradient(r)
-            p_loss = p_loss - 0.01 * entropy
-            total_loss = tf.reduce_mean(p_loss)
-            return total_loss
-
-        return loss
-
-
-def my_model_function():
-    # For demonstration, let's assume action_space=3 (e.g., 3 discrete actions)
-    # This parameter can be adjusted to fit the specific use case
-    action_space = 3
-    model = MyModel(action_space=action_space)
-
-    # Compile the model here with Adam optimizer and the custom loss wrapped with policy_loss
-    # We create a dummy rewards tensor as input shape (batch_size,1) is required for loss closure
-    rewards_input = tf.keras.Input(shape=(1,), dtype=tf.float32, name='rewards')
-
-    # Build model inputs placeholders for compilation (images and rewards)
-    images_input = tf.keras.Input(shape=(84, 84, 4), dtype=tf.float32, name='images')
-
-    # Get logits output
-    logits = model([images_input, rewards_input])
-
-    # Create a tf.keras.Model to enable compile(). This model is used only for compilation/training.
-    keras_model = tf.keras.Model(inputs=[images_input, rewards_input], outputs=logits)
-
-    # Use the loss closure function to create a compatible loss function
-    # We pass rewards_input tensor to get the loss function that depends on r
-
-    loss_fn = MyModel.policy_loss(rewards_input)
-
-    # Use Adam optimizer with a default LR (can be adjusted later)
-    adam_optimizer = tf.keras.optimizers.Adam()
-
-    keras_model.compile(optimizer=adam_optimizer, loss=loss_fn)
-
-    # Set the compiled keras_model inside our MyModel instance for training convenience
-    model.keras_compiled_model = keras_model
-
-    return model
-
-
-def GetInput():
-    # Return a tuple of two tensors:
-    # - images: random tensor with shape (batch_size, 84, 84, 4), dtype float32
-    # - rewards: random tensor (batch_size, 1), float32, required for loss function
-
-    batch_size = 2  # small batch for demonstration; can be changed as needed
-    images = tf.random.uniform((batch_size, 84, 84, 4), dtype=tf.float32)
-    rewards = tf.ones((batch_size, 1), dtype=tf.float32)  # e.g. rewards of 1 for all batch items
-
-    return (images, rewards)
-
+    def calc_loss(self, s, r, a):
+        logits = self.model(s)
+        policy_loss = tf.nn.softmax_cross_entropy_with_logits_v2(labels=a, logits=logits)
+        policy_loss = tf.reduce_mean(policy_loss * tf.stop_gradient(r))
+        return policy_loss

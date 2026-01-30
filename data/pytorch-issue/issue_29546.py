@@ -1,34 +1,26 @@
-# torch.rand(4, 1, dtype=torch.float32)
 import torch
-import torch.nn as nn
 
-class OldMaskGenerator(nn.Module):
-    def forward(self, sz):
+tensor([[0., -inf, -inf, -inf],
+        [0., 0., -inf, -inf],
+        [0., 0., 0., -inf],
+        [0., 0., 0., 0.]])
+
+def generate_square_subsequent_mask(self, sz):
+        r"""Generate a square mask for the sequence. The masked positions are filled with float('-inf').
+            Unmasked positions are filled with float(0.0).
+        """
         mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
         mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
         return mask
 
-class NewMaskGenerator(nn.Module):
-    def forward(self, sz):
-        mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1).float()
-        mask = mask.masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
-        return mask
+sz = 3
+mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
+mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.old_mask = OldMaskGenerator()
-        self.new_mask = NewMaskGenerator()
+tensor([[0., 0., 0.],
+        [-inf, 0., 0.],
+        [-inf, -inf, 0.]])
 
-    def forward(self, x):
-        sz = x.size(0)
-        old_mask = self.old_mask(sz)
-        new_mask = self.new_mask(sz)
-        return torch.tensor(not torch.allclose(old_mask, new_mask), dtype=torch.bool)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(4, 1)
-
+tensor([[0., -inf, -inf],
+        [0., 0., -inf],
+        [0., 0., 0.]])

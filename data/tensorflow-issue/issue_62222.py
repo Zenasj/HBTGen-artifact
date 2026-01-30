@@ -1,24 +1,29 @@
-# tf.random.uniform((10, 9), dtype=tf.bfloat16)
-import tensorflow as tf
+import random
 
-class MyModel(tf.keras.Model):
+import tensorflow as tf
+import traceback
+
+class Network(tf.Module):
     def __init__(self):
         super().__init__()
-        # No trainable params, just wrapping raw_ops Cos and Asin operations
 
-    def call(self, x):
-        # Apply Cos then Asin using raw_ops as per the reported issue
-        x_cos = tf.raw_ops.Cos(x=x)
-        x_asin = tf.raw_ops.Asin(x=x_cos)
-        return x_asin
+    @tf.function(jit_compile=True)
+    def __call__(self, x):
+      
+      x = tf.raw_ops.Cos(x=x, )        
+      x = tf.raw_ops.Asin(x=x, )        
+      return x
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+m = Network()
+inp = {
+    "x": tf.random.uniform([10,9], dtype=tf.bfloat16),
+}
 
-def GetInput():
-    # Return a random tensor input matching the expected input
-    # Shape: [10,9], dtype: bfloat16 (matching original repro)
-    # Note: The issue arises due to precision differences in bfloat16 with jit_compile=True
-    return tf.random.uniform(shape=(10, 9), dtype=tf.bfloat16)
+with tf.device('/GPU:0'):
+    tf.config.run_functions_eagerly(True)
+    no_op_res = m(**inp)
+    tf.config.run_functions_eagerly(False)
+    with tf.device('/GPU:0'):
+        op_res = m(**inp)
 
+    tf.debugging.assert_near(tf.cast(no_op_res, tf.float64), tf.cast(op_res, tf.float64), atol=0.001, rtol=0.001)

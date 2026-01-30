@@ -1,14 +1,17 @@
-# torch.rand(4, 32, 64, 64, dtype=torch.float32)
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+
+class TestModel(nn.Module):
+
     def __init__(self, num_features, init_size=None):
-        super(MyModel, self).__init__()
+        super(TestModel, self).__init__()
+
         if init_size is None:
             self.upsample = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
         else:
             self.upsample = nn.Upsample(size=init_size * 2, mode='bilinear', align_corners=True)
+
         self.innorm = nn.InstanceNorm2d(num_features, affine=False)
 
     def forward(self, x):
@@ -16,11 +19,24 @@ class MyModel(nn.Module):
         out = self.innorm(out)
         return out
 
-def my_model_function():
-    # Use init_size=64 to force static output size for ONNX compatibility
-    return MyModel(num_features=32, init_size=64)
 
-def GetInput():
-    # Matches input dimensions expected by MyModel with init_size=64
-    return torch.randn(4, 32, 64, 64, dtype=torch.float32)
+if __name__ == '__main__':
 
+    init_size = 64
+    num_features = 32
+    x = torch.randn(4, num_features, init_size, init_size)
+
+    model = TestModel(num_features, init_size=None)
+    # model = TestModel(num_features, init_size=init_size)
+    output = model(x)
+    print(output.size())
+    # torch.Size([4, 32, 128, 128])
+
+    torch.onnx.export(
+        model, x, 'test.onnx',
+        export_params=True,
+        verbose=True,
+        opset_version=14,  # 9 ~ 14
+        input_names=['x'],
+        output_names=['output']
+    )

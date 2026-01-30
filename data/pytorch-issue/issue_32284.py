@@ -1,30 +1,104 @@
-# torch.rand(B, C, H, W, dtype=...)  # (2, 1, 80, 80)  # Inferred input shape from the issue
-
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-class MyModel(nn.Module):
+3
+import os
+os.environ["OMP_NUM_THREADS"] = "1"
+import torch
+from torch import nn
+from memory_profiler import profile
+import resource
+
+class Network(torch.nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(1, 32, 5, stride=1, padding=2)
-        self.maxp1 = nn.MaxPool2d(2, 2)
-        self.conv2 = nn.Conv2d(32, 64, 3, stride=1, padding=1)
-        self.maxp2 = nn.MaxPool2d(2, 2)
-        self.linear = nn.Linear(64 * 20 * 20, 6)
+        super(Network, self).__init__()
+        self.maxp1 = nn.MaxPool2d(1, 1)
 
     def forward(self, x):
-        x = F.relu(self.maxp1(self.conv1(x)))
-        x = F.relu(self.maxp2(self.conv2(x)))
-        x = x.view(x.size(0), -1)
-        return self.linear(x)
+        return self.maxp1(x)
 
-def my_model_function():
-    return MyModel()
+def debug_memory():
+    print('maxrss = {}'.format(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss))
 
-def GetInput():
+@profile
+def func():
     batch = 2
     channels = 1
     side_dim = 80
-    return torch.randn([batch, channels, side_dim, side_dim])
+    model = Network()
+    x = torch.randn([batch, channels, side_dim, side_dim])
+    while True:
+        y = model(x)
+        debug_memory()
 
+import os
+import torch
+torch.set_num_threads(1)
+from torch import nn
+from memory_profiler import profile
+import resource
+import gc
+
+
+def debug_memory():
+    val = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    # print('maxrss = {}'.format(val))
+    return val
+
+def fn(x):
+    # choose one
+    # torch._C._nn.max_pool2d_with_indices(x, 1)
+    torch.relu(x)
+
+@profile
+def func():
+    batch = 2
+    channels = 1
+    side_dim = 80
+    x = torch.randn([batch, channels, side_dim, side_dim])
+    old_val = debug_memory()
+    for i in range(1000):
+        fn(x)
+        new_val = debug_memory()
+        if new_val != old_val:
+            print("Increased at {}: {}".format(i, new_val - old_val))
+            old_val = new_val
+
+func()
+
+import os
+os.environ["OMP_NUM_THREADS"] = "1"
+import torch
+import torch.nn.functional as F
+from torch import nn
+from memory_profiler import profile
+import resource
+
+class Network(torch.nn.Module):
+    def __init__(self):
+        super(Network, self).__init__()
+        self.maxp1 = nn.MaxPool2d(1, 1)
+
+    def forward(self, x):
+        #return torch.relu(x)
+        #return torch.threshold(x, 0, 0)
+        #return torch._C._nn.log_sigmoid(x)
+        return torch._C._nn.max_pool2d_with_indices(x, 1)
+        #return self.maxp1(x)
+
+def debug_memory():
+    print('maxrss = {}'.format(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss))
+
+@profile
+def func():
+    batch = 2
+    channels = 1
+    side_dim = 80
+    model = Network()
+    x = torch.randn([batch, channels, side_dim, side_dim])
+    for i in range(100000):
+        y = model(x)
+        if i % 1000 == 0:
+            debug_memory()
+
+if __name__ == '__main__':
+    func()

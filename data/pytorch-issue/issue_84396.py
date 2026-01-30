@@ -1,36 +1,51 @@
-# torch.rand(B, seq_length, embed_dim, dtype=torch.float32)  # Inferred input shape: (batch_size, sequence_length, embedding_dimension)
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self, embed_dim, num_heads):
+class NativeMHA(nn.Module):
+    """
+    Modified from https://github.com/pytorch/pytorch/blob/v1.12.1/test/test_native_mha.py#L144-L166
+    """
+
+    def __init__(self, embed_dim, num_heads, qkv, proj):
         super().__init__()
+        self.qkv = qkv
+        self.proj = proj
         self.embed_dim = embed_dim
         self.num_heads = num_heads
-        self.qkv = nn.Linear(embed_dim, 3 * embed_dim)
-        self.proj = nn.Linear(embed_dim, embed_dim)
-        self.multihead_attention = nn.MultiheadAttention(embed_dim, num_heads, batch_first=True)
 
-    def forward(self, x):
-        q, k, v = x, x, x
-        # Adding a small scalar to avoid the optimized self-attention path in mixed precision
-        q = q + 1e-8
-        attn_output, _ = self.multihead_attention(q, k, v)
-        return attn_output
+    def forward(
+        self, q, k, v, key_padding_mask=None, need_weights=False, average_attn_weights=True
+    ):
+        return torch._native_multi_head_attention(
+            q,
+            k,
+            v,
+            self.embed_dim,
+            self.num_heads,
+            self.qkv.weight,
+            self.qkv.bias,
+            self.proj.weight,
+            self.proj.bias,
+            key_padding_mask,
+            need_weights=need_weights,
+            average_attn_weights=average_attn_weights,
+        )
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    embed_dim = 16
-    num_heads = 4
-    return MyModel(embed_dim, num_heads)
+device = "cuda:0"
+dtype = torch.float32
+batch_size = 2
+seq_length = 4
+embed_dim = 16
+num_heads = 4
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    batch_size = 2
-    seq_length = 4
-    embed_dim = 16
-    device = "cuda:0" if torch.cuda.is_available() else "cpu"
-    dtype = torch.float32
-    x = torch.rand(batch_size, seq_length, embed_dim, device=device, dtype=dtype)
-    return x
+qkv = torch.nn.Linear(embed_dim, 3 * embed_dim, device=device, dtype=dtype)
+proj = torch.nn.Linear(embed_dim, embed_dim, device=device, dtype=dtype)
+m = NativeMHA(embed_dim, num_heads, qkv, proj)
+x = torch.rand(batch_size, seq_length, embed_dim, device=device, dtype=dtype)
 
+m(x, x, x)  # everything is ok
+with torch.autocast("cuda"):
+    m(x, x, x)  # raise runtime error
+
+# In my modules __init__
+self.audio_self_attention = nn.MultiheadAttention(decoder_input_channels, num_heads=16, batch_first=True)

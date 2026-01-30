@@ -1,36 +1,24 @@
-# torch.rand(1, dtype=torch.float32)
-import torch
-import torch.distributions as dist
-import torch.nn as nn
+import torch as tt
+dist = tt.distributions.Dirichlet(tt.ones(3))
+support = dist.support
+tform = tt.distributions.constraint_registry.biject_to(support)
+dist_unconstrained = tt.distributions.TransformedDistribution(dist,tform.inv)
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        base_dist = dist.Dirichlet(torch.ones(3))
-        
-        # Original transform (without the fix)
-        original_tform = dist.transforms.StickBreakingTransform()
-        self.original_dist = dist.TransformedDistribution(base_dist, original_tform.inv)
-        
-        # Fixed transform with the proposed fix
-        class FixedStickBreakingTransform(dist.transforms.StickBreakingTransform):
-            def transform_event_shape(self, event_shape):
-                return torch.Size([event_shape[0] - 1])
-        fixed_tform = FixedStickBreakingTransform()
-        self.fixed_dist = dist.TransformedDistribution(base_dist, fixed_tform.inv)
+print(tform)
+print(dist_unconstrained.sample())
+print(dist_unconstrained.event_shape)
 
-    def forward(self, x):
-        original_event = self.original_dist.event_shape
-        fixed_event = self.fixed_dist.event_shape
-        # Check if original is wrong (3) and fixed is correct (2)
-        correct_original = (original_event == torch.Size([3]))
-        correct_fixed = (fixed_event == torch.Size([2]))
-        result = torch.tensor([correct_original and correct_fixed], dtype=torch.bool)
-        return result
+StickBreakingTransform()
+tensor([ 0.3628, -1.9573])
+torch.Size([3])
 
-def my_model_function():
-    return MyModel()
+torch.Size([2])
 
-def GetInput():
-    return torch.rand(1, dtype=torch.float32)
+py
+class Transform(object):
+    def transform_event_shape(self, event_shape):
+        return event_shape
 
+class StickBreakingTransform(Transform):
+    def transform_event_shape(self, event_shape):
+        return torch.Size((event_shape[0] - 1,))

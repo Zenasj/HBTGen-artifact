@@ -1,37 +1,55 @@
-# tf.random.uniform((B, 28, 28, 1), dtype=tf.float32)
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
+
+for k, v in logs.items():
+      send[k] = v
+
+for k, v in logs.items():
+            if isinstance(v, (np.ndarray, np.generic)):
+                send[k] = v.item()
+            else:
+                send[k] = v
+
 import tensorflow as tf
 import numpy as np
+import tensorflow.keras as keras
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.datasets import fashion_mnist
+from tensorflow.keras.layers import Dense, Conv2D, Flatten, Activation, BatchNormalization, MaxPool2D
+from tensorflow.keras.optimizers import Adam, Adadelta
+import tensorflow.keras.losses as losses
+import tensorflow.keras.metrics as metrics
+from tensorflow.keras.callbacks import RemoteMonitor, LambdaCallback, Callback
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define a small CNN similar to the example to match input shape (28,28,1)
-        self.conv = tf.keras.layers.Conv2D(64, (3, 3), activation='relu', input_shape=(28,28,1))
-        self.pool = tf.keras.layers.MaxPool2D((2, 2))
-        self.bn = tf.keras.layers.BatchNormalization()
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(256, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(10, activation='softmax')
-    
-    def call(self, inputs, training=False):
-        x = self.conv(inputs)
-        x = self.pool(x)
-        x = self.bn(x, training=training)
-        x = self.flatten(x)
-        x = self.dense1(x)
-        out = self.dense2(x)
-        return out
+(x_train, y_train), (x_test, y_test) = fashion_mnist.load_data()
 
-def my_model_function():
-    # Return an instance of MyModel
-    model = MyModel()
-    # This model is ready to be compiled with loss and optimizer externally.
-    return model
+x_train = x_train.reshape(-1,28,28,1) / 255
+x_test = x_test.reshape(-1,28,28,1) / 255
 
-def GetInput():
-    # Return a random tensor input matching the expected input shape: (batch_size, 28, 28, 1)
-    # Assume a batch size of 8 for demonstration
-    batch_size = 8
-    # Random float32 tensor normalized between 0 and 1, matching example preprocessing
-    return tf.random.uniform((batch_size, 28, 28, 1), dtype=tf.float32, minval=0, maxval=1)
+y_train = y_train.astype(np.int32)
+y_test = y_test.astype(np.int32)
 
+remote_cb = RemoteMonitor(root="http://localhost:9000", path="/publish/epoch/end/", send_as_json=True)
+
+model = Sequential()
+model.add(Conv2D(64,(3,3), activation="relu", input_shape=(28,28,1)))
+model.add(MaxPool2D((2,2)))
+model.add(BatchNormalization())
+model.add(Flatten())
+model.add(Dense(256, activation="relu"))
+model.add(Dense(10, activation="softmax"))
+
+model.compile(loss=losses.sparse_categorical_crossentropy, optimizer=Adam(),
+              metrics = ["accuracy"])
+
+model.fit(x_train[:3000], y_train[:3000], epochs=5, batch_size=64, callbacks=[remote_cb])
+
+for k, v in logs.items():
+      send[k] = v
+
+for k, v in logs.items():
+            if isinstance(v, (np.ndarray, np.generic)):
+                send[k] = v.item()
+            else:
+                send[k] = v

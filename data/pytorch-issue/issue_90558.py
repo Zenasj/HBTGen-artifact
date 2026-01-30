@@ -1,45 +1,51 @@
-# torch.rand(10, 10, 1, 1, dtype=torch.float32)
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-class BasicModule(nn.Module):
+import torch
+import torch.nn.functional as F
+import torch._dynamo
+
+torch._dynamo.config.print_graph_breaks = True
+
+class BasicModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.linear1 = nn.Linear(10, 10)
-        self.register_buffer('scale', torch.randn(1, 10))  # Non-trainable buffer for scale
+        self.linear1 = torch.nn.Linear(10, 10)
+        self.scale = torch.randn(1, 10)
 
     def forward(self, x):
         return F.relu(self.linear1(x)) * self.scale
 
-class SuperViaSuper(BasicModule):
+class SuperModule(BasicModule):
     def forward(self, x):
-        x = super().forward(x)
+        x = super().forward(x)           # <--------- Look at this line
         return x + 10.0
 
-class SuperViaDirect(BasicModule):
-    def forward(self, x):
-        x = BasicModule.forward(self, x)  # Direct parent method call (problematic in Dynamo)
-        return x + 10.0
+model = SuperModule().eval()
+opt_model = torch._dynamo.optimize("inductor")(model)
+x = torch.rand([10, 10])
+print(opt_model(x))
 
-class MyModel(nn.Module):
+import torch
+import torch.nn.functional as F
+import torch._dynamo
+
+torch._dynamo.config.print_graph_breaks = True
+
+class BasicModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.via_super = SuperViaSuper()
-        self.via_direct = SuperViaDirect()
+        self.linear1 = torch.nn.Linear(10, 10)
+        self.scale = torch.randn(1, 10)
 
     def forward(self, x):
-        # Reshape to 2D if input is 4D (B, C, H, W)
-        if x.dim() == 4:
-            x = x.view(x.size(0), -1)
-        out1 = self.via_super(x)
-        out2 = self.via_direct(x)
-        # Return boolean tensor indicating if outputs match
-        return torch.tensor([torch.allclose(out1, out2)], dtype=torch.bool)
+        return F.relu(self.linear1(x)) * self.scale
 
-def my_model_function():
-    return MyModel()
+class SuperModule(BasicModule):
+    def forward(self, x):
+        x = BasicModule.forward(self, x)     # <--------- Look at this line
+        return x + 10.0
 
-def GetInput():
-    return torch.rand(10, 10, 1, 1)  # Matches the input shape comment
-
+model = SuperModule().eval()
+opt_model = torch._dynamo.optimize("inductor")(model)
+x = torch.rand([10, 10])
+print(opt_model(x))

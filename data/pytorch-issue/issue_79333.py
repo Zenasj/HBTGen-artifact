@@ -1,25 +1,54 @@
-# torch.rand(8, 8, dtype=torch.float32)  # Input shape for minimal reproducible case
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    class ProblematicModel(nn.Module):  # Original model with problematic default arguments
-        def forward(self, x, y=None):
-            return x
+import torch
+from torch import nn
 
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.problematic = self.ProblematicModel()  # Encapsulate problematic model
-        # Workaround: Explicitly pass default arguments to avoid ONNX export issues
-        # Uses a dummy tensor as placeholder for optional parameters
+model = nn.MultiheadAttention(128, 8, 0.1)
+model = torch.jit.script(model)
+
+q = torch.randn(64, 1, 128)
+k = torch.randn(64, 1, 128)
+v = torch.randn(64, 1, 128)
+
+# prove that these are the correct shapes and args
+_ = model(q, k, v)
+
+torch.onnx.export(
+    model,
+    (q, k, v),
+    "test.onnx",
+)
+
+import torch
+from torch import nn
+
+
+class MyNetwork(nn.Module):
+    def forward(self, x, y=None):
+        return x
+
+
+model = MyNetwork()
+model = torch.jit.script(model)
+
+# this still works
+x = torch.randn(8, 8)
+y = model(x)
+
+# this doesn't
+torch.onnx.export(
+    model,
+    x,
+    "test.onnx",
+)
+
+class Wrapper(nn.Module):
+    def __init__(self, inner: MyNetwork):
+        super().__init__()
+        self.inner = inner
 
     def forward(self, x):
-        # Explicitly pass dummy tensor for optional argument 'y' to avoid ONNX export failure
-        return self.problematic(x, torch.empty(()))
+        return self.inner(x, torch.empty(()))
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    return torch.rand(8, 8)  # Matches input shape from minimal repro case
-
+model = Wrapper(MyNetwork())

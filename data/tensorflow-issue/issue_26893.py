@@ -1,63 +1,33 @@
-# tf.random.uniform((128, 96, 96, 3), dtype=tf.float32)
 import tensorflow as tf
+from tensorflow import keras
 
-# This code is inferred from the provided issue.
-# The original model is a SEResNext variant with ~27M parameters,
-# input images are likely 96x96x3 as seen in logs (batch=128).
-# The goal was TPU compilation, but ran out of "VMEM" which is an XLA memory space.
-# Here, we reconstruct a minimal MyModel class capturing the described architecture.
+def seresnext_model(input_shape):
+  base_model = SEResNextImageNet(input_shape,include_top = False)
+  x = base_model.output
+  out1 = GlobalMaxPooling2D()(x)
+  out2 = GlobalAveragePooling2D()(x)
+  out3 = Flatten()(x)
+  out = concatenate([out1,out2,out3])
+  out = Dropout(0.3)(out)
+  out = Dense(256,activation = 'relu')(out)
+  out = Dropout(0.3)(out)
+  X = Dense(1, activation='sigmoid', kernel_initializer='glorot_uniform', bias_initializer='zeros')(out)
+  model =  Model(inputs=base_model.input, outputs=X)
+  return model
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Since SEResNextImageNet is undefined, we use a placeholder backbone.
-        # Assumption: input shape (96, 96, 3), output tensor shape inferred to be (24,24,256)
-        # from fusion labels in logs (128,24,24,256). Thus spatial downsampling of 4 folds.
-        # For demonstration, use a few Conv2D layers to produce tensor of that shape.
-        
-        self.backbone = tf.keras.Sequential([
-            tf.keras.layers.Conv2D(64, 3, strides=2, padding='same', activation='relu'),
-            tf.keras.layers.Conv2D(128, 3, strides=2, padding='same', activation='relu'),
-            tf.keras.layers.Conv2D(256, 3, strides=1, padding='same', activation='relu'),
-        ])
-        # Output shape after backbone ~ (batch, 24, 24, 256)
-        
-        # Heads from the backbone output
-        self.global_max_pool = tf.keras.layers.GlobalMaxPooling2D()
-        self.global_avg_pool = tf.keras.layers.GlobalAveragePooling2D()
-        self.flatten = tf.keras.layers.Flatten()
-        
-        # Combine the three pooled outputs
-        self.concat = tf.keras.layers.Concatenate()
-        self.dropout1 = tf.keras.layers.Dropout(0.3)
-        self.dense1 = tf.keras.layers.Dense(256, activation='relu')
-        self.dropout2 = tf.keras.layers.Dropout(0.3)
-        self.final_dense = tf.keras.layers.Dense(1, activation='sigmoid',
-                                                 kernel_initializer='glorot_uniform',
-                                                 bias_initializer='zeros')
-        
-    def call(self, inputs, training=False):
-        x = self.backbone(inputs)
 
-        # Three different pooling/flatten operations on the same tensor
-        out1 = self.global_max_pool(x)
-        out2 = self.global_avg_pool(x)
-        out3 = self.flatten(x)
-        
-        out = self.concat([out1, out2, out3])
-        out = self.dropout1(out, training=training)
-        out = self.dense1(out)
-        out = self.dropout2(out, training=training)
-        out = self.final_dense(out)
-        
-        return out
-
-def my_model_function():
-    # Return an instance of the model.
-    return MyModel()
-
-def GetInput():
-    # Return a random input tensor of batch size 128 and shape (96, 96, 3), dtype float32.
-    # This matches the expected input shape for MyModel.
-    return tf.random.uniform((128, 96, 96, 3), dtype=tf.float32)
-
+tf.logging.set_verbosity(tf.logging.INFO)
+tpu_model = tf.contrib.tpu.keras_to_tpu_model(
+    seresnext_model,
+    strategy=tf.contrib.tpu.TPUDistributionStrategy(
+        tf.contrib.cluster_resolver.TPUClusterResolver(tpu='grpc://' + os.environ['COLAB_TPU_ADDR'])
+    )
+)
+tpu_model.compile(optimizer=tf.train.AdamOptimizer(learning_rate = 3e-4), loss=tf.keras.losses.binary_crossentropy, metrics=['acc'])
+filepath = '/content/model.h5'
+#clr = CyclicLR(base_lr=2e-4, max_lr=0.006,
+#                     step_size=1070.)
+checkpoint = ModelCheckpoint(filepath,monitor='val_loss', verbose=1, 
+                             save_best_only=True)
+history = tpu_model.fit_generator(train_gen,steps_per_epoch = train_steps,validation_data = val_gen,validation_steps = val_steps,epochs = 60,callbacks=[checkpoint],
+                                  )

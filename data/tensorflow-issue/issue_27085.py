@@ -1,34 +1,31 @@
-# tf.random.uniform((B, 1), dtype=tf.float32) ← Here input shape is (?, 1) as per the original Input layer shape
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
+import numpy as np
 
-class MyDenseLayer(tf.keras.layers.Layer):
+class MyDense(tf.keras.layers.Layer):
     def __init__(self, units):
-        super(MyDenseLayer, self).__init__()
+        super(MyDense, self).__init__()
         self.units = units
-        # Initialize Dense layer here instead of build to properly track variables
+
+    def build(self, input_shape):
         self.dense = tf.keras.layers.Dense(units=self.units)
 
     def call(self, inputs, mask=None):
         return self.dense(inputs)
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Instead of wrapping a Layer inside the call, instantiate it as a sublayer to ensure variables are tracked and checkpointed.
-        self.my_dense = MyDenseLayer(units=1)
+inputs = tf.keras.layers.Input(shape=(1,), dtype=tf.float32)
+model = tf.keras.models.Model(inputs=inputs, outputs=MyDense(units=1)(inputs))
 
-    def call(self, inputs, training=False):
-        # Forward pass through the encapsulated MyDenseLayer
-        return self.my_dense(inputs)
+checkpoint = tf.train.Checkpoint(model=model)
+manager = tf.train.CheckpointManager(checkpoint, directory='./', max_to_keep=None)  # no checkpoint present
+status = checkpoint.restore(manager.latest_checkpoint)
 
-def my_model_function():
-    # Return an instance of MyModel
-    # Users will have a trackable model whose variables can be checkpointed/restored properly
-    return MyModel()
+inputs_placeholder = tf.placeholder(dtype=tf.float32, shape=[None, 1])
+called_model = model(inputs_placeholder)
 
-def GetInput():
-    # Generate a random input tensor matching the expected input shape
-    # Batch size is arbitrarily 4 here; height=1, width not applicable, channels=not used (1D tensor)
-    return tf.random.uniform((4, 1), dtype=tf.float32)
-
+with tf.Session() as session:
+    status.initialize_or_restore(session)
+    session.run(called_model, feed_dict={inputs_placeholder: np.array([[1.]])})

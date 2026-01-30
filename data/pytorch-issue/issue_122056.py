@@ -1,24 +1,8 @@
-# torch.rand(B, 3, 224, 224, dtype=torch.float32)
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
+mps = torch.device("mps")
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1)
-        self.pool = nn.MaxPool2d(2, 2)
-        self.fc1 = nn.Linear(16 * 112 * 112, 10)  # Adjusted for pooling
+import torch
+import numpy as np  # with numpy 1.26 for example
 
-    def forward(self, x):
-        x = self.pool(F.relu(self.conv1(x)))
-        x = x.view(-1, 16 * 112 * 112)
-        x = self.fc1(x)
-        return x
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
-
+x = np.arange(5)
+t = torch.tensor(x)

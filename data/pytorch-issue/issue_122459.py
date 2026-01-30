@@ -1,33 +1,29 @@
-# torch.rand(8, 32, dtype=torch.float32, requires_grad=True)
+test_fully_shard_training_compile.py
+
 import torch
-import torch.nn as nn
+from torch.distributed._composable.fsdp import fully_shard
+from torch.testing._internal.common_distributed import skip_if_lt_x_gpu
+from torch.testing._internal.common_fsdp import FSDPTest, MLP
+from torch.testing._internal.common_utils import run_tests
 
-# Mock the fully_shard function as it's part of PyTorch's internal FSDP
-def fully_shard(module, reshard_after_forward):
-    # Placeholder to mimic sharding configuration
-    pass
 
-class MyModel(nn.Module):
-    def __init__(self, lin_dim, device):
-        super().__init__()
-        self.in_proj = nn.Linear(lin_dim, lin_dim, device=device)
-        self.out_proj = nn.Linear(lin_dim, lin_dim, device=device)
+class TestFullyShard1DTrainingCore(FSDPTest):
+    @property
+    def world_size(self) -> int:
+        return min(4, torch.cuda.device_count())
 
-    def forward(self, x):
-        x = self.in_proj(x)
-        x = self.out_proj(x)
-        return x
+    @skip_if_lt_x_gpu(2)
+    def test_train_parity_multi_group(self):
+        torch.manual_seed(42)
+        lin_dim = 32
+        reshard_after_forward = 2
+        model = MLP(lin_dim, torch.device("cuda"))
+        fully_shard(model.in_proj, reshard_after_forward=reshard_after_forward)
+        fully_shard(model.out_proj, reshard_after_forward=reshard_after_forward)
+        fully_shard(model, reshard_after_forward=reshard_after_forward)
+        model = torch.compile(model)
+        inp = torch.randn((8, lin_dim), device=torch.device("cuda"))
+        model(inp)
 
-def my_model_function():
-    lin_dim = 32
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = MyModel(lin_dim, device)
-    reshard_after_forward = 2
-    fully_shard(model.in_proj, reshard_after_forward=reshard_after_forward)
-    fully_shard(model.out_proj, reshard_after_forward=reshard_after_forward)
-    fully_shard(model, reshard_after_forward=reshard_after_forward)
-    return model
-
-def GetInput():
-    return torch.randn((8, 32), device=torch.device("cuda" if torch.cuda.is_available() else "cpu"), requires_grad=True)
-
+if __name__ == "__main__":
+    run_tests()

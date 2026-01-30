@@ -1,38 +1,70 @@
-# tf.random.uniform((32, 224, 224, 3), dtype=tf.float32) ← inferred input shape and dtype based on model training setup
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
-import tensorflow as tf
+# Import Library
+import os
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.metrics import classification_report, confusion_matrix, ConfusionMatrixDisplay
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.applications import MobileNetV2
+from tensorflow.keras.models import Model
 from tensorflow.keras.layers import GlobalAveragePooling2D, Dense
+from tensorflow.keras.optimizers import Adam
+import seaborn as sns
+import random
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Base model: MobileNetV2 without top layers, pretrained on imagenet
-        self.base_model = MobileNetV2(include_top=False, weights='imagenet', input_shape=(224, 224, 3))
-        self.base_model.trainable = False
+# Load dan Preprocessing Dataset
+train_dir = 'C:\\KULIAH\\SEMESTER 6\\DEEP LEARNING\\PLANTVILLAGE_TOMATO\\train'
+val_dir = 'C:\\KULIAH\\SEMESTER 6\\DEEP LEARNING\\PLANTVILLAGE_TOMATO\\val'
 
-        self.global_avg_pool = GlobalAveragePooling2D()
-        self.dense1 = Dense(128, activation='relu')
-        # Output number of classes is unknown at code time; 
-        # Use placeholder 10 classes, user can adjust accordingly.
-        # This must match number of classes used during training.
-        self.pred_layer = Dense(10, activation='softmax')
+train_datagen = ImageDataGenerator(rescale=1./255)
+val_datagen = ImageDataGenerator(rescale=1./255)
 
-    def call(self, inputs, training=False):
-        x = self.base_model(inputs, training=False)  # keep base_model in inference mode
-        x = self.global_avg_pool(x)
-        x = self.dense1(x)
-        x = self.pred_layer(x)
-        return x
+train_data = train_datagen.flow_from_directory(
+    train_dir,
+    target_size=(224, 224),
+    batch_size=32,
+    class_mode='categorical'
+)
+val_data = val_datagen.flow_from_directory(
+    val_dir,
+    target_size=(224, 224),
+    batch_size=32,
+    class_mode='categorical',
+    shuffle=False
+)
 
-def my_model_function():
-    # Return an instance of MyModel.
-    # Note: The final Dense layer default is 10 classes -- adjust if known.
-    # Alternatively, allow passing num_classes if dynamic construction needed.
-    return MyModel()
+# Bangun Model CNN dengan MobileNetV2
+base_model = MobileNetV2(include_top=False, weights='imagenet', input_shape=(224, 224, 3))
+base_model.trainable = False
 
-def GetInput():
-    # Return a random tensor input matching input expected by MyModel.
-    # Batch size of 32 to match original training batch size.
-    return tf.random.uniform((32, 224, 224, 3), dtype=tf.float32)
+x = GlobalAveragePooling2D()(base_model.output)
+x = Dense(128, activation='relu')(x)
+predictions = Dense(train_data.num_classes, activation='softmax')(x)
 
+model = Model(inputs=base_model.input, outputs=predictions)
+model.compile(optimizer=Adam(), loss='categorical_crossentropy', metrics=['accuracy'])
+model.summary()
+
+# Latih Model
+history = model.fit(train_data, validation_data=val_data, epochs=10)
+
+# Visualisasi Akurasi dan Loss
+plt.figure(figsize=(12, 5))
+plt.subplot(1, 2, 1)
+plt.plot(history.history['accuracy'], label='Akurasi Latih')
+plt.plot(history.history['val_accuracy'], label='Akurasi Validasi')
+plt.title('Grafik Akurasi')
+plt.legend()
+
+plt.subplot(1, 2, 2)
+plt.plot(history.history['loss'], label='Loss Latih')
+plt.plot(history.history['val_loss'], label='Loss Validasi')
+plt.title('Grafik Loss')
+plt.legend()
+plt.show()
+
+# Simpan Model
+model.save("model_cnn_tomat.h5")

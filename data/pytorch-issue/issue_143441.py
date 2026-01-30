@@ -1,19 +1,22 @@
-# torch.rand(B, 3, dtype=torch.float)
-import torch
+import torch.nn as nn
+
 from torch import nn
 
-class MyModel(nn.Module):
+
+class SimpleModel(nn.Module):
     def __init__(self):
         super().__init__()
-        self.net = nn.Linear(3, 4)  # Matches SimpleModel's structure from the example
-    
-    def forward(self, x):
-        return self.net(x)
+        self.net = nn.Linear(3, 4)
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    # Returns a random tensor matching the input expected by MyModel's Linear layer (3 features)
-    return torch.rand(2, 3, dtype=torch.float)
+model = SimpleModel()
+model.set_submodule('0', nn.Conv2d(2, 3, 3))
+# this will work, despite there being no module named '0' in model
+assert isinstance(getattr(model, '0'), nn.Conv2d)
 
+
+try:
+    model.set_submodule('foo.bar', nn.Conv2d(2, 3, 3))
+except AttributeError as e:
+    message = str(e)
+    assert message == 'SimpleModel has no attribute `foo`'

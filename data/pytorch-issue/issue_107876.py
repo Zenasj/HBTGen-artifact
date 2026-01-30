@@ -1,27 +1,115 @@
-# torch.rand(32, 100, 1000, dtype=torch.float32)
+import os
+import random
+
+import numpy as np
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.first_layer = nn.Linear(1000, 1000)
-        self.second_layer = nn.Linear(100, 100)
-        # Initialize weights to 1.0 as per the issue's setup
-        self.first_layer.weight.data.fill_(1.0)
-        self.second_layer.weight.data.fill_(1.0)
+def set_seed(seed: int):
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    os.environ["PYTHONHASHSEED"] = str(seed)
 
-    def forward(self, x):
-        x = self.first_layer(x)
-        x = nn.functional.gelu(x)
-        x = x.transpose(-1, -2)
-        x = self.second_layer(x)
-        x = x.transpose(-1, -2)
-        return x
 
-def my_model_function():
-    return MyModel()
+set_seed(42)
 
-def GetInput():
-    return torch.rand(32, 100, 1000, dtype=torch.float32)
+test_in = torch.ones(32, 100, 1000)
+test_target = torch.ones(32, 100, 1000)
 
+first_layer = nn.Linear(1000, 1000)
+second_layer = nn.Linear(100, 100)
+
+with torch.no_grad():
+    first_layer.weight = nn.Parameter(torch.ones_like(first_layer.weight))
+    second_layer.weight = nn.Parameter(torch.ones_like(second_layer.weight))
+
+# COMMENT IN FOR REPRODUCIBLE GRADIENTS
+# test_in = test_in.cuda()
+# test_target = test_target.cuda()
+# first_layer = first_layer.cuda()
+# second_layer = second_layer.cuda()
+
+loss = torch.mean(
+    (
+        second_layer(
+            nn.functional.gelu(first_layer(test_in)).transpose(-1, -2)
+        ).transpose(-1, -2)
+        - test_target
+    )
+    ** 2.0
+)
+loss.backward()
+
+print(first_layer.weight.grad)
+
+# First run
+tensor([[2.1599e+33, 2.1599e+33, 2.1599e+33,  ..., 2.1599e+33, 2.1599e+33,
+         2.1599e+33],
+        [3.2001e+06, 3.2001e+06, 3.2001e+06,  ..., 3.2001e+06, 3.2001e+06,
+         3.2001e+06],
+        [3.2000e+06, 3.2000e+06, 3.2000e+06,  ..., 3.2000e+06, 3.2000e+06,
+         3.2000e+06],
+        ...,
+        [3.2000e+06, 3.2000e+06, 3.2000e+06,  ..., 3.2000e+06, 3.2000e+06,
+         3.2000e+06],
+        [3.2000e+06, 3.2000e+06, 3.2000e+06,  ..., 3.2000e+06, 3.2000e+06,
+         3.2000e+06],
+        [3.2000e+06, 3.2000e+06, 3.2000e+06,  ..., 3.2000e+06, 3.2000e+06,
+         3.2000e+06]])
+
+# Second run
+tensor([[2.0544e+37, 2.0544e+37, 2.0544e+37,  ..., 2.0544e+37, 2.0544e+37,
+         2.0544e+37],
+        [2.0000e+02, 2.0000e+02, 2.0000e+02,  ..., 2.0000e+02, 2.0000e+02,
+         2.0000e+02],
+        [2.0000e+02, 2.0000e+02, 2.0000e+02,  ..., 2.0000e+02, 2.0000e+02,
+         2.0000e+02],
+        ...,
+        [2.0000e+02, 2.0000e+02, 2.0000e+02,  ..., 2.0000e+02, 2.0000e+02,
+         2.0000e+02],
+        [2.0000e+02, 2.0000e+02, 2.0000e+02,  ..., 2.0000e+02, 2.0000e+02,
+         2.0000e+02],
+        [2.0000e+02, 2.0000e+02, 2.0000e+02,  ..., 2.0000e+02, 2.0000e+02,
+         2.0000e+02]])
+
+# Third run
+tensor([[199.4996, 199.4996, 199.4996,  ..., 199.4996, 199.4996, 199.4996],
+        [200.0014, 200.0014, 200.0014,  ..., 200.0014, 200.0014, 200.0014],
+        [199.9969, 199.9969, 199.9969,  ..., 199.9969, 199.9969, 199.9969],
+        ...,
+        [200.0000, 200.0000, 200.0000,  ..., 200.0000, 200.0000, 200.0000],
+        [199.9984, 199.9984, 199.9984,  ..., 199.9984, 199.9984, 199.9984],
+        [199.9980, 199.9980, 199.9980,  ..., 199.9980, 199.9980, 199.9980]])
+
+# Fourth run
+tensor([[2.0544e+37, 2.0544e+37, 2.0544e+37,  ..., 2.0544e+37, 2.0544e+37,
+         2.0544e+37],
+        [3.2001e+06, 3.2001e+06, 3.2001e+06,  ..., 3.2001e+06, 3.2001e+06,
+         3.2001e+06],
+        [3.2000e+06, 3.2000e+06, 3.2000e+06,  ..., 3.2000e+06, 3.2000e+06,
+         3.2000e+06],
+        ...,
+        [3.2000e+06, 3.2000e+06, 3.2000e+06,  ..., 3.2000e+06, 3.2000e+06,
+         3.2000e+06],
+        [3.2000e+06, 3.2000e+06, 3.2000e+06,  ..., 3.2000e+06, 3.2000e+06,
+         3.2000e+06],
+        [3.2000e+06, 3.2000e+06, 3.2000e+06,  ..., 3.2000e+06, 3.2000e+06,
+         3.2000e+06]])
+
+tensor([[19999.9629, 19999.9629, 19999.9629,  ..., 19999.9629, 19999.9629,
+         19999.9629],
+        [20000.0469, 20000.0469, 20000.0469,  ..., 20000.0469, 20000.0469,
+         20000.0469],
+        [19999.8125, 19999.8125, 19999.8125,  ..., 19999.8125, 19999.8125,
+         19999.8125],
+        ...,
+        [20000.0020, 20000.0020, 20000.0020,  ..., 20000.0020, 20000.0020,
+         20000.0020],
+        [19999.9512, 19999.9512, 19999.9512,  ..., 19999.9512, 19999.9512,
+         19999.9512],
+        [19999.8398, 19999.8398, 19999.8398,  ..., 19999.8398, 19999.8398,
+         19999.8398]], device='cuda:0')

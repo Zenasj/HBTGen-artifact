@@ -1,28 +1,50 @@
-# torch.rand(1, 3, 1024, 1024, dtype=torch.float32)  # Input shape inferred from trace call
+import os
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Simulated FaceBoxes model structure based on context (actual layers may differ)
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, padding=1)
-        self.norm = nn.LayerNorm([64, 1024, 1024])  # Likely problematic layer per issue context
-        self.relu = nn.ReLU(inplace=True)  # In-place operations may trigger aliasing issues
-        # Note: Actual FaceBoxes has more layers, but simplified for demonstration
+from models.faceboxes import FaceBoxes
 
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.norm(x)
-        x = self.relu(x)
-        # Simulated partial forward pass to match error context
-        return x
+def check_keys(model, pretrained_state_dict):
+    ckpt_keys = set(pretrained_state_dict.keys())
+    model_keys = set(model.state_dict().keys())
+    used_pretrained_keys = model_keys & ckpt_keys
+    unused_pretrained_keys = ckpt_keys - model_keys
+    missing_keys = model_keys - ckpt_keys
+    print('Missing keys:{}'.format(len(missing_keys)))
+    print('Unused checkpoint keys:{}'.format(len(unused_pretrained_keys)))
+    print('Used keys:{}'.format(len(used_pretrained_keys)))
+    assert len(used_pretrained_keys) > 0, 'load NONE from pretrained checkpoint'
+    return True
 
-def my_model_function():
-    # Initialize model with random weights (original uses pretrained weights)
-    return MyModel()
 
-def GetInput():
-    # Generate input matching expected dimensions (1, 3, 1024, 1024)
-    return torch.rand(1, 3, 1024, 1024, dtype=torch.float32)
+def remove_prefix(state_dict, prefix):
+    ''' Old style model is stored with all names of parameters sharing common prefix 'module.' '''
+    print('remove prefix \'{}\''.format(prefix))
+    f = lambda x: x.split(prefix, 1)[-1] if x.startswith(prefix) else x
+    return {f(key): value for key, value in state_dict.items()}
 
+
+def load_model(model, pretrained_path, load_to_cpu):
+    print('Loading pretrained model from {}'.format(pretrained_path))
+    if load_to_cpu:
+        pretrained_dict = torch.load(pretrained_path, map_location=lambda storage, loc: storage)
+    else:
+        device = torch.cuda.current_device()
+        pretrained_dict = torch.load(pretrained_path, map_location=lambda storage, loc: storage.cuda(device))
+    if "state_dict" in pretrained_dict.keys():
+        pretrained_dict = remove_prefix(pretrained_dict['state_dict'], 'module.')
+    else:
+        pretrained_dict = remove_prefix(pretrained_dict, 'module.')
+    check_keys(model, pretrained_dict)
+    model.load_state_dict(pretrained_dict, strict=False)
+    return model
+
+
+def load():
+    net = FaceBoxes(phase='test', size=None, num_classes=2)
+    print('load model...')
+    net = load_model(net, 'weights/FaceBoxes.pth', True)
+    traced_script_module = torch.jit.trace(net, torch.rand(1, 3, 1024, 1024))
+    traced_script_module.save("faceboxes.pt")
+
+if __name__ == '__main__':
+    load()

@@ -1,45 +1,24 @@
-# tf.random.uniform((B, 512, 512, 1), dtype=tf.float32) ← Input shape inferred from Keras Input(shape=(512, 512, 1))
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
+from tensorflow.python.compiler.tensorrt import trt_convert as trt
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define layers consistent with the issue's example model
-        # Conv2D with 64 filters, 3x3 kernel, no activation, no bias, padding='same'
-        self.conv2d = tf.keras.layers.Conv2D(
-            filters=64,
-            kernel_size=(3, 3),
-            activation=None,
-            padding='same',
-            use_bias=False,
-            name="conv2d"
-        )
-        # Conv2DTranspose with 32 filters, 3x3 kernel, strides=2, padding='same', ReLU activation
-        self.conv2d_transpose = tf.keras.layers.Conv2DTranspose(
-            filters=32,
-            kernel_size=(3, 3),
-            strides=(2, 2),
-            padding='same',
-            activation=tf.nn.relu,
-            name="conv2d_transpose"
-        )
+inputs = tf.keras.Input(shape=(512, 512, 1))
+x = tf.keras.layers.Conv2D(filters=64, kernel_size=(3, 3),
+                           activation=None, padding='same', use_bias=False)(inputs)
+output = tf.keras.layers.Conv2DTranspose(filters=32, kernel_size=(3, 3),
+                                         strides=(2, 2), padding='same',
+                                         activation=tf.nn.relu)(x)
+model = tf.keras.Model(inputs=inputs, outputs=output)
 
-    def call(self, inputs, training=False):
-        # Forward pass matching the example: Input → Conv2D → Conv2DTranspose
-        x = self.conv2d(inputs)
-        output = self.conv2d_transpose(x)
-        return output
+model.save_weights("results/checkpoint")
+tf.keras.models.save_model(model, "results/SavedModel", save_format="tf",
+                           overwrite=True, include_optimizer=False)
+print("Model saved to SavedModel")
 
-def my_model_function():
-    # Return an instance of MyModel
-    model = MyModel()
-    # Weights are not initialized from checkpoint here, user can load from "results/checkpoint" if needed.
-    return model
-
-def GetInput():
-    # Return random input tensor matching the Keras Input shape (batch size 1, 512, 512, 1)
-    # Batch size is arbitrary, set to 1 for convenience
-    input_tensor = tf.random.uniform(shape=(1, 512, 512, 1), dtype=tf.float32)
-    return input_tensor
-
+converter = trt.TrtGraphConverterV2(input_saved_model_dir="results/SavedModel")
+converter.convert()
+converter.save("results/trt_model")
+print("Model exported to TRT")

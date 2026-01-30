@@ -1,17 +1,7 @@
-# torch.rand(B, 3, 3, dtype=torch.float32)
+py
 import torch
-from torch import nn
-
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Apply index_fill on dimension 1 with indices [0, 2] and value -1.0
-        return x.index_fill(1, torch.tensor([0, 2], device=x.device), -1.0)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Generate a random input tensor matching the expected shape (B, 3, 3)
-    B = 4  # Example batch size, can be adjusted
-    return torch.randn(B, 3, 3, dtype=torch.float32)
-
+from functorch import vmap
+x = torch.randn(4, 3, 3)
+index = torch.tensor([0, 2])
+z = vmap(torch.index_fill, (0, None, None, None))(x, 1, index, -1)
+#  UserWarning: There is a performance drop because we have not yet implemented the batching rule

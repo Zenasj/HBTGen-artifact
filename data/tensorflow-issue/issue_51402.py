@@ -1,31 +1,35 @@
-# tf.random.uniform((1, 2), dtype=tf.string) ← Input shape is (batch=1, length=2) with dtype string
+from tensorflow import keras
 
 import tensorflow as tf
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # The core issue is that tf.gather in TFLite does not support inputs with more than 1 dimension.
-        # We reshape the input tensor from shape (1, 2) to (2,) before applying gather.
-        # This matches the workaround described in the issue conversation.
-        self.gather_indices = tf.constant([0])
+names = tf.keras.Input(shape=(2,), dtype=tf.string)
+model = tf.keras.Model(
+    inputs=names,
+    outputs=tf.gather(names, tf.constant([0])),
+)
 
-    def call(self, inputs):
-        # inputs shape: (batch=1, 2)
-        # reshape to 1D [2] to satisfy TFLite gather requirements.
-        reshaped = tf.reshape(inputs, shape=[2])
-        gathered = tf.gather(reshaped, self.gather_indices)
-        return gathered
+model.save('./export')
+converter = tf.lite.TFLiteConverter.from_saved_model('./export')
+tflite_model = converter.convert()
+with open('model.tflite', 'wb') as f:
+    f.write(tflite_model)
 
+interpreter = tf.lite.Interpreter(model_path='model.tflite')
+interpreter.allocate_tensors()
+input_details = interpreter.get_input_details()
+output_details = interpreter.get_output_details()
+interpreter.set_tensor(input_details[0]['index'], np.array([[1, 2]], dtype=np.string))
+interpreter.invoke()
+interpreter.get_tensor(output_details[0]['index'])
 
-def my_model_function():
-    # Create and return an instance of MyModel
-    return MyModel()
+import tensorflow as tf
+import numpy as np
 
+names = tf.keras.Input(shape=(2,), dtype=tf.string)
+model = tf.keras.Model(
+    inputs=names,
+    outputs=tf.gather(names, tf.constant([0])),
+)
 
-def GetInput():
-    # Return a sample input tensor compatible with the model:
-    # shape (1, 2)  - batch of one element with two strings
-    sample_strings = tf.constant([[b'hello', b'world']], dtype=tf.string)
-    return sample_strings
-
+model(np.array([1, 2], dtype=np.str))

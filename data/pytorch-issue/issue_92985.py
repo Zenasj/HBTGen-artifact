@@ -1,20 +1,22 @@
-# torch.rand(2, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
+import torch
+
+input = torch.rand([2], dtype=torch.float32, requires_grad=True)
+
+def func(input):
+    res = torch.amax(input)
+    return res
+
+# torch.autograd.functional.jacobian(func, (input, ), strategy='forward-mode', vectorize=True)
+# RuntimeError: Could not allocate memory to change Tensor SizesAndStrides!
+
+print(torch.func.jacfwd(func)(input))
 
 import torch
-from torch import nn
+from torch._vmap_internals import vmap
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        return torch.amax(x)
+input = torch.randn(2, 2)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+def fn(x):
+    return x.sum(())
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand([2], dtype=torch.float32, requires_grad=True)
-
+o = vmap(fn)(input)

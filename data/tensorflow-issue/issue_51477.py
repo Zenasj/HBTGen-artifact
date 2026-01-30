@@ -1,33 +1,42 @@
-# tf.random.uniform((B, 2), dtype=tf.string) ← Input shape inferred from model Input(shape=(2,), dtype=tf.string)
-
+import numpy as np
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Initialize a lookup table mapping strings ["a", "b"] to int64 numbers [1, 2]
+class Lookup(tf.keras.layers.Layer):
+    def build(self, input_shape):
         names = tf.constant(["a", "b"])
         numbers = tf.constant([1, 2], dtype=tf.int64)
-        self.table = tf.lookup.StaticHashTable(
-            tf.lookup.KeyValueTensorInitializer(names, numbers),
-            default_value=-1,
-        )
         
-    def call(self, inputs):
-        # Flatten inputs to 1D tensor of strings and lookup indices in the table
-        flat_inputs = tf.reshape(inputs, [-1])
-        return self.table.lookup(flat_inputs)
+        self.table = tf.lookup.StaticHashTable(tf.lookup.KeyValueTensorInitializer(names, numbers), -1)
+        self.built = True
+        
+    def call(self, names):
+        return self.table.lookup(tf.reshape(names, [-1]))
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+with tf.control_dependencies([tf.compat.v1.tables_initializer()]):  
+    names = tf.keras.Input(shape=(2,), dtype=tf.string, name='names')
+    model_outputs = Lookup()(names)
+    model = tf.keras.Model(
+        inputs=[names],
+        outputs=model_outputs,
+    )
+    
+model.save('./export')
 
-def GetInput():
-    # Return a random input consistent with MyModel's input: shape (batch_size, 2) strings "a" or "b"
-    # To simulate typical input, produce batch size 3 with random choice of "a" and "b"
-    batch_size = 3
-    import numpy as np
-    # Generate random choices from ["a", "b"] of shape (batch_size, 2)
-    choices = np.random.choice(["a", "b"], size=(batch_size, 2))
-    return tf.constant(choices, dtype=tf.string)
+converter = tf.lite.TFLiteConverter.from_saved_model('./export')
+tflite_model = converter.convert()
+with open('simple.tflite', 'wb') as f:
+    f.write(tflite_model)
 
+interpreter = tf.lite.Interpreter(model_path='simple.tflite')
+input_details = interpreter.get_input_details()
+output_details = interpreter.get_output_details()
+interpreter.allocate_tensors()
+interpreter.set_tensor(input_details[0]['index'], np.array([['a', 'b']]))
+interpreter.invoke()
+output_data = interpreter.get_tensor(output_details[0]['index'])
+print('output', output_data)
+
+-1
+-1

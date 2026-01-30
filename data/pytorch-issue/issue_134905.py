@@ -1,47 +1,21 @@
-# Input: (A: torch.rand(3,3), B: torch.rand(3)), e.g., (torch.rand(3,3), torch.rand(3))
-import torch
-import torch.nn as nn
+import torch as t
+import numpy as np
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, inputs):
-        A, B = inputs
-        # Compute 32-bit solution
-        A32 = A.float()
-        B32 = B.float()
-        try:
-            sol32 = torch.linalg.solve(A32, B32)
-        except:
-            sol32 = torch.full_like(B32, float('nan'))
-        
-        # Compute 64-bit solution
-        A64 = A.double()
-        B64 = B.double()
-        try:
-            sol64 = torch.linalg.solve(A64, B64)
-        except:
-            sol64 = torch.full_like(B64, float('nan'))
-        
-        # Compute residuals
-        residual32 = torch.sum((A32 @ sol32 - B32)**2)
-        residual64 = torch.sum((A64 @ sol64 - B64)**2)
-        
-        # Return boolean indicating if 32-bit residual is orders of magnitude worse than 64-bit
-        return torch.tensor([residual32 > 1e6 * residual64], dtype=torch.bool)
+Xt = t.linalg.solve(t.Tensor(A),t.Tensor(B))
+print('torch ',t.__version__,Xt.min(),Xt.max(),(t.Tensor(A) @ Xt - t.Tensor(B)).pow(2).sum())
+Xt32 = t.linalg.solve(t.Tensor(A).to(t.float32),t.Tensor(B).to(t.float32))
+print('torch 32',t.__version__,Xt32.min(),Xt32.max(),(t.Tensor(A).to(t.float32) @ Xt32 - t.Tensor(B).to(t.float32)).pow(2).sum())
+Xt64 = t.linalg.solve(t.Tensor(A).to(t.float64),t.Tensor(B).to(t.float64))
+print('torch 64',t.__version__,Xt64.min(),Xt64.max(),(t.Tensor(A).to(t.float64) @ Xt64 - t.Tensor(B).to(t.float64)).pow(2).sum())
 
-def my_model_function():
-    return MyModel()
+Xn = np.linalg.solve(np.array(A),np.array(B))
+print('numpy',np.__version__,Xn.min(),Xn.max(),((np.array(A) @ Xn - np.array(B))**2).sum())
+Xn32 = np.linalg.solve(np.array(A,dtype=np.float32),np.array(B,dtype=np.float32))
+print('numpy 32',np.__version__,Xn32.min(),Xn32.max(),((np.array(A,dtype=np.float32) @ Xn32 - np.array(B,dtype=np.float32))**2).sum())
+Xn64 = np.linalg.solve(np.array(A,dtype=np.float64),np.array(B,dtype=np.float64))
+print('numpy 64',np.__version__,Xn64.min(),Xn64.max(),((np.array(A,dtype=np.float64) @ Xn64 - np.array(B,dtype=np.float64))**2).sum())
 
-def GetInput():
-    # Ill-conditioned matrix example (condition number ~1e8)
-    epsilon = 1e-8
-    A = torch.tensor([
-        [1.0, 1.0, 1.0],
-        [1.0, 1.0 + epsilon, 1.0],
-        [1.0, 1.0, 1.0 + epsilon]
-    ], dtype=torch.float64)
-    B = torch.tensor([3.0, 3.0 + epsilon, 3.0 + epsilon], dtype=torch.float64)
-    return (A, B)
-
+Xt32cu = t.linalg.solve(t.Tensor(A).to(t.float32).cuda(),t.Tensor(B).to(t.float32).cuda())
+print('torch 32 cuda',t.__version__,Xt32cu.min(),Xt32cu.max(),(t.Tensor(A).to(t.float32).cuda() @ Xt32cu - t.Tensor(B).to(t.float32).cuda()).pow(2).sum())
+Xt64cu = t.linalg.solve(t.Tensor(A).to(t.float64).cuda(),t.Tensor(B).to(t.float64).cuda())
+print('torch 64 cuda',t.__version__,Xt64cu.min(),Xt64cu.max(),(t.Tensor(A).to(t.float64).cuda() @ Xt64cu - t.Tensor(B).to(t.float64).cuda()).pow(2).sum())

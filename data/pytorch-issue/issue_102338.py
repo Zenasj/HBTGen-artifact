@@ -1,15 +1,18 @@
-# torch.rand(10, 10, dtype=torch.float32)  # Inferred input shape
+import torch.nn as nn
 
 import torch
-import torch.nn as nn
+import torch._dynamo
+import logging
 import torch.nn.functional as F
 
-class MyModel(nn.Module):
+torch._logging.set_logs(dynamo=logging.DEBUG)
+
+class MyModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.layer0 = nn.Linear(10, 10)
-        self.layer1 = nn.Linear(10, 10)
-        self.layer2 = nn.Linear(10, 10)
+        self.layer0 = torch.nn.Linear(10, 10)
+        self.layer1 = torch.nn.Linear(10, 10)
+        self.layer2 = torch.nn.Linear(10, 10)
 
     @property
     def encoder_layers(self):
@@ -24,11 +27,11 @@ class MyModel(nn.Module):
                 output = F.relu(output)
         return output
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(10, 10)
+x = torch.randn(10, 10)
 
+m = MyModule()
+print(m(x))
+
+opt_m = torch.compile(backend="eager")(m)
+print(opt_m(x))

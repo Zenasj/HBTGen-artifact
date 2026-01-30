@@ -1,25 +1,30 @@
-# torch.rand(1, dtype=torch.float32)  # Dummy input; model uses stored nested tensor
+layout = torch.jagged
+g0 = torch.zeros(1)
+g1 = torch.zeros(2)
+g = torch.nested.nested_tensor([g0, g1], layout=layout)
+torch.save(g, "file.p")
+
 import torch
-from torch import nn
+from torch.nested._internal.nested_tensor import nested_view_from_values_offsets, _nt_view_dummy
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Create nested tensor with layout=torch.jagged to trigger serialization issue
-        g0 = torch.zeros(1)
-        g1 = torch.zeros(2)
-        self.nt = torch.nested.nested_tensor([g0, g1], layout=torch.jagged)
-        # Access .shape to cache the problematic PyCapsule (as per repro steps)
-        self.nt.shape
+def fn(values, offsets):
+    return nested_view_from_values_offsets(values, offsets)
 
-    def forward(self, x):
-        # Forward pass returns the nested tensor (x is unused but required for input compatibility)
-        return self.nt
+fn_t = torch.fx.symbolic_trace(fn)
 
-def my_model_function():
-    return MyModel()
+# this is needed to call sym_sizes_capsule, presumably:
+# https://github.com/pytorch/pytorch/blob/d95a019704f526ee985cfe8d68261d34ddaf0e9d/torch/csrc/PyInterpreter.cpp#L812-L813
+_nt_view_dummy().size()
 
-def GetInput():
-    # Return dummy input compatible with MyModel's forward (any tensor works here)
-    return torch.rand(1)
+torch.save(fn_t, "/tmp/py_capsule_repro.pt")
 
+import torch
+
+layout = torch.jagged
+g0 = torch.zeros(1)
+g1 = torch.zeros(2)
+g = torch.nested.nested_tensor([g0, g1], layout=layout)
+# accessing size caches a PyCapsule on the object
+g.shape
+# TypeError: cannot pickle 'PyCapsule' object
+torch.save(g, "file.p")

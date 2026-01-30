@@ -1,79 +1,104 @@
-# torch.rand(1, dtype=torch.float32, device='cuda')
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.register_buffer('document_id', torch.zeros(32768, dtype=torch.int, device='cuda'))
-        self.document_id[:4096] = 0
-        for i in range(4096, 32768, 2048):
-            self.document_id[i:i+2048] = i // 2048
-        self.B = 4
-        self.H = 1
-        self.M = 32768
-        self.N = 32768
-        self.KV_BLOCK_SIZE = 128
-        self.Q_BLOCK_SIZE = 128
+import torch
+import torch.nn.functional as F
 
-    @staticmethod
-    def broadcast_to_dim(x, dim):
-        while x.dim() < dim:
-            x = x.unsqueeze(0)
-        return x
+import torch
+torch.set_default_device('cuda')
 
-    def _convert_mask_to_block_mask(self, mask):
-        assert mask.dtype == torch.bool
-        mask = self.broadcast_to_dim(mask, 4)
-        B, H, Q, KV = mask.shape
-        assert Q % self.Q_BLOCK_SIZE == 0
-        assert KV % self.KV_BLOCK_SIZE == 0
-        mask = mask.view(
-            B, H, Q // self.Q_BLOCK_SIZE, self.Q_BLOCK_SIZE,
-            KV // self.KV_BLOCK_SIZE, self.KV_BLOCK_SIZE
-        )
-        mask = mask.permute(0, 1, 2, 4, 3, 5)
-        mask = mask.sum(dim=[-2, -1]) > 0
-        return mask
+from functools import wraps
 
-    def _create_block_mask_from_mask(self, block_mask):
-        device = block_mask.device
-        block_mask = block_mask.to(dtype=torch.int8)
-        kv_num_blocks = block_mask.sum(dim=3)
-        kv_indices = torch.argsort(
-            block_mask, dim=3, descending=True, stable=True
-        )
-        q_num_blocks = block_mask.sum(dim=2)
-        q_indices = torch.argsort(
-            block_mask, dim=2, descending=True, stable=True
-        ).permute(0, 1, 3, 2)
-        return (
-            kv_num_blocks.to(torch.int32).contiguous(),
-            kv_indices.to(torch.int32).contiguous(),
-            q_num_blocks.to(torch.int32).contiguous(),
-            q_indices.to(torch.int32).contiguous(),
-            torch.tensor([self.KV_BLOCK_SIZE], dtype=torch.int32, device=device),
-            torch.tensor([self.Q_BLOCK_SIZE], dtype=torch.int32, device=device),
-        )
+# Example usage
+_DEFAULT_SPARSE_BLOCK_SIZE = 128
 
-    def forward(self, x):
-        device = x.device
-        qk = torch.zeros(1, 1, self.M, self.N, device=device)
-        q_idx = torch.arange(self.M, device=device).view(1, 1, self.M, 1)
-        kv_idx = torch.arange(self.N, device=device).view(1, 1, 1, self.N)
-        causal_mask = q_idx <= kv_idx
-        document_mask = self.document_id[q_idx] == self.document_id[kv_idx]
-        combined_mask = causal_mask & document_mask
-        qk_masked = torch.where(combined_mask, qk, -float('inf'))
-        mask = torch.isneginf(qk_masked)
-        mask = ~mask  # mask is True where qk_masked is not -inf
+def broadcast_to_dim(x, dim):
+    while x.dim() < dim:
+        x = x.unsqueeze(0)
+    return x
 
-        block_mask = self._convert_mask_to_block_mask(mask)
-        return self._create_block_mask_from_mask(block_mask)
+def _convert_mask_to_block_mask(
+    mask,
+    KV_BLOCK_SIZE=_DEFAULT_SPARSE_BLOCK_SIZE,
+    Q_BLOCK_SIZE=_DEFAULT_SPARSE_BLOCK_SIZE,
+):
+    assert mask.dtype == torch.bool
+    mask = broadcast_to_dim(mask, 4)
+    B, H, Q, KV = mask.shape
+    assert Q % Q_BLOCK_SIZE == 0
+    assert KV % KV_BLOCK_SIZE == 0
+    mask = mask.view(
+        B, H, Q // Q_BLOCK_SIZE, Q_BLOCK_SIZE, KV // KV_BLOCK_SIZE, KV_BLOCK_SIZE
+    )  # [B, H, Q//Q_BLOCK_SIZE, Q_BLOCK_SIZE, KV//KV_BLOCK_SIZE, KV_BLOCK_SIZE]
+    mask = mask.permute(
+        0, 1, 2, 4, 3, 5
+    )  # [B, H, Q//Q_BLOCK_SIZE, KV//KV_BLOCK_SIZE, Q_BLOCK_SIZE, KV_BLOCK_SIZE]
+    mask = mask.sum(dim=[-2, -1]) > 0  # [B, H, Q//Q_BLOCK_SIZE, KV//KV_BLOCK_SIZE]
+    return mask
 
-def my_model_function():
-    return MyModel()
+def _create_block_mask_from_mask(
+    block_mask: torch.Tensor,
+    KV_BLOCK_SIZE: int = _DEFAULT_SPARSE_BLOCK_SIZE,
+    Q_BLOCK_SIZE: int = _DEFAULT_SPARSE_BLOCK_SIZE,
+):
+    device = block_mask.device
+    block_mask = block_mask.to(dtype=torch.int8)
+    kv_num_blocks = block_mask.sum(dim=3)
+    kv_indices = torch.argsort(block_mask, dim=3, descending=True, stable=True)
+    q_num_blocks = block_mask.sum(dim=2)
+    q_indices = torch.argsort(block_mask, dim=2, descending=True, stable=True).permute(
+        0, 1, 3, 2
+    )
+    return (
+        kv_num_blocks.to(torch.int32).to(device).contiguous(),
+        kv_indices.to(torch.int32).to(device).contiguous(),
+        q_num_blocks.to(torch.int32).to(device).contiguous(),
+        q_indices.to(torch.int32).to(device).contiguous(),
+        KV_BLOCK_SIZE,
+        Q_BLOCK_SIZE,
+    )
 
-def GetInput():
-    return torch.rand(1, device='cuda')
+def _create_block_mask(
+    score_mod,
+    B: int,
+    H: int,
+    M: int,
+    N: int,
+    device: str = "cuda",
+    KV_BLOCK_SIZE: int = _DEFAULT_SPARSE_BLOCK_SIZE,
+    Q_BLOCK_SIZE: int = _DEFAULT_SPARSE_BLOCK_SIZE,
+):
+    r"""This function creates a block mask tuple from a score_mod function.
 
+    Args:
+        score_mod (Callable): Function to modify attention scores.
+        B (int): Batch size.
+        H (int): Number of heads.
+        M (int): Sequence length of query.
+        N (int): Sequence length of key/value.
+        device (str): Device to run the mask creation on.
+        KV_BLOCK_SIZE (int): Block size of block mask for each query.
+        Q_BLOCK_SIZE (int): Block size of block mask for each key/value.
+
+    Returns:
+        block_mask (tuple): A tuple of (kv_num_blocks, kv_indices, q_num_blocks, q_indices,
+                            KV_BLOCK_SIZE, Q_BLOCK_SIZE) which represents the block mask.
+    """
+    mask = torch.where(torch.isneginf(score_mod(torch.zeros(1, 1, M, N), None, None, torch.arange(M).view(1, 1, M, 1), torch.arange(N).view(1, 1, 1, N))), False, True)
+    # mask = _create_mask(score_mod, B, H, M, N, device)
+    block_mask = _convert_mask_to_block_mask(
+        mask, KV_BLOCK_SIZE=KV_BLOCK_SIZE, Q_BLOCK_SIZE=Q_BLOCK_SIZE
+    )
+    block_mask = _create_block_mask_from_mask(block_mask, KV_BLOCK_SIZE, Q_BLOCK_SIZE)
+    return block_mask
+
+document_id = torch.zeros(32768, dtype=torch.int, device='cuda')
+document_id[:4096] = 0
+for i in range(4096, 32768, 2048):
+    document_id[i:i+2048] = i // 2048
+
+def document_masking_causal(qk, batch, head, q_idx, kv_idx):
+    causal_mask = q_idx <= kv_idx
+    document_mask = (document_id[q_idx] == document_id[kv_idx])
+    return torch.where(causal_mask & document_mask, qk, -float("inf"))
+
+mask = torch.compile(_create_block_mask)(document_masking_causal, 4, 1, 32768, 32768, device='cuda')

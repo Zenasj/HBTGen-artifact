@@ -1,25 +1,35 @@
-# tf.random.uniform((B, 2), dtype=tf.float32) ← Input shape inferred from example x = [[0,0],[0,1],[1,0],[1,1]]
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
+import shutil
+import glob
 import tensorflow as tf
+from tensorflow.core.util import event_pb2
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define a single Dense layer with 1 unit and sigmoid activation as in the example
-        self.dense = tf.keras.layers.Dense(units=1, activation='sigmoid')
-    
-    def call(self, inputs):
-        return self.dense(inputs)
+workdir = 'tmp_workdir/'
+shutil.rmtree(workdir, ignore_errors=True)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+x = [[0, 0], [0, 1], [1, 0], [1, 1]]
+y = [0, 1, 1, 0]
 
-def GetInput():
-    # Return a random tensor matching the input (batch size 4, 2 features)
-    # Using batch size 4 as in the example provided
-    batch_size = 4
-    input_shape = (batch_size, 2)
-    # Uniform values between 0 and 1 to match the example inputs of 0s and 1s
-    return tf.random.uniform(input_shape, minval=0, maxval=1, dtype=tf.float32)
+inputs = tf.keras.Input(shape=(2,))
+outputs = tf.keras.layers.Dense(units=1, activation='sigmoid')(inputs)
+model = tf.keras.Model(inputs=inputs, outputs=outputs)
 
+model.compile(optimizer=tf.keras.optimizers.Adam(), loss=tf.keras.losses.MeanSquaredError())
+
+model.fit(x=x, y=y, batch_size=2, epochs=2, callbacks=[
+    tf.keras.callbacks.TensorBoard(log_dir=workdir, write_steps_per_second=True, update_freq=1,
+                            profile_batch=0)])
+
+max_step = 0
+for record in tf.data.TFRecordDataset(glob.glob(workdir + 'train/events.out*')[0]):
+    event = event_pb2.Event.FromString(record.numpy())
+    if event.HasField('summary') and event.summary.value[0].tag == 'batch_steps_per_second':
+        max_step = max(max_step, event.step)
+
+if max_step == 0:
+    print("FAILURE")
+else:
+    print("OK")

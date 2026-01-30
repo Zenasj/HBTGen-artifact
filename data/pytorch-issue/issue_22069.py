@@ -1,14 +1,20 @@
-# torch.rand(3, 256, 256, dtype=torch.float32)  # Input shape inferred from example
 import torch
 import torch.nn as nn
+from torch import onnx
+from torch.autograd import Variable 
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return torch.randn_like(x)  # Use torch.randn_like to avoid shape handling issues
+class NoiseLayer(nn.Module):
+    """adds noise. noise is per pixel (constant over channels) with per-channel weight"""
+    def __init__(self):
+        super().__init__()
+    
+    def forward(self, x, noise=None):
+        shape = x.size()
+        noise = torch.randn(shape)
+        return noise
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(3, 256, 256, dtype=torch.float32)  # Matches the example input dimensions
-
+model = NoiseLayer()
+output = model.forward(Variable(torch.randn(3,256,256)))
+print(output)
+# Translate this model to ONNX
+onnx.export(model, Variable(torch.randn(3,256,256)), '/tmp/model.onnx')

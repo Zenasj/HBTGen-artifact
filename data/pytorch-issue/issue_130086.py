@@ -1,27 +1,61 @@
-# torch.rand(0, dtype=torch.float32)
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Compare two approaches: max with dim=0 vs max with another tensor
-        # Return 1.0 if error occurs in first approach, else 0.0
-        error_flag = torch.tensor(0.0)
-        try:
-            # Case 1: Single tensor with dim=0 (may error)
-            _ = torch.max(x, dim=0)
-        except:
-            error_flag = torch.tensor(1.0)
-        
-        # Case 2: Two tensors (no dim needed, works for empty 1D)
-        _ = torch.max(x, x)  # Always works for empty 1D
-        
-        return error_flag  # 1.0 indicates error in Case 1
+my_tensor = torch.tensor([])
 
-def my_model_function():
-    return MyModel()
+torch.max(input=my_tensor) # Error
 
-def GetInput():
-    # Input that triggers error in Case 1 but works in Case 2
-    return torch.tensor([], dtype=torch.float32)
+import torch
 
+my_tensor = torch.tensor([])
+
+torch.max(input=my_tensor, dim=0) # Error
+
+import torch
+
+my_tensor = torch.tensor([[]])
+
+torch.max(input=my_tensor) # Error
+
+my_tensor = torch.tensor([[[]]])
+
+torch.max(input=my_tensor) # Error
+
+import torch
+
+my_tensor = torch.tensor([[]])
+
+torch.max(input=my_tensor, dim=0)
+# torch.return_types.max(
+# values=tensor([]),
+# indices=tensor([], dtype=torch.int64))
+
+my_tensor = torch.tensor([[[]]])
+
+torch.max(input=my_tensor, dim=0)
+# torch.return_types.max(
+# values=tensor([], size=(1, 0)),
+# indices=tensor([], size=(1, 0), dtype=torch.int64))
+
+import torch
+
+tensor1 = torch.tensor([])
+tensor2 = torch.tensor([])
+
+torch.max(input=tensor1, other=tensor2)
+# tensor([])
+
+tensor1 = torch.tensor([[]])
+tensor2 = torch.tensor([[]])
+
+torch.max(input=tensor1, other=tensor2)
+# tensor([], size=(1, 0))
+
+tensor1 = torch.tensor([[[]]])
+tensor2 = torch.tensor([[[]]])
+
+torch.max(input=tensor1, other=tensor2)
+# tensor([], size=(1, 1, 0))
+
+import torch
+
+torch.__version__ # 2.3.0+cu121

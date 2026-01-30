@@ -1,15 +1,34 @@
-# torch.rand(2, 3, dtype=torch.float32)  # Input is a tuple containing a tensor of shape (2, 3)
+class MyClass(nn.Module):
+    def __init__(self):
+        super(MyClass, self).__init__()
+    def forward(self, x: List[Tensor]):
+        x = x[0]
+        return x
+model = MyClass()
+img = [torch.zeros((2, 3,))]
+x = model(img) # OK
+torch.onnx.export(model, img, 'f.onnx', verbose=False, opset_version=11, example_outputs=img[0]) # OK
+model = torch.jit.script(model)
+torch.onnx.export(model, img, 'f.onnx', verbose=False, opset_version=11, example_outputs=img[0]) # fail
+
 import torch
-from torch import nn
-from typing import Tuple
+import torch.nn as nn
+from torch import Tensor
 
-class MyModel(nn.Module):
-    def forward(self, x: Tuple[torch.Tensor]) -> torch.Tensor:
-        return x[0]
+from typing import List
 
-def my_model_function():
-    return MyModel()
+class MyClass(nn.Module):
+    def __init__(self):
+        super(MyClass, self).__init__()
+    def forward(self, x: List[Tensor]):
+        # x = x[0] # FAILS
+        x1 = x[0] # WORKS
+        return x
+        
+model = MyClass()
+img = [torch.zeros((2, 3,))]
+x = model(img) # OK
 
-def GetInput():
-    return (torch.rand(2, 3), )
-
+torch.onnx.export(model, img, 'f.onnx', verbose=False, opset_version=11, example_outputs=img[0]) # OK
+model = torch.jit.script(model)
+torch.onnx.export(model, img, 'f.onnx', verbose=False, opset_version=11, example_outputs=img[0]) # fail

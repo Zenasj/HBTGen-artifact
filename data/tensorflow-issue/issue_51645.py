@@ -1,30 +1,24 @@
-# tf.random.uniform((B, 2*C), dtype=tf.float32) ← Input shape inferred as single tensor of shape (?, features)
-import tensorflow as tf
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
-class MyModel(tf.keras.Model):
+# Third Party
+import numpy as np
+from tensorflow.keras.layers import Concatenate, Dense
+from tensorflow.python.keras.models import Model
+
+class MyModel(Model):
     def __init__(self):
         super(MyModel, self).__init__()
-        # Layers as per original example: Concatenate followed by Dense(10, relu)
-        self.con = tf.keras.layers.Concatenate()  # Concatenates on last axis by default
-        self.dense = tf.keras.layers.Dense(10, activation="relu")
+        self.con = Concatenate()
+        self.dense = Dense(10, activation="relu")
 
     def call(self, x):
-        # Concatenate input tensor with itself along the last axis
         x = self.con([x, x])
-        x = self.dense(x)
-        return x
+        return self.dense(x)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+if __name__ == "__main__":
+   model = MyModel()
+   print(model.layers)
 
-def GetInput():
-    # Input must match the expected input shape of MyModel's call method.
-    # Since the dense layer has units=10, input should be (batch, features).
-    # Original example does not specify input shape, but Concatenate doubles feature dimension.
-    # To keep things flexible, choose input shape (batch=4, features=5).
-    batch_size = 4
-    features = 5
-    # Generate random float32 tensor of shape (batch_size, features)
-    return tf.random.uniform((batch_size, features), dtype=tf.float32)
-
+from keras.layers import Concatenate, Dense
+from keras.models import Model

@@ -1,86 +1,88 @@
-# tf.random.uniform((B, None, None, 3), dtype=tf.float32) ← Inferred input shape based on example code with 3 channels and spatial dims unknown
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
+# Load Pre-Trained Model
+model = ...
+# Using I/O of previous model, build model with an additional (or replacement) output 
+first_half = tf.keras.models.Model(model.inputs, model.get_layer("some_intermediate_layer_n").output)
+
+second_half = tf.keras.models.Model(model.get_layer("some_intermediate_layer_n_plus_1").input, model.outputs)
 
 import tensorflow as tf
+def def_enc_dec_pair():
+    input_ = tf.keras.layers.Input(shape=[None, None, 3])
+    x_e = tf.keras.layers.Conv2D(filters=8, kernel_size=(3, 3), strides=(2, 2), padding="SAME")(input_)
+    x_e = tf.keras.layers.Conv2D(filters=16, kernel_size=(3, 3), strides=(2, 2), padding="SAME")(x_e)
+    x_e = tf.keras.layers.Conv2D(filters=8, kernel_size=(3, 3), strides=(2, 2), padding="SAME")(x_e)
+    x_e = tf.keras.layers.Conv2D(filters=3, kernel_size=(3, 3), strides=(2, 2), padding="SAME", name="encoded_layer")(x_e)
+
+    x_d = tf.keras.layers.Conv2DTranspose(filters=8, kernel_size=(3, 3), strides=(2, 2), padding="SAME", name="second_section")(x_e)
+    x_d = tf.keras.layers.Conv2DTranspose(filters=16, kernel_size=(3, 3), strides=(2, 2), padding="SAME")(x_d)
+    x_d = tf.keras.layers.Conv2DTranspose(filters=8, kernel_size=(3, 3), strides=(2, 2), padding="SAME")(x_d)
+    x_d = tf.keras.layers.Conv2DTranspose(filters=3, kernel_size=(3, 3), strides=(2, 2), padding="SAME")(x_d)
+
+    model = tf.keras.Model(inputs=[input_], outputs=[x_d])
+    model.compile(optimizer=tf.optimizers.Adam(), loss=[tf.keras.losses.MSE])
+
+    return model
+
+base_model = def_enc_dec_pair()
+# base_model.summary()
+
+first_half = tf.keras.Model(base_model.inputs, base_model.get_layer("encoded_layer").output)
+# first_half.summary()
+
+second_half = tf.keras.Model(base_model.get_layer("second_section").input, base_model.output)
+second_half.summary()
+
+...
+second_input_shape = base_model.get_layer("encoded_layer").output.shape
+second_input_shape = second_input_shape[1:]  # Remove Batch from front.
+second_input = tf.keras.layers.Input(shape=second_input_shape)
+x = second_input
+for layer in base_model.layers[5:]:  # encoded_layer idx + 1
+    x = layer(x)
+
+second_half = tf.keras.Model(second_input, x)
+second_half.summary()
 
 class Encoder(tf.keras.Model):
-    def __init__(self):
-        super(Encoder, self).__init__()
-        # Encoder layers matching example convolutional stack
-        self.encoder_layers = [
-            tf.keras.layers.Conv2D(filters=8, kernel_size=(3, 3), strides=(2, 2), padding="SAME"),
-            tf.keras.layers.Conv2D(filters=16, kernel_size=(3, 3), strides=(2, 2), padding="SAME"),
-            tf.keras.layers.Conv2D(filters=8, kernel_size=(3, 3), strides=(2, 2), padding="SAME"),
-            tf.keras.layers.Conv2D(filters=3, kernel_size=(3, 3), strides=(2, 2), padding="SAME", name="encoded_layer")
-        ]
+  def __init__(self):
+    super(Encoder, self).__init__()
+    self.encoder_layers = []
+    self.encoder_layers.append(tf.keras.layers.Conv2D(filters=8, kernel_size=(3, 3), strides=(2, 2), padding="SAME"))
+    self.encoder_layers.append(tf.keras.layers.Conv2D(filters=16, kernel_size=(3, 3), strides=(2, 2), padding="SAME"))
+    self.encoder_layers.append(tf.keras.layers.Conv2D(filters=8, kernel_size=(3, 3), strides=(2, 2), padding="SAME"))
+    self.encoder_layers.append(tf.keras.layers.Conv2D(filters=3, kernel_size=(3, 3), strides=(2, 2), padding="SAME", name="encoded_layer"))
 
-    def call(self, inputs):
-        x = inputs
-        for layer in self.encoder_layers:
-            x = layer(x)
-        return x
-
+  def call(self, inputs):
+    output = inputs
+    for layer in self.encoder_layers:
+      output = layer(output)
+    return output
 
 class Decoder(tf.keras.Model):
-    def __init__(self):
-        super(Decoder, self).__init__()
-        # Decoder layers matching example Conv2DTranspose stack
-        self.decoder_layers = [
-            tf.keras.layers.Conv2DTranspose(filters=8, kernel_size=(3, 3), strides=(2, 2), padding="SAME", name="second_section"),
-            tf.keras.layers.Conv2DTranspose(filters=16, kernel_size=(3, 3), strides=(2, 2), padding="SAME"),
-            tf.keras.layers.Conv2DTranspose(filters=8, kernel_size=(3, 3), strides=(2, 2), padding="SAME"),
-            tf.keras.layers.Conv2DTranspose(filters=3, kernel_size=(3, 3), strides=(2, 2), padding="SAME")
-        ]
-
-    def call(self, inputs):
-        x = inputs
-        for layer in self.decoder_layers:
-            x = layer(x)
-        return x
+  def __init__(self):
+    super(Decoder, self).__init__()
+    self.decoder_layers = []
+    self.decoder_layers.append(tf.keras.layers.Conv2DTranspose(filters=8, kernel_size=(3, 3), strides=(2, 2), padding="SAME", name="second_section"))
+    self.decoder_layers.append(tf.keras.layers.Conv2DTranspose(filters=16, kernel_size=(3, 3), strides=(2, 2), padding="SAME"))
+    self.decoder_layers.append(tf.keras.layers.Conv2DTranspose(filters=8, kernel_size=(3, 3), strides=(2, 2), padding="SAME"))
+    self.decoder_layers.append(tf.keras.layers.Conv2DTranspose(filters=3, kernel_size=(3, 3), strides=(2, 2), padding="SAME"))
+  
+  def call(self, inputs):
+    output = inputs
+    for layer in self.decoder_layers:
+      output = layer(output)
+    return output
 
 
 class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.encoder = Encoder()
-        self.decoder = Decoder()
+  def __init__(self):
+    super(MyModel, self).__init__()
+    self.encoder = Encoder()
+    self.decoder = Decoder()
 
-    def call(self, inputs, start_from_encoded=False):
-        """
-        Forward pass through the full model or decoder starting from encoded representation.
-        
-        Args:
-            inputs: Tensor input, if start_from_encoded is False this should be the images,
-                    if True this should be the encoded tensor input for the decoder.
-            start_from_encoded: bool, whether to start forward pass from encoder or decoder.
-        
-        Returns:
-            Tensor output of the full model or decoder output.
-        """
-        if start_from_encoded:
-            # inputs are already encoded representation -> decode only
-            return self.decoder(inputs)
-        else:
-            # Full forward pass: encode then decode
-            encoded = self.encoder(inputs)
-            decoded = self.decoder(encoded)
-            return decoded
-
-
-def my_model_function():
-    """
-    Returns an instance of the MyModel class.
-    """
-    return MyModel()
-
-
-def GetInput():
-    """
-    Generate a random input tensor matching the expected input shape:
-    Batch size: 1 (arbitrary for testing), Height & Width: 64x64 (chosen arbitrary spatial dim),
-    Channels: 3 (color channels as per example).
-    
-    Returns:
-        A tf.Tensor with shape (1, 64, 64, 3), dtype tf.float32.
-    """
-    return tf.random.uniform((1, 64, 64, 3), dtype=tf.float32)
-
+  def call(self, inputs):
+    return self.decoder(self.encoder(inputs))

@@ -1,8 +1,7 @@
-# tf.random.uniform((B, 60), dtype=tf.float32) ← inferred input shape from code: input_shape=(60,)
-
+import numpy as np
 import tensorflow as tf
+from tensorflow import keras
 from tensorflow.keras import layers
-from tensorflow.keras.utils import tf_utils
 
 class GroupSoftmax(layers.Layer):
     def __init__(self, axis=-1, **kwargs):
@@ -11,54 +10,71 @@ class GroupSoftmax(layers.Layer):
         self.axis = axis
 
     def call(self, inputs):
-        # The original code used tf.divide(inputs, tf.reduce_sum(inputs, axis=self.axis))
-        # but that is not a stable softmax. Assuming intention was a group-wise softmax replacement,
-        # Here we provide a sum normalization along axis.
-        sum_along_axis = tf.reduce_sum(inputs, axis=self.axis, keepdims=True)
-        # avoid division by zero
-        sum_along_axis = tf.where(tf.equal(sum_along_axis, 0), tf.ones_like(sum_along_axis), sum_along_axis)
-        return inputs / sum_along_axis
+        return tf.divide(inputs, tf.reduce_sum(inputs, axis=self.axis))
 
     def get_config(self):
         config = {'axis': self.axis}
         base_config = super(GroupSoftmax, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
-
+    
     @tf_utils.shape_type_conversion
     def compute_output_shape(self, input_shape):
         return input_shape
 
+'''
+-----------------network of g-----------------
+'''
+gModel = tf.keras.Sequential([
+# 添加一个有Nodes个神经元的全连接层，“input_shape”为该层接受的输入数据的维度，“activation”指定该层所用的激活函数
+layers.Dense(Nodes, activation='sigmoid', input_shape=(60,), use_bias = False),#封装数据应该为（3000，10，6）
+# 添加第二个网络层
+layers.Dense(Nodes, activation='sigmoid', use_bias = False),
+# 添加第3个网络层
+layers.Dense(Nodes, activation='sigmoid', use_bias = False),
+# 添加第4个网络层
+layers.Dense(Nodes, activation='sigmoid', use_bias = False),
+# 添加第5个网络层
+layers.Dense(Nodes, activation='sigmoid', use_bias = False),
+# 添加第6个网络层,改变节点数目
+layers.Dense(66, activation='sigmoid', use_bias = False),
+# 添加第7个网络层,改变shape
+layers.Reshape((11, 6)),
+# 添加output网络层,分组softmax
+#layers.Dense(6, activation=layers.Softmax(axis=0),input_shape=(11,6), use_bias = False), # [11,6]
+#layers.Softmax(axis=0)
+GroupSoftmax(axis=0)
+])
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        Nodes = 60  # inferred from usage of Dense layers with input_shape=(60,)
-        self.seq = tf.keras.Sequential([
-            layers.Dense(Nodes, activation='sigmoid', input_shape=(60,), use_bias=False),
-            layers.Dense(Nodes, activation='sigmoid', use_bias=False),
-            layers.Dense(Nodes, activation='sigmoid', use_bias=False),
-            layers.Dense(Nodes, activation='sigmoid', use_bias=False),
-            layers.Dense(Nodes, activation='sigmoid', use_bias=False),
-            layers.Dense(66, activation='sigmoid', use_bias=False),
-            layers.Reshape((11, 6)),
-            GroupSoftmax(axis=0)  # Apply group softmax along axis 0 as original code
-        ])
+gModel.summary()
 
-    @tf.function(jit_compile=True)
-    def call(self, inputs):
-        # Forward pass through the sequential model
-        return self.seq(inputs)
+ds_train     = ds_train.map(lambda img, label: (img, tuple([label])))
 
+unpack_label = lambda img, label: (img, tuple([label]))
+unpack_label = tf.autograph.do_not_convert(unpack_label)  # Runtime not compatible
+ds_train = ds_train.map(unpack_label)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+from tensorflow.keras.datasets import fashion_mnist
+from tensorflow.keras import Sequential
+from tensorflow.keras.layers import Dense, Flatten
+from tensorflow.keras.losses import SparseCategoricalCrossentropy
 
+(X_train, y_train), (X_test, y_test) = fashion_mnist.load_data()
 
-def GetInput():
-    # Return a random tensor matching input expected by MyModel:
-    # Input shape is (B, 60), batch size B can be arbitrary (e.g., 32)
-    batch_size = 32
-    # dtype inferred float32 (typical for keras input)
-    return tf.random.uniform((batch_size, 60), dtype=tf.float32)
+X_train = X_train / 255
+X_test = X_test / 255
 
+model = Sequential([
+    Flatten(input_shape=X_train.shape[1:]),
+    Dense(30, activation='relu'),
+    Dense(30, activation='relu'),
+    Dense(10, activation='softmax')
+    ])
+
+model.compile(optimizer='adam',
+              loss=SparseCategoricalCrossentropy(from_logits=True),
+              metrics=['accuracy'])
+
+model.fit(X_train, y_train, epochs=30)
+
+y_pred = model.predict(X_test)  # <--- Error occurs here
+print(np.argmax(predictions[0]))

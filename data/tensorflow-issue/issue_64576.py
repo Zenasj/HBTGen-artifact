@@ -1,38 +1,19 @@
-# tf.random.uniform((B, 32), dtype=tf.float32) ← inferred input shape (batch size B, features 32)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
+keras
+import numpy as np
 import tensorflow as tf
-from tensorflow.keras.layers import Dense
 from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Dense, Activation, Input, BatchNormalization, Dropout, Flatten, Identity
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Two simple submodels, each with one Dense layer of 32 units
-        self.net1 = CustomModel1()
-        self.net2 = CustomModel2()
 
-    def call(self, inputs):
-        # Forward pass calls net1 then net2, returns both outputs as in original code
-        z = self.net1(inputs)
-        x = self.net2(z)
-        return z, x
+args = {"activation": "relu",
+        "batch_norm": True}
 
-    def train_step(self, data):
-        # Custom train step illustrating the original problematic behavior:
-        # Calling submodels explicitly instead of self.call to reproduce the issue
-        x, y = data
-
-        with tf.GradientTape() as tape:
-            # Calling submodels directly triggers save/load error in original issue
-            y_pred = self.net2(self.net1(x))  
-            loss = self.compiled_loss(y, y_pred)
-
-        trainable_vars = self.trainable_weights
-        gradients = tape.gradient(loss, trainable_vars)
-        self.optimizer.apply_gradients(zip(gradients, trainable_vars))
-        self.compiled_metrics.update_state(y, y_pred)
-        return {m.name: m.result() for m in self.metrics}
-
-@tf.keras.utils.register_keras_serializable()
+@keras.saving.register_keras_serializable()
 class CustomModel1(Model):
     def __init__(self):
         super().__init__()
@@ -42,7 +23,8 @@ class CustomModel1(Model):
         x = self.dense(inputs)
         return x
 
-@tf.keras.utils.register_keras_serializable()
+
+@keras.saving.register_keras_serializable()
 class CustomModel2(Model):
     def __init__(self):
         super().__init__()
@@ -52,25 +34,62 @@ class CustomModel2(Model):
         x = self.dense(inputs)
         return x
 
-def my_model_function():
-    # Returns an instance of MyModel, ready for compilation/training
-    return MyModel()
 
-def GetInput():
-    # Generate a batch of random inputs with shape (batch_size, 32)
-    # Assuming typical batch size of 8 for example, dtype float32
-    batch_size = 8
-    return tf.random.uniform((batch_size, 32), dtype=tf.float32)
+@keras.saving.register_keras_serializable()
+class CustomModel3(Model):
+    def __init__(self):
+        super().__init__()
+        self.net1 = CustomModel1()
+        self.net2 = CustomModel2()
 
-"""
-Notes / Assumptions:
-- Input shape: (batch_size, 32), as seen from the Dense layer input dimension and training example.
-- Two submodels, each one Dense(32), composed inside MyModel as net1 and net2.
-- train_step overridden to call net1 and net2 explicitly inside, mimicking the original code's issue.
-- Registered the CustomModel1 and CustomModel2 classes with @register_keras_serializable for loading/saving support.
-- Did not modify behavior to fix saving/loading, as the original issue is about the bug when calling submodels in train_step.
-- The primary goal is capturing the model structure and usage pattern that leads to the error,
-  not fixing the bug or changing the logic.
-- No external dependencies other than TensorFlow 2.15+.
-"""
+    def call(self, inputs):
+        z = self.net1(inputs)
+        x = self.net2(z)
+        return z, x
 
+    def train_step(self, data):
+        x, y = data
+
+        with tf.GradientTape() as tape:
+            # z, y_pred = self(x)                 # this fixes it instead
+            y_pred = self.net2(self.net1(x))      # this line throws the error
+            loss = self.compiled_loss(y, y_pred)
+
+        trainable_vars = self.trainable_weights
+        gradients = tape.gradient(loss, trainable_vars)
+        self.optimizer.apply_gradients(zip(gradients, trainable_vars))
+        self.compiled_metrics.update_state(y, y_pred)
+        return {m.name: m.result() for m in self.metrics}
+
+
+# Instantiate the model
+model = CustomModel3()
+
+# Compile the model
+model.compile(optimizer='adam',
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
+
+# Create some dummy data for training
+x_train = np.random.random((1000, 32))
+y_train = np.random.randint(10, size=(1000,))
+
+# Train the model for one epoch
+model.fit(x_train, y_train, epochs=1)
+
+# Save the model
+model.save('custom_model.keras', save_format='keras')
+
+# Load the model again
+loaded_model = tf.keras.models.load_model('custom_model.keras')
+
+# Generate some sample data for prediction
+x_sample = np.random.random((10, 32))  # Assuming 10 samples with 32 features each
+
+# Make predictions using the loaded model
+predictions = loaded_model.predict(x_sample)
+print(predictions)
+# Print the predictions
+print(model.summary())
+
+loaded_model = tf.keras.models.load_model('custom_model.h5')  # For HDF5 format

@@ -1,63 +1,91 @@
-# tf.random.uniform((32, 1), dtype=tf.float32)  # input shape inferred from example X with shape (train_size=32, 1)
+import random
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
+import numpy as np
+import matplotlib.pyplot as plt
+import os
+
+def f(x, sigma):
+    epsilon = np.random.randn(*x.shape) * sigma
+    return 10 * np.sin(2 * np.pi * (x)) + epsilon
 
 import tensorflow as tf
+
+from tensorflow.keras import backend as K
+from tensorflow.keras import activations, initializers
+from tensorflow.keras.layers import Layer
 import tensorflow_probability as tfp
 
 tfd = tfp.distributions
 
-class MyModel(tf.keras.Model):
-    def __init__(self, noise=1.0, **kwargs):
-        super().__init__(**kwargs)
-        # From the original example: two DenseFlipout layers with relu, then one output DenseFlipout layer
-        self.dense_flipout1 = tfp.layers.DenseFlipout(20, activation='relu')
-        self.dense_flipout2 = tfp.layers.DenseFlipout(20, activation='relu')
-        self.dense_flipout3 = tfp.layers.DenseFlipout(1)  # no activation on output
+import warnings
+warnings.filterwarnings('ignore')
 
-        # Noise for the likelihood in neg_log_likelihood
-        self.noise = noise
+from tensorflow.keras.layers import Input
+from tensorflow.keras.models import Model
 
-    def call(self, inputs, training=False):
-        x = self.dense_flipout1(inputs)
-        x = self.dense_flipout2(x)
-        output = self.dense_flipout3(x)
+train_size = 32
+noise = 1.0
 
-        # We add the KL divergence losses from the layers to self.losses
-        # This is automatically done by DenseFlipout layers when using model.losses during training
-        return output
+X = np.linspace(-0.5, 0.5, train_size).reshape(-1, 1)
+y = f(X, sigma=noise)
+y_true = f(X, sigma=0.0)
 
-    def neg_log_likelihood(self, y_true, y_pred):
-        # Negative log likelihood under Normal distribution with fixed noise stddev
-        dist = tfd.Normal(loc=y_pred, scale=self.noise)
-        # Sum log probs across all data points (original uses sum, could be mean or sum)
-        return tf.reduce_sum(-dist.log_prob(y_true))
+plt.scatter(X, y, marker='+', label='Training data')
+plt.plot(X, y_true, label='Truth')
+plt.title('Noisy training data and ground truth')
+plt.savefig('data.png')
+plt.close()
 
-def neg_log_likelihood_wrapper(y_true, y_pred):
-    # This is a helper to use as loss in compile, combines neg_log_likelihood and KL
-    # NOTE: We'll implement the combined loss function correctly here. The user function combined neg_log_likelihood + kl.
-    # But we do need to receive the model to get kl losses, so instead we will implement loss as a custom function below.
-    # We cannot pass model reference directly here without closure; so provide a dummy.
-    # In the compiled usage, user can use model.losses for kl separately.
+batch_size = train_size
+num_batches = train_size / batch_size
+kl_weight = 1.0 / num_batches
 
-    # This function won't be used directly here; the actual loss function is defined in compile below.
-    pass
+x_in = Input(shape=(1,))
 
-def my_model_function():
-    # Return an instance of MyModel configured with noise=1.0 (default as in example)
-    return MyModel(noise=1.0)
+x = tfp.layers.DenseFlipout(20, activation='relu')(x_in)
+x = tfp.layers.DenseFlipout(20, activation='relu')(x)
+x = tfp.layers.DenseFlipout(1)(x)
+model = Model(x_in, x)
 
-def GetInput():
-    # Return a random tensor input with shape (32,1) matching training data shape X from example
-    # Use uniform random values in range [-0.5, 0.5] like original np.linspace input
-    return tf.random.uniform((32,1), minval=-0.5, maxval=0.5, dtype=tf.float32)
+from tensorflow.keras import callbacks, optimizers, utils
 
-# ---
-# **Additional notes and explanation:**
-# - The original example inputs are numpy arrays shaped (32,1) with values in [-0.5,0.5].
-# - The model uses TensorFlow Probability `DenseFlipout` layers for Bayesian posterior approximation.
-# - The loss combines a custom negative log likelihood from a Normal likelihood plus KL loss from the layers.
-# - The original error referred to KL loss usage outside of tf.function context (graph tensor leakage), but that is a usage pattern issue, not the model definition.
-# - The code here focuses on reconstructing the model definition and input shape for usage inside tf.function compatible code.
-# - KL losses are accessed via `model.losses` in typical training calls; the loss combining them must be defined outside the model or via custom training loop.
-# - For simplicity, the example does not implement a compiled training loop or combined loss here, since input requested is the model and a compatible input.
-# - The input is sampled similarly to the example training data to match expected shape and data distribution.
-# Let me know if you want an example of how to write the combined loss function or training steps!
+def neg_log_likelihood(y_obs, y_pred, sigma=noise):
+    dist = tfp.distributions.Normal(loc=y_pred, scale=sigma)
+    return K.sum(-dist.log_prob(y_obs)) 
+
+kl = sum(model.losses)
+loss = neg_log_likelihood + kl 
+
+model.compile(loss=loss, optimizer=optimizers.Adam(lr=0.08), metrics=['mse'])
+utils.plot_model(model, to_file = 'model_flipout.png',  show_shapes = True, show_layer_names = True, show_dtype = True, dpi = 600)
+model.summary()
+model.fit(X, y, batch_size=batch_size, epochs=1500, verbose=0);
+model.save(f'flipout.h5')    
+
+import tqdm
+
+X_test = np.linspace(-1.5, 1.5, 1000).reshape(-1, 1)
+y_pred_list = []
+
+for i in tqdm.tqdm(range(500)):
+    y_pred = model.predict(X_test)
+    y_pred_list.append(y_pred)
+#import ipdb; ipdb.set_trace()                
+y_preds = np.concatenate(y_pred_list, axis = 1)
+y_mean = np.mean(y_preds, axis = 1)
+y_sigma = np.std(y_preds, axis = 1)
+
+plt.plot(X_test, y_mean, 'r-', label = 'Predictive mean');
+plt.plot(X, y_true, 'b-', label='Truth')
+
+plt.scatter(X, y, marker = '+', label = 'Training data')
+plt.fill_between(X_test.ravel(), 
+                 y_mean + 2 * y_sigma, 
+                 y_mean - 2 * y_sigma, 
+                 alpha = 0.5, label='Epistemic uncertainty')
+plt.title('Prediction')
+plt.legend();
+plt.savefig('result_flipout.png')
+plt.close()

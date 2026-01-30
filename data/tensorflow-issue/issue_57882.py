@@ -1,27 +1,38 @@
-# tf.constant(True, shape=[2,2,2], dtype=tf.bool) ← inferred input shape
+import math
 
 import tensorflow as tf
+print(tf.__version__)
 
-class MyModel(tf.keras.Model):
+
+def get_tflite_callable(model, inp_dict):
+    converter = tf.lite.TFLiteConverter.from_concrete_functions(
+        funcs=[model.__call__.get_concrete_function(**inp_dict)],
+        trackable_obj=model,
+    )
+    converter.target_spec.supported_ops = [
+        tf.lite.OpsSet.TFLITE_BUILTINS, # enable TensorFlow Lite ops.
+        tf.lite.OpsSet.SELECT_TF_OPS # enable TensorFlow ops.
+    ]
+    tflite_bytes = converter.convert()
+    interpreter = tf.lite.Interpreter(model_content=tflite_bytes)
+    runner = interpreter.get_signature_runner()
+    return runner
+
+class MyModule(tf.Module):
     def __init__(self):
         super().__init__()
-        # Constant tensor of shape [1,1,2,2,1] with bool type for XOR operation
         self.const = tf.constant(True, shape=[1,1,2,2,1], dtype=tf.bool)
 
-    @tf.function
-    def call(self, x):
-        # Perform logical XOR between input x and self.const
-        y = tf.math.logical_xor(x, self.const)
-        # Squeeze the first axis as in original code (axis=0)
-        y = tf.squeeze(y, axis=0)
-        return y
+    @tf.function # (jit_compile=True)
+    def __call__(self, x):
+        x = tf.math.logical_xor(x, self.const)
+        x = tf.squeeze(x, axis=0)
+        return x
 
-def my_model_function():
-    # Instantiate and return MyModel
-    return MyModel()
-
-def GetInput():
-    # Return a bool tensor matching the input expected by MyModel:
-    # The example input was shape [2,2,2], dtype bool
-    return tf.constant(True, shape=[2,2,2], dtype=tf.bool)
-
+inp = {
+    "x": tf.constant(True, shape=[2,2,2], dtype=tf.bool),
+}
+m = MyModule()
+print(m(**inp))
+runner = get_tflite_callable(m, inp)
+print(runner(**inp))

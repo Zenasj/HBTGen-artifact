@@ -1,19 +1,22 @@
-# torch.rand(10, dtype=torch.float32, requires_grad=True)
 import torch
-from torch import nn
+from torch.utils._python_dispatch import TorchDispatchMode
+from torch.autograd import detect_anomaly
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-    
-    def forward(self, x):
-        x = x * 2
-        x = x / 3
-        return x.sum()
+class MyMode(TorchDispatchMode):
+    def __torch_dispatch__(self, func, types, args, kwargs=None):
+        node = torch._C._current_autograd_node()
+        print(f"Running {func} from within {node}")
+        if node is not None:
+            print("The Node was created at:")
+            print("\n  ".join(node.metadata["traceback_"]))
+        return func(*args, **kwargs or {})
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    return torch.rand(10, dtype=torch.float32, requires_grad=True)
-
+with MyMode(), detect_anomaly():
+    print("FW")
+    a = torch.rand(10, requires_grad=True) 
+    b = a.mul(2)
+    b = b.div(3)
+    b = b.sum()
+    print("BW")
+    b.backward()

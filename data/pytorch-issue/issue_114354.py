@@ -1,16 +1,20 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)
+import torch.nn as nn
+import torch.nn.functional as F
+import torchvision
+
 import torch
-from torch import nn
+from torch.nn.functional import conv2d
 
-class MyModel(nn.Module):
-    def forward(self, image):
-        num_channels = image.shape[-3]
-        kernel = torch.rand(num_channels, 1, 3, 3, device=image.device, dtype=image.dtype)
-        return torch.nn.functional.conv2d(image, kernel, groups=num_channels)
+@torch.compile(backend="inductor", dynamic=True)
+def fn(image):
+    num_channels = image.shape[-3]
+    kernel = torch.rand(num_channels, 1, 3, 3)
+    return conv2d(image, kernel, groups=num_channels)
 
-def my_model_function():
-    return MyModel()
+from torchvision.transforms.v2 import functional as F
 
-def GetInput():
-    return torch.rand(1, 3, 16, 16, dtype=torch.float32)
+cfn = torch.compile(backend="inductor", dynamic=True)(F.gaussian_blur_image)
+cfn(torch.rand(3, 16, 16), [3, 3])
 
+cfn = torch.compile(backend="inductor", dynamic=True)(F.adjust_sharpness_image)
+cfn(torch.rand(3, 16, 16), 0.5)

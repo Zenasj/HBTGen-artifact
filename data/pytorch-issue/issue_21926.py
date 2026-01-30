@@ -1,20 +1,38 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)
+import time
 import torch
-from torch import nn
+import numpy as np
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Identity module to match the issue's tensor shape context
-        self.identity = nn.Identity()
-    
-    def forward(self, x):
-        return self.identity(x)
+a = torch.rand((40,100,256,256))
+b = np.ones((40,100,256,256))
+c = a.cpu()
 
-def my_model_function():
-    return MyModel()
+t1 = time.time()
+torch.save(a[0],open('torch1.p','wb'))
+t2 = time.time()
+print(t2 - t1)
 
-def GetInput():
-    # Returns a random tensor matching the shape discussed in the issue (40,100,256,256)
-    return torch.rand(40, 100, 256, 256, dtype=torch.float32)
+a = a.cuda()
+torch.save(a[0],open('torch2.p','wb'))
+t3 = time.time()
+print(t3 - t2)
 
+np.save(open('numpy1.p','wb'),c[0])
+t4 = time.time()
+print(t4 - t3)
+
+np.save(open('numpy2.p','wb'),b[0])
+t5= time.time()
+print(t5 - t4)
+
+a = torch.randn(10, 20)
+b = a[0]
+b.add_(10) # changes `a`
+
+a = torch.randn(10, 20)
+b = a[0]
+b.add_(10) # changes `a`
+
+torch.save((a, b), 'foo.pt')
+a, b = torch.save('foo.pt')
+
+b.add_(10) # still changes `a`

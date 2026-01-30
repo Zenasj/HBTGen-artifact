@@ -1,42 +1,70 @@
-# tf.random.uniform((B=1000, H=5), dtype=tf.float32) ← Input shape inferred from x: [1000, input_dim=5]
+from tensorflow import keras
+from tensorflow.keras import layers
 
+class MyDenseLayer(tf.keras.layers.Layer):
+    def __init__(self, num_outputs):
+        super(MyDenseLayer, self).__init__()
+        self.num_outputs = num_outputs
+    def build(self, input_shape):
+        self.kernel = self.add_variable("kernel", initializer=tf.keras.initializers.GlorotUniform(),
+                                        shape=[int(input_shape[-1]),
+                                               self.num_outputs])
+        self.bias = self.add_variable("bias", initializer=tf.zeros_initializer,
+                                        shape=[self.num_outputs])
+    def call(self, input):
+        return tf.matmul(input, self.kernel) + self.bias
+
+net = tf.keras.Sequential()
+net.add(MyDenseLayer(100))
+net.add(tf.keras.layers.ReLU())
+net.add(MyDenseLayer(100))
+net.add(tf.keras.layers.ReLU())
+net.add(MyDenseLayer(1))
+net.build((None, input_dim))
+
+import os
+import pickle
+import random
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.dense1 = tf.keras.layers.Dense(100, activation=tf.nn.relu, kernel_initializer=None, use_bias=True)
-        self.dense2 = tf.keras.layers.Dense(100, activation=tf.nn.relu, kernel_initializer=None, use_bias=True)
-        self.dense3 = tf.keras.layers.Dense(1, activation=None, kernel_initializer=None, use_bias=True)
+os.environ['TF_CUDNN_DETERMINISTIC'] = 'true'
 
-    def call(self, inputs):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        x = self.dense3(x)
-        return x
+seed = 1234
+np.random.seed(seed)
+tf.random.set_seed(seed)
+random.seed(seed)
 
-def my_model_function():
-    # Return an instance of MyModel
-    model = MyModel()
-    # Build the model by providing an input shape; this triggers variable creation
-    model.build((None, 5))
-    return model
+# NN Model
+input_dim = 5
+net = tf.keras.Sequential()
+net.add(tf.keras.layers.Dense(100, activation=tf.nn.relu, kernel_initializer=None))
+net.add(tf.keras.layers.Dense(100, activation=tf.nn.relu, kernel_initializer=None))
+net.add(tf.keras.layers.Dense(1, activation=None, kernel_initializer=None))
+net.build((None, input_dim))
 
-def GetInput():
-    # Return a random input tensor matching (batch_size=1000, input_dim=5) as used in the original code
-    # Use tf.random.normal to match np.random.normal behavior
-    return tf.random.normal(shape=(1000, 5), mean=0.0, stddev=1.0, dtype=tf.float32)
+# Initial v_params
+initial_v_params = net.variables
 
-# ---
-# ### Explanation and assumptions:
-# - Input shape `(1000, 5)` is inferred from the original training data arrays `x` with shape `[1000, input_dim]` where `input_dim = 5`.
-# - The original model is a `Sequential` of three Dense layers with ReLU activations on the first two and no activation on the last. We replicate this exactly in the subclassed model.
-# - Kernel initializer is `None` in the original snippet for simplicity; no special initialization specified — defaults apply.
-# - `use_bias=True` because original code discussed bias causing non-determinism; it's kept as default.
-# - We build the model once in `my_model_function` using the input shape, so weights are created before usage.
-# - The `GetInput()` returns a tensor of shape `(1000, 5)` with normal distribution, matching the original input generation via `np.random.normal`.
-# - We omit saving/loading or gradient computation logic, as the task is to produce the model and input generator.
-# - This model and input tensor should work directly as `model(GetInput())` without errors.
-# - This code is compatible with TensorFlow 2.20.0 and can be compiled with XLA using `@tf.function(jit_compile=True)`.
-# - No test or main code included, per instructions.
-# If you want, I can help add the gradient computation wrapped in a compiled function as well! Just let me know.
+# Update NN Model one-step
+x = np.random.normal(loc=0, scale=1., size=[1000, input_dim])
+y = np.random.normal(loc=0, scale=1., size=[1000])
+
+with tf.GradientTape() as tape:
+    loss = tf.reduce_mean(tf.square(y - net(x)))
+grad = tape.gradient(loss, net.trainable_variables)
+
+# Tag for comparing files
+tag = 1
+
+with open('./numpy_data{}.pkl'.format(tag), 'wb') as f:
+    pickle.dump([x, y], f)
+
+with open('./initial_params{}.pkl'.format(tag), 'wb') as f:
+    pickle.dump(initial_v_params, f)
+
+with open('./loss{}.pkl'.format(tag), 'wb') as f:
+    pickle.dump(loss, f)
+
+with open('./grad{}.pkl'.format(tag), 'wb') as f:
+    pickle.dump(grad, f)

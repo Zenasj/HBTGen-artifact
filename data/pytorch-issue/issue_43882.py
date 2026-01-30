@@ -1,22 +1,26 @@
-# torch.rand(100000, 10, dtype=torch.float32)  # Inferred input shape from the provided code
+import random
 
 import torch
-import torch.nn as nn
+from torch.autograd import profiler
+torch.set_num_threads(1)
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.w = nn.Parameter(torch.randn(10, 10))
-        self.b = nn.Parameter(torch.randn(10))
+def dense_layer(input, w, b):
+    return torch.addmm(b, input, w)
 
-    def forward(self, input):
-        return torch.addmm(self.b, input, self.w)
+if __name__ == '__main__':
+    torch.random.manual_seed(1234)
+    a = torch.randn(100000, 10)
+    b = torch.randn(10, 10)
+    c = torch.randn(10)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+    with profiler.profile() as prof:
+        for i in range(1000):
+            dense_layer(a, b, c)
+    print(prof.key_averages().table(sort_by='cpu_time_total', row_limit=3))
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(100000, 10, dtype=torch.float32)
-
+    traced = torch.jit.trace(dense_layer, (a, b, c))
+    # traced = torch.jit.script(dense_layer)
+    with profiler.profile() as prof2:
+        for i in range(1000):
+            traced(a, b, c)
+    print(prof2.key_averages().table(sort_by='cpu_time_total', row_limit=3))

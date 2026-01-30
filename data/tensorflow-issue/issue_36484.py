@@ -1,40 +1,35 @@
-# tf.random.uniform((32, 28, 28), dtype=tf.float32) ← Based on example input shape in the issue
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Reconstruct the small_model (an intermediate sub-model)
-        inputs = tf.keras.layers.Input(shape=(28, 28))
-        x = tf.keras.layers.Flatten()(inputs)
-        x = tf.keras.layers.Dense(128)(x)
-        x = tf.keras.layers.ReLU()(x)
-        x = tf.keras.layers.Dense(10)(x)
-        self.small_model = tf.keras.Model(inputs=inputs, outputs=x)
+input = tf.keras.layers.Input(shape=(28,28))
 
-        # Big model takes same input as small_model and passes through small_model then extra layers
-        big_input = self.small_model.input
-        big_x = self.small_model.output
-        big_x = tf.keras.layers.Dense(20)(big_x)
-        big_x = tf.keras.layers.Dense(30)(big_x)
-        big_x = tf.keras.layers.Dense(10)(big_x)
-        self.big_model = tf.keras.Model(inputs=big_input, outputs=big_x)
+x = tf.keras.layers.Flatten()(input)
+x = tf.keras.layers.Dense(128)(x)
+x = tf.keras.layers.ReLU()(x)
+x = tf.keras.layers.Dense(10)(x)
 
-    def call(self, inputs):
-        # Forward through big_model and also capture the output of the small_model inside
-        small_out = self.small_model(inputs)
-        big_out = self.big_model(inputs)
+small_model = tf.keras.models.Model(inputs=[input], outputs=[x])
 
-        # The issue discussed is about gradients w.r.t outputs of a sub-model (small_model)
-        # Return both outputs so that gradient can be checked externally
-        return big_out, small_out
+y = small_model(input)
 
+y = tf.keras.layers.Dense(20)(y)
+y = tf.keras.layers.Dense(30)(y)
+y = tf.keras.layers.Dense(10)(y)
 
-def my_model_function():
-    return MyModel()
+big_model = tf.keras.models.Model(inputs=[small_model.input], outputs=[y])
 
-def GetInput():
-    # From the issue example: input shape is (batch_size=32, 28, 28), dtype float32
-    return tf.random.uniform((32, 28, 28), dtype=tf.float32)
+ext_model = tf.keras.models.Model(inputs=[small_model.input], outputs=[big_model.output,  big_model.layers[1].output])
 
+images = tf.random.uniform(shape=(32,28,28))
+labels = tf.zeros(shape=(32,))
+
+with tf.GradientTape() as tape:    
+    predictions, layer = ext_model(images)
+
+print("grad = ", tape.gradient(predictions, layer))
+
+ext_model = tf.keras.models.Model(inputs=[small_model.input], outputs=[big_model.output,  big_model.layers[2].output])

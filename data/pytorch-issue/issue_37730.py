@@ -1,14 +1,17 @@
-# torch.rand(B, C, H, W, dtype=...)  # Add a comment line at the top with the inferred input shape
-import torch
 import torch.nn as nn
+import torchvision
+
+import torch
 from torchvision.models import resnet18
 
-class MyModel(nn.Module):
+amp_enabled = True
+checkpoint_enabled = True
+device = torch.device('cuda')
+
+class ResNetWithCheckpoints(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.base = resnet18()
-        self.amp_enabled = True
-        self.checkpoint_enabled = True
 
     def forward(self, x):
         base = self.base
@@ -17,7 +20,7 @@ class MyModel(nn.Module):
         x = base.relu(x)
         x = base.maxpool(x)
 
-        if self.checkpoint_enabled:
+        if checkpoint_enabled:
             x = torch.utils.checkpoint.checkpoint(base.layer1, x)
             x = torch.utils.checkpoint.checkpoint(base.layer2, x)
             x = torch.utils.checkpoint.checkpoint(base.layer3, x)
@@ -34,13 +37,20 @@ class MyModel(nn.Module):
 
         return x
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    model = MyModel()
-    return model
+model = ResNetWithCheckpoints()
+model.to(device)
+optimizer = torch.optim.SGD(model.parameters(), lr=0.001)
+loss_fn = torch.nn.CrossEntropyLoss()
+scaler = torch.cuda.amp.GradScaler(enabled=amp_enabled)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    B, C, H, W = 5, 3, 128, 128
-    return torch.randn(B, C, H, W, dtype=torch.float32, device='cuda')
-
+xs = torch.randn(5, 3, 128, 128).to(device)
+ys = torch.tensor(range(len(xs))).to(device)
+for _ in range(20):
+    optimizer.zero_grad()
+    with torch.cuda.amp.autocast(enabled=amp_enabled):
+        ys_pred = model(xs)
+        loss = loss_fn(ys_pred, ys)
+    print(float(loss))
+    scaler.scale(loss).backward()
+    scaler.step(optimizer)
+    scaler.update()

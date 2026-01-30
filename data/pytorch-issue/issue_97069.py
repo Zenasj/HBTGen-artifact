@@ -1,17 +1,14 @@
-# torch.rand(1073741824, dtype=torch.float16, device='cuda')
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        
-    def forward(self, x):
-        return x  # Pass-through to replicate memory inspection scenario
+# Test fp32 tensor
+tmp_tensor = torch.empty(1, dtype=torch.int8, device='cuda')
+# memory usage: 1115MB (context)
+tmp_tensor = torch.empty(1024*1024*1024, dtype=torch.float32, device='cuda')
+# memory usage: 5213MB (increase about 4GB, right with tmp_tensor)
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(1024*1024*1024, dtype=torch.float16, device='cuda')
-
+# Test fp16 tensor
+del tmp_tensor
+torch.cuda.empty_cache()
+# memory usage: 115MB
+tmp_tensor = torch.empty(1024*1024*1024, dtype=torch.float16, device='cuda')
+# memory usage: 7621MB (increate about 6GB, wrong with the number tmp_tensor should be)

@@ -1,26 +1,15 @@
-# torch.rand(2, 2, dtype=torch.float32).to_sparse()  # Input shape: (2, 2) sparse COO tensor
+# python -m torch.distributed.run --nnodes=1 --nproc_per_node=2 this_script.py
+
 import torch
-import torch.nn as nn
+import torch.distributed as dist
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # The model acts as a dummy to demonstrate sparse tensor handling
-        # (e.g., in a distributed context like the PR's all_reduce example)
-        self.identity = nn.Identity()  # Placeholder operation
-    
-    def forward(self, x):
-        # Simple forward pass to comply with model structure requirements
-        # Actual distributed operations like all_reduce are handled externally
-        return self.identity(x)
+def main():
+    dist.init_process_group(backend="nccl")
+    rank = dist.get_rank()
+    a = torch.tensor([[0, 2.], [3, 0]]).to(rank)
+    a = a.to_sparse()
+    print(f"rank {rank} - a: {a}")
+    dist.all_reduce(a)
 
-def my_model_function():
-    # Returns an instance of MyModel with default initialization
-    return MyModel()
-
-def GetInput():
-    # Generates a random sparse COO tensor matching the example's shape (2x2)
-    dense = torch.rand(2, 2, dtype=torch.float32)
-    sparse_tensor = dense.to_sparse()
-    return sparse_tensor
-
+if __name__ == "__main__":
+    main()

@@ -1,26 +1,33 @@
-# torch.rand(B, C, H, W, dtype=...)  # Inferred input shape: (8, 640, 16, 16)
-import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
+#!/usr/bin/env python
+
+import torch
+from torch._dynamo import optimize
+torch.manual_seed(0)
+
+class Model(torch.nn.Module):
     def __init__(self, channels):
-        super(MyModel, self).__init__()
-        self.layers = nn.Sequential(
-            nn.Conv2d(channels, channels, 1),
-            nn.ReLU(),
-            nn.Conv2d(channels, channels, 1),
-            nn.ReLU(),
+        super(Model, self).__init__()
+        self.layers = torch.nn.Sequential(
+            torch.nn.Conv2d(channels, channels, 1),
+            torch.nn.ReLU(),
+            torch.nn.Conv2d(channels, channels, 1),
+            torch.nn.ReLU(),
         )
 
     def forward(self, x):
         return self.layers(x)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel(640)
+n, c, h, w = 8, 640, 16, 16
+x = torch.randn((n, c, h, w))
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    B, C, H, W = 8, 640, 16, 16
-    return torch.randn((B, C, H, W))
+model = Model(c)
+jit_model = optimize("inductor")(model)
+jit_model(x)
 
+torch.save(jit_model.state_dict(), "model.pt")
+
+# Someone else is trying to load the checkpoint
+model = Model(c)
+model.load_state_dict(torch.load("model.pt"))

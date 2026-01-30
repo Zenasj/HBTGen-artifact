@@ -1,50 +1,70 @@
-# tf.random.uniform((BATCH_SIZE, 28, 28, 1), dtype=tf.float32) ← Input shape and dtype inferred from MNIST dataset preprocessing in the original example
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
+import tensorflow_datasets as tfds
+from absl import logging
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Model layers mimic the original Keras Sequential in the issue
-        # Note: The original model used a BatchNormalization layer which caused bug with Estimator + MirroredStrategy.
-        # We'll keep it here to match the original model structure, assuming no workaround needed here.
-        # If needed, comment out BN layer to avoid bug as discussed in the issue comments.
-        self.conv = tf.keras.layers.Conv2D(
-            32, 3, activation='relu',
-            kernel_regularizer=tf.keras.regularizers.l2(0.02),
-            input_shape=(28, 28, 1))
-        self.pool = tf.keras.layers.MaxPooling2D()
-        self.flatten = tf.keras.layers.Flatten()
-        self.dropout = tf.keras.layers.Dropout(0.1)
-        self.dense1 = tf.keras.layers.Dense(64, activation='relu')
-        self.batchnorm = tf.keras.layers.BatchNormalization()
-        self.dense2 = tf.keras.layers.Dense(10, activation='softmax')
-
-    def call(self, inputs, training=False):
-        x = self.conv(inputs)
-        x = self.pool(x)
-        x = self.flatten(x)
-        x = self.dropout(x, training=training)
-        x = self.dense1(x)
-        x = self.batchnorm(x, training=training)
-        return self.dense2(x)
+logging.set_verbosity(logging.INFO)
+# Define the estimator's input_fn
+STEPS_PER_EPOCH = 5
+BATCH_SIZE = 64
+NUM_EPOCHS = 5
 
 
-def my_model_function():
-    # Returns a compiled instance of MyModel with Adam optimizer and appropriate loss/metrics
-    model = MyModel()
-    model.compile(
-        optimizer='adam',
-        loss='sparse_categorical_crossentropy',
-        metrics=['accuracy']
-    )
-    return model
+def input_fn():
+    datasets, ds_info = tfds.load(name='mnist', with_info=True, as_supervised=True)
+    mnist_train, mnist_test = datasets['train'], datasets['test']
 
-
-def GetInput():
-    # Returns a random batch of inputs consistent with MNIST shape (BATCH_SIZE, 28, 28, 1)
-    # Use batch size 64 as in original example
+    BUFFER_SIZE = 10000
     BATCH_SIZE = 64
-    # Input values scaled in [0,1] float32 as in scaling function in original input_fn
-    return tf.random.uniform(shape=(BATCH_SIZE, 28, 28, 1), dtype=tf.float32, minval=0.0, maxval=1.0)
 
+    def scale(image, label):
+        image = tf.cast(image, tf.float32)
+        image /= 255
+    
+        return image, label[..., tf.newaxis]
+
+    train_data = mnist_train.map(scale).shuffle(BUFFER_SIZE).batch(BATCH_SIZE)
+    return train_data.repeat()
+
+# Define train & eval specs
+train_spec = tf.estimator.TrainSpec(input_fn=input_fn,
+                                    max_steps=STEPS_PER_EPOCH * NUM_EPOCHS)
+eval_spec = tf.estimator.EvalSpec(input_fn=input_fn,
+                                  steps=STEPS_PER_EPOCH)
+
+def make_model():
+    return tf.keras.Sequential([
+        tf.keras.layers.Conv2D(32, 3, activation='relu',
+                               kernel_regularizer=tf.keras.regularizers.l2(0.02),
+                               input_shape=(28, 28, 1)),
+        tf.keras.layers.MaxPooling2D(),
+        tf.keras.layers.Flatten(),
+        tf.keras.layers.Dropout(0.1),
+        tf.keras.layers.Dense(64, activation='relu'),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Dense(10, activation='softmax')
+    ])
+
+model = make_model()
+
+model.compile(optimizer='adam',
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
+
+#####
+#strategy=None 
+# crashing
+strategy = tf.distribute.MirroredStrategy()
+
+# config tf.estimator to use a give strategy
+training_config = tf.estimator.RunConfig(train_distribute=strategy)
+#####
+
+estimator = tf.keras.estimator.model_to_estimator(
+    keras_model = model,
+    config=training_config
+)
+
+tf.estimator.train_and_evaluate(estimator, train_spec, eval_spec)

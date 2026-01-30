@@ -1,35 +1,41 @@
-# tf.random.uniform((B, 28, 28), dtype=tf.float32) ← Input shape inferred from MNIST example (batch, height, width)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Flatten layer converts (28,28) input to (784,)
-        self.flatten = tf.keras.layers.Flatten(input_shape=(28, 28))
-        # Hidden dense layer with 128 units and ReLU activation
-        self.dense1 = tf.keras.layers.Dense(128, activation='relu')
-        # Dropout layer with rate 0.2 
-        self.dropout = tf.keras.layers.Dropout(0.2)
-        # Output dense layer with 10 units (for 10 classes)
-        self.dense2 = tf.keras.layers.Dense(10)
+print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
+tf.debugging.set_log_device_placement(True)
 
-    def call(self, inputs, training=False):
-        x = self.flatten(inputs)
-        x = self.dense1(x)
-        x = self.dropout(x, training=training)
-        logits = self.dense2(x)
-        return logits
+tf.autograph.set_verbosity(5)
+mnist = tf.keras.datasets.mnist
 
-def my_model_function():
-    # Create and compile model with Adam optimizer, SparseCategoricalCrossentropy loss, and accuracy metric
-    model = MyModel()
-    loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
-    model.compile(optimizer='adam', loss=loss_fn, metrics=['accuracy'])
-    return model
+(x_train, y_train), (x_test, y_test) = mnist.load_data()
+x_train, x_test = x_train / 255.0, x_test / 255.0
 
-def GetInput():
-    # Return a batch of 1 example, 28x28 with float32 values between 0 and 1
-    # Matches input expected by MyModel
-    return tf.random.uniform((1, 28, 28), dtype=tf.float32)
 
+model = tf.keras.models.Sequential([
+      tf.keras.layers.Flatten(input_shape=(28, 28)),
+      tf.keras.layers.Dense(128, activation='relu'),
+      tf.keras.layers.Dropout(0.2),
+      tf.keras.layers.Dense(10)
+            ])
+
+predictions = model(x_train[:1]).numpy()
+print(predictions)
+
+tf.nn.softmax(predictions).numpy()
+loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+loss_fn(y_train[:1], predictions).numpy()
+
+model.compile()
+model.summary()
+
+model.fit(x_train, y_train, epochs=5)
+model.evaluate(x_test,  y_test, verbose=2)
+
+probability_model = tf.keras.Sequential([
+      model, tf.keras.layers.Softmax()
+        ])
+probability_model(x_test[:5])

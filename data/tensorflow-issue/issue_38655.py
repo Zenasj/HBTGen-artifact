@@ -1,31 +1,41 @@
-# tf.random.uniform((1024, 224, 224, 3), dtype=tf.float32)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
 import tensorflow as tf
-
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # As per the reported Keras model: a GlobalMaxPool2D followed by Dense(1000, softmax)
-        self.pool = tf.keras.layers.GlobalMaxPool2D(input_shape=(224, 224, 3))
-        self.classifier = tf.keras.layers.Dense(1000, activation="softmax")
-
-    def call(self, inputs, training=False):
-        x = self.pool(inputs)
-        return self.classifier(x)
+import tensorflow_datasets as tfds
 
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+batch_size = 1024
+decoders = {"image": tfds.decode.SkipDecoding()}
+
+dataset = tfds.load(
+    "imagenet2012:5.0.0",
+    decoders=decoders,
+    split="validation",
+    data_dir="gs://my-data-bucket",
+)
+
+val_dataset = tfds.load(
+    "imagenet2012:5.0.0",
+    decoders=decoders,
+    split="train",
+    data_dir="gs://my-data-bucket",
+)
+
 
 def _decode_and_center_crop(image_bytes):
-    """Crops to center of image with padding then scales image_size (224x224)."""
+    """Crops to center of image with padding then scales image_size."""
     shape = tf.image.extract_jpeg_shape(image_bytes)
     image_height = shape[0]
     image_width = shape[1]
     image_size = 224
 
     padded_center_crop_size = tf.cast(
-        (image_size / (image_size + 32)) * tf.cast(tf.minimum(image_height, image_width), tf.float32),
+        (
+            (image_size / (image_size + 32))
+            * tf.cast(tf.minimum(image_height, image_width), tf.float32)
+        ),
         tf.int32,
     )
 
@@ -37,20 +47,37 @@ def _decode_and_center_crop(image_bytes):
     image = tf.image.decode_and_crop_jpeg(image_bytes, crop_window, channels=3)
     return tf.image.resize(image, [image_size, image_size], method="bicubic")
 
-def GetInput():
-    # Generate a random input tensor simulating a batch of 1024 images
-    # Shape matches model input: (batch_size=1024, height=224, width=224, channels=3)
-    # Values are floats to represent preprocessed image data (scaled 0-255 float)
-    batch_size = 1024
-    height = 224
-    width = 224
-    channels = 3
-    # Using uniform distribution 0-255 to simulate cropped & resized image pixel values
-    input_tensor = tf.random.uniform(
-        (batch_size, height, width, channels),
-        minval=0,
-        maxval=255,
-        dtype=tf.float32
-    )
-    return input_tensor
 
+def preprocessing(data):
+    return tf.cast(_decode_and_center_crop(data["image"]), tf.float32), data["label"]
+
+
+def apply_preprocessing(dataset):
+    return (
+        dataset.cache()
+        .map(preprocessing, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+        .batch(batch_size)
+        .prefetch(1)
+    )
+
+
+dataset = apply_preprocessing(dataset)
+val_dataset = apply_preprocessing(val_dataset)
+
+with tf.distribute.MirroredStrategy().scope():
+    model = tf.keras.models.Sequential(
+        [
+            tf.keras.layers.GlobalMaxPool2D(input_shape=(224, 224, 3)),
+            tf.keras.layers.Dense(1000, activation="softmax",),
+        ]
+    )
+
+    model.compile(
+        optimizer="adam",
+        loss="sparse_categorical_crossentropy",
+        metrics=["accuracy", "sparse_top_k_categorical_accuracy"],
+    )
+
+model.fit(
+    dataset, epochs=5, validation_data=val_dataset,
+)

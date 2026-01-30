@@ -1,47 +1,58 @@
-# tf.random.uniform((B=1,), dtype=tf.float32) ← This matches random.uniform([1], 0.2, 5.0) calls in the original examples
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+
+import numpy as np  
+import tensorflow as tf
+tf.compat.v1.enable_eager_execution()
+
+SEED = 88
+tf.compat.v1.random.set_random_seed(SEED)
+
+ds_train = tf.data.Dataset.range(0, 4)
+ds_val = tf.data.Dataset.range(0, 4)
+ds_train = ds_train.map(
+    lambda x: tf.random.uniform([1], 0.2, 5.0)
+)
+ds_val = ds_val.map(
+    lambda x: tf.random.uniform([1], 0.2, 5.0) 
+)
+for el in ds_train:
+    print(el.numpy())
+    # --> [0.44027787], [1.7892183], [2.8793733], [3.3438706]
+for el in ds_val:
+    print(el.numpy())
+    # why the same here? --> [0.44027787], [1.7892183], [2.8793733], [3.3438706]
+
+tf.random.uniform
+
+seed
 
 import tensorflow as tf
+tf.compat.v1.enable_eager_execution()
+SEED = 88
+tf.compat.v1.random.set_random_seed(SEED)
+rand1 = tf.random.uniform([1], 0.2, 5.0, seed=SEED) #-->[2.7339704]
+rand2 = tf.random.uniform([1], 0.2, 5.0, seed=SEED) #-->[1.4490409] different
+# Same when only graph-level seed is set
+rand1 = tf.random.uniform([1], 0.2, 5.0) #-->[2.9647074]
+rand2 = tf.random.uniform([1], 0.2, 5.0) #-->[2.7952404] different
 
-class MyModel(tf.keras.Model):
-    """
-    This model encapsulates two separate random.uniform calls, simulating
-    the Dataset.map scenario where two different map calls with the same seed
-    produce the same random sequences.
+class Augment(tf.keras.layers.Layer):
+  def __init__(self, seed=42):
+    super().__init__()
+    # both use the same seed, so they'll make the same random changes.
+    self.augment_inputs = tf.keras.layers.RandomFlip(mode="horizontal", seed=seed)
+    self.augment_labels = tf.keras.layers.RandomFlip(mode="horizontal", seed=seed)
 
-    It compares the outputs of the two random calls seeded identically
-    and returns a boolean tensor indicating if they are equal (same random numbers).
+  def call(self, inputs, labels):
+    inputs = self.augment_inputs(inputs)
+    labels = self.augment_labels(labels)
+    return inputs, labels
 
-    This mimics the core of the issue described:
-    - Two calls with the same seed produce identical random outputs.
-    """
-    def __init__(self, seed=None):
-        super().__init__()
-        # Seed here simulates global/graph-level seed that causes identical sequences in different map calls.
-        self.seed = seed
+# Create a tf.datasets
+ds = tf.data.Dataset.from_tensor_slices((fields, masks))
 
-    @tf.function(jit_compile=True)
-    def call(self, inputs=None):
-        # inputs is ignored; random ops do not depend on inputs in the original issue
-        
-        # Generate first random uniform scalar with given seed
-        rand1 = tf.random.uniform([1], 0.2, 5.0, seed=self.seed)
-        # Generate second random uniform scalar with the same seed
-        rand2 = tf.random.uniform([1], 0.2, 5.0, seed=self.seed)
-
-        # Compare if both generated values are exactly equal (elementwise)
-        is_equal = tf.reduce_all(tf.equal(rand1, rand2))
-        # Output a dictionary for clarity: random1, random2, and comparison boolean
-        return {"rand1": rand1, "rand2": rand2, "equal": is_equal}
-
-def my_model_function():
-    # Here we instantiate the model with a fixed seed to simulate the behavior that causes repeated sequences.
-    # The seed aligns with the original issue seed (e.g. 88).
-    return MyModel(seed=88)
-
-def GetInput():
-    # The original random.uniform call does not actually use the dataset element as input,
-    # so we return a dummy tensor of shape () (scalar) to accommodate the call.
-    #
-    # This matches the tf.data.Dataset.range(0,4) elements passed, but unused.
-    return tf.constant(0, dtype=tf.int64)
-
+# plot to verify
+for f, m in ds.map(Augment()).take(5):
+    show_image(f.numpy(), m.numpy())

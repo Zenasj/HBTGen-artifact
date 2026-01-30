@@ -1,30 +1,44 @@
-# torch.rand(4, 10, dtype=torch.float32)  # Inferred input shape from the provided code
+import torch.nn as nn
 
 import torch
 from torch.utils.checkpoint import checkpoint
 
-class MyModel(torch.nn.Module):
+def report_memory(name):
+    """Simple GPU memory report."""
+
+    mega_bytes = 1024.0 * 1024.0
+    string = name + " memory (MB)"
+    string += " | allocated: {:.1f}".format(torch.cuda.memory_allocated() / mega_bytes)
+    string += " | max allocated: {:.1f}".format(torch.cuda.max_memory_allocated() / mega_bytes)
+    string += " | reserved: {:.1f}".format(torch.cuda.memory_reserved() / mega_bytes)
+    string += " | max reserved: {:.1f}".format(torch.cuda.max_memory_reserved() / mega_bytes)
+    print(string)
+
+class TestNN(torch.nn.Module):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self.ln1 = torch.nn.Linear(10, 20)
-        self.ln2 = torch.nn.Linear(20, 3000)
-        self.ln3 = torch.nn.Linear(3000, 40)
-
+        self.ln1 = torch.nn.Linear(10,20)
+        self.ln2 = torch.nn.Linear(20,3000)
+        self.ln3 = torch.nn.Linear(3000,40)
+        
     def forward(self, x):
         x = self.ln1(x)
         x = torch.nn.functional.relu(x)
-        with torch.autograd.graph.saved_tensors_hooks(lambda x: x.detach(), lambda x: x):
+        # intend to use inner saved_tensors_hooks to disable _checkpoint_hook
+        with torch.autograd.graph.saved_tensors_hooks(lambda x: x, lambda x: x):
             x = self.ln2(x)
             x = torch.nn.functional.relu(x)
         x = self.ln3(x)
         x = torch.nn.functional.relu(x)
         return x
+    
+model = TestNN().cuda()
+optim = torch.optim.AdamW(model.parameters())
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(4, 10, device='cuda')
-
+for _ in range(100):
+    x = torch.randn(4, 10).cuda()
+    out = checkpoint(model, x, use_reentrant=False)
+    (out - torch.randn_like(out)).sum().backward()
+    optim.step()
+    optim.zero_grad()
+    report_memory("Mem")

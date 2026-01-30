@@ -1,24 +1,39 @@
-# torch.rand(5, 3, dtype=torch.float32)
 import torch
-from torch import nn
+from torch.multiprocessing import Process
 
-class MyModel(nn.Module):
-    def __init__(self):
+@torch.jit.script
+def sigmoid(x):
+    return 1.0 / (1.0 + torch.exp(-x))
+
+
+class Net(torch.jit.ScriptModule):
+    def __init__(self, n):
         super().__init__()
-        # Encapsulate both problematic (sigmoid) and working (tanh) models as submodules
-        self.problematic = nn.Sequential()  # Empty container for sigmoid (intrinsic to PyTorch)
-        self.working = nn.Tanh()  # Working alternative activation
-        
+
+    @torch.jit.script_method
     def forward(self, x):
-        # Run both activations and return their outputs for comparison
-        out_problematic = torch.sigmoid(x)  # Problematic path causing hang in multiprocessing
-        out_working = self.working(x)       # Working path (tanh)
-        return out_problematic, out_working
+        return torch.sigmoid(x)
+        # return sigmoid(x)
+        # return torch.tanh(x)
 
-def my_model_function():
-    return MyModel()
+def run(rank,):
+    xs = torch.randn((5, 3), dtype=torch.float32)
+    f = Net(3)
+    print("{}: Starting...".format(rank))
+    print(f.forward(xs))
+    print("{}: Done!".format(rank))
 
-def GetInput():
-    # Matches input shape used in the original issue's reproduction script
-    return torch.randn(5, 3, dtype=torch.float32)
+if __name__ == "__main__":
+    # These lines are important
+    xs = torch.randn((5, 3), dtype=torch.float32)
+    net = Net(3)
+    print(net(xs))
 
+    processes = []
+    for rank in range(2):
+        p = Process(target=run, args=(rank,))
+        p.start()
+        processes.append(p)
+
+    for p in processes:
+        p.join()

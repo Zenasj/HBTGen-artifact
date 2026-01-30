@@ -1,60 +1,84 @@
-# tf.random.uniform((1, 200, 200, 3), dtype=tf.float32) <- Inferred input shape and dtype based on MobileNet input_shape=(200,200,3)
+from tensorflow import keras
+from tensorflow.keras import models
 
+base_model = MobileNet(weights='imagenet', include_top=False, input_shape=(200,200,3), dropout=.2)
+x = base_model.output
+x = GlobalAveragePooling2D()(x)
+x = Dense(1024, activation='relu')(x)
+x = Dense(1024, activation='relu')(x)
+x = Dense(512,activation='relu')(x)
+types = Dense(20,activation='softmax')(x)
+model = Model(inputs=base_model.input,outputs=types)
+
+base_model = MobileNet(weights='imagenet', include_top=False, input_shape=(200,200,3), dropout=.2)
+x = base_model.output
+x = GlobalAveragePooling2D()(x)
+x = Dense(1024, activation='relu')(x)
+x = Dense(1024, activation='relu')(x)
+x = Dense(512,activation='relu')(x)
+types = Dense(20,activation='softmax')(x)
+
+y = base_model.output
+y = GlobalAveragePooling2D()(y)
+y = Dense(512, activation='relu')(y)
+y = Dense(1024, activation='relu')(y)
+y = Dense(512, activation='relu')(y)
+values = Dense(3, activation='sigmoid')(y)
+
+model = Model(inputs=base_model.input, outputs=[types,values])
+
+interpreter = tf.lite.Interpreter(model_path='path/to/model/quantized.tflite')
+input_details = interpreter.get_input_details()
+output_details = interpreter.get_output_details()
+
+print("shape:", output_details[0]['shape'])
+print("shape:", output_details[1]['shape'])
+
+#reshape for input of batch size 32
+interpreter.resize_tensor_input(input_details[0]['index'], (32, 200, 200, 3))
+interpreter.resize_tensor_input(output_details[0]['index'], (32, 20))
+#interpreter.resize_tensor_input(output_details[1]['index'], (32, 3))
+interpreter.allocate_tensors()
+
+import os
 import tensorflow as tf
-from tensorflow.keras.applications import MobileNet
-from tensorflow.keras.layers import GlobalAveragePooling2D, Dense
-from tensorflow.keras import backend as K
+import numpy as np
+from PIL import Image
+from tensorflow.keras.applications.mobilenet import preprocess_input
+import pathlib
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Load MobileNet base model without top layers, with pretrained weights
-        # input_shape must include batch dimension at runtime; here (200,200,3)
-        self.base_model = MobileNet(weights='imagenet', include_top=False, input_shape=(200, 200, 3), dropout=0.2)
-        
-        # First output branch layers
-        self.pool1 = GlobalAveragePooling2D()
-        self.dense1_1 = Dense(1024, activation='relu')
-        self.dense1_2 = Dense(1024, activation='relu')
-        self.dense1_3 = Dense(512, activation='relu')
-        self.out_types = Dense(20, activation='softmax', name='Output1')
-        
-        # Second output branch layers
-        self.pool2 = GlobalAveragePooling2D()
-        self.dense2_1 = Dense(512, activation='relu')
-        self.dense2_2 = Dense(1024, activation='relu')
-        self.dense2_3 = Dense(512, activation='relu')
-        self.out_values = Dense(3, activation='sigmoid', name='Output2')
+model = tf.keras.models.load_model('path/to/file.h5')
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
 
-    def call(self, inputs, training=False):
-        # Forward pass through base model
-        x = self.base_model(inputs, training=training)
-        
-        # First output branch
-        y1 = self.pool1(x)
-        y1 = self.dense1_1(y1)
-        y1 = self.dense1_2(y1)
-        y1 = self.dense1_3(y1)
-        out1 = self.out_types(y1)
-        
-        # Second output branch
-        y2 = self.pool2(x)
-        y2 = self.dense2_1(y2)
-        y2 = self.dense2_2(y2)
-        y2 = self.dense2_3(y2)
-        out2 = self.out_values(y2)
-        
-        # Return tuple of outputs matching original multi-output model
-        return out1, out2
+os.chdir('/directory/of/image/directories')#Where image directories are
+directory = os.listdir()
+directory
 
-def my_model_function():
-    # Return an instance of MyModel with pretrained MobileNet base weights
-    # User can load weights later if needed
-    model = MyModel()
-    return model
+def representative_dataset_gen():
+    for i in directory:
+        count = 0
+        os.chdir(i)
+        files = os.listdir()
+        print(i)
+        for j in files:
+            if count<600:
+                img = Image.open(j)
+                array = np.asarray(img, dtype=np.float32)
+                array = preprocess_input(array)
+                count=count+1
+                yield[np.expand_dims(array, axis=0)]
+            else:
+                break      
+        os.chdir('../')
 
-def GetInput():
-    # Return random input tensor matching (batch_size=1, 200, 200, 3) and dtype float32
-    # Matches the MobileNet expected input size from the issue
-    return tf.random.uniform((1, 200, 200, 3), dtype=tf.float32)
+converter.representative_dataset = representative_dataset_gen
+converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
+converter.inference_input_type = tf.int8  # or tf.uint8
+converter.inference_output_type = tf.int8  # or tf.uint8
+tflite_quant_model = converter.convert()
 
+#Saving file
+tflite_model_dir = pathlib.Path('save/path/')
+tflite_quant_model_file = tflite_model_dir/'quantized.tflite'
+tflite_quant_model_file.write_bytes(tflite_quant_model)

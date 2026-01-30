@@ -1,85 +1,229 @@
-# torch.rand(2, 3, 640, 256, dtype=torch.float32)
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from torch.utils import checkpoint
 
-class MyModel(nn.Module):
-    def __init__(self, grad_checkpoint=True):
+import torch
+import torch.utils.checkpoint
+import torch._dynamo
+torch._dynamo.config.verbose=True
+import argparse
+import torch.utils.benchmark as benchmark
+
+
+class myModel(torch.nn.Module):
+    def __init__(self, grad_checkpoint):
         super().__init__()
-        self.conv1 = nn.Conv2d(3, 128, kernel_size=3, padding=1)
-        self.conv2 = nn.Conv2d(128, 128, kernel_size=3, padding=1)
-        self.conv3 = nn.Conv2d(128, 3, kernel_size=3, padding=1)
+        self.conv1 = torch.nn.Conv2d(3, 128, kernel_size=3, padding=1)
+        self.conv2 = torch.nn.Conv2d(128, 128, kernel_size=3, padding=1)
+        self.conv3 = torch.nn.Conv2d(128, 3, kernel_size=3, padding=1)
         self.checkpoint = grad_checkpoint
 
     def forward(self, x):
         x = self.conv1(x)
-        x = F.relu(x)
+        x = torch.nn.functional.relu(x)
         if self.checkpoint:
-            x = checkpoint.checkpoint(self.conv2, x)
+            x = torch.utils.checkpoint.checkpoint(self.conv2, x)
         else:
             x = self.conv2(x)
-        x = F.relu(x)
+        x = torch.nn.functional.relu(x)
         x = self.conv3(x)
         return x
 
-def my_model_function():
-    return MyModel(grad_checkpoint=True)
 
-def GetInput():
-    return torch.rand(2, 3, 640, 256, dtype=torch.float32)
+def run_forward(model_, x):
+    out = model_(x)
 
-# Okay, let me try to tackle this problem. The user wants me to generate a complete Python code file based on the provided GitHub issue content. The main goal is to create a single Python script that includes a PyTorch model, functions to initialize it, and a function to generate an input tensor. The model must handle gradient checkpointing and be compatible with torch.compile. 
-# First, I need to parse the GitHub issue. The original issue describes a bug where using torch.compile with gradient checkpointing causes errors. The user provided code examples, including a model class called myModel, which uses checkpointing via torch.utils.checkpoint.checkpoint. The error occurs when trying to compile the model with torch.compile.
-# The task is to extract the model structure and necessary functions. The model in the issue is myModel, which has three Conv2d layers. The forward method uses checkpointing on the second convolution (conv2) if the grad_checkpoint flag is set. The input shape in the example is (2, 3, 640, 256).
-# The user's requirements specify that the class must be named MyModel(nn.Module), so I need to adjust the original class name from myModel to MyModel. Also, the input generation function GetInput should return a tensor matching the model's expected input.
-# Looking at the comments, there's a mention that the nightly build fixed some issues, but the user's repro by @ipoletaev still had errors. However, the final comment says it's fixed, so maybe the current code should work as intended.
-# I need to structure the code as per the output structure:
-# - A comment line with the input shape (e.g., # torch.rand(B, C, H, W, dtype=torch.float32))
-# - The MyModel class with the correct structure
-# - my_model_function that returns an instance of MyModel
-# - GetInput function that returns the input tensor
-# The original model uses Conv2d layers with kernel_size 3, padding 1, so the input dimensions should be maintained through the layers. The input shape in the example is (2,3,640,256), so I'll use that as the default in GetInput.
-# I need to ensure that the checkpointing is correctly implemented. The original code uses torch.utils.checkpoint.checkpoint, which should be compatible with the latest PyTorch versions as per the issue's resolution.
-# Possible issues to consider: The user's code in the comments had more complex models, but the original issue's code is simpler. Since the task is to generate the code from the original issue's content, I'll focus on the myModel class provided there. The user might have multiple models, but in this case, it's just one.
-# Wait, the user's instruction says if multiple models are compared, they should be fused. But in the provided issue, it's a single model with a checkpoint option. So no need to fuse here.
-# Now, writing the code:
-# The MyModel class should have the same structure as myModel, with the grad_checkpoint flag. The forward method uses checkpointing on conv2 if self.checkpoint is True.
-# The my_model_function needs to return an instance, perhaps with a default setting for grad_checkpoint. Since the issue's example uses a command-line argument, but the function doesn't take parameters, maybe just create an instance with grad_checkpoint=True, or perhaps leave it as a parameter? Wait, the function should return an instance, so maybe it's better to have a function that can initialize with or without checkpointing, but according to the problem statement, the function should return an instance, so maybe just set a default.
-# Alternatively, the function could return a model with checkpointing enabled. Since the issue's problem was about compiling with checkpointing, maybe the model should include checkpointing by default. So in my_model_function, set grad_checkpoint=True.
-# The GetInput function should generate a tensor of shape (2, 3, 640, 256) as in the example. Using torch.rand with device set to "cuda" if available, but since the function should just return the tensor, maybe without device, but the user's code example moves to device in run(). But the function should just return the input, so perhaps just the shape and dtype.
-# Putting it all together:
-# The input comment line will be:
-# # torch.rand(2, 3, 640, 256, dtype=torch.float32)
-# The MyModel class:
-# class MyModel(nn.Module):
-#     def __init__(self, grad_checkpoint=True):
-#         super().__init__()
-#         self.conv1 = nn.Conv2d(3, 128, kernel_size=3, padding=1)
-#         self.conv2 = nn.Conv2d(128, 128, kernel_size=3, padding=1)
-#         self.conv3 = nn.Conv2d(128, 3, kernel_size=3, padding=1)
-#         self.checkpoint = grad_checkpoint
-#     def forward(self, x):
-#         x = self.conv1(x)
-#         x = F.relu(x)
-#         if self.checkpoint:
-#             x = torch.utils.checkpoint.checkpoint(self.conv2, x)
-#         else:
-#             x = self.conv2(x)
-#         x = F.relu(x)
-#         x = self.conv3(x)
-#         return x
-# The my_model_function initializes the model with checkpointing enabled:
-# def my_model_function():
-#     return MyModel(grad_checkpoint=True)
-# The GetInput function returns a random tensor with the correct shape:
-# def GetInput():
-#     return torch.rand(2, 3, 640, 256, dtype=torch.float32)
-# Wait, but in the original code, the model is moved to device (cuda) in the run function. However, the GetInput function should return a tensor compatible with the model, but since the model's device isn't specified here, perhaps the input should be on CPU, and the user can move it when using. Alternatively, maybe include a device parameter, but the problem says to return a valid input that works with MyModel(), so perhaps just CPU by default.
-# But in the original example, the input is on CUDA. However, the function should not assume a device. Since the GetInput function must return an input that works with the model as is, perhaps the model is on the same device as the input. Since the model's initialization doesn't set a device, the user would handle that externally. So the GetInput can just return a CPU tensor, and when compiled, the user can move it to the desired device.
-# Thus, the code should look like this.
-# Wait, but the user's example in the run function includes moving to device and creating x with device=device. The GetInput function should return a tensor that can be used directly with the model, so perhaps it's better to return a tensor without a device (CPU) and let the user move it when needed. The function's responsibility is to generate the shape and type correctly.
-# Therefore, the code should be structured as above.
-# I should check for any missing parts. The original code uses ReLU after each conv except the last one. The model structure is correct. The checkpoint is applied only to conv2, which is correct.
-# Now, putting all into a single Python code block with proper formatting.
-# </think>
+
+def run(grad_checkpoint):
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model = myModel(grad_checkpoint).to(device)
+    x = torch.randn((2, 3, 640, 256), device=device)
+
+    model_opt = torch.compile(model, mode="reduce-overhead")
+    num_threads = torch.get_num_threads()
+    t = benchmark.Timer(
+        stmt='optim(x)',
+        globals={'optim': model_opt, 'x': x}, # When 'optim': model then it works
+        num_threads=num_threads,
+        label="Average Run Duration",
+    )
+    print(t.timeit(100))
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--grad_checkpoint", action='store_true')
+    args = parser.parse_args()
+    run(args.grad_checkpoint)
+
+from torch.distributed.algorithms._checkpoint import checkpoint_wrapper
+...
+
+def apply_activation_checkpointing(model: torch.nn.Module) -> torch.nn.Module:
+    class_to_checkpoint = ... # class reference to the entire decoder block
+    def check_fn(submodule: Any) -> bool:
+            return isinstance(submodule, class_to_checkpoint)
+
+    wrapper = functools.partial(checkpoint_wrapper.checkpoint_wrapper,
+                                checkpoint_impl=checkpoint_wrapper.CheckpointImpl.NO_REENTRANT,
+                                preserve_rng_state=False)
+    checkpoint_wrapper.apply_activation_checkpointing(
+        model,  # pylint: disable=protected-access
+        checkpoint_wrapper_fn=wrapper,
+        check_fn=check_fn)
+
+    return model
+
+import functools
+from typing import Any
+
+import torch
+from absl import app, logging
+from torch.distributed.algorithms._checkpoint import checkpoint_wrapper
+
+
+class FlashCausalAttention(torch.nn.Module):
+
+    def __init__(self, *, n_heads: int, ndim: int):
+        super().__init__()
+
+        self.head_dim = ndim // n_heads
+        self.dims = (ndim, ndim, ndim)
+        self.q_heads = self.k_heads = self.v_heads = n_heads
+        self.c_attn = torch.nn.Linear(ndim, sum(self.dims))
+        self.c_proj = torch.nn.Linear(ndim, ndim)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        B, T, C = x.size()
+        q, k, v = self.c_attn(x).split(self.dims, dim=2)
+
+        q = q.view(B, T, self.q_heads, self.head_dim).transpose(1, 2)
+        k = k.view(B, T, self.k_heads, self.head_dim).transpose(1, 2)
+        v = v.view(B, T, self.v_heads, self.head_dim).transpose(1, 2)
+
+        with torch.backends.cuda.sdp_kernel(enable_flash=True,
+                                            enable_math=False,
+                                            enable_mem_efficient=False):
+            y = torch.nn.functional.scaled_dot_product_attention(q,
+                                                                 k,
+                                                                 v,
+                                                                 dropout_p=0.0,
+                                                                 is_causal=True)
+
+        y = y.transpose(1, 2).contiguous().view(B, T, C)
+        return self.c_proj(y)
+
+
+class SwigluMlp(torch.nn.Module):
+
+    def __init__(self, *, ndim: int, hidden_dim: int):
+        super().__init__()
+
+        self.c_fc = torch.nn.Linear(ndim, hidden_dim)
+        self.linear_v = torch.nn.Linear(ndim, hidden_dim)
+        self.c_proj = torch.nn.Linear(hidden_dim, ndim)
+        self.swiglu_impl = torch.nn.functional.silu
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        g = self.swiglu_impl(self.c_fc(x))
+        x = g * self.linear_v(x)
+        return self.c_proj(x)
+
+
+class DecoderBlock(torch.nn.Module):
+
+    def __init__(self, *, n_heads: int, ndim: int):
+        super().__init__()
+
+        self.ln_1 = torch.nn.LayerNorm(ndim)
+        self.attn = FlashCausalAttention(n_heads=n_heads, ndim=ndim)
+        self.ln_2 = torch.nn.LayerNorm(ndim)
+        self.mlp = SwigluMlp(ndim=ndim, hidden_dim=4 * ndim)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        h = x + self.attn(self.ln_1(x))
+        return h + self.mlp(self.ln_2(h))
+
+
+class BaseGpt(torch.nn.Module):
+
+    def __init__(self, *, n_layers: int, n_heads: int, ndim: int, vocab_size: int):
+        super().__init__()
+
+        decoder_blocks = torch.nn.ModuleList(
+            [DecoderBlock(n_heads=n_heads, ndim=ndim) for _ in range(n_layers)])
+        self.transformer = torch.nn.ModuleDict({
+            "wte": torch.nn.Embedding(num_embeddings=vocab_size, embedding_dim=ndim),
+            "decoder_blocks": decoder_blocks,
+            "ln_f": torch.nn.LayerNorm(ndim)
+        })
+        self.lm_head = torch.nn.Linear(ndim, vocab_size, bias=False)
+
+    def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
+        x = self.transformer.wte(input_ids)
+        for decoder_block in self.transformer.decoder_blocks:
+            x = decoder_block(x)
+        x = self.transformer.ln_f(x)
+        return self.lm_head(x)
+
+
+class TrainingGpt(torch.nn.Module):
+
+    def __init__(self, base_model: torch.nn.Module):
+        super().__init__()
+        self.base_model = base_model
+        self.loss_fn = torch.nn.CrossEntropyLoss(reduction="mean")
+
+    def forward(self, input_ids: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+        logits = self.base_model(input_ids)
+        return self.loss_fn(logits.view(-1, logits.size(-1)), labels.view(-1))
+
+
+def apply_activation_checkpointing(model: torch.nn.Module) -> torch.nn.Module:
+
+    def _check_fn(submodule: Any) -> bool:
+        return isinstance(submodule, DecoderBlock)
+
+    wrapper = functools.partial(
+        checkpoint_wrapper.checkpoint_wrapper,
+        checkpoint_impl=checkpoint_wrapper.CheckpointImpl.NO_REENTRANT,
+        preserve_rng_state=False)
+    checkpoint_wrapper.apply_activation_checkpointing(model,
+                                                      checkpoint_wrapper_fn=wrapper,
+                                                      check_fn=_check_fn)
+
+    return model
+
+
+def main(argv):
+    del argv  # Unused.
+
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    vocab_size, max_seq_length = 50304, 1024
+
+    model = TrainingGpt(
+        BaseGpt(n_layers=12, n_heads=12, ndim=768, vocab_size=vocab_size))
+    model = model.to(device)
+    optimizer = torch.optim.AdamW(model.parameters())
+    logging.info("Model: {} is initialized with {:.2f} B weights.".format(
+        model,
+        sum(p.numel() for p in model.parameters() if p.requires_grad) / 1e9))
+
+    logging.info("Compiling model...")
+    model = torch.compile(model)
+    logging.info("Applying activation checkpointing...")
+    model = apply_activation_checkpointing(model)
+
+    random_x = torch.randint(0, vocab_size, (1, max_seq_length), device=device)
+    random_y = torch.randint(0, vocab_size, (1, max_seq_length), device=device)
+    with torch.amp.autocast(device_type=device.type, enabled=True,
+                            dtype=torch.bfloat16):
+        loss = model(random_x, random_y)
+    logging.info("Loss: %s", loss)
+
+    logging.info("Running backward pass...")
+    optimizer.zero_grad(set_to_none=True)
+    loss.backward()
+    optimizer.step()
+    logging.info("All good.")
+
+
+if __name__ == '__main__':
+    app.run(main)

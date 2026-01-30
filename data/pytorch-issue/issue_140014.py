@@ -1,14 +1,16 @@
-# torch.rand(3, 3, dtype=torch.float32)
 import torch
-from torch import nn
+from torch.fx.experimental.proxy_tensor import make_fx
+from torch.fx.passes.split_module import split_module
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return (x,)
+def fn(x):
+    return (x,)
 
-def my_model_function():
-    return MyModel()
+g = make_fx(fn, tracing_mode="fake")(torch.randn(3, 3))
 
-def GetInput():
-    return torch.rand(3, 3, dtype=torch.float32)
+g.print_readable()
 
+# `keep_original_order=False` works
+# split_module(g, None, split_callback=lambda _ : 0, keep_original_order=False)
+
+# This fails
+split_module(g, None, split_callback=lambda _ : 0, keep_original_order=True)

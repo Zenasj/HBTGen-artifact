@@ -1,18 +1,12 @@
-# torch.rand(B, 4096, 40, dtype=torch.float32)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-    
-    def forward(self, x):
-        return torch.einsum('b i d, b j d -> b i j', x, x)
+from torch import einsum, ones
+n_samples = 17
+einsum('b i d, b j d -> b i j', ones(16 * n_samples, 4096, 40, device='mps'), ones(16 * n_samples, 4096, 40, device='mps')).shape
+# Output:
+# RuntimeError: Tiling of batch matmul for larger than 2**32 entries only available from MacOS15 onwards
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    B = 16  # Base case from original code (n_samples=1)
-    return torch.rand(B, 4096, 40, dtype=torch.float32)
-
+from torch import einsum, ones
+n_samples = 17
+einsum('b i d, b j d -> b i j', ones(16 * n_samples, 4096, 40, device='mps'), ones(16 * n_samples, 4096, 40, device='mps')).shape
+# torch.Size([272, 4096, 4096])

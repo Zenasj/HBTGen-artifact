@@ -1,20 +1,10 @@
-# torch.rand(B, 2, 2, dtype=torch.float64)  # Inferred input shape: batch of 2x2 matrices
 import torch
-from torch import nn
-
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        
-    def forward(self, x):
-        # Applies torch.linalg.inv to invert the input matrix, which must be a square matrix (n x n)
-        return torch.linalg.inv(x)
-
-def my_model_function():
-    # Returns an instance of MyModel with default initialization
-    return MyModel()
-
-def GetInput():
-    # Returns a random 2x2 tensor (valid for inversion)
-    return torch.rand(2, 2, dtype=torch.float64)
-
+import numpy as np
+arg_1_tensor = torch.neg(torch.rand([2], dtype=torch.float64))
+arg_1 = arg_1_tensor.clone()
+arg_2_tensor = torch.tensor([], dtype=torch.bool)
+arg_2 = arg_2_tensor.clone()
+try:
+  res = torch.linalg.inv(arg_1,out=arg_2,)
+except Exception as e:
+  print("Error:"+str(e))

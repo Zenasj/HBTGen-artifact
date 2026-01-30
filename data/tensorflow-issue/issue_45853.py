@@ -1,72 +1,147 @@
-# tf.random.uniform((32, 400, 16), dtype=tf.float32) ← inferred input shape from the test/data discussion in the issue
+import random
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
 import numpy as np
+a = np.array([2 , 4, 5])
+ap=tf.constant(a)
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define a small CNN model as discussed in the issue
-        self.conv1 = tf.keras.layers.Conv1D(128, 400, strides=4, padding='same')
-        self.flatten = tf.keras.layers.Flatten()
-        self.dropout = tf.keras.layers.Dropout(0.5)
-        self.dense1 = tf.keras.layers.Dense(64, activation='relu')
-        self.out = tf.keras.layers.Dense(1, activation='sigmoid')
+import tensorflow as tf
+major_version = int(tf.__version__.split(".")[0])
+if major_version >= 2:
+   from tensorflow.python import _pywrap_util_port
+   print("MKL enabled:", _pywrap_util_port.IsMklEnabled())
+else:
+   print("MKL enabled:", tf.pywrap_tensorflow.IsMklEnabled())
 
-        # Define a medium model with Bidirectional LSTM + Conv1D as per issue snippet
-        self.bilstm = tf.keras.layers.Bidirectional(
-            tf.keras.layers.LSTM(512, activation='relu', return_sequences=True)
-        )
-        self.lstm = tf.keras.layers.LSTM(512, activation='relu', return_sequences=True)
-        self.conv2 = tf.keras.layers.Conv1D(128, 400, strides=4, padding='same')
-        self.flatten2 = tf.keras.layers.Flatten()
-        self.dropout2 = tf.keras.layers.Dropout(0.5)
-        self.dense2_1 = tf.keras.layers.Dense(256, activation='relu')
-        self.dense2_2 = tf.keras.layers.Dense(128, activation='relu')
-        self.dense2_3 = tf.keras.layers.Dense(64, activation='relu')
-        self.out2 = tf.keras.layers.Dense(1, activation='sigmoid')
+import tensorflow as tf
+import numpy as np
+a = np.array([2 , 4, 5])
+ap=tf.constant(a)
 
-    def call(self, inputs, training=False):
-        # We will run the input through both models and compare outputs
-        # This fusion reflects the comments where both small and medium models were benchmarked
-        
-        # Small model forward
-        x = self.conv1(inputs)
-        x = self.flatten(x)
-        x = self.dropout(x, training=training)
-        x = self.dense1(x)
-        out_small = self.out(x)
+import tensorflow as tf
+major_version = int(tf.__version__.split(".")[0])
+if major_version >= 2:
+   from tensorflow.python import _pywrap_util_port
+   print("MKL enabled:", _pywrap_util_port.IsMklEnabled())
+else:
+   print("MKL enabled:", tf.pywrap_tensorflow.IsMklEnabled())
 
-        # Medium model forward
-        y = self.bilstm(inputs)
-        y = self.lstm(y)
-        y = self.conv2(y)
-        y = self.flatten2(y)
-        y = self.dropout2(y, training=training)
-        y = self.dense2_1(y)
-        y = self.dense2_2(y)
-        y = self.dense2_3(y)
-        out_medium = self.out2(y)
+tf.__version__
+'2.3.0'
 
-        # Compare outputs: for example, absolute difference
-        diff = tf.abs(out_small - out_medium)
-        # Optionally return boolean if outputs are close within tolerance
-        comparison = tf.less_equal(diff, 1e-3)
+import tensorflow as tf
+major_version = int(tf.__version__.split(".")[0])
+if major_version >= 2:
+    from tensorflow.python import _pywrap_util_port
+    print("MKL enabled:", _pywrap_util_port.IsMklEnabled())
+else:
+    print("MKL enabled:", tf.pywrap_tensorflow.IsMklEnabled())
 
-        # Return dictionary of outputs + comparison to illustrate fusion and comparison logic
-        return {
-            'output_small': out_small,
-            'output_medium': out_medium,
-            'difference': diff,
-            'close_enough': comparison
-        }
+import tensorflow as tf
+from tensorflow import keras
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+input_A = keras.layers.Input(shape=[5], name="wide_input")
+input_B = keras.layers.Input(shape=[6], name="deep_input")
+hidden1 = keras.layers.Dense(30, activation="relu")(input_B)
+hidden2 = keras.layers.Dense(30, activation="relu")(hidden1)
+concat = keras.layers.concatenate([input_A, hidden2])
+output = keras.layers.Dense(1, name="output")(concat)
+model = keras.models.Model(inputs=[input_A, input_B], outputs=[output])
 
-def GetInput():
-    # Return a random float32 tensor with shape matching model input:
-    # batch_shape: (32, 400, 16) - based on batch_shape in the issue's benchmarking code
-    return tf.random.uniform((32, 400, 16), dtype=tf.float32)
+import numpy as np
+import tensorflow as tf
 
+x_in = np.array([[
+  [[2], [1], [2], [0], [1]],
+  [[1], [3], [2], [2], [3]],
+  [[1], [1], [3], [3], [0]],
+  [[2], [2], [0], [1], [1]],
+  [[0], [0], [3], [1], [2]], ]])
+kernel_in = np.array([
+ [ [[2, 0.1]], [[3, 0.2]] ],
+ [ [[0, 0.3]],[[1, 0.4]] ], ])
+x = tf.constant(x_in, dtype=tf.float32)
+kernel = tf.constant(kernel_in, dtype=tf.float32)
+tf.nn.conv2d(x, kernel, strides=[1, 1, 1, 1], padding='VALID')
+
+import tensorflow as tf
+major_version = int(tf.__version__.split(".")[0])
+if major_version >= 2:
+    from tensorflow.python import _pywrap_util_port
+    print("MKL enabled:", _pywrap_util_port.IsMklEnabled())
+else:
+    print("MKL enabled:", tf.pywrap_tensorflow.IsMklEnabled())
+
+set
+
+import mkl
+mkl.verbose(1)
+
+import tensorflow as tf
+major_version = int(tf.__version__.split(".")[0])
+if major_version >= 2:
+    from tensorflow.python import _pywrap_util_port
+    print("MKL enabled:", _pywrap_util_port.IsMklEnabled())
+else:
+    print("MKL enabled:", tf.pywrap_tensorflow.IsMklEnabled())
+
+from tensorflow.keras.layers import Input, Dense, LSTM, Bidirectional, Conv1D
+from tensorflow.keras.layers import Flatten, Dropout
+from tensorflow.keras.models import Model
+from tensorflow.keras.optimizers import Adam
+import tensorflow.keras.backend as K
+import numpy as np
+from time import time
+
+
+def timeit(func, iterations, *args):
+    t0 = time()
+    for _ in range(iterations):
+        func(*args)
+    print("Time/iter: %.4f sec" % ((time() - t0) / iterations))
+
+def make_small_model(batch_shape):
+    ipt   = Input(batch_shape=batch_shape)
+    x     = Conv1D(128, 400, strides=4, padding='same')(ipt)
+    x     = Flatten()(x)
+    x     = Dropout(0.5)(x)
+    x     = Dense(64, activation='relu')(x)
+    out   = Dense(1,  activation='sigmoid')(x)
+    model = Model(ipt, out)
+    model.compile(Adam(lr=1e-4), 'binary_crossentropy')
+    return model
+
+def make_medium_model(batch_shape):
+    ipt   = Input(batch_shape=batch_shape)
+    x     = Bidirectional(LSTM(512, activation='relu', return_sequences=True))(ipt)
+    x     = LSTM(512, activation='relu', return_sequences=True)(x)
+    x     = Conv1D(128, 400, strides=4, padding='same')(x)
+    x     = Flatten()(x)
+    x     = Dense(256, activation='relu')(x)
+    x     = Dropout(0.5)(x)
+    x     = Dense(128, activation='relu')(x)
+    x     = Dense(64,  activation='relu')(x)
+    out   = Dense(1,   activation='sigmoid')(x)
+    model = Model(ipt, out)
+    model.compile(Adam(lr=1e-4), 'binary_crossentropy')
+    return model
+
+def make_data(batch_shape):
+    return np.random.randn(*batch_shape), np.random.randint(0, 2, (batch_shape[0], 1))
+
+batch_shape = (32, 400, 16)
+X, y = make_data(batch_shape)
+
+model_small = make_small_model(batch_shape)
+model_small.train_on_batch(X, y)  # skip first iteration which builds graph
+timeit(model_small.train_on_batch, 200, X, y)
+
+K.clear_session()  # in my testing, kernel was restarted instead
+
+model_medium = make_medium_model(batch_shape)
+model_medium.train_on_batch(X, y)  # skip first iteration which builds graph
+timeit(model_medium.train_on_batch, 10, X, y)
+#endregion

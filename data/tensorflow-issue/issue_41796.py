@@ -1,132 +1,115 @@
-# tf.random.uniform((B, 28, 28, 1), dtype=tf.float32) ← Input shape inferred from original MNIST domain images
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
-import tensorflow as tf
-from tensorflow.keras.layers import Input, Conv2D, Dense, Flatten
+from tensorflow.keras.layers import Input, Conv2D, Conv2DTranspose, Dense, Flatten
 from tensorflow.keras.models import Model
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define the shared generators used in the domain translation GAN
-        self.g_m2h = self._build_generator(name="g_m2h")  # Mapping: domain M to H
-        self.g_h2m = self._build_generator(name="g_h2m")  # Mapping: domain H to M
-        self.g_h2r = self._build_generator(name="g_h2r")  # Mapping: domain H to R
-        self.g_r2h = self._build_generator(name="g_r2h")  # Mapping: domain R to H
+def dump_model( model, indent=0 ):
+    print( '-'*indent, model.name, ('None-Trainable', 'Trainable')[model.trainable] )
+    if hasattr(model, 'layers'):
+        for layer in model.layers:
+            dump_model( layer, indent+2 )
 
-        # Define critics (discriminators) for domains M and R
-        self.critic_m = self._build_critic(name="critic_m")
-        self.critic_r = self._build_critic(name="critic_r")
+def build_critic():
+    input = Input( shape=(28, 28, 1 ) )
+    output = Dense(1)(Flatten()(input))
+    return Model( input, output )
 
-        # Additional models built over these sub-networks:
-        # Cycle consistency model (multitask outputs with cycle losses)
-        m_inputs = Input(shape=(28, 28, 1))
-        r_inputs = Input(shape=(28, 28, 1))
+def generator():
+    input = Input( shape=(28, 28, 1 ) )
+    output = Conv2D( 1, (3, 3), padding='same' )(input)
+    model = Model( input, output )
+    model.compile( loss='mae', optimizer='adam' )
+    return model
 
-        # Forward cycle losses for domain M and R
-        m_output_1 = self.g_h2m(self.g_m2h(m_inputs))
-        m_output_2 = self.g_h2m(self.g_r2h(self.g_h2r(self.g_m2h(m_inputs))))
+def build_mnist( optimizer = None ):
+    input_shape = ( 28, 28, 1 )
+    g_m2h = generator()
+    g_h2m = generator()
+    g_h2r = generator()
+    g_r2h = generator()
 
-        r_output_1 = self.g_h2r(self.g_r2h(r_inputs))
-        r_output_2 = self.g_h2r(self.g_m2h(self.g_h2m(self.g_r2h(r_inputs))))
+    m_inputs = Input( shape=input_shape )
+    m_output_1 = g_h2m( g_m2h( m_inputs ) )
+    m_output_2 = g_h2m( g_r2h( g_h2r( g_m2h( m_inputs ) ) ) )
 
-        # Cycle consistency outputs explicitly
-        mmh = self.g_r2h(self.g_h2r(self.g_m2h(m_inputs)))
-        rrh = self.g_m2h(self.g_h2m(self.g_r2h(r_inputs)))
+    r_inputs = Input( shape=input_shape )
+    r_output_1 = g_h2r( g_r2h( r_inputs ) )
+    r_output_2 = g_h2r( g_m2h (g_h2m( g_r2h( r_inputs ) ) ) )
 
-        self.model_cycle = Model(
-            inputs=[m_inputs, r_inputs],
-            outputs=[m_output_1, m_output_2, r_output_1, r_output_2, mmh, rrh],
-            name="cycle_model"
-        )
+    mh = g_m2h( m_inputs )
+    mmh = g_r2h( g_h2r( mh ) )
 
-        # Models that use fixed generators (trainable=False) for WGAN GAN training on domain R and M
-        # For domain R:
-        self.g_m2h.trainable = False
-        self.g_h2m.trainable = False
-        self.g_h2r.trainable = False
-        self.g_r2h.trainable = False
+    rh = g_r2h( r_inputs )
+    rrh = g_m2h( g_h2m( rh ) )
 
-        m_inputs_wgan = Input(shape=(28, 28, 1))
-        g_m2r = self.g_h2r(self.g_m2h(m_inputs_wgan))
-        self.model_m2r = Model(m_inputs_wgan, g_m2r, name="model_m2r")
-        # model_m2r compiled with trainable False sub-networks
+    model_cycle = Model( inputs=[m_inputs, r_inputs], outputs=[m_output_1, m_output_2, r_output_1, r_output_2, mmh, rrh] )
+    model_cycle.compile( loss='mae', optimizer='adam' )
 
-        real_image_r = Input(shape=(28, 28, 1))
-        noisy_image_r = Input(shape=(28, 28, 1))
-        valid_r = self.critic_r(real_image_r)
-        fake_image_r = self.model_m2r(noisy_image_r)
-        fake_r = self.critic_r(fake_image_r)
-        self.model_wgan_r = Model(
-            inputs=[real_image_r, noisy_image_r],
-            outputs=[valid_r, fake_r],
-            name="wgan_critic_r"
-        )
+    g_m2h.trainable = False
+    g_h2m.trainable = False
+    g_h2r.trainable = False
+    g_r2h.trainable = False
+    m_inputs = Input( shape=input_shape )
+    g_m2r = g_h2r( g_m2h( m_inputs ) )
+    model_m2r = Model( m_inputs, g_m2r, trainable=False )
+    model_m2r.compile( loss='mae', optimizer='adam' ) # must compile here?
 
-        # For domain M:
-        r_inputs_wgan = Input(shape=(28, 28, 1))
-        g_r2m = self.g_h2m(self.g_r2h(r_inputs_wgan))
-        self.model_r2m = Model(r_inputs_wgan, g_r2m, name="model_r2m")
+    critic_r = build_critic()
+    critic = critic_r
+    generator_model = model_m2r
+    real_image = Input(shape=input_shape)
+    valid = critic( real_image )
+    noisy_image = Input(shape=input_shape)
+    fake_image = generator_model(noisy_image)
+    fake = critic( fake_image )
+    critic_model = Model(inputs=[real_image, noisy_image], outputs=[valid, fake] )
+    critic_model.compile(loss='mae', optimizer='adam' )
+    model_wgan_r = critic_model
+    model_wgan_r.summary()
+    dump_model( model_wgan_r )
 
-        real_image_m = Input(shape=(28, 28, 1))
-        noisy_image_m = Input(shape=(28, 28, 1))
-        valid_m = self.critic_m(real_image_m)
-        fake_image_m = self.model_r2m(noisy_image_m)
-        fake_m = self.critic_m(fake_image_m)
-        self.model_wgan_m = Model(
-            inputs=[real_image_m, noisy_image_m],
-            outputs=[valid_m, fake_m],
-            name="wgan_critic_m"
-        )
+    r_inputs = Input( shape=input_shape )
+    g_r2m = g_h2m( g_r2h( r_inputs ) )
+    model_r2m = Model( r_inputs, g_r2m, trainable = False )
+    model_r2m.compile( loss='mae', optimizer='adam' )
 
-        # Reset trainable flags for further training steps on these sub-networks
-        self.g_m2h.trainable = True
-        self.g_h2m.trainable = True
-        self.g_h2r.trainable = True
-        self.g_r2h.trainable = True
+    critic_m = build_critic()
+    critic = critic_m
+    generator_model = model_r2m
+    generator_model.Trainable = False
+    real_image = Input(shape=input_shape)
+    valid = critic( real_image )
+    noisy_image = Input(shape=input_shape)
+    fake_image = generator_model(noisy_image)
+    fake = critic( fake_image )
+    critic_model = Model(inputs=[real_image, noisy_image], outputs=[valid, fake] )
+    critic_model.compile(loss='mae', optimizer='adam' )
+    model_wgan_m = critic_model
 
-        self.critic_r.trainable = False
-        m_inputs_critic = Input(shape=(28, 28, 1))
-        m2r_critic_out = self.critic_r(self.g_h2r(self.g_m2h(m_inputs_critic)))
-        self.model_critic_m2r = Model(m_inputs_critic, m2r_critic_out, name="critic_m2r")
+    g_m2h.trainable = True
+    g_h2m.trainable = True
+    g_h2r.trainable = True
+    g_r2h.trainable = True
 
-        self.critic_m.trainable = False
-        r_inputs_critic = Input(shape=(28, 28, 1))
-        r2m_critic_out = self.critic_m(self.g_h2m(self.g_r2h(r_inputs_critic)))
-        self.model_critic_r2m = Model(r_inputs_critic, r2m_critic_out, name="critic_r2m")
+    critic_r.trainable = False
+    m_inputs = Input( shape=input_shape )
+    m2r_critic = critic_r( g_h2r( g_m2h( m_inputs ) ) )
+    model_critic_m2r = Model( m_inputs, m2r_critic  )
+    model_critic_m2r.compile( loss='mae', optimizer='adam' )
 
-    @staticmethod
-    def _build_generator(name=None):
-        # A simple generator: Conv2D with kernel size (3,3), padding=same
-        inputs = Input(shape=(28, 28, 1))
-        outputs = Conv2D(1, (3, 3), padding='same')(inputs)
-        model = Model(inputs, outputs, name=name)
-        return model
+    critic_m.trainable = False
+    r_inputs = Input( shape=input_shape )
+    r2m_critic = critic_m( g_h2m( g_r2h( r_inputs ) ) )
+    model_critic_r2m = Model( r_inputs, r2m_critic )
+    model_critic_r2m.compile( loss='mae', optimizer='adam' )
 
-    @staticmethod
-    def _build_critic(name=None):
-        # A simple critic/discriminator model: Flatten -> Dense(1)
-        inputs = Input(shape=(28, 28, 1))
-        x = Flatten()(inputs)
-        outputs = Dense(1)(x)
-        model = Model(inputs, outputs, name=name)
-        return model
+    print( '\n', '*'*80, '\n' )
 
-    def call(self, inputs, training=False):
-        """
-        Forward call returns the 6 outputs from the cycle consistency model.
-        This illustrates the domain translation pipeline with cycle losses.
-        """
-        m_input, r_input = inputs  # expecting a tuple of two inputs
-        return self.model_cycle([m_input, r_input])
+    model_wgan_r.summary()
+    dump_model( model_wgan_r )
 
-def my_model_function():
-    # Return an instance of MyModel with freshly created sub-networks
-    return MyModel()
+    return model_cycle, model_wgan_r, model_wgan_m, model_critic_m2r, model_critic_r2m, model_m2r, model_r2m
 
-def GetInput():
-    # Return a tuple of two random float32 tensors matching the input shape (28, 28, 1)
-    # to simulate (m_inputs, r_inputs) for the model call
-    x1 = tf.random.uniform((1, 28, 28, 1), dtype=tf.float32)
-    x2 = tf.random.uniform((1, 28, 28, 1), dtype=tf.float32)
-    return (x1, x2)
-
+if __name__ == "__main__":
+    model_cycle, model_wgan_r, model_wgan_m, model_critic_m2r, model_critic_r2m, model_m2r, model_r2m = build_mnist()

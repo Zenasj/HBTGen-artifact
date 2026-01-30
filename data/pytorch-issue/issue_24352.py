@@ -1,51 +1,71 @@
-# torch.rand(B, C, H, W, dtype=...)  # Add a comment line at the top with the inferred input shape
-import torch
 import torch.nn as nn
+import torchvision
+
 import torch.optim as optim
+from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1)
-        self.relu = nn.ReLU()
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
-        self.fc = nn.Linear(64 * 16 * 16, 10)  # Assuming input size is 32x32
+conv = nn.Conv2d(3,3,3)
+optimizer = optim.Adam(conv.parameters()) 
+lr_scheduler = optim.lr_scheduler.StepLR(optimizer, 2)
 
-    def forward(self, x):
-        x = self.pool(self.relu(self.conv1(x)))
-        x = x.view(-1, 64 * 16 * 16)
-        x = self.fc(x)
-        return x
+# Scheduler with sometimes-constant epoch number
+for epoch in [0, 0, 1, 1, 2, 2, 3, 3]:
+  lr_scheduler.step(epoch)
+  print(optimizer.param_groups[0]['lr'])
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+import torch.optim as optim
+from torch import nn
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # Assuming input shape is (B, C, H, W) where B is batch size, C is channels, H is height, W is width
-    return torch.rand(1, 3, 32, 32, dtype=torch.float32)
+conv = nn.Conv2d(3,3,3)
+optimizer = optim.Adam(conv.parameters()) 
+lr_scheduler = optim.lr_scheduler.StepLR(optimizer, 2)
 
-# Example usage of the model and scheduler
-if __name__ == "__main__":
-    model = my_model_function()
-    optimizer = optim.Adam(model.parameters())
-    lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=2)
+last_epoch = -1
+for epoch in [0, 0, 1, 1, 2, 2, 3, 3]:
 
-    last_epoch = -1
-    for epoch in [0, 0, 1, 1, 2, 2, 3, 3]:
-        if epoch - last_epoch > 0:
-            lr_scheduler.step()
-        last_epoch = epoch
+  # Check if epoch number has changed manually
+  if epoch-last_epoch > 0:
+    lr_scheduler.step()
+  last_epoch = epoch
 
-        print(f"Epoch {epoch}, Learning Rate: {lr_scheduler.get_last_lr()}")
+  print(epoch, scheduler.get_computed_values())
 
-# The provided GitHub issue and comments discuss changes to PyTorch's learning rate schedulers, specifically making them chainable and deprecating certain behaviors. However, the issue does not describe a specific PyTorch model or provide any code for a model. Instead, it focuses on the usage and behavior of learning rate schedulers.
-# Since the goal is to generate a complete Python code file that includes a PyTorch model, I will create a simple example model and incorporate the discussed scheduler changes into the code. The model will be a basic convolutional neural network (CNN) with an Adam optimizer and a StepLR scheduler.
-# Here is the complete Python code file:
-# ### Explanation:
-# 1. **MyModel**: A simple CNN with one convolutional layer, ReLU activation, max pooling, and a fully connected layer.
-# 2. **my_model_function**: Returns an instance of `MyModel`.
-# 3. **GetInput**: Generates a random tensor input with shape `(1, 3, 32, 32)` to match the expected input of the model.
-# 4. **Example usage**: Demonstrates how to use the model and scheduler, including the logic to handle the sometimes-constant epoch number and the deprecation of the `get_lr` method.
-# This code should be ready to use with `torch.compile(MyModel())(GetInput())`.
+import torch
+from torchvision.models import resnet18
+net = resnet18()
+
+optimizer = torch.optim.SGD(net.parameters(), 0.1)
+scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[3, 6, 9], gamma=0.1)
+scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 3, gamma=0.1)
+
+for i in range(10):
+  # Scheduler computes and returns new learning rate, leading to unexpected behavior
+  print(i, scheduler.get_lr())
+  scheduler.step()
+
+import torch
+from torchvision.models import resnet18
+
+net = resnet18()
+optimizer = torch.optim.SGD(net.parameters(), 0.1)
+lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[3, 6, 9], gamma=0.1)
+lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 3, gamma=0.1)
+
+for i in range(10):
+    # Returns last computed learning rate by scheduler
+    print(i, lr_scheduler.get_computed_values())
+    lr_scheduler.step()
+
+import torch.optim as optim
+from torch import nn
+
+conv = nn.Conv2d(3,3,3)
+optimizer = optim.Adam(conv.parameters()) 
+lr_scheduler = optim.lr_scheduler.StepLR(optimizer, 2)
+
+for epoch in range(10):
+  # ... some large amount of code ...
+  lr_scheduler.step(epoch)
+  # ... some large amount of code ...
+  lr_scheduler.step(epoch)
+  # ... some large amount of code ...

@@ -1,24 +1,11 @@
-# torch.rand(1, 3, 224, 224, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
-
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.flatten = nn.Flatten(start_dim=1, end_dim=-1)
-        self.fc = nn.Linear(3 * 224 * 224, 10)  # Example output size, adjust as needed
-
-    def forward(self, x):
-        x = self.flatten(x)
-        x = self.fc(x)
-        return x
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
-
+torch.onnx.export(
+    model,                       # MyPyTorch Model
+    features,                    # Dummy_Input tensor
+    "./converted.onnx",            # Output file 
+    opset_version=12,       # Operator support version
+    input_names=['input'],   # Input tensor name (arbitary)
+    output_names=['prediction'] # Output tensor name (arbitary)
+)
+...

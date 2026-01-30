@@ -1,91 +1,51 @@
-# tf.random.uniform((10, 1), dtype=tf.float32) ← inferred from DummyGenerator output batch shape (10, 1)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
+from tensorflow.python.keras.layers import Input, Dense
+from tensorflow.python.keras.models import Model
+from tensorflow.python.ops import state_ops
+
 import numpy as np
 
 class BatchCounter(tf.keras.layers.Layer):
-    def __init__(self, name="batch_counter", **kwargs):
-        super(BatchCounter, self).__init__(name=name, **kwargs)
-        self.stateful = True
-        # Using a Variable instead of Keras backend variable for better compatibility
-        self.batches = tf.Variable(0, dtype=tf.int32, trainable=False)
 
-    def reset_states(self):
-        self.batches.assign(0)
+        def __init__(self, name="batch_counter", **kwargs):
+            super(BatchCounter, self).__init__(name=name, **kwargs)
+            self.stateful = True
+            self.batches = tf.keras.backend.variable(value=0, dtype="int32")
 
-    def call(self, y_true, y_pred):
-        current_batches = self.batches.value()
-        # Increment the batch count by 1
-        self.batches.assign_add(1)
-        # Return the batch count + 1 as a float metric, to mimic original behavior
-        # (added 1 is consistent with original code)
-        return tf.cast(current_batches + 1, tf.float32)
+        def reset_states(self):
+            tf.keras.backend.set_value(self.batches, 0)
+
+        def __call__(self, y_true, y_pred):
+            current_batches = self.batches * 1
+            self.add_update(
+              state_ops.assign_add(self.batches,
+                                   tf.keras.backend.variable(value=1, dtype="int32")))
+            return current_batches + 1
 
 class DummyGenerator(object):
-    """ Dummy data generator yielding batches of shape (10, 1) with features of ones and zeros as labels """
+    """ Dummy data generator. """
+
     def run(self):
         while True:
-            yield np.ones((10, 1), dtype=np.float32), np.zeros((10, 1), dtype=np.float32)
+            yield np.ones((10, 1)), np.zeros((10, 1))
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.dense = tf.keras.layers.Dense(1)
-        self.batch_counter_metric = BatchCounter()
+train_gen = DummyGenerator()
+val_gen = DummyGenerator()
 
-        # Create a keras metrics.Metric wrapper around BatchCounter to integrate with model.metrics
-        # But since the original BatchCounter is a Layer returning a float, we'll just implement metric like behavior
-        # during training step here for demonstration.
+# Dummy model
+inputs = Input(shape=(1,))
+outputs = Dense(1)(inputs)
+model = Model(inputs=inputs, outputs=outputs)
+model.compile(loss="mse", optimizer="adam", metrics=[BatchCounter()])
 
-    def call(self, inputs, training=False):
-        outputs = self.dense(inputs)
-        return outputs
-
-    def train_step(self, data):
-        x, y = data
-        with tf.GradientTape() as tape:
-            y_pred = self(x, training=True)  # Forward pass
-            loss = self.compiled_loss(y, y_pred, regularization_losses=self.losses)
-
-        # Compute gradients
-        gradients = tape.gradient(loss, self.trainable_variables)
-        # Update weights
-        self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
-
-        # Update BatchCounter metric by calling with y_true and y_pred
-        batch_count_metric = self.batch_counter_metric(y, y_pred)
-
-        # Update other metrics
-        self.compiled_metrics.update_state(y, y_pred)
-
-        # Prepare results dict for logs()
-        results = {m.name: m.result() for m in self.metrics}
-        # Include our batch counter metric result keyed by its name
-        results[self.batch_counter_metric.name] = batch_count_metric
-
-        return results
-
-    def test_step(self, data):
-        x, y = data
-        y_pred = self(x, training=False)
-        # Update loss and metrics
-        self.compiled_loss(y, y_pred, regularization_losses=self.losses)
-        self.compiled_metrics.update_state(y, y_pred)
-
-        results = {m.name: m.result() for m in self.metrics}
-        return results
-
-def my_model_function():
-    # Create an instance of MyModel, compile it similarly to the example:
-    model = MyModel()
-    model.compile(
-        optimizer=tf.keras.optimizers.Adam(),
-        loss=tf.keras.losses.MeanSquaredError(),
-        metrics=[tf.keras.metrics.MeanAbsoluteError()]  # Add any standard metric for demonstration
-    )
-    return model
-
-def GetInput():
-    # Return a random tensor input matching input shape expected by MyModel, based on DummyGenerator shape: (batch=10, 1)
-    return tf.random.uniform((10, 1), dtype=tf.float32)
-
+model.fit_generator(
+    train_gen.run(),
+    steps_per_epoch=5,
+    epochs=200,
+    validation_data=val_gen.run(),
+    validation_steps=5,
+    callbacks=[tf.keras.callbacks.TensorBoard()])

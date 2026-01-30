@@ -1,29 +1,24 @@
-# tf.random.uniform((1, 1, 1), dtype=tf.float32)  ← inferred input shape from batch_input_shape
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        number_of_cells = 2
-        # Create two GRUCells as in the original example
-        cells = [tf.keras.layers.GRUCell(10) for _ in range(number_of_cells)]
-        # Stateful RNN with these cells
-        self.rnn = tf.keras.layers.RNN(cells, stateful=True)
-        # We add InputSpec for batch_input_shape to match original model setup
-        self._set_input_spec(
-            tf.keras.layers.InputSpec(batch_shape=(1, 1, 1))
-        )
-        
-    def call(self, inputs):
-        # Forward pass through the stateful RNN
-        return self.rnn(inputs)
-    
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+number_of_cells = 2
 
-def GetInput():
-    # Create a random tensor matching the expected input shape (batch=1, timesteps=1, features=1)
-    return tf.random.uniform((1, 1, 1), dtype=tf.float32)
+model = tf.keras.Sequential()
 
+model.add(tf.keras.layers.Input(batch_input_shape=(1, 1, 1)))
+
+cells = []
+
+for _ in range(number_of_cells):
+    cells.append(tf.keras.layers.GRUCell(10))
+
+model.add(tf.keras.layers.RNN(cells, stateful=True))
+
+model.compile()
+
+model.save('rnn.tf', save_format='tf')
+
+model2 = tf.keras.models.load_model('rnn.tf')

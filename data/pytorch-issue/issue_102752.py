@@ -1,19 +1,14 @@
-# torch.rand(16, 16, 16, dtype=torch.float32, device='cuda')  # Input shape and dtype inferred from the repro
 import torch
-import torch.nn as nn
+import torch._dynamo
+import torch._inductor.config
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-    
-    def forward(self, x):
-        y = x + 4
-        z = torch.fft.fftn(y)
-        return z
+torch._inductor.config.cpp_wrapper = True
 
-def my_model_function():
-    return MyModel()
+x = torch.rand((16, 16, 16), device='cuda')
 
-def GetInput():
-    return torch.rand(16, 16, 16, dtype=torch.float32, device='cuda')
+def fn(x):
+    y = x + 4
+    z = torch.fft.fftn(y)
+    return z
 
+torch._dynamo.optimize("inductor")(fn)(x)

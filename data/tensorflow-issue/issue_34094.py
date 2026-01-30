@@ -1,46 +1,120 @@
-# tf.random.uniform((B, None), dtype=tf.int32) ← Input shape: batch size B, variable sequence length, integer tokens (text encoded)
+embedding_dim=16
+
+model = keras.Sequential([
+    layers.Embedding(encoder.vocab_size, embedding_dim),
+    layers.Bidirectional(tf.keras.layers.LSTM(32)),
+    layers.Dense(1, activation='sigmoid')
+])
+
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
 
-class MyModel(tf.keras.Model):
-    def __init__(self, vocab_size, embedding_dim=16, lstm_units=32):
-        super().__init__()
-        # Embedding with mask_zero=True to handle variable-length padded sequences
-        self.embedding = tf.keras.layers.Embedding(
-            vocab_size, embedding_dim, mask_zero=True)
-        # Bidirectional LSTM as in original model - uses cuDNN when on GPU if available
-        self.bi_lstm = tf.keras.layers.Bidirectional(
-            tf.keras.layers.LSTM(lstm_units))
-        self.classifier = tf.keras.layers.Dense(1, activation='sigmoid')
+import tensorflow_datasets as tfds
+# tfds.disable_progress_bar()
+(train_data, test_data), info = tfds.load(
+    'imdb_reviews/subwords8k', 
+    split = (tfds.Split.TRAIN, tfds.Split.TEST), 
+    with_info=True, as_supervised=True)
+encoder = info.features['text'].encoder
+padded_shapes = ([None],())
+train_batches = train_data.shuffle(1000).padded_batch(10, padded_shapes = padded_shapes)
+test_batches = test_data.shuffle(1000).padded_batch(10, padded_shapes = padded_shapes)
 
-    def call(self, inputs, training=False):
-        x = self.embedding(inputs)
-        x = self.bi_lstm(x, training=training)
-        x = self.classifier(x)
-        return x
+embedding_dim=16
 
-def my_model_function():
-    # The imdb_reviews/subwords8k dataset from TFDS uses a vocabulary size of 8185 in the tutorial,
-    # but since we are not loading dataset here, choose a placeholder vocab size consistent with official subwords8k.
-    # (In practice this number should come from the encoder.)
-    vocab_size = 8185
-    embedding_dim = 16
-    lstm_units = 32
-    return MyModel(vocab_size, embedding_dim, lstm_units)
+model = keras.Sequential([
+    layers.Embedding(encoder.vocab_size, embedding_dim,mask_zero=True),
+    layers.Bidirectional(tf.keras.layers.LSTM(32)),
+    layers.Dense(1, activation='sigmoid')
+])
 
-def GetInput():
-    # Return a random batch of integer sequences representing tokenized text
-    # Assumptions based on imdb_reviews/subwords8k dataset:
-    # - Batch size: 10 (small batch to avoid OOM issues shown in the issue)
-    # - Sequence length: variable, pad with zeros. We'll generate sequences of len 50 here.
-    # - Integer values between 1 and vocab_size-1, 0 reserved for padding (mask_zero=True)
-    batch_size = 10
-    seq_len = 50
-    vocab_size = 8185
+model.compile(optimizer='adam',
+              loss='binary_crossentropy',
+              metrics=['accuracy'])
 
-    # Generate random int32 tensor with values in [1, vocab_size-1] (0 reserved for padding)
-    # Here we do not pad with zeros explicitly since all are > 0 (mask_zero=True handles masking)
-    input_data = tf.random.uniform(
-        shape=(batch_size, seq_len), minval=1, maxval=vocab_size, dtype=tf.int32)
-    return input_data
+history = model.fit(
+    train_batches,
+    epochs=10,
+    validation_data=test_batches, validation_steps=20,verbose=2)
 
+from __future__ import absolute_import, division, print_function, unicode_literals
+
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+
+import tensorflow_datasets as tfds
+# tfds.disable_progress_bar()
+(train_data, test_data), info = tfds.load(
+    'imdb_reviews/subwords8k', 
+    split = (tfds.Split.TRAIN, tfds.Split.TEST), 
+    with_info=True, as_supervised=True)
+encoder = info.features['text'].encoder
+padded_shapes = ([None],())
+train_batches = train_data.shuffle(10000).padded_batch(256, padded_shapes = padded_shapes)
+test_batches = test_data.shuffle(10000).padded_batch(256, padded_shapes = padded_shapes)
+
+embedding_dim=16
+
+model = keras.Sequential([
+    layers.Embedding(encoder.vocab_size, embedding_dim,mask_zero=True),
+    layers.Bidirectional(tf.keras.layers.LSTM(32)),
+    layers.Dense(1, activation='sigmoid')
+])
+
+model.compile(optimizer='adam',
+              loss='binary_crossentropy',
+              metrics=['accuracy'])
+
+history = model.fit(
+    train_batches,
+    epochs=10,
+    validation_data=test_batches, validation_steps=20)
+
+import tensorflow as tf
+gpus = tf.config.experimental.list_physical_devices('GPU')
+tf.config.experimental.set_memory_growth(gpus[0],True)
+
+from __future__ import absolute_import, division, print_function, unicode_literals
+
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+
+import tensorflow_datasets as tfds
+import os
+
+gpus = tf.config.experimental.list_physical_devices('GPU')
+tf.config.experimental.set_memory_growth(gpus[0],True)
+
+# tfds.disable_progress_bar()
+(train_data, test_data), info = tfds.load(
+    'imdb_reviews/subwords8k', 
+    split = (tfds.Split.TRAIN, tfds.Split.TEST), 
+    with_info=True, as_supervised=True)
+encoder = info.features['text'].encoder
+padded_shapes = ([None],())
+train_batches = train_data.shuffle(10000).padded_batch(100, padded_shapes = padded_shapes)
+test_batches = test_data.shuffle(10000).padded_batch(100, padded_shapes = padded_shapes)
+
+embedding_dim=16
+
+model = keras.Sequential([
+    layers.Embedding(encoder.vocab_size, embedding_dim,mask_zero=True),
+    layers.Bidirectional(tf.keras.layers.LSTM(32)),
+    layers.Dense(1, activation='sigmoid')
+])
+
+model.compile(optimizer='adam',
+              loss='binary_crossentropy',
+              metrics=['accuracy'])
+
+# TF_FORCE_GPU_ALLOW_GROWTH=true
+
+history = model.fit(
+    train_batches,
+    epochs=10,
+    validation_data=test_batches, validation_steps=20)

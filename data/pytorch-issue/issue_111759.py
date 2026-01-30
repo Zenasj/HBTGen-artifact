@@ -1,18 +1,13 @@
-# torch.rand(128, 20, dtype=torch.float32)
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.layer = nn.Linear(20, 30)
-        
-    def forward(self, x):
-        return self.layer(x)
+import torch
+from functorch.compile import aot_function
 
-def my_model_function():
-    return MyModel()
+model = torch.nn.Linear(20, 30)
+x = torch.randn(128, 20)
 
-def GetInput():
-    return torch.randn(128, 20, dtype=torch.float32)
+def backend(gm, inputs):
+    return gm
 
+model = aot_function(model, fw_compiler=backend, bw_compiler=backend)
+model(x)

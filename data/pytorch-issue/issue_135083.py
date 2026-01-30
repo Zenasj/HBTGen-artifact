@@ -1,17 +1,8 @@
-# torch.rand(4,4, dtype=torch.bfloat16)
 import torch
-from torch import nn
+def fn(x):
+    result = torch.rrelu(x,0.2,0.8,training=True)
+    return result
+x = torch.randn(4,4,dtype=torch.bfloat16,requires_grad=True)
+compiled_fn = torch.compile(fn, backend="inductor")
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        
-    def forward(self, x):
-        return torch.rrelu(x, 0.2, 0.8, training=True)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.randn(4, 4, dtype=torch.bfloat16, requires_grad=True)
-
+res = compiled_fn(x)

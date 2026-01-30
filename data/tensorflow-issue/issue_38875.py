@@ -1,26 +1,27 @@
-# tf.random.uniform((), dtype=tf.float32) ← The example input is a scalar tensor (shape ()), dtype float32
+from tensorflow import keras
+
 import tensorflow as tf
 
 class MyModel(tf.keras.Model):
     def __init__(self):
         super().__init__()
-        # In this minimal example, no layers are needed, just a simple call doubling input.
 
     def call(self, inputs):
-        # Example operation: multiply input by 2
         return 2 * inputs
 
-    @tf.function
-    def step_model(self, inputs):
-        # Method version of step_model to enable tracing with model instance as "self"
-        return self(inputs)
+@tf.function
+def step_model(model, inputs):
+    return model(inputs)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+@tf.function
+def step(inputs):
+    return model(inputs)
 
-def GetInput():
-    # Return a scalar float32 tensor matching the input expected by MyModel.call
-    # Since the example uses scalar input: shape ()
-    return tf.random.uniform((), dtype=tf.float32)
-
+inputs = tf.convert_to_tensor(1, dtype=tf.float32)
+model = MyModel()
+# This works as expected
+print(f"step() = {step(inputs)}") # 2.0
+print(f"step() concrete functions: {step._list_all_concrete_functions_for_serialization()}") # [<tensorflow.python.eager.function.ConcreteFunction object at 0x13a2c0510>]
+# This does not, no concrete function is saved
+print(f"step_model() = {step_model(model, inputs)}") # 2.0
+print(f"step_model() concrete functions: {step_model._list_all_concrete_functions_for_serialization()}") # []

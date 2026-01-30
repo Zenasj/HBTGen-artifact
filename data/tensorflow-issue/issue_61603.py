@@ -1,31 +1,28 @@
-# tf.random.uniform((3, 74, 74, 256), dtype=tf.float32) ← input shape from issue reproduction code
+import random
+from tensorflow.keras import layers
 
+results = dict()
 import tensorflow as tf
+import os
+import numpy as np
+try:
+  pool_size_0 = 1e+38
+  pool_size_1 = 1048576
+  pool_size = [pool_size_0,pool_size_1,]
+  strides_0 = 2
+  strides_1 = 2
+  strides = [strides_0,strides_1,]
+  padding = "same"
+  data_format = None
+  arg_class = tf.compat.v1.keras.layers.MaxPool2D(pool_size=pool_size,strides=strides,padding=padding,data_format=data_format,)
+  arg_input_0_tensor = tf.random.uniform([3, 74, 74, 256], dtype=tf.float32)
+  arg_input_0 = tf.identity(arg_input_0_tensor)
+  arg_input = [arg_input_0,]
+  out = arg_class(*arg_input)
+except Exception as e:
+  print("Error:"+str(e))
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Create a tf.compat.v1.keras.layers.MaxPool2D layer using the parameters from the issue
-        # Note: pool_size has extremely large float and large int values, which likely triggers the error.
-        # We keep the original parameters to reproduce the scenario.
-        self.maxpool = tf.compat.v1.keras.layers.MaxPool2D(
-            pool_size=[1e+38, 1048576],
-            strides=[2, 2],
-            padding="same",
-            data_format=None,
-        )
+print(results)
 
-    def call(self, inputs):
-        # inputs is expected to be a 4-D tensor (batch, height, width, channels)
-        # Pass through the MaxPool2D layer
-        return self.maxpool(inputs)
-
-def my_model_function():
-    # Return an instance of MyModel with the MaxPool2D layer initialized
-    return MyModel()
-
-def GetInput():
-    # Return a random input tensor matching the expected input for MyModel
-    # Shape: [3, 74, 74, 256], dtype: float32 (from provided reproducing code)
-    return tf.random.uniform([3, 74, 74, 256], dtype=tf.float32)
+### Relevant log output
 

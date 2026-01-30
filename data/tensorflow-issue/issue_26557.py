@@ -1,50 +1,31 @@
-# tf.random.uniform((B, 2)) ← Input shape inferred as (batch_size, 2) from the issue example
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
+import os
 import tensorflow as tf
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import (LSTM, Activation, BatchNormalization, Bidirectional,
+                                     Conv1D, Dense, Dropout, Input, Lambda, Masking,
+                                     TimeDistributed)
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # First dense layer (Dense1) whose weights should be frozen (stopped gradient)
-        self.dense1 = tf.keras.layers.Dense(8)
-        # Lambda layer to stop gradients flowing back through Dense1's output
-        self.stop_grad = tf.keras.layers.Lambda(lambda x: tf.stop_gradient(x))
-        # Subsequent dense layers to be trained
-        self.dense2 = tf.keras.layers.Dense(4)
-        # Final dense layer with softmax activation as in original example
-        self.dense3 = tf.keras.layers.Dense(1, activation='softmax')
-    
-    def call(self, inputs):
-        x = self.dense1(inputs)
-        x = self.stop_grad(x)  # Prevent gradients w.r.t. Dense1's weights
-        x = self.dense2(x)
-        output = self.dense3(x)
-        return output
+import numpy as np
+os.environ["CUDA_VISIBLE_DEVICES"]="1"
 
-def my_model_function():
-    """
-    Instantiate MyModel.
-    
-    Important: To emulate behavior where weights of dense1 are fixed,
-    one must ensure that optimizer does not update those weights.
-    Since tf.stop_gradient prevents backprop for those variables,
-    tf.keras.optimizers.Adam will raise ValueError if used directly.
-    
-    This is the core issue described.
-    To workaround:
-      - use a custom training loop that excludes dense1 weights from optimizer,
-      - or do not use stop_gradient and instead freeze variables via setting trainable=False.
-    However, since the original issue uses stop_gradient, this model replicates that structure.
-    """
-    model = MyModel()
-    return model
 
-def GetInput():
-    """
-    Return a random input tensor of shape (batch_size, 2) matching Input(shape=(2,))
-    Using batch_size = 100 as in example.
-    """
-    batch_size = 100
-    input_tensor = tf.random.uniform((batch_size, 2), dtype=tf.float32)
-    return input_tensor
+Input_layer = Input(shape=(2, ))
+Dense1 = Dense(8, input_shape=(2, ))(Input_layer)
+Dense1_stop = Lambda(lambda x: tf.stop_gradient(x))(Dense1)
+Dense2 = Dense(4)(Dense1_stop)
+Dense3 = Dense(1, activation='softmax')(Dense2)
+model = Model(inputs=Input_layer, outputs=Dense3)
 
+# model.compile(optimizer=tf.train.AdamOptimizer(), loss='mse')
+model.compile(optimizer=tf.keras.optimizers.Adam(), loss='mse')
+
+
+x = np.random.uniform(0, 1, (100, 2))
+y = np.random.uniform(0, 1, (100, 1))
+model.fit(x=x, y=y, validation_split=0.2)

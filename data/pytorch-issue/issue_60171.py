@@ -1,35 +1,35 @@
-# torch.rand(B, C, H, W, dtype=...)  # Add a comment line at the top with the inferred input shape
-
 import torch
-import torch.nn as nn
+from torch.utils.data import Dataset
 
-class MyModel(nn.Module):
+
+class Mydataset(Dataset):
     def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(in_channels=3, out_channels=64, kernel_size=3, padding=1)
-        self.relu = nn.ReLU()
-        self.fc = nn.Linear(64 * 32 * 32, 10)  # Assuming input size is (B, 3, 32, 32)
+        super(Mydataset, self).__init__()
+        pass
 
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.relu(x)
-        x = x.view(x.size(0), -1)
-        x = self.fc(x)
-        return x
+    def __len__(self):
+        return 100
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+    def __getitem__(self, idx):
+        return idx
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # Assuming batch size B=4, channels C=3, height H=32, width W=32
-    return torch.rand(4, 3, 32, 32, dtype=torch.float32)
 
-# The provided issue is about a warning related to thread-pool leaking in PyTorch when using `DataLoader` with multiple workers. It does not contain any specific model or code that needs to be extracted and converted into the required structure. However, I will create a minimal example that includes a simple `MyModel` class and a `GetInput` function to meet the specified requirements.
-# Here is the complete Python code file:
-# ### Explanation:
-# - **MyModel**: A simple convolutional neural network with one convolutional layer, a ReLU activation, and a fully connected layer.
-# - **my_model_function**: Returns an instance of `MyModel`.
-# - **GetInput**: Generates a random tensor with the shape `(4, 3, 32, 32)` which is a common input shape for image classification tasks.
-# This code can be used as a starting point for further development or testing. The input shape is assumed based on typical use cases, and you can adjust it as needed.
+def main():
+    data_set = Mydataset()
+    data_set_loader = torch.utils.data.DataLoader(data_set,
+                                                  batch_size=2,
+                                                  shuffle=False,
+                                                  num_workers=4)
+    # refer to
+    # https://github.com/pytorch/vision/blob/master/references/detection/engine.py#L72-L109
+    n_threads = torch.get_num_threads()
+    torch.set_num_threads(1)
+
+    for data in data_set_loader:
+        pass
+
+    torch.set_num_threads(n_threads)
+
+
+if __name__ == '__main__':
+    main()

@@ -1,32 +1,55 @@
-# tf.random.uniform((B, 28, 28), dtype=tf.float32) ← inferred input shape based on example: batch size B, sequence length 28, feature size 28
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # The LSTM model as described: input (28,28), LSTM(20 units), Flatten, Dense(10 with softmax)
-        self.lstm = tf.keras.layers.LSTM(20, time_major=False, return_sequences=True)
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense = tf.keras.layers.Dense(10, activation='softmax', name='output')
-    
-    def call(self, inputs, training=False):
-        x = self.lstm(inputs, training=training)
-        x = self.flatten(x)
-        return self.dense(x)
+model = tf.keras.models.Sequential([
+    tf.keras.layers.Input(shape=(28, 28), name='input'),
+    tf.keras.layers.LSTM(20, time_major=False, return_sequences=True),
+    tf.keras.layers.Flatten(),
+    tf.keras.layers.Dense(10, activation=tf.nn.softmax, name='output')
+])
+model.compile(optimizer='adam',
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
+model.summary()
 
-def my_model_function():
-    # Return an instance of MyModel with uninitialized weights (user can train or load weights)
-    model = MyModel()
-    # Since original model compiled with sparse_categorical_crossentropy, compile similarly:
-    model.compile(optimizer='adam',
-                  loss='sparse_categorical_crossentropy',
-                  metrics=['accuracy'])
-    return model
+(x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
+x_train, x_test = x_train / 255.0, x_test / 255.0
+x_train = x_train.astype(np.float32)
+x_test = x_test.astype(np.float32)
 
-def GetInput():
-    # Return a batch of inputs matching shape [1, 28, 28] and dtype float32 for forward pass
-    # Matching the MNIST normalized float32 training input format
-    import tensorflow as tf
-    return tf.random.uniform((1, 28, 28), dtype=tf.float32)
+_FAST_TRAINING = True
+_EPOCHS = 5
+if _FAST_TRAINING:
+  _EPOCHS = 1
+  _TRAINING_DATA_COUNT = 1000
+  x_train = x_train[:_TRAINING_DATA_COUNT]
+  y_train = y_train[:_TRAINING_DATA_COUNT]
 
+model.fit(x_train, y_train, epochs=_EPOCHS)
+model.evaluate(x_test, y_test, verbose=0)
+
+run_model = tf.function(lambda x: model(x))
+# This is important, let's fix the input size.
+BATCH_SIZE = 1
+STEPS = 28
+INPUT_SIZE = 28
+concrete_func = run_model.get_concrete_function(
+    tf.TensorSpec([BATCH_SIZE, STEPS, INPUT_SIZE], model.inputs[0].dtype))
+
+# model directory.
+MODEL_DIR = "keras_lstm"
+model.save(MODEL_DIR, save_format="tf", signatures=concrete_func)
+
+# from saved model
+converter = tf.lite.TFLiteConverter.from_saved_model(MODEL_DIR)
+tflite_model = converter.convert()
+open("saved_lstm_model.tflite", "wb").write(tflite_model)
+print('convert from saved model successfully!')
+# from keras model
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+tflite_model = converter.convert()
+open("keras_lstm_model.tflite", "wb").write(tflite_model)

@@ -1,31 +1,66 @@
-# tf.random.uniform((B, 3), dtype=tf.float32) ← Input shape inferred from placeholder (None, 3) in original code
+import random
 
+py
+import os
+
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
+
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
+
+print(tf.__version__)
+
+
+class Config:
     def __init__(self):
-        super().__init__()
-        # Original `mlp` layer: Dense units=10
-        self.mlp = tf.keras.layers.Dense(10)
-        # Original `resize` layer: Dense units=2 (number of classes)
-        self.resize = tf.keras.layers.Dense(2)
-        # Dropout rate from Config
+        self.units = 10
+        self.n_classes = 2
         self.drop_rate = 0.5
 
-    def call(self, x, training=False):
-        # Forward pass: mlp -> dropout -> resize
+
+class Model:
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.mlp = tf.layers.Dense(cfg.units)
+        self.resize = tf.layers.Dense(cfg.n_classes)
+
+    def predict(self, x):
         z = self.mlp(x)
-        # In TF2 Keras, dropout respects training flag
-        z = tf.keras.layers.Dropout(rate=self.drop_rate)(z, training=training)
+        z = tf.layers.dropout(z, rate=self.cfg.drop_rate,
+                              training=self.cfg.training)
         z = self.resize(z)
         return z
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
 
-def GetInput():
-    # Return a random tensor input matching expected shape (batch, 3)
-    # Using batch size 1 for simplicity
-    return tf.random.uniform((1, 3), dtype=tf.float32)
+cfg = Config()
+# training = tf.placeholder_with_default(False, (), 'mode')
+training = False
+cfg.training = training
 
+model = Model(cfg)
+
+
+def _cond(x, i):
+    return tf.less(i, 20)
+
+
+def _body(x, i):
+    y = model.predict(x)
+    dy_dx = tf.gradients(y, x)[0]
+    x = dy_dx
+    return x, i+1
+
+
+x = tf.placeholder(tf.float32, (None, 3))
+y = model.predict(x)
+xx, ind = tf.while_loop(_cond, _body, [x, 0])
+
+sess = tf.Session()
+sess.run(tf.global_variables_initializer())
+
+val = sess.run(xx, feed_dict={x: np.random.random((1, 3))})
+print(val)
+
+sess.close()

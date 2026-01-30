@@ -1,40 +1,22 @@
-# tf.random.uniform((batch_size, num_classes, 1), dtype=tf.float32)
 import tensorflow as tf
+import unittest
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # This model demonstrates a max_pool1d operation on input shape (N, W, C)
-        # where N=batch_size, W=num_classes, C=1 in this example.
+class TestMethods(unittest.TestCase):
 
-    def call(self, x):
-        # x is expected to have shape (batch_size, width, channels)
-        # Use max_pool1d with ksize=[width, 1, 1] and strides=[1, 1, 1] as per example.
-        width = tf.shape(x)[1]
+    def test_max_pool(self):
+        num_classes = 10
+        print('num_classes: ', num_classes)
+        batch_size = 2
+        y_output = tf.constant(value=[[.1, .3, .2, .0, .8, .4, .1, .1, .1, .2],
+                                      [.1, .9, .2, .0, .1, .4, .1, .1, .1, .2]])
+        input = tf.reshape(tensor=y_output, shape=[batch_size, num_classes, 1])
+        print('input shape: ', input.shape)
+        y_max = tf.nn.max_pool1d(input=input, ksize=[num_classes, 1, 1], strides=[1, 1, 1], padding='VALID', data_format='NWC')
+        print('y_max: ', y_max)
+        y_max = tf.reshape(tensor=y_max, shape=[batch_size])
+        print('y_max: ', y_max)
 
-        # Use max_pool1d with data_format NWC (batch, width, channels)
-        # ksize and strides are [width,1,1] and [1,1,1] respectively, 
-        # so the max_pool will pool across the entire width dimension.
-        y_max = tf.nn.max_pool1d(input=x,
-                                 ksize=[width, 1, 1],
-                                 strides=[1, 1, 1],
-                                 padding='VALID',
-                                 data_format='NWC')
-        # y_max shape is (batch_size, 1, channels), reshape to (batch_size,)
-        y_max = tf.reshape(y_max, [tf.shape(x)[0]])
-        return y_max
 
-def my_model_function():
-    # Return an instance of MyModel without pretrained weights or special init.
-    return MyModel()
-
-def GetInput():
-    # Based on the example in the issue:
-    # Input shape (batch_size=2, width=num_classes=10, channels=1)
-    batch_size = 2
-    num_classes = 10
-    channels = 1
-    # Generate random floats for input tensor
-    x = tf.random.uniform(shape=(batch_size, num_classes, channels), dtype=tf.float32)
-    return x
-
+if __name__ == "__main__":
+    tf.compat.v1.enable_eager_execution()
+    unittest.main()

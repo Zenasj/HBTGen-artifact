@@ -1,21 +1,19 @@
-# torch.rand(3, 2, dtype=torch.float32)
 import torch
-import torch.nn as nn
+[torch.Tensor(), None, None].count(None)
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Minimal model structure based on inferred input shape
-        self.identity = nn.Identity()  # Pass-through layer
-    
-    def forward(self, x):
-        return self.identity(x)
+#Traceback (most recent call last):
+#  File "<stdin>", line 1, in <module>
+#  File ".../lib/python2.7/site-packages/torch/tensor.py", line 312, in __eq__
+#    return self.eq(other)
+#TypeError: eq received an invalid combination of arguments - got (NoneType), but expected one of:
+# * (float value)
+#      didn't match because some of the arguments have invalid types: (NoneType)
+# * (torch.FloatTensor other)
+#      didn't match because some of the arguments have invalid types: (NoneType)
 
-def my_model_function():
-    # Returns a model instance with default initialization
-    return MyModel()
+[torch.Tensor([1, 2]), 1, 2].count(1)
+#File "/home/mscho/vadim/.wigwam/prefix/python/lib/python2.7/site-packages/torch/tensor.py", line # 168, in __bool__    " containing more than one value is ambiguous")
 
-def GetInput():
-    # Generates a random tensor matching the expected input shape
-    return torch.rand(3, 2, dtype=torch.float32)
-
+# what should be the semantics here? 
+[torch.Tensor([1]), 1, 2].count(1)
+#2

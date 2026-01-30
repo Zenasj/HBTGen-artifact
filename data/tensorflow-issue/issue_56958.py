@@ -1,42 +1,73 @@
-# tf.random.uniform((BATCH_SIZE, MAX_LEN), dtype=tf.int32) ← inferred input shape from padded text sequences with maxlen=172
-
-import tensorflow as tf
+from tensorflow import keras
 from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
-# To align with the original Keras Functional model, we define a subclassed model.
-# The original input shape was (MAX_LEN,) i.e. a sequence of token IDs, padded to length 172.
-# Embedding input_dim=500, output_dim=62, followed by Bidirectional LSTM(32),
-# Dense(64,relu), Dense(32,relu), Dense(1) (regression output).
+import pandas as pd
+import tensorflow as tf
+from tensorflow.keras.preprocessing.text import Tokenizer
+import tensorflow.keras.layers as L
+import tensorflow.keras.models as M
+import tensorflow.keras.optimizers as O
+import tensorflow.keras.losses as Los
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        self.embedding = layers.Embedding(input_dim=500, output_dim=62)
-        self.bi_lstm = layers.Bidirectional(layers.LSTM(32))
-        self.dense1 = layers.Dense(64, activation='relu')
-        self.dense2 = layers.Dense(32, activation='relu')
-        self.out = layers.Dense(1)  # Regression output
+from sklearn.model_selection import KFold
+train_data = pd.read_csv('train.csv')
+test_data = pd.read_csv('test.csv')
 
-    def call(self, inputs, training=False):
-        x = self.embedding(inputs)  # (B, MAX_LEN, 62)
-        x = self.bi_lstm(x)         # (B, 64) since lstm units=32 per direction
-        x = self.dense1(x)          # (B, 64)
-        x = self.dense2(x)          # (B, 32)
-        return self.out(x)          # (B, 1)
+positive_excerpts = train_data[train_data.target.values>=0]
+negative_excerpts = train_data[train_data.target.values<0]
 
-def my_model_function():
-    # Instantiate the model
-    model = MyModel()
-    # Compile similar to original code: MSE loss, Adam optimizer, accuracy metric (though accuracy is unusual for regression)
-    model.compile(loss='mse', optimizer='adam', metrics=['accuracy'])
+positive_len = [len(x) for x in positive_excerpts.excerpt.values]
+negative_len = [len(x) for x in negative_excerpts.excerpt.values]
+
+tokenizer = Tokenizer(num_words=500)
+tokenizer.fit_on_texts(train_data.excerpt.values)
+data_seq = tokenizer.texts_to_sequences(train_data.excerpt.values)
+
+BATCH_SIZE = 16
+MAX_LEN = 172
+EPOCHS = 10
+pad_data_seq = tf.keras.preprocessing.sequence.pad_sequences(data_seq,maxlen=MAX_LEN,padding='post')
+def build_model():
+    inp = L.Input(shape=(MAX_LEN,))
+    emb = L.Embedding(input_dim=500,output_dim = 62)(inp)
+    X = L.Bidirectional(L.LSTM(32))(emb)
+    X = L.Dense(64,activation='relu')(X)
+    X = L.Dense(32,activation='relu')(X)
+    out = L.Dense(1)(X)
+    
+    model = M.Model(inputs=inp,outputs=out)
+    model.compile(loss='mse',optimizer='adam',metrics=['acc'])
     return model
+model = build_model()
+model.summary()
+kf = KFold(n_splits=5,random_state=24,shuffle=True)
 
-def GetInput():
-    # Return a random tensor of shape (BATCH_SIZE, MAX_LEN)
-    # Tokens are integer indices from 0 to 499 (since num_words=500 in original tokenizer)
-    BATCH_SIZE = 16
-    MAX_LEN = 172
-    # Random integers simulating tokenized, padded sequences
-    input_tensor = tf.random.uniform(shape=(BATCH_SIZE, MAX_LEN), minval=0, maxval=500, dtype=tf.int32)
-    return input_tensor
+for index,(t_idx,v_idx) in enumerate(kf.split(pad_data_seq)):
+    print(f"######## STEP {index+1} ########")
+    train_data_seq = pad_data_seq[t_idx]
+    val_data_seq = pad_data_seq[v_idx]
+    train_target = train_data.target.values[t_idx]
+    val_target = train_data.target.values[v_idx]
+    
+    history = model.fit(train_data_seq,
+                        train_target,
+                        validation_data=(val_data_seq,val_target),
+                        epochs=EPOCHS,
+                        batch_size=BATCH_SIZE)
+test_data_seq = tokenizer.texts_to_sequences(test_data.excerpt.values)
+test_data_seq = tf.keras.preprocessing.sequence.pad_sequences(test_data_seq,maxlen=MAX_LEN)
+pred = model.predict(pad_data_seq)
+pred = model.predict(test_data_seq,verbose=1)
+sampl = pd.read_csv('sample_submission.csv')
+sampl.target = pred
+sampl.to_csv('submission.csv',index=False)
 
+from sklearn.metrics import mean_squared_error
+import pandas as pd
+
+y_pred = pd.read_csv('submission.csv')[['target']]
+y_target = pd.read_csv('target.csv')[['target']]
+print("MSE: ", mean_squared_error(y_target, y_pred))
+print("RMSE: ",mean_squared_error(y_target,y_pred,squared=False))

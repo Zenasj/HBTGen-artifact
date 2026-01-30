@@ -1,26 +1,30 @@
-# torch.rand(n, dtype=...)  # Add a comment line at the top with the inferred input shape
-
 import torch
-import torch.nn as nn
+import pickle
+from torch.utils import benchmark
+from itertools import product
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # This is a placeholder model. In a real scenario, you would define your model architecture here.
-        # For the purpose of this example, we will just use an identity function.
-        self.identity = nn.Identity()
+device = 'cpu'
+dtypes = (torch.float16, torch.float32, torch.float64, torch.bfloat16)
+n = (100, 200, 500, 1000, 10000)
 
-    def forward(self, x):
-        return self.identity(x)
+result = []
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+for dtype, num in product(dtypes, n):
+    x = torch.rand(num, dtype=dtype, device='cpu')
+    torch.digamma(x)
+    stmt = 'torch.digamma(x)'
+    measurement = benchmark.Timer(
+        stmt=stmt,
+        globals={'x': x},
+        label=stmt + " Benchmark",
+        sub_label=f"dtype {dtype} - n : {num}",
+        description="vectorized",
+    ).blocked_autorange()
 
-def GetInput():
-    # Generate a random tensor input that matches the input expected by MyModel
-    # The input shape and dtype are inferred from the benchmarking script
-    n = 100  # Example value for n, can be adjusted
-    dtype = torch.float32  # Example dtype, can be adjusted
-    return torch.rand(n, dtype=dtype, device='cpu')
+    result.append(measurement)
 
+fname_prefix = "benchmark_digamma_"
+
+benchmark.Compare(result).print()
+with open(fname_prefix+"vectorized", "wb") as f:
+    pickle.dump(result, f)

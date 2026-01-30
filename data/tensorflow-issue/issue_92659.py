@@ -1,64 +1,39 @@
-# tf.random.uniform((4, 32, 230, 288, 1), dtype=tf.float32) ← inferred input shape from model inputs vxm_dense_source_input and vxm_dense_target_input
+import random
 
+import os
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.python.framework.convert_to_constants import convert_variables_to_constants_v2
+import numpy as np
+import voxelmorph as vxm
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Since the original model is Voxelmorph's VxmDense,
-        # and direct code or weights unavailable,
-        # we'll mock a simplified version with two inputs: moving and fixed,
-        # producing two outputs as Identity ops did in original frozen graph.
+tf.random.set_seed(seed=0)
+print(tf.__version__)
+from tensorflow import keras
 
-        # Voxelmorph-like feature extractor layers (placeholders)
-        self.conv3d_1 = tf.keras.layers.Conv3D(16, kernel_size=3, padding='same', activation='relu')
-        self.conv3d_2 = tf.keras.layers.Conv3D(32, kernel_size=3, padding='same', activation='relu')
-        # Simple flow field output as per registration models - placeholder
-        self.flow_field = tf.keras.layers.Conv3D(3, kernel_size=3, padding='same', activation=None)
-        # Warp layer might be required, but here used dummy Identity-like output
+model_path = "/home/users/giuseppe.sorrentino/SODA/models/abdomreg_intra.h5"
+model = vxm.networks.VxmDense.load(
+    "/home/users/giuseppe.sorrentino/SODA/models/abdomreg_intra.h5"
+)
 
-    def call(self, inputs, training=False):
-        # inputs expected as list or tuple: [moving, fixed]
-        moving, fixed = inputs
+save_path = os.path.join(os.getcwd(), "model/simple/")
+tf.saved_model.save(model, save_path) 
 
-        # Feature extraction from moving
-        fmv = self.conv3d_1(moving)
-        fmv = self.conv3d_2(fmv)
+@tf.function
+def infer(moving, fixed):
+    return model([moving, fixed])
 
-        # Feature extraction from fixed
-        ffx = self.conv3d_1(fixed)  # share conv weights
-        ffx = self.conv3d_2(ffx)
+inp0, inp1 = model.inputs
 
-        # Simple difference feature
-        diff = fmv - ffx
+concrete_func = infer.get_concrete_function(
+    moving=tf.TensorSpec(shape=inp0.shape, dtype=inp0.dtype, name=inp0.name.split(':')[0]),
+    fixed =tf.TensorSpec(shape=inp1.shape, dtype=inp1.dtype, name=inp1.name.split(':')[0])
+)
 
-        # Estimating flow field (registration vector field)
-        flow = self.flow_field(diff)
-
-        # As Voxelmorph often outputs warped moving image and flow,
-        # here we mimic two outputs
-        # Output 1: flow field tensor
-        # Output 2: warped moving (simulated as moving + flow) as a placeholder
-        
-        warped_moving = moving + tf.pad(flow, [[0,0],[0,0],[0,0],[0,0],[0, 1]])[:, :, :, :, :1] 
-        # pad flow channels to match moving last dim (1 channel), simplified
-
-        return flow, warped_moving
-
-
-def my_model_function():
-    # Return an instance of MyModel.
-    # No pretrained weight loading because original .h5 unavailable,
-    # but this is a functional placeholder model reflecting original inputs and outputs.
-    return MyModel()
-
-
-def GetInput():
-    # Return a tuple of random tensor inputs matching model expected shape:
-    # moving and fixed images of shape (4, 32, 230, 288, 1), dtype tf.float32 as per original input specs.
-
-    moving = tf.random.uniform(shape=(4, 32, 230, 288, 1), dtype=tf.float32)
-    fixed = tf.random.uniform(shape=(4, 32, 230, 288, 1), dtype=tf.float32)
-
-    return (moving, fixed)
-
+frozen_func = convert_variables_to_constants_v2(concrete_func)
+tf.io.write_graph(
+    graph_or_graph_def=frozen_func.graph,
+    logdir=os.getcwd(),
+    name="output/frozen_graph.pbtxt",
+    as_text=True
+)

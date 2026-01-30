@@ -1,54 +1,37 @@
-# torch.rand(1, 1, 2, 2, dtype=torch.float32)  # Input shape (B=1, C=1, H=2, W=2) inferred from example's 2x2 tensor usage
-
 import torch
-from torch import nn
 
-class Submodule(nn.Module):
-    def __init__(self):
-        super().__init__()
-    
-    def forward(self, x):
-        return x + 2
+a_scripted_module = torch.jit.script(an_nn_module)
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.submodule1 = Submodule()
-        self.submodule2 = torch.jit.script(Submodule())
+# same behavior as before
+@torch.jit.script
+def some_fn():
+    return 2
 
-    @torch.jit.ignore
-    def some_debugging_function(self, x):
-        # Placeholder for non-scriptable debugging code (e.g., pdb)
-        pass
+# just marks a function as ignored, if nothing
+# ever calls it then this has no effect
+@torch.jit.ignore
+def some_fn2():
+    return 2
 
-    @torch.jit.ignore(drop_on_export=True)
-    def training_only_code(self, x):
-        # Simulate non-scriptable training code (returns zeros to avoid runtime errors)
-        return torch.zeros_like(x)
+# doesn't do anything, this function is already 
+# the main entry point
+@torch.jit.export
+def some_fn3():
+    return 2
 
-    @torch.jit.export
-    def an_explicit_entry_point(self, x):
-        return self.forward(x + 20)
+class MyModule(torch.jit.ScriptModule):
+  my_int_list: List[int]
+ 
+  def __init__(self):
+    self.my_int_list = [2]  # the type can be inferred since it has elements
+    self.my_float_list: List[float] = []  # the type is specified manually
+    self.my_int_list = [] # can specify the type out of line
+    self.my_int = 2
 
-    @torch.jit.export
-    def a_called_model_entry_point(self, x):
-        return self.forward(x + 20)
-
-    def some_function(self, y):
-        return y + 25
-
-    def forward(self, x):
-        x += self.submodule1(x)
-        x += self.submodule2(x)
-        x += self.some_function(x)
-        if self.training:
-            x += self.training_only_code(x)
-        self.some_debugging_function(x)
-        return x
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(1, 1, 2, 2, dtype=torch.float32)
-
+class MyModule(torch.jit.ScriptModule):
+  __annotations__ = {'my_int_list': List[float]}
+ 
+  def __init__(self):
+    self.my_int_list = [2]  # the type can be inferred since it has elements
+    self.my_float_list = []  # the type is specified manually
+    self.my_int = 2

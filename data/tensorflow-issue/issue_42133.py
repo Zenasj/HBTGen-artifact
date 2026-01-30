@@ -1,24 +1,29 @@
-# tf.random.uniform((B, 16), dtype=tf.float32) ← Input shape inferred from `Input(shape=(16,))` in original Keras functional example
+import random
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
+import shutil
+import tempfile
+import numpy as np
 import tensorflow as tf
+tf.compat.v1.disable_eager_execution()
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Single Dense layer with 16 units, no activation specified (linear by default)
-        self.dense = tf.keras.layers.Dense(16)
-        
-    def call(self, inputs):
-        # Forward pass
-        return self.dense(inputs)
+from tensorflow.keras.layers import Input, Dense
+from tensorflow.keras.models import Model
+from tensorflow.keras.callbacks import TensorBoard
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+#%%############################################
+ipt = Input(shape=(16,))
+out = Dense(16)(ipt)
+model = Model(ipt, out)
+model.compile('adam', 'mse')
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # The original input shape was (160, 16) for training, but batch size can be arbitrary here.
-    # Use batch size = 32 as in example; dtype float32 for Dense layer compatibility.
-    return tf.random.uniform((32, 16), dtype=tf.float32)
+logdir = tempfile.mkdtemp()
+print('tensorboard --logdir="%s"' % logdir)
+tb = TensorBoard(logdir, write_graph=True)
 
+#%%############################################
+x = y = np.random.randn(160, 16)
+model.fit(x, y, batch_size=32, callbacks=[tb])
+
+# shutil.rmtree(logdir)

@@ -1,86 +1,187 @@
-# tf.random.uniform((B, maxlen), dtype=tf.int32) for each of the 6 inputs - input_ids, token_type_ids, attention_mask for Document and Question
-
+import numpy as np
+import random
 import tensorflow as tf
-import tensorflow_hub as hub
+from tensorflow import keras
 
-class MyModel(tf.keras.Model):
-    def __init__(self, vocab_size, maxlen):
-        super().__init__()
-        # Load the pre-trained BERT layer from TF Hub, trainable
-        self.bert_layer = hub.KerasLayer(
-            "https://tfhub.dev/tensorflow/bert_en_uncased_L-12_H-768_A-12/2", trainable=True)
+class trainGenSeq_short_YesNo(tf.keras.utils.Sequence, ):
+    def __init__(self, batchSize, sentenceLength):
+        self.batchSize = batchSize
+        self.trainFiles = os.listdir('D:/Python/Datasets/v1.0/train/')
+        self.trainingSamples = 307372 * 2
+        self.sentenceLength = sentenceLength
         
-        # Dense layers in sequence as described, final output with 2 units (for yes/no)
-        self.concat = tf.keras.layers.Concatenate()
-        self.dense1 = tf.keras.layers.Dense(128, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(256, activation='relu')
-        self.dense3 = tf.keras.layers.Dense(256, activation='relu')
-        self.dense4 = tf.keras.layers.Dense(128, activation='relu')
-        self.flatten = tf.keras.layers.Flatten()
-        self.out_layer = tf.keras.layers.Dense(2)  # No activation, logits output
+        #Load Vocab
+        slow_tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
+        save_path = "bert_base_uncased/"
+        if not os.path.exists(save_path):
+            os.makedirs(save_path)
+        slow_tokenizer.save_pretrained(save_path)
+        self.tokenizer = BertTokenizer('vocab.txt', lowercase = True)
+        self.vocabSize = len(self.tokenizer.vocab)
+        
     
-    def call(self, inputs, training=False):
-        # inputs expected as list of 6 inputs in order:
-        # [input_ids_Document, token_type_ids_Document, attention_mask_Document,
-        #  input_ids_Question, token_type_ids_Question, attention_mask_Question]
+    def __len__(self):
+        return int(self.trainingSamples // self.batchSize)
+    
+    def getLen(self):
+        return int(self.trainingSamples // self.batchSize)
+    
+    def attentionMasks(self,input_dims):
+        return [int(id > 0) for id in input_dims]
         
-        input_ids_doc, token_type_ids_doc, attention_mask_doc, \
-        input_ids_q, token_type_ids_q, attention_mask_q = inputs
-        
-        # BERT expects inputs as list/tensor: [input_ids, token_type_ids, attention_mask]
-        bert_inputs_doc = [input_ids_doc, token_type_ids_doc, attention_mask_doc]
-        bert_inputs_q = [input_ids_q, token_type_ids_q, attention_mask_q]
-        
-        # BERT layer outputs tuple: (pooled_output, sequence_output)
-        bert_output_doc = self.bert_layer(bert_inputs_doc)[0]  # pooled_output shape (B, 768)
-        bert_output_q = self.bert_layer(bert_inputs_q)[0]      # pooled_output shape (B, 768)
-        
-        # Concatenate pooled outputs from Document and Question
-        concat_out = self.concat([bert_output_doc, bert_output_q])  # shape (B, 1536)
-        
-        x = self.dense1(concat_out)
-        x = self.dense2(x)
-        x = self.dense3(x)
-        x = self.dense4(x)
-        x = self.flatten(x)
-        logits = self.out_layer(x)  # shape (B, 2)
-        return logits
+    def inputDims(self, dims):
+        return pad_sequences([dims], maxlen = self.sentenceLength, dtype="long", value=0, truncating="post", padding="post")[0]
+    
+    def encode_sentence(self, sentence):
+        sentence = sent_tokenize(sentence)
+        ans = []
+        for i in range(len(sentence)):
+            encode_sent = self.tokenizer.encode(sentence[i],add_special_tokens = True)
+            ans += encode_sent
 
-def my_model_function():
-    # Based on the input data specs, maxlen appears to be the sequence length (e.g. 512)
-    # vocab_size is used only for tokenizer, not for BERT layer inputs
-    # We provide some reasonable defaults for illustration; user should override as needed
-    maxlen = 512
-    vocab_size = 30522  # Standard BERT vocab size
+        ans = pad_sequences([ans], maxlen = self.sentenceLength, dtype = "long", value = 0, truncating = "post", padding = "post")
+        return ans[0]
     
-    return MyModel(vocab_size=vocab_size, maxlen=maxlen)
+    def __getitem__(self, _):
+        documentStack = np.array([])
+        questionStack = np.array([])
+        answerStack = np.array([])
+        
+        document_AttStack = np.array([])
+        question_AttStack = np.array([])
 
-def GetInput():
-    # Returns a list of 6 tensors simulating batch input to MyModel:
-    # [input_ids_Document, token_type_ids_Document, attention_mask_Document,
-    #  input_ids_Question, token_type_ids_Question, attention_mask_Question]
-    
-    batch_size = 2  # example batch size
-    maxlen = 512    # example sequence length
-    
-    # All inputs are int32 tensor with shape (batch_size, maxlen)
-    # input_ids: integers in [0, vocab_size), token_type_ids: 0 or 1
-    # attention_mask: 0 or 1
-    
-    input_ids_doc = tf.random.uniform(
-        shape=(batch_size, maxlen), minval=0, maxval=30522, dtype=tf.int32)
-    token_type_ids_doc = tf.random.uniform(
-        shape=(batch_size, maxlen), minval=0, maxval=2, dtype=tf.int32)
-    attention_mask_doc = tf.random.uniform(
-        shape=(batch_size, maxlen), minval=0, maxval=2, dtype=tf.int32)
-    
-    input_ids_q = tf.random.uniform(
-        shape=(batch_size, maxlen), minval=0, maxval=30522, dtype=tf.int32)
-    token_type_ids_q = tf.random.uniform(
-        shape=(batch_size, maxlen), minval=0, maxval=2, dtype=tf.int32)
-    attention_mask_q = tf.random.uniform(
-        shape=(batch_size, maxlen), minval=0, maxval=2, dtype=tf.int32)
-    
-    return [input_ids_doc, token_type_ids_doc, attention_mask_doc,
-            input_ids_q, token_type_ids_q, attention_mask_q]
+        document_SegStack = np.array([])
+        question_SegStack = np.array([])
 
+        First = True
+        
+        for file in self.trainFiles:
+            for line in open('D:/Python/Datasets/v1.0/train/' + file):
+                file = json.loads(line)
+                #annotations
+                if file.get('annotations')[0].get('short_answers'):
+                    s_Start = file.get('annotations')[0].get('short_answers')[0].get('start_token')
+                    s_End = file.get('annotations')[0].get('short_answers')[0].get('end_token')
+                    l_Start = file.get('annotations')[0].get('long_answer').get('start_token')
+                    l_End = file.get('annotations')[0].get('long_answer').get('end_token')
+
+                    #Question and Title
+                    question = file.get('question_text')
+
+                    #document
+                    document = []
+                    for indexs in file.get('document_tokens')[l_Start:l_End]:
+                        if indexs.get('html_token') == False:
+                            document.append(indexs.get('token'))
+                    
+                    #Fake Document OR No document
+                    fake = []
+                    randomNumber = random.randint(7500, 9000)
+                    front = random.choice([True, False])
+                    
+                    if front:
+                        try:
+                            for indexs in range(max(0, l_Start - randomNumber), min(len(file.get('document_tokens')),l_End - randomNumber)):
+                                if file.get('document_tokens')[indexs].get('html_token') == False:
+                                    fake.append(file.get('document_tokens')[indexs].get('token'))
+                                else:
+                                    indexs -= 1
+                        except:
+                            for indexs in range(max(0, l_Start + randomNumber), min(len(file.get('document_tokens')),l_End + randomNumber)):
+                                if file.get('document_tokens')[indexs].get('html_token') == False:
+                                    fake.append(file.get('document_tokens')[indexs].get('token'))
+                                else:
+                                    indexs -= 1
+                    else:
+                        try:
+                            for indexs in range(max(0, l_Start + randomNumber), min(len(file.get('document_tokens')),l_End + randomNumber)):
+                                if file.get('document_tokens')[indexs].get('html_token') == False:
+                                    fake.append(file.get('document_tokens')[indexs].get('token'))
+                                else:
+                                    indexs -= 1
+                        except:
+                            for indexs in range(max(0, l_Start - randomNumber), min(len(file.get('document_tokens')),l_End - randomNumber)):
+                                if file.get('document_tokens')[indexs].get('html_token') == False:
+                                    fake.append(file.get('document_tokens')[indexs].get('token'))
+                                else:
+                                    indexs -= 1
+                    
+                    document = ' '.join(document)
+                    fake = ' '.join(document)
+
+                    document = self.encode_sentence(document)
+                    fake = self.encode_sentence(fake)
+                    question = self.encode_sentence(question)
+                    
+                    fake_AttentionMask = self.attentionMasks(fake)
+                    document_AttentionMask = self.attentionMasks(document)
+                    question_AttentionMask = self.attentionMasks(question)
+                    
+                    fake_SegID = [0 for _ in range(len(fake))]
+                    document_SegID = [0 for _ in range(len(document))]
+                    question_SegID = [0 for _ in range(len(question))]
+
+                    if First:
+                        #Document
+                        documentStack = np.array([document])
+                        documentStack = np.append(documentStack, np.array([fake]), axis = 0)
+                        document_AttStack = np.array([document_AttentionMask])
+                        document_AttStack = np.append(document_AttStack, np.array([fake_AttentionMask]), axis = 0)
+                        document_SegStack = np.array([document_SegID])
+                        document_SegStack = np.append(document_SegStack, np.array([fake_AttentionMask]), axis = 0)
+                        
+                        #Add Question Again
+                        questionStack = np.array([question])
+                        questionStack = np.append(questionStack, np.array([question]), axis = 0)
+                        
+                        question_AttStack = np.array([question_AttentionMask])
+                        question_AttStack = np.append(question_AttStack, np.array([question_AttentionMask]), axis = 0)
+                        question_SegStack = np.array([question_SegID])
+                        question_SegStack = np.append(question_SegStack, np.array([question_SegID]), axis = 0)
+                        
+                        #Add Answer
+                        answerStack = np.array([np.array([1,0])])
+                        answerStack = np.append(answerStack, np.array([np.array([0,1])]), axis = 0)
+                        
+                        First = False
+                    else:
+                        documentStack = np.append(documentStack, np.array([document]), axis = 0)
+                        documentStack = np.append(documentStack, np.array([fake]), axis = 0)
+                        questionStack = np.append(questionStack, np.array([question]), axis = 0)
+                        questionStack = np.append(questionStack, np.array([question]), axis = 0)
+                        answerStack = np.append(answerStack, np.array([np.array([1,0])]), axis = 0)
+                        answerStack = np.append(answerStack, np.array([np.array([0,1])]), axis = 0)
+                        
+                        #Attention Mask
+                        document_AttStack = np.append(document_AttStack, np.array([document_AttentionMask]), axis = 0)
+                        document_AttStack = np.append(document_AttStack, np.array([fake_AttentionMask]), axis = 0)
+                        question_AttStack = np.append(question_AttStack, np.array([question_AttentionMask]), axis = 0)
+                        question_AttStack = np.append(question_AttStack, np.array([question_AttentionMask]), axis = 0)
+                        
+                        #SegmentIDs
+                        document_SegStack = np.append(document_SegStack, np.array([document_AttentionMask]), axis = 0)
+                        document_SegStack = np.append(document_SegStack, np.array([fake_AttentionMask]), axis = 0)
+                        question_SegStack = np.append(question_SegStack, np.array([question_SegID]), axis = 0)
+                        question_SegStack = np.append(question_SegStack, np.array([question_SegID]), axis = 0)
+                
+                if documentStack.shape[0] == self.batchSize:
+                    documentStack = np.reshape(documentStack, (documentStack.shape[0], 1, documentStack.shape[1]))
+                    questionStack = np.reshape(questionStack, (questionStack.shape[0], 1, questionStack.shape[1]))
+                    answerStack = np.reshape(answerStack, (answerStack.shape[0], 1, answerStack.shape[1]))
+                    First = True
+
+                    #print(type(documentStack), type(questionStack), type(answerStack))
+                    return [np.squeeze(documentStack), np.squeeze(document_AttStack), np.squeeze(document_SegStack), 
+                            np.squeeze(questionStack), np.squeeze(question_AttStack), np.squeeze(question_SegStack)], np.squeeze(answerStack)
+                    
+                    documentStack = None
+                    titleStack = None
+                    questionStack = None
+                    answerStack = None
+
+trainGen = trainGenSeq_short_YesNo(BatchSize, SeqLength)
+
+model = createModel_YesNo(trainGen.vocabSize, BatchSize, SeqLength)
+model.summary()
+model.compile(optimizer = 'adam', loss = 'categorical_crossentropy')
+model.fit(trainGen, epochs = 10, steps_per_epoch = trainGen.getLen(),verbose = 1)

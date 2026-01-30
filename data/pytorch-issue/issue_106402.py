@@ -1,10 +1,14 @@
+py
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+
 class SuperConv(nn.Conv2d):
+
     def __init__(self, *args, is_lora=False, **kwargs):
         super().__init__(*args, **kwargs)
+
         self.is_lora = is_lora
 
     def forward(self, *args, **kwargs):
@@ -13,11 +17,11 @@ class SuperConv(nn.Conv2d):
         else:
             return super().forward(*args, **kwargs)
 
-# torch.rand(1, 3, 32, 32, dtype=torch.float32)
-class MyModel(nn.Module):
+# Define a simple Convolutional Neural Network
+class SimpleCNN(nn.Module):
     def __init__(self):
-        super().__init__()
-        self.conv1 = SuperConv(3, 6, 5)
+        super(SimpleCNN, self).__init__()
+        self.conv1 = SuperConv(3, 6, 5) # Assuming input images are RGB, so 3 input channels
         self.pool = nn.MaxPool2d(2, 2)
         self.conv2 = SuperConv(6, 16, 5)
         self.fc1 = nn.Linear(16 * 5 * 5, 120)
@@ -33,17 +37,27 @@ class MyModel(nn.Module):
         x = self.fc3(x)
         return x
 
-def my_model_function():
-    model = MyModel()
-    for m in model.modules():
-        if isinstance(m, nn.Conv2d):
-            nn.init.constant_(m.weight, 0.1)
-            nn.init.constant_(m.bias, 0.1)
-        elif isinstance(m, nn.Linear):
-            nn.init.constant_(m.weight, 0.1)
-            nn.init.constant_(m.bias, 0.1)
-    return model
+# Create the network
+net = SimpleCNN()
 
-def GetInput():
-    return torch.randn(1, 3, 32, 32, dtype=torch.float32)
+# Initialize weights with dummy values
+for m in net.modules():
+    if isinstance(m, nn.Conv2d):
+        nn.init.constant_(m.weight, 0.1)
+        nn.init.constant_(m.bias, 0.1)
+    elif isinstance(m, nn.Linear):
+        nn.init.constant_(m.weight, 0.1)
+        nn.init.constant_(m.bias, 0.1)
 
+# Perform inference
+input = torch.randn(1, 3, 32, 32).to("cuda")
+net = net.to("cuda")
+output = net(input)
+
+print(output)
+
+net = torch.compile(net, mode="reduce-overhead", fullgraph=True)
+
+output = net(input)
+
+print(output)

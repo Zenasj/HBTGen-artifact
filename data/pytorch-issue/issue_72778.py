@@ -1,20 +1,20 @@
-# torch.rand(1, 1, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.linear = nn.Linear(1, 1)
+from collections import OrderedDict
+from torch.nn import Linear
 
-    def forward(self, x):
-        return self.linear(x)
+m = Linear(1, 1)
+print(m.state_dict())  # works
+print(m.state_dict(OrderedDict()))  # fails
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+from torch.nn import Linear
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(1, 1, dtype=torch.float32)
+m = Linear(1, 1)
+print(m.state_dict())  # works
+print(m.state_dict('a'))  # fails
 
+def _state_dict_impl(self, destination, prefix, keep_vars):
+    ...  # real things here
+
+def state_dict(self, prefix, keep_vars):
+    return self._state_dict_impl(None, prefix, keep_vars)

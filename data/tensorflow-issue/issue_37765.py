@@ -1,42 +1,78 @@
-# tf.random.uniform((B, 28, 28, 1), dtype=tf.float32)
+from tensorflow import keras
+from tensorflow.keras import layers
+
 import tensorflow as tf
+import horovod.tensorflow.keras as hvd
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Build the equivalent of the MNIST model from the issue with two Conv2D layers,
-        # pooling, dropouts, flatten and dense layers.
-        # Input shape assumed: (batch_size, 28, 28, 1) grayscale images from MNIST
-        self.conv1 = tf.keras.layers.Conv2D(32, (3, 3), activation='relu')
-        self.conv2 = tf.keras.layers.Conv2D(64, (3, 3), activation='relu')
-        self.pool = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))
-        self.dropout1 = tf.keras.layers.Dropout(0.25)
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(128, activation='relu')
-        self.dropout2 = tf.keras.layers.Dropout(0.5)
-        self.dense2 = tf.keras.layers.Dense(10, activation='softmax', dtype='float32')
-        # Note: output dtype forced to float32 for numeric stability with mixed precision
+# Horovod: initialize Horovod.
+hvd.init()
 
-    def call(self, inputs, training=False):
-        x = self.conv1(inputs)
-        x = self.conv2(x)
-        x = self.pool(x)
-        x = self.dropout1(x, training=training)
-        x = self.flatten(x)
-        x = self.dense1(x)
-        x = self.dropout2(x, training=training)
-        return self.dense2(x)
+# Horovod: pin GPU to be used to process local rank (one GPU per process)
+gpus = tf.config.experimental.list_physical_devices('GPU')
+for gpu in gpus:
+    tf.config.experimental.set_memory_growth(gpu, True)
+if gpus:
+    tf.config.experimental.set_visible_devices(gpus[hvd.local_rank()], 'GPU')
 
-def my_model_function():
-    # Return a fresh model instance, weights randomly initialized
-    return MyModel()
+(mnist_images, mnist_labels), _ = \
+    tf.keras.datasets.mnist.load_data(path='mnist-%d.npz' % hvd.rank())
 
-def GetInput():
-    # Return a random tensor shaped (batch, height, width, channels) = (128, 28, 28, 1),
-    # dtype float32, normalized [0,1]. This shape matches the example MNIST dataset input.
-    batch_size = 128  # batch size is 128 as in the example code
-    height = 28
-    width = 28
-    channels = 1
-    return tf.random.uniform((batch_size, height, width, channels), dtype=tf.float32)
+dataset = tf.data.Dataset.from_tensor_slices(
+    (tf.cast(mnist_images[..., tf.newaxis] / 255.0, tf.float32),
+             tf.cast(mnist_labels, tf.int64))
+)
+dataset = dataset.repeat().shuffle(10000).batch(128)
 
+policy = tf.keras.mixed_precision.experimental.Policy('mixed_float16', 128)
+tf.keras.mixed_precision.experimental.set_policy(policy)
+
+mnist_model = tf.keras.Sequential([
+    tf.keras.layers.Conv2D(32, [3, 3], activation='relu'),
+    tf.keras.layers.Conv2D(64, [3, 3], activation='relu'),
+    tf.keras.layers.MaxPooling2D(pool_size=(2, 2)),
+    tf.keras.layers.Dropout(0.25),
+    tf.keras.layers.Flatten(),
+    tf.keras.layers.Dense(128, activation='relu'),
+    tf.keras.layers.Dropout(0.5),
+    tf.keras.layers.Dense(10, activation='softmax')
+])
+
+# Horovod: adjust learning rate based on number of GPUs.
+opt = tf.optimizers.Adam(0.001)
+
+# Horovod: add Horovod DistributedOptimizer.
+opt = hvd.DistributedOptimizer(opt)
+
+# Horovod: Specify `experimental_run_tf_function=False` to ensure TensorFlow
+# uses hvd.DistributedOptimizer() to compute gradients.
+mnist_model.compile(loss=tf.losses.SparseCategoricalCrossentropy(),
+                    optimizer=opt,
+                    metrics=['accuracy'],
+                    experimental_run_tf_function=False)
+
+callbacks = [
+    # Horovod: broadcast initial variable states from rank 0 to all other processes.
+    # This is necessary to ensure consistent initialization of all workers when
+    # training is started with random weights or restored from a checkpoint.
+    hvd.callbacks.BroadcastGlobalVariablesCallback(0),
+]
+
+# Train the model.
+# Horovod: adjust number of steps based on number of GPUs.
+mnist_model.fit(
+    dataset,
+    steps_per_epoch=500 // hvd.size(),
+    callbacks=callbacks,
+    epochs=24,
+    verbose=1 if hvd.rank() == 0 else 0
+)
+
+class LossScaleOptimizer(optimizer_v2.OptimizerV2):
+ ...
+ _HAS_ALL_REDUCE_SUM_GRAD = True
+ def _aggregate_gradients(self, grads_and_vars):
+   return self._optimizer._aggregate_gradients(grads_and_vars)
+ ...
+
+def _aggregate_gradients(self, grads_and_vars):
+   return self._optimizer._aggregate_gradients(grads_and_vars)

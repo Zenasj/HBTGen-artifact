@@ -1,38 +1,74 @@
-# tf.random.uniform((B, 28, 28), dtype=tf.float32) ← Input shape inferred from Fashion MNIST images
+from tensorflow.keras import layers
 
 import tensorflow as tf
+from tensorflow import keras
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Following the model architecture from the issue:
-        # Flatten input 28x28 -> 784, 
-        # Dense 128 units with relu activation,
-        # BatchNormalization,
-        # Dense 10 units without activation (logits output).
-        self.flatten = tf.keras.layers.Flatten(input_shape=(28, 28))
-        self.dense1 = tf.keras.layers.Dense(128, activation='relu')
-        self.batchnorm = tf.keras.layers.BatchNormalization()
-        self.dense2 = tf.keras.layers.Dense(10)  # No activation here (logits)
+import numpy as np
+import matplotlib.pyplot as plt
 
-    def call(self, inputs, training=False):
-        # inputs assumed to be shape (B, 28, 28) with float32 normalized [0,1]
-        x = self.flatten(inputs)
-        x = self.dense1(x)
-        x = self.batchnorm(x, training=training)
-        logits = self.dense2(x)
-        return logits
+fashion_mnist = keras.datasets.fashion_mnist
+(train_images, train_labels), (test_images, test_labels) = fashion_mnist.load_data()
 
-def my_model_function():
-    # Return an untrained model instance resembling the one in the issue
-    # No weights loading because original code used graph sessions and checkpoints not directly portable here.
-    model = MyModel()
-    # Build model by passing dummy input (required to create weights in TF2 eager)
-    _ = model(tf.zeros((1, 28, 28), dtype=tf.float32))
-    return model
+train_images = train_images / 255.0
+test_images = test_images / 255.0
 
-def GetInput():
-    # Return a random tensor input that matches model input: batch of 1, 28x28, float32 normalized to [0,1]
-    # In original code, train_images / 255.0 -> normalized floats; here generate uniform float input
-    return tf.random.uniform(shape=(1, 28, 28), minval=0.0, maxval=1.0, dtype=tf.float32)
+def build_keras_model():
+  return keras.Sequential([
+    keras.layers.Flatten(input_shape=(28,28)),
+    keras.layers.Dense(128, activation='relu'),
+    keras.layers.BatchNormalization(),
+    keras.layers.Dense(10)
+  ])
 
+train_graph = tf.Graph()
+train_sess = tf.Session(graph=train_graph)
+
+keras.backend.set_session(train_sess)
+with train_graph.as_default():
+  train_model = build_keras_model()
+
+  tf.contrib.quantize.create_training_graph(input_graph=train_graph, quant_delay=100)
+  train_sess.run(tf.global_variables_initializer())
+
+  train_model.compile(
+    optimizer='adam',
+    loss='sparse_categorical_crossentropy',
+    metrics=['accuracy']
+  )
+  train_model.fit(train_images, train_labels, epochs=5)
+
+  saver = tf.train.Saver()
+  saver.save(train_sess, 'checkpoints')
+
+eval_graph = tf.Graph()
+eval_sess = tf.Session(graph=eval_graph)
+
+keras.backend.set_session(eval_sess)
+
+with eval_graph.as_default():
+  keras.backend.set_learning_phase(0)
+  eval_model = build_keras_model()
+  tf.contrib.quantize.create_eval_graph(input_graph=eval_graph)
+  eval_graph_def = eval_graph.as_graph_def()
+  saver = tf.train.Saver()
+  saver.restore(eval_sess, 'checkpoints')
+
+  frozen_graph_def = tf.graph_util.convert_variables_to_constants(
+    eval_sess,
+    eval_graph_def,
+    [eval_model.output.op.name]
+  )
+  with open('frozen_model.pb', 'wb') as f:
+    f.write(frozen_graph_def.SerializeToString())
+
+converter = tf.lite.TFLiteConverter.from_frozen_graph(
+  'frozen_model.pb',
+  ['flatten_input'],
+  ['dense_1/BiasAdd'])
+converter.inference_type = tf.lite.constants.QUANTIZED_UINT8
+input_arrays = converter.get_input_arrays()
+converter.quantized_input_stats = {input_arrays[0] : (0, 255)}  # mean, std_dev
+tflite_model = converter.convert()
+open('model.tflite', 'wb').write(tflite_model)
+
+# Put link here or attach to the issue.

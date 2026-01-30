@@ -1,18 +1,27 @@
-# torch.rand(3,4), torch.rand(4,5), torch.rand(3,5)  # input shapes for x, y, inp
-import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        x, y, inp = inputs
+py
+import torch
+
+torch.manual_seed(420)
+
+class Model(torch.nn.Module):
+    def forward(self, x, y, inp):
         return torch.add(torch.mm(x, y), inp)
 
-def my_model_function():
-    return MyModel()
+x = torch.randn(3, 4).cuda()
 
-def GetInput():
-    x = torch.randn(3, 4)
-    y = torch.randn(4, 5)
-    inp = torch.randn(3, 5)
-    return (x, y, inp)
+y = torch.randn(4, 5).cuda()
 
+inp = torch.randn(3, 5).cuda()
+
+func = Model()
+
+res1 = func(x, y, inp)
+print(res1)
+
+jit_func = torch.compile(func)
+res2 = jit_func(x, y, inp)
+print(res2)
+# TypeError: can't multiply sequence by non-int of type 'float'
+# While executing %mm : [#users=1] = call_function[target=torch.mm](args = (%l_x_, %l_y_), kwargs = {})

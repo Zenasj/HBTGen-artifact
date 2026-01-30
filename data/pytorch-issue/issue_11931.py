@@ -1,44 +1,33 @@
-# torch.rand(C, dtype=torch.float32)  # C is the number of categories (e.g., 10,000)
 import torch
-import torch.nn as nn
+weights = torch.randn(10000000, dtype=torch.float32).clamp(0.01, 1)
 
-class OriginalMultinomial(nn.Module):
-    def __init__(self, num_samples):
-        super().__init__()
-        self.num_samples = num_samples
+n_small = 100
+n_big = 100000
 
-    def forward(self, probs):
-        return torch.multinomial(probs, self.num_samples, replacement=False)
+# Works
+sample_1 = torch.multinomial(weights, n_small, replacement=True)
+print("Sampled 1")
 
-class AlgorithmAMultinomial(nn.Module):
-    def __init__(self, num_samples):
-        super().__init__()
-        self.num_samples = num_samples
+# Works
+sample_2 = torch.multinomial(weights, n_big, replacement=True)
+print("Sampled 2")
 
-    def forward(self, probs):
-        rand = torch.empty_like(probs).uniform_()
-        log_rand_div_p = rand.log() / probs
-        _, indices = log_rand_div_p.topk(k=self.num_samples)
-        return indices
+# Works, but much slower
+sample_3 = torch.multinomial(weights, n_small, replacement=False)
+print("Sampled 3")
 
-class MyModel(nn.Module):
-    def __init__(self, num_samples=1000):
-        super().__init__()
-        self.original = OriginalMultinomial(num_samples)
-        self.algorithm_a = AlgorithmAMultinomial(num_samples)
+# I think it works, but it takes so long that it is unusable
+sample_4 = torch.multinomial(weights, n_big, replacement=False)
+print("Sampled 4")
 
-    def forward(self, probs):
-        sample_orig = self.original(probs)
-        sample_alg = self.algorithm_a(probs)
-        # Sort indices for comparison (order may differ between methods)
-        sorted_orig, _ = torch.sort(sample_orig)
-        sorted_alg, _ = torch.sort(sample_alg)
-        return torch.all(sorted_orig == sorted_alg)
-
-def my_model_function():
-    return MyModel(num_samples=1000)
-
-def GetInput():
-    # Generate a 1D tensor of positive weights (probabilities)
-    return torch.rand(10000, dtype=torch.float32).clamp_min(0.01)
-
+p = torch.ones(1_000_000)
+have = 0
+want = 100_000
+p_ = p.clone()
+result = torch.empty(want, dtype=torch.long)
+while have < want:
+    a = torch.multinomial(p_, want-have, replacement=True)
+    b = a.unique()
+    result[have:have+b.size(-1)] = b
+    p_[b] = 0
+    have += b.size(-1)

@@ -1,28 +1,25 @@
-# tf.random.uniform((batch_size, 1000, 512), dtype=tf.float32) ← inferred input shape from issue code
+from tensorflow import keras
+from tensorflow.keras import layers
 
+from __future__ import print_function
+import numpy as np
 import tensorflow as tf
+from tensorflow.keras.layers import LSTM, GRU
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # From the issue example: Input shape is (1000, 512)
-        # The model uses a GRU with units = shape[-1] // 2 = 512 // 2 = 256, return_sequences=True
-        self.gru = tf.keras.layers.GRU(256, return_sequences=True)
-    
-    def call(self, inputs, training=False):
-        # Forward pass: run GRU on inputs
-        return self.gru(inputs, training=training)
+if __name__ == "__main__":
+    with tf.device('/CPU:0'):
+        batches = [1] + list(range(1, 10))
+        shape = (1000, 512)
+        inputs = tf.keras.Input(shape=shape)
+        rnn = GRU(shape[-1]//2, return_sequences=True)(inputs)
+        model = tf.keras.Model(inputs=inputs, outputs=rnn)
+        results = []
+        for i, batch in enumerate(batches):
+            x = tf.ones((batch,) + shape)
+            y = model.predict_on_batch(x)
+            results.append(y[0])
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel:
-    # The original example uses ones with shape (batch, 1000, 512)
-    # We'll produce a float32 tensor with batch size 4 as a reasonable default
-    batch_size = 4
-    H, W = 1000, 512
-    # Use uniform random data for diversity, dtype float32
-    return tf.random.uniform((batch_size, H, W), dtype=tf.float32)
-
+        for b, x in list(zip(batches, results))[1:]:
+            print(b, np.max(np.abs(results[0] - x)))
+        if not all(np.allclose(x, results[0]) for x in results[1:]):
+            raise ValueError("Varying batch size produces different results")

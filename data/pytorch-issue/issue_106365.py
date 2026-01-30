@@ -1,26 +1,65 @@
+import torch.distributed as dist
+import torch.multiprocessing as mp
 import torch
-import torch.nn as nn
+import os
+import time
 
-# torch.rand(B, 3, 32, 32, dtype=torch.float32)  # Assumed input shape based on common CNN use cases
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1)
-        self.relu = nn.ReLU()
-        self.fc = nn.Linear(16 * 32 * 32, 10)  # Matches input shape (32x32) after convolution
-        
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.relu(x)
-        x = x.view(x.size(0), -1)
-        x = self.fc(x)
-        return x
+def run(rank, size):
+    print(f"[ {os.getpid()} ] world_size = {dist.get_world_size()}, " + f"rank = {dist.get_rank()}, backend={dist.get_backend()}")
+    time.sleep(1000)
 
-def my_model_function():
-    # Returns a simple CNN model instance
-    return MyModel()
+def init_process(rank, size, fn, backend="gloo"): 
+    os.environ['MASTER_ADDR'] = '192.168.0.3' 
+    os.environ['MASTER_PORT'] = '29522'
+    os.environ['WORLD_SIZE'] = str(size) 
+    os.environ['RANK'] = str(rank)
+    print(f"Pre Complete initialization {rank} {size}")
+    from datetime import timedelta
+    server_store = dist.TCPStore("192.168.0.3", 12345, 2, True, timedelta(seconds=30))
+    server_store.set("first_key", "first_value")
+    dist.init_process_group(backend, store=server_store, rank=rank, world_size=size)
+    
+    print(f"Complete initialization")
+    fn(rank, size)
 
-def GetInput():
-    # Returns a random input tensor matching the model's expected input shape
-    return torch.rand(2, 3, 32, 32, dtype=torch.float32)
+if __name__ == "__main__":
+    size = 2
+    processes = []
+    p = mp.Process(target=init_process, args=(0, size, run))
+    p.start()
+    processes.append(p)
 
+    for p in processes:
+        p.join()
+
+import torch.distributed as dist
+import torch.multiprocessing as mp
+import torch
+import os
+import time
+
+def run(rank, size):
+    print(f"[ {os.getpid()} ] world_size = {dist.get_world_size()}, " + f"rank = {dist.get_rank()}, backend={dist.get_backend()}")
+
+def init_process(rank, size, fn, backend="gloo"): 
+    os.environ['MASTER_ADDR'] = '192.168.0.3' 
+    os.environ['MASTER_PORT'] = '29522'
+    os.environ['WORLD_SIZE'] = str(size) 
+    os.environ['RANK'] = str(rank)
+    print(f"Pre Complete initialization {rank} {size}")
+    client_store = dist.TCPStore("192.168.0.3", 12345, 2, False)
+    print(client_store.get("first_key"))
+    dist.init_process_group(backend, rank=rank, store=client_store, world_size=size)
+    
+    print(f"Complete initialization")
+    fn(rank, size)
+
+if __name__ == "__main__":
+    size = 2
+    processes = []
+    p = mp.Process(target=init_process, args=(1, size, run))
+    p.start()
+    processes.append(p)
+
+    for p in processes:
+        p.join()

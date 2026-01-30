@@ -1,88 +1,61 @@
-# tf.random.uniform((B=33, W=8), dtype=tf.float32) ← inferred from jnp.ones([33, 8]) input shape in the Flax example
+import numpy as np
 
-import tensorflow as tf
+import flax
+from flax import linen as nn
+from flax.training import train_state
+from flax import jax_utils
+from flax.core.frozen_dict import freeze, unfreeze
+import jax
+import jax.numpy as jnp
+from jax import random, device_get
+from typing import Sequence, Tuple, Optional, Callable, Any
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # From the original Flax NN structure:
-        # features = [[2,3,4],[2,3]]
-        # kernel_sizes = [[(2,), (4,), (5,)], [(2,), (4,)]]
-        #
-        # We'll implement two rounds of 1D convolutions with ReLU activations,
-        # flatten, and dense layer for each conv block.
-        #
-        # Since TF conv1d expects kernel_size as an integer,
-        # we extract the first value of the tuple.
-        #
-        # We will follow roughly the logic:
-        # For each boosting_round in [0,1]:
-        #  For each depth in features[boosting_round]:
-        #    Conv1D -> ReLU
-        #  Flatten -> Dense(1)
-        #
-        # Sum outputs from both rounds as final output.
+ModuleDef = Any
 
-        # Round 0 conv and dense layers
-        self.conv_0_0 = tf.keras.layers.Conv1D(filters=2, kernel_size=2, padding='same', name="conv_0_0")
-        self.conv_0_1 = tf.keras.layers.Conv1D(filters=3, kernel_size=4, padding='same', name="conv_0_1")
-        self.conv_0_2 = tf.keras.layers.Conv1D(filters=4, kernel_size=5, padding='same', name="conv_0_2")
-        self.dense_0 = tf.keras.layers.Dense(1, name="dense_0")
+class NN(nn.Module):
+    features: Sequence[Sequence[int]]
+    kernel_sizes: Sequence[Sequence[Tuple[int, int]]]
+    used_rounds: Optional[int] = None
+    act: Callable = nn.relu
 
-        # Round 1 conv and dense layers
-        self.conv_1_0 = tf.keras.layers.Conv1D(filters=2, kernel_size=2, padding='same', name="conv_1_0")
-        self.conv_1_1 = tf.keras.layers.Conv1D(filters=3, kernel_size=4, padding='same', name="conv_1_1")
-        self.dense_1 = tf.keras.layers.Dense(1, name="dense_1")
+    @nn.compact
+    def __call__(self, x):
+        n_rounds = len(self.kernel_sizes) if self.used_rounds == None else self.used_rounds
+        if n_rounds < 0:
+            round_range = range(len(self.kernel_sizes) + n_rounds)
+        else:
+            round_range = range(n_rounds)
+        
+        y_rounds = jnp.zeros((len(list(round_range)), x.shape[0], 1))
+        for boosting_round in round_range:
+            y = None
+            for depth in range(len(self.features[boosting_round])):
+                if depth == (len(self.features[boosting_round]) - 1) and boosting_round == (len(list(round_range)) - 1):
+                    conv_name = "conv_head"
+                    dense_name = "dense_head"
+                else:
+                    conv_name = f"conv_{boosting_round}_{depth}"
+                    dense_name = f"dense_{boosting_round}_{depth}"
+                if y is not None:
+                    y = jnp.concatenate((x, y), axis=-1)
+                else:
+                    y = x
+                f = self.features[boosting_round][depth]
+                k = self.kernel_sizes[boosting_round][depth]
+                y = nn.Conv(features=f, kernel_size=k, name=conv_name)(y)
+                y = self.act(y)
+            
+            y_flat = y.reshape((y.shape[0], -1))  # flatten
+            y_dense = nn.Dense(features=1, name=dense_name)(y_flat)
+            y_rounds = y_rounds.at[boosting_round].set(y_dense)
+        return jnp.sum(y_rounds, axis=0)
 
-        self.act = tf.keras.layers.ReLU()
+tree_trial = NN([[2, 3, 4], [2, 3]], [[(2,), (4,), (5,)], [(2,), (4,)]])
+params = tree_trial.init(random.PRNGKey(0), jnp.ones([33, 8]))['params']
+print(jax.tree_map(lambda x: x.shape, params))
 
-    def call(self, inputs):
-        # inputs shape expected: (batch_size, length, channels)
-        # Original JAX input is (batch=33, width=8), no channel dimension explicitly given.
-        # In TF conv1d, the input shape is (batch, length, channels).
-        #
-        # Since original input is (33, 8) -- looks like batch=33 and width=8,
-        # but conv1d needs channels dimension.
-        # We'll assume inputs shape: (batch_size=33, length=8, channels=1)
-        # So we expect GetInput to add channel dimension correspondingly.
+os.environ["XLA_FLAGS"]="--xla_gpu_strict_conv_algorithm_picker=false"
+os.environ["XLA_FLAGS"]="--xla_gpu_autotune_level=0"
 
-        # Round 0
-        x0 = inputs
-        x0 = self.conv_0_0(x0)
-        x0 = self.act(x0)
-        x0 = self.conv_0_1(x0)
-        x0 = self.act(x0)
-        x0 = self.conv_0_2(x0)
-        x0 = self.act(x0)
-        x0 = tf.reshape(x0, [tf.shape(x0)[0], -1])  # flatten
-        out0 = self.dense_0(x0)  # (batch, 1)
-
-        # Round 1
-        x1 = inputs
-        x1 = self.conv_1_0(x1)
-        x1 = self.act(x1)
-        x1 = self.conv_1_1(x1)
-        x1 = self.act(x1)
-        x1 = tf.reshape(x1, [tf.shape(x1)[0], -1])  # flatten
-        out1 = self.dense_1(x1)
-
-        # Sum outputs as in original: jnp.sum(y_rounds, axis=0)
-        # y_rounds shape was (n_rounds, batch, 1)
-        # So sum across rounds => sum of out0 and out1 (both shape (batch,1))
-        output = out0 + out1  # shape (batch, 1)
-        return output
-
-def my_model_function():
-    # Return an instance of MyModel with initialized weights by calling Build.
-    # We use typical input shape [33, 8, 1] to build the model.
-    model = MyModel()
-    # We force build by calling model on a dummy input
-    dummy_input = tf.zeros((33, 8, 1), dtype=tf.float32)
-    model(dummy_input)
-    return model
-
-def GetInput():
-    # Return a random tensor matching the expected input shape:
-    # batch=33, length=8, channels=1 (added channels dim for TF conv1d)
-    return tf.random.uniform(shape=(33, 8, 1), dtype=tf.float32)
-
+import os
+os.environ["TF_ENABLE_ONEDNN_OPTS"]="1"

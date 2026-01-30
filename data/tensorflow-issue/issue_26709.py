@@ -1,38 +1,34 @@
-# tf.random.uniform((10, 1), dtype=tf.float32)
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Single Dense layer as per the original example
-        self.dense = tf.keras.layers.Dense(1)
+features = tf.data.Dataset.from_tensors([1.]).repeat(10000).batch(10)
+labels = tf.data.Dataset.from_tensors([1.]).repeat(10000).batch(10)
+train_dataset = tf.data.Dataset.zip((features, labels))
 
-    def call(self, inputs, training=False):
-        return self.dense(inputs)
+distribution = tf.contrib.distribute.MirroredStrategy(['/device:CPU:0', '/device:GPU:0', '/device:GPU:1'])
 
-def my_model_function():
-    # Return an instance of MyModel.
-    return MyModel()
+with distribution.scope():
+  inputs = tf.keras.layers.Input(shape=(1,))
+  predictions = tf.keras.layers.Dense(1)(inputs)
+  model = tf.keras.models.Model(inputs=inputs, outputs=predictions)
 
-def GetInput():
-    # Input shape inferred from example: batch size 10 and feature shape 1 (shape=(10,1))
-    # Because original dataset used batch(10) with shape (1,) per example.
-    return tf.random.uniform((10, 1), dtype=tf.float32)
+  model.compile(loss='mean_squared_error',
+                optimizer=tf.train.GradientDescentOptimizer(learning_rate=0.2))
 
-# ---
-# ### Explanation / Assumptions
-# - The original code from the issue is a minimal example creating a Keras model with a single dense layer on inputs of shape (1,), batched using dataset batch size 10.
-# - Most errors arise from using tf.contrib.distribute.MirroredStrategy in TF 1.12 which lacks stable support for Keras models and dataset inputs.
-# - The input is a tensor of shape (batch_size=10, input_dim=1), consistent with the original dataset batches.
-# - No complex fusion or multiple models are described, so a single straightforward model with one Dense layer is implemented.
-# - TensorFlow 2.20.0 support requested — this code is compatible with TF 2 API, and can be jit compiled.
-# - The function `GetInput()` generates a random input tensor with shape matching the model's expected input: (10, 1).
-# - Comments that do not provide exact code or model fusion are disregarded here, focusing on a minimal reproducible model from the described problem.
-# - Deprecated API like `tf.train.GradientDescentOptimizer` replaced by current `tf.keras.optimizers.SGD` in TF 2 style (not shown but expected downstream).
-# - This enables usage under TF 2 with XLA compilation.
-# This satisfies the instructions:  
-# - Single class `MyModel(tf.keras.Model)`.  
-# - `my_model_function()` returns an instance.  
-# - `GetInput()` returns a matching input tensor.  
-# - Comments show inferred shape.  
-# - No test code or execution outside code block.
+model.fit(train_dataset, epochs=5, steps_per_epoch=10)
+
+distribution = tf.contrib.distribute.MirroredStrategy(['/device:CPU:0', '/device:GPU:0', '/device:GPU:1'])
+
+distribution = tf.contrib.distribute.MirroredStrategy(['/device:GPU:0', '/device:GPU:1'])
+
+# Creates a graph.
+with tf.device('/cpu:0'):
+  a = tf.constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], shape=[2, 3], name='a')
+  b = tf.constant([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], shape=[3, 2], name='b')
+c = tf.matmul(a, b)
+# Creates a session with log_device_placement set to True.
+sess = tf.Session(config=tf.ConfigProto(log_device_placement=True))
+# Runs the op.
+print(sess.run(c))

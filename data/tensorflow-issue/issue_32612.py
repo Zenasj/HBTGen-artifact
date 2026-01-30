@@ -1,44 +1,52 @@
-# tf.random.uniform((B, 32), dtype=tf.float32) ← Input shape is inferred from example Input layer shape=(32,)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Simple example model: one Dense layer mapping 32 features to 32 outputs
-        self.dense = tf.keras.layers.Dense(32)
-
-        # Custom loss instance embedded as submodule
-        self.my_loss = MyCustomLoss()
-
-    def call(self, inputs, training=None):
-        return self.dense(inputs)
-    
-    def compute_loss(self, y_true, y_pred):
-        # Provide a wrapper for loss computation like Keras expects
-        return self.my_loss(y_true, y_pred)
-
-
+print(tf.__version__)
 class MyCustomLoss(tf.keras.losses.Loss):
     def __init__(self):
         super().__init__()
-        # No additional state or config needed in this minimal example
 
     def call(self, y_true, y_pred):
-        # Return constant loss as in the example (always 1)
-        return tf.constant(1.0)
+        return 1.
 
-    def get_config(self):
-        # Required to enable saving/loading the custom loss with config
-        config = super().get_config()
-        return config
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
 
-def GetInput():
-    # Return a random tensor with shape (batch_size, 32)
-    # Batch size chosen as 4 (arbitrary) for example usage
-    return tf.random.uniform((4, 32), dtype=tf.float32)
+a = tf.keras.layers.Input(shape=(32,))
+b = tf.keras.layers.Dense(32)(a)
+model = tf.keras.models.Model(inputs=a, outputs=b)
+model.save('./model.h5') # save first and then compile
+model.compile('sgd', MyCustomLoss())
 
+# load the model
+model_new = tf.keras.models.load_model('./model.h5')
+model_new.compile('sgd', MyCustomLoss())
+
+import tensorflow as tf
+
+print(tf.__version__)
+class MyCustomLoss(tf.keras.losses.Loss):
+    def __init__(self):
+        super().__init__()
+
+    def call(self, y_true, y_pred):
+        return 1.
+
+
+
+a = tf.keras.layers.Input(shape=(32,))
+b = tf.keras.layers.Dense(32)(a)
+model = tf.keras.models.Model(inputs=a, outputs=b)
+model.compile('sgd', MyCustomLoss()) # first compile, then fit, then save is the normal order.
+model.fit(some_data, epochs=1) 
+model.save('./model.h5') # I can not save any earlier!!!
+# load the model
+model_new = tf.keras.models.load_model('./model.h5')
+model_new.compile('sgd', MyCustomLoss())
+
+# Custom Loss1 (for example) 
+@tf.function() 
+def customLoss1(yTrue,yPred):
+  return tf.reduce_mean(yTrue-yPred)

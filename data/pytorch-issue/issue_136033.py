@@ -1,6 +1,4 @@
-# torch.rand(2, dtype=torch.float64)
 import torch
-from torch import nn
 import contextlib
 
 @contextlib.contextmanager
@@ -12,14 +10,8 @@ def set_default_dtype(dtype):
     finally:
         torch.set_default_dtype(old_dtype)
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        with set_default_dtype(torch.float64):
-            return x * 2.0  # Example operation under context manager
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(2, dtype=torch.float64)  # Matches the model's expected input shape
-
+@torch.compile(backend="eager", fullgraph=True)
+def fn():
+    with set_default_dtype(torch.float64):
+        x = torch.tensor([3.0, 3.0 + 5.0j])
+    return x

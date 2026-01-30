@@ -1,59 +1,84 @@
-# tf.random.uniform((None,)) ← Input shape inferred from the issue example generator yielding tf.zeros(2, 3),
-# but shape is dynamic (None,), so we assume a 2D tensor with shape (2, 3) as the fixed input shape for clarity
+import random
+
+# Cleanup utility class
+class TfDataset(object):
+    def __init__(self):
+        self.py_func_set_to_cleanup = set()
+
+    def from_generator(self, generator, output_types, output_shapes=None, args=None):
+        if not hasattr(tf.compat.v1.get_default_graph(), '_py_funcs_used_in_graph'):
+            tf.compat.v1.get_default_graph()._py_funcs_used_in_graph = []
+        py_func_set_before = set(tf.compat.v1.get_default_graph()._py_funcs_used_in_graph)
+        result = tf.data.Dataset.from_generator(generator, output_types, output_shapes, args)
+        py_func_set_after = set(tf.compat.v1.get_default_graph()._py_funcs_used_in_graph) - py_func_set_before
+        self.py_func_set_to_cleanup |= py_func_set_after
+        return result
+  
+    def cleanup(self):
+        new_py_funcs = set(tf.compat.v1.get_default_graph()._py_funcs_used_in_graph) - self.py_func_set_to_cleanup
+        tf.compat.v1.get_default_graph()._py_funcs_used_in_graph = list(new_py_funcs)
+        self.py_func_set_to_cleanup = set()
+
+# Usage example
+tf_dataset = TfDataset()
+dataset = tf_dataset.from_generator(generator, output_types=tf.int32, output_shapes=[None])
+del dataset
+tf_dataset.cleanup()  # Call this after done using the generator.
+
+strategy = tf.distribute.MirroredStrategy()
+train_iterator = strategy.make_dataset_iterator(train_dataset)
+def train_step(inputs):
+    images, labels = inputs
+    with tf.GradientTape() as tape:
+        y_pred = recognizer(images, training=True)
+        loss = compute_loss(
+                   y_pred, labels
+        )
+    losses.update_state(loss)
+    gradients = tape.gradient(loss, recognizer.trainable_variables)
+    optimizer.apply_gradients(zip(gradients, recognizer.trainable_variables))
+@tf.function
+def distributred_train(dataset):
+        return strategy.experimental_run(train_step, dataset)
+
+for epoch in range(epochs):
+    for steps in range(train_steps_per_epoch):
+        ditributred_train(train_iterator)
+        # it use the train_iterator to run the distributed training step.
+        # How should I suppose to reset the dataset?
+
+import gc
+
+import psutil
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define two simple sub-models for demonstration.
-        # Because the original issue is about tf.data.Dataset.from_generator memory leak,
-        # and no explicit model was described, we'll simulate two models that
-        # consume the input and compare outputs as an example fused model.
-        self.model_a = tf.keras.Sequential([
-            tf.keras.layers.Dense(10, activation='relu', input_shape=(3,)),
-            tf.keras.layers.Dense(5)
-        ])
-        self.model_b = tf.keras.Sequential([
-            tf.keras.layers.Dense(10, activation='relu', input_shape=(3,)),
-            tf.keras.layers.Dense(5)
-        ])
 
-    def call(self, x):
-        # x assumed shape: (batch_size, 2, 3) or (2, 3)
-        # Flatten the first dimension if needed (if input is (2,3) -> batch_size=2)
-        # We'll flatten batch and sequence dims for a general approach.
-        # Although the original generator yields tf.zeros(2,3), 
-        # here to keep compatibility, we treat input shape as (batch, 2, 3).
-        # For this example, assume input shape is (batch, 2, 3).
-        # Reshape input to (batch * 2, 3) to feed into Dense layer.
-        shape = tf.shape(x)
-        batch_dim = shape[0]
-        seq_dim = shape[1]
-        x_flat = tf.reshape(x, (batch_dim * seq_dim, 3))
+def generator():
+    yield tf.random.randn((1000, 1000))
 
-        output_a = self.model_a(x_flat)
-        output_b = self.model_b(x_flat)
 
-        # Compare outputs: for instance, compute their elementwise absolute difference
-        diff = tf.abs(output_a - output_b)
+gc.collect()
 
-        # Aggregate difference per batch: sum over last axis
-        diff_per_sample = tf.reduce_sum(diff, axis=-1)
+process = psutil.Process()
 
-        # Reshape back to (batch_dim, seq_dim)
-        diff_per_sample = tf.reshape(diff_per_sample, (batch_dim, seq_dim))
-        
-        # Return the difference tensor as output - showing how the two sub-models compare
-        return diff_per_sample
+deltas = []
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+for i in range(1000):
+    mem_used_0 = process.memory_info().rss
+    # create a dataset from a generator, and cleanup immediatelly
+    dataset = tf.data.Dataset.from_generator(
+        generator, output_types=tf.float64, output_shapes=[None]
+    )
+    del dataset
+    gc.collect()
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel.
-    # Since the original example generator outputs tf.zeros(2,3), batch size is unknown.
-    # For this function, create a batch with batch size 4 of shape (4, 2, 3).
-    # Using float32 as dtype.
-    return tf.random.uniform((4, 2, 3), dtype=tf.float32)
+    # collect memory usage
+    mem_used_1 = process.memory_info().rss
 
+    # store the memory usage delta
+    delta = mem_used_1 - mem_used_0
+    deltas.append(delta)
+
+# How much memory is leaking?
+delta_sum_mb = sum(deltas) / 1024**2
+print(f"Sum of memory leaking: {delta_sum_mb:.2f}MB")

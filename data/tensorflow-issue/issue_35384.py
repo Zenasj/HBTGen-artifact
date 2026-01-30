@@ -1,42 +1,72 @@
-# tf.random.uniform((B, 32, 32, 3), dtype=tf.float32)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
+
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+
+import sys
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Four Conv2D layers with 96 filters, kernel_size=3, strides=2, padding='same'
-        self.conv1 = tf.keras.layers.Conv2D(filters=96, kernel_size=3, strides=2, padding="same")
-        self.conv2 = tf.keras.layers.Conv2D(filters=96, kernel_size=3, strides=2, padding="same")
-        self.conv3 = tf.keras.layers.Conv2D(filters=96, kernel_size=3, strides=2, padding="same")
-        self.conv4 = tf.keras.layers.Conv2D(filters=96, kernel_size=3, strides=2, padding="same")
-        
-        # Global Average Pooling 2D
-        self.gap = tf.keras.layers.GlobalAveragePooling2D()
-        # Flatten layer (sometimes redundant after GAP, but preserved here per original code)
-        self.flatten = tf.keras.layers.Flatten()
-        
-        # Final Dense layer with 10 units for CIFAR10 classes
-        self.dense = tf.keras.layers.Dense(10)
-        # Softmax activation layer for classification probabilities
-        self.softmax = tf.keras.layers.Activation(tf.nn.softmax)
+def block(x):
+    x =tf.keras.layers.Conv2D(filters=96, kernel_size=3, strides=2, padding="same")(x)
+    x =tf.keras.layers.Conv2D(filters=96, kernel_size=3, strides=2, padding="same")(x)
+    x =tf.keras.layers.Conv2D(filters=96, kernel_size=3, strides=2, padding="same")(x)
+    x =tf.keras.layers.Conv2D(filters=96, kernel_size=3, strides=2, padding="same")(x)
 
-    def call(self, inputs, training=False):
-        x = self.conv1(inputs)
-        x = self.conv2(x)
-        x = self.conv3(x)
-        x = self.conv4(x)
-        x = self.gap(x)
-        x = self.flatten(x)
-        x = self.dense(x)
-        x = self.softmax(x)
-        return x
+    x = tf.keras.layers.GlobalAveragePooling2D()(x)
+    x = tf.keras.layers.Flatten()(x)
 
-def my_model_function():
-    # Instantiate the model
-    return MyModel()
+    x = tf.keras.layers.Dense(10)(x)
+    x = tf.keras.layers.Activation(activation=tf.nn.softmax)(x)
 
-def GetInput():
-    # Creates a random float32 tensor with shape matching CIFAR10 input: (batch_size, 32, 32, 3)
-    # batch_size is arbitrarily chosen as 8 here; can be adjusted as needed
-    return tf.random.uniform((8, 32, 32, 3), dtype=tf.float32)
+    return x
+def FCN():
+    in_tensor = tf.keras.Input(shape=(32, 32, 3))
+    out_tensors = block(in_tensor)
+    model = tf.keras.Model(inputs=in_tensor, outputs=out_tensors, name="FCN")
+    return model
 
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+
+import os
+import numpy as np
+import tensorflow as tf
+
+from test_net import FCN
+
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+
+# load data and norm to [-1,1]
+cifar10 = tf.keras.datasets.cifar10
+(x_train, y_train), (x_test, y_test) = cifar10.load_data()
+x_train, x_test = (x_train - 128.0) / 128.0, (x_test - 128.0) / 128.0
+
+x_test= x_test[0:9984]
+y_test = y_test[0:9984]
+
+# config the used GPU memory size
+config = tf.ConfigProto(allow_soft_placement=True)
+config.gpu_options.per_process_gpu_memory_fraction = 0.3
+tf.keras.backend.set_session(tf.Session(config=config))
+
+
+mirror_strategy = tf.distribute.MirroredStrategy()
+with mirror_strategy.scope():
+    model = FCN()
+    sgd = tf.keras.optimizers.SGD(lr=0.01, momentum=0.9, decay=1e-4)
+    model.compile(
+    optimizer=sgd, loss="sparse_categorical_crossentropy", metrics=["accuracy"]
+    )
+
+    model.fit(
+        x_train, 
+        y_train,
+        batch_size=256,
+        epochs=10,
+        validation_data=(x_test, y_test),
+        verbose=2,
+    )

@@ -1,50 +1,30 @@
-# torch.rand(1, 4, 4, 4, dtype=torch.float32)
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.weight = nn.Parameter(torch.randn(2, 4, 2, 2))  # Matches original weight shape
-        self.strides = (1, 1)
-        self.pads = (0, 0)
-        self.dilations = (1, 1)
-        self.groups = 1
+qconv = torch.ops.quantized.conv2d
+qconv_prepack = torch.ops.quantized.conv2d_prepack
 
-    def forward(self, x):
-        # Quantize input and weights with scales from the issue
-        qx = torch.quantize_per_tensor(x, scale=0.052, zero_point=0, dtype=torch.quint8)
-        qweight = torch.quantize_per_tensor(self.weight, scale=2.39, zero_point=0, dtype=torch.qint8)
-        
-        orig_engine = torch.backends.quantized.engine
-        result = torch.tensor([False], dtype=torch.bool)
-        
-        try:
-            # Run FBGEMM path
-            torch.backends.quantized.engine = 'fbgemm'
-            w_prepack_fbgemm = torch.ops.quantized.conv2d_prepack(qweight, None, self.strides, self.pads, self.dilations, self.groups)
-            out_fbgemm = torch.ops.quantized.conv2d(qx, w_prepack_fbgemm, self.strides, self.pads, self.dilations, self.groups, 0.112, 0)
-            
-            # Run QNNPACK path
-            torch.backends.quantized.engine = 'qnnpack'
-            w_prepack_qnnpack = torch.ops.quantized.conv2d_prepack(qweight, None, self.strides, self.pads, self.dilations, self.groups)
-            out_qnnpack = torch.ops.quantized.conv2d(qx, w_prepack_qnnpack, self.strides, self.pads, self.dilations, self.groups, 0.112, 0)
-            
-            # Compare dequantized outputs
-            deq_fbgemm = out_fbgemm.dequantize()
-            deq_qnnpack = out_qnnpack.dequantize()
-            result = torch.tensor([torch.allclose(deq_fbgemm, deq_qnnpack)], dtype=torch.bool)
-        except Exception:
-            # QNNPACK error indicates mismatch
-            result = torch.tensor([False], dtype=torch.bool)
-        finally:
-            torch.backends.quantized.engine = orig_engine  # Restore original backend
-            
-        return result  # Returns True if outputs match (or QNNPACK succeeded)
+strides = (1, 1)
+pads = (0, 0)
+dilations = (1, 1)
+groups = 1
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    return torch.randn(1, 4, 4, 4)
+for name in ["fbgemm", "qnnpack"]:
+    torch.backends.quantized.engine = name
+    print("Running on backend ", name)
+    x = torch.randn(1, 4, 4, 4)
+    qx = torch.quantize_per_tensor(x, scale=0.052, zero_point=0, dtype=torch.quint8)
+    weight = torch.randn(2, 4, 2, 2)
+    qweight = torch.quantize_per_tensor(weight, scale=2.39, zero_point=0, dtype=torch.qint8)
+    w_prepack = qconv_prepack(qweight, None, strides, pads, dilations, groups)
+    print(qconv(qx, w_prepack, strides, pads, dilations, groups, 0.112, 0))
 
+tensor([[[[0.0000, 0.0000, 0.0000],
+          [0.0000, 0.0000, 0.0000],
+          [0.0000, 0.0000, 0.0000]],
+
+         [[1.2320, 0.2240, 0.0000],
+          [0.0000, 0.0000, 2.6880],
+          [0.4480, 0.0000, 0.0000]]]], size=(1, 2, 3, 3), dtype=torch.quint8,
+       quantization_scheme=torch.per_tensor_affine, scale=0.112, zero_point=0)

@@ -1,19 +1,40 @@
-# torch.rand(B, C, H, W, dtype=torch.float32) ← Assuming input is a dummy tensor for demonstration
-import torch
 import os
+import torch
+from torch import multiprocessing as mp
+from torch.distributed import rpc
 
-class MyModel(torch.nn.Module):
-    def forward(self, x):
-        # Simulate the core issue: current_device() may return incorrect device when called over RPC
-        current_dev = torch.cuda.current_device()
-        # Return a tensor indicating the device to observe behavior
-        return torch.tensor([current_dev], device=current_dev)
+def foo(with_rpc=True):
+    device = torch.cuda.current_device()
+    prefix = 'with_rpc' if with_rpc else 'without_rpc'
+    print(f'{prefix}: {os.getpid()=}, {device=}')
 
-def my_model_function():
-    # Returns an instance of MyModel
-    return MyModel()
+def worker0():
+    rpc.init_rpc("worker0", rank=0, world_size=2)
+    foo(with_rpc=False)
+    rpc.remote("worker1", foo)
+    rpc.shutdown()
 
-def GetInput():
-    # Returns a dummy input tensor compatible with MyModel's forward
-    return torch.rand(1, 1, 1, 1, dtype=torch.float32)
+def worker1():
+    rpc.init_rpc("worker1", rank=1, world_size=2)
+    foo(with_rpc=False)
+    rpc.remote("worker0", foo)
+    rpc.shutdown()
 
+def run(rank):
+    device = rank
+    torch.cuda.set_device(rank)
+    assert torch.cuda.current_device() == device
+    os.environ['MASTER_ADDR'] = 'localhost'
+    os.environ['MASTER_PORT'] = '12355'
+    if rank == 0:
+        worker0()
+    else:
+        worker1()
+
+
+def main():
+    mp.start_processes(run, nprocs=2, start_method='fork')
+
+
+if __name__ == '__main__':
+    main()

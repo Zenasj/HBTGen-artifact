@@ -1,132 +1,163 @@
-# tf.random.uniform((BATCH, MAX_LEN, EMBEDDING_DIM), dtype=tf.float32) ← inferred input shape after embedding_lookup (BATCH=5, MAX_LEN=10, EMBEDDING_DIM=300)
+# #!/usr/bin/env python3
 
+# python 3.5 (anaconda)
+# TF 0.12 RC from https://storage.googleapis.com/tensorflow/linux/cpu/tensorflow-0.12.0rc0-cp35-cp35m-linux_x86_64.whl
+# $ python -c "import tensorflow; print(tensorflow.__version__)"
+#  0.12.0-rc0
+
+# OS: RedHat 7.2
+# CPU version only, no GPU, no CUDA, no CUDNN
+
+import numpy as np
 import tensorflow as tf
+from tensorflow.python.ops.rnn_cell import GRUCell
 
-# Constants inferred from original code
+
 BATCH = 5  # batch size
 MAX_LEN = 10  # max length of the sequence
 MLP_HIDDEN_DIM = 128  # number of hidden neurons in the MLP
 EMBEDDING_DIM = 300  # embedding dimension
 VOCAB_SIZE = 8  # vocabulary size
-STD = 0.001  # standard deviation of variable initializers
+
+THREADS = 4  # number of threads to be used
+STD=0.001  # standard deviation of ariable initializers
 
 
-class MyModel(tf.keras.Model):
-    def __init__(self, adversarial=False):
-        super().__init__()
-        self.adversarial = adversarial
+class SimpleSentiment:
+    def __init__(self, adversarial=False, device='/cpu:0'):
 
-        # Embeddings variable. Using tf.Variable since tf.get_variable is not TF2 style.
-        # Initialize uniformly in [-1,1].
-        self.embeddings = tf.Variable(
-            tf.random.uniform([VOCAB_SIZE, EMBEDDING_DIM], minval=-1.0, maxval=1.0),
-            trainable=True,
-            name="word_embeddings"
-        )
+        self.embeddings = tf.get_variable('word_embeddings',
+                                          initializer=tf.random_uniform([VOCAB_SIZE, EMBEDDING_DIM], -1.0, 1.0))
 
-        # GRU Cell (single layer)
-        self.gru_cell = tf.keras.layers.GRUCell(MLP_HIDDEN_DIM)
+        with tf.variable_scope('sentiment') as scope:
+            with tf.device(device):
+                # Inputs
+                self.text = tf.placeholder(tf.int32, [BATCH, MAX_LEN])
+                self.text_len = tf.placeholder(tf.int32, [BATCH])
+                self.sentiment = tf.placeholder(tf.int32, [BATCH])
 
-        # MLP weights (instead of tf.get_variable, using tf.Variable)
-        # Using dense layers with no bias and manual bias variables to match original
-        self.W1 = tf.Variable(
-            tf.random.normal([MLP_HIDDEN_DIM, MLP_HIDDEN_DIM], mean=0.0, stddev=STD),
-            name="MLP_W1"
-        )
-        self.h1 = tf.Variable(
-            tf.random.normal([MLP_HIDDEN_DIM], mean=0.0, stddev=STD),
-            name="MLP_h1"
-        )
-        self.W2 = tf.Variable(
-            tf.random.normal([MLP_HIDDEN_DIM, 2], mean=0.0, stddev=STD),
-            name="MLP_W2"
-        )
-        self.h2 = tf.Variable(
-            tf.random.normal([2], mean=0.0, stddev=STD),
-            name="MLP_h2"
-        )
+                # Normal loss
+                loss_normal = self._loss(self.text, self.text_len, self.sentiment)
 
-    def call(self, inputs):
-        # inputs: tuple of (text, text_len)
-        # text: int32 tensor, shape [BATCH, MAX_LEN]
-        # text_len: int32 tensor, shape [BATCH]
+                # Define the optimizer
+                # Note: I've tried multiple of optimizers and none helped
+                optimizer = tf.train.AdamOptimizer(learning_rate=0.0005)
 
-        text, text_len = inputs
+                if adversarial:  # Define adversarial loss
+                    # Let's acces already defined variables
+                    scope.reuse_variables()
 
-        # Embedding lookup
-        embeddings = tf.nn.embedding_lookup(self.embeddings, text)
-        # embeddings shape: [BATCH, MAX_LEN, EMBEDDING_DIM]
+                    # Gradients of all variable (according to normal loss)
+                    gradients = optimizer.compute_gradients(loss_normal)
+                    print(len(gradients), gradients)
 
-        # Run dynamic_rnn with GRUCell manually
-        # tf.keras.layers.GRUCell does not have a layered dynamic_rnn directly,
-        # use tf.keras.layers.RNN with a GRUCell.
-        gru_layer = tf.keras.layers.RNN(self.gru_cell, return_sequences=False, return_state=True)
-        # Pack text_len for mask
-        mask = tf.sequence_mask(text_len, maxlen=MAX_LEN)
-        outputs, final_state = gru_layer(embeddings, mask=mask)
+                    # gradients of the embeddings
+                    emb_gradient = optimizer.compute_gradients(loss_normal, [self.embeddings])[0][0]
 
-        # MLP forward
-        # after_first_layer = relu(state * W1 + h1)
-        # logits = after_first_layer * W2 + h2
-        after_first_layer = tf.nn.relu(tf.matmul(final_state, self.W1) + self.h1)
-        logits = tf.matmul(after_first_layer, self.W2) + self.h2
+                    # this how much we want to shift the embeddings, i.e. going "against" the gradient
+                    delta = 0.001*tf.sign(emb_gradient)
 
-        return logits
+                    # let's compute the loss once again but this time we add the delta to the embeddings
+                    loss_adversarial = self._loss(self.text, self.text_len, self.sentiment, delta)
 
-    def loss(self, inputs, labels, emb_delta=None):
-        # Compute loss optionally with embedding delta added (for adversarial perturbation)
-        text, text_len = inputs
-        if emb_delta is not None:
-            # We add emb_delta to embeddings before lookup.
-            # emb_delta shape assumed [VOCAB_SIZE, EMBEDDING_DIM]
-            embeddings = self.embeddings + emb_delta
+                    # new gradient of the whole computational graph
+                    adversarial_gradients = optimizer.compute_gradients(loss_adversarial)
+                    print(len(adversarial_gradients), adversarial_gradients)  # everything is None!
+
+                    # Now we compute an average of old and new gradients
+                    new_gradients = [((g + ag)/2, vg) for ((g, vg), (ag, avg)) in zip(gradients, adversarial_gradients)]
+
+                    # and apply them
+                    self.training = optimizer.apply_gradients(new_gradients)
+
+                    # Btw this doesn't work either
+                    # self.training = optimizer.apply_gradients(adversarial_gradients)
+
+                    self.loss_final = (loss_normal + loss_adversarial) / 2
+
+                else:  # Normal loss
+                    # simply minimize according to the gradients
+                    self.loss_final = loss_normal
+                    self.training = optimizer.minimize(loss_normal)
+
+                # Create the session
+                self.session = tf.Session(config=tf.ConfigProto(inter_op_parallelism_threads=THREADS,
+                                                                intra_op_parallelism_threads=THREADS,
+                                                                allow_soft_placement=True))
+
+                # init everything (still deprecated way)
+                self.session.run(tf.initialize_all_variables())
+
+    def _loss(self, text, text_len, sentiment, emb_delta=0):
+        # use embedding
+        # note that emb_delta is zero as long as adversarial=False
+        # if adversarial=False then each embedding is shifted by appropriate emb_delta
+        text = tf.nn.embedding_lookup(self.embeddings + emb_delta, text)
+
+        # run gru
+        gru_cell = GRUCell(MLP_HIDDEN_DIM)
+        outputs, state = tf.nn.dynamic_rnn(cell=gru_cell,
+                                           inputs=text,
+                                           sequence_length=text_len,
+                                           dtype=tf.float32)
+
+        # define MLP
+        W1 = tf.get_variable(name='MLP_W1',
+                             shape=[state.get_shape()[1], MLP_HIDDEN_DIM],
+                             initializer=tf.random_normal_initializer(mean=0, stddev=STD))
+        W2 = tf.get_variable(name='MLP_W2',
+                             shape=[MLP_HIDDEN_DIM, 2],
+                             initializer=tf.random_normal_initializer(mean=0, stddev=STD))
+        h1 = tf.get_variable(name='MLP_h1',
+                             shape=[MLP_HIDDEN_DIM],
+                             initializer=tf.random_normal_initializer(mean=0, stddev=STD))
+        h2 = tf.get_variable(name='MLP_h2',
+                             shape=[2],
+                             initializer=tf.random_normal_initializer(mean=0, stddev=STD))
+
+        # apply MLP of the last GRU state
+        after_first_layer = tf.nn.relu(tf.matmul(state, W1) + h1)
+        logits = tf.matmul(after_first_layer, W2) + h2
+
+        # compute loss via categorial cross entropy
+        loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits, sentiment))
+        return loss
+
+
+def main():
+    for adversarial in [False, True]:
+        print('\n=================================')
+        if adversarial:
+            print('Using the adversarial loss')
         else:
-            embeddings = self.embeddings
+            print('Using the standard loss')
 
-        # Embedding lookup
-        embedded_text = tf.nn.embedding_lookup(embeddings, text)
+        net = SimpleSentiment(adversarial=adversarial)
 
-        # GRU RNN
-        mask = tf.sequence_mask(text_len, maxlen=MAX_LEN)
-        gru_layer = tf.keras.layers.RNN(self.gru_cell, return_sequences=False, return_state=True)
-        outputs, final_state = gru_layer(embedded_text, mask=mask)
+        for epoch in range(5):
+            print('Epoch {}'.format(epoch))
 
-        # MLP forward
-        after_first_layer = tf.nn.relu(tf.matmul(final_state, self.W1) + self.h1)
-        logits = tf.matmul(after_first_layer, self.W2) + self.h2
+            for batch in range(3):
+                _, loss_final = net.session.run([net.training, net.loss_final],
+                                                {net.text: np.array([[3, 1, 1, 2, 1, 0, 0, 0, 0, 0],
+                                                                     [3, 4, 1, 2, 1, 4, 4, 0, 0, 0],
+                                                                     [1, 1, 1, 2, 0, 0, 0, 0, 0, 0],
+                                                                     [3, 3, 3, 2, 1, 7, 0, 0, 0, 0],
+                                                                     [7, 1, 5, 2, 4, 2, 2, 2, 1, 7]], dtype='int32'),
+                                                 net.text_len: np.array([5, 7, 4, 6, 10], dtype='int32'),
+                                                 net.sentiment: np.array([0, 0, 1, 1, 0], dtype='int32')})
 
-        loss_val = tf.reduce_mean(
-            tf.nn.sparse_softmax_cross_entropy_with_logits(
-                logits=logits, labels=labels
-            )
-        )
-        return loss_val
+                print('\tBatch {}: {}'.format(batch, loss_final))
 
+if __name__ == '__main__':
+    main()
 
-def my_model_function():
-    """
-    Returns an instance of MyModel.
-    By default, to replicate original code, adversarial mode is enabled or not depending on user.
-
-    We create a basic model instance here with adversarial=False for simplicity,
-    as the original code's adversarial logic was implemented externally.
-    """
-    return MyModel(adversarial=False)
-
-
-def GetInput():
-    """
-    Returns a tuple (text, text_len) as inputs for MyModel.
-    - text: random integers in [0, VOCAB_SIZE) of shape [BATCH, MAX_LEN]
-    - text_len: random lengths in [1, MAX_LEN] of shape [BATCH]
-    """
-
-    import numpy as np
-
-    np.random.seed(0)
-    # Random token indices
-    text = np.random.randint(0, VOCAB_SIZE, size=(BATCH, MAX_LEN), dtype=np.int32)
-    # Random lengths between 1 and MAX_LEN
-    text_len = np.random.randint(1, MAX_LEN + 1, size=(BATCH,), dtype=np.int32)
-    return tf.constant(text), tf.constant(text_len)
-
+def rnn(cell, inputs, initial_state):
+  inputs = tf.unpack(inputs, axis=1)
+  outputs = []
+  state = initial_state
+  for input_ in inputs:
+    output, state = cell(input_, state)
+    outputs.append(output)
+  outputs = tf.pack(outputs, axis=1)
+  return outputs, state

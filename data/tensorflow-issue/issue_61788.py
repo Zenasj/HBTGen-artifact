@@ -1,88 +1,310 @@
-# tf.random.uniform((B, 96, 96, 3), dtype=tf.float32) ← Input shape inferred from the cats_and_dogs dataset image size (96,96,3)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
+#!/usr/bin/env python
+# coding: utf-8
+
+
+import matplotlib.pyplot as plt
+import numpy as np
+import os
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Data augmentation layers as used in the original code
-        self.data_augmentation = tf.keras.Sequential([
-            tf.keras.layers.RandomFlip('horizontal'),
-            tf.keras.layers.RandomRotation(0.2),
-        ])
-
-        # Preprocessing for MobileNetV2
-        self.preprocess_input = tf.keras.applications.mobilenet_v2.preprocess_input
-
-        # Base pretrained MobileNetV2 model without the classification head
-        IMG_SIZE = (96, 96)
-        IMG_SHAPE = IMG_SIZE + (3,)
-        self.base_model = tf.keras.applications.MobileNetV2(
-            input_shape=IMG_SHAPE,
-            include_top=False,
-            weights='imagenet'
-        )
-        self.base_model.trainable = False  # Initially freeze the base
-
-        # Global average pooling for feature extraction
-        self.global_average_layer = tf.keras.layers.GlobalAveragePooling2D()
-
-        # Dropout layer for regularization
-        self.dropout = tf.keras.layers.Dropout(0.2)
-
-        # Final prediction layer outputting 1 logit (binary classification)
-        self.prediction_layer = tf.keras.layers.Dense(1)
-
-    def call(self, inputs, training=False):
-        # Apply data augmentation only during training
-        x = tf.cond(
-            tf.cast(training, tf.bool),
-            true_fn=lambda: self.data_augmentation(inputs),
-            false_fn=lambda: inputs
-        )
-        # Preprocess input for MobileNetV2
-        x = self.preprocess_input(x)
-        # Pass through base model; training=False to keep batchnorm layers in inference mode initially
-        x = self.base_model(x, training=False)
-        # Pool features
-        x = self.global_average_layer(x)
-        # Apply dropout only during training
-        x = self.dropout(x, training=training)
-        # Final predictions (logits)
-        x = self.prediction_layer(x)
-        return x
-
-    def fine_tune(self, fine_tune_at=100):
-        """Unfreeze the base model from layer `fine_tune_at` onward."""
-        # Unfreeze entire base model first
-        self.base_model.trainable = True
-        # Freeze layers before fine_tune_at
-        for layer in self.base_model.layers[:fine_tune_at]:
-            layer.trainable = False
 
 
-def my_model_function():
-    """
-    Return an instance of the MyModel class, which is a MobileNetV2 based transfer learning model
-    with data augmentation and fine-tuning capability.
-    """
-    model = MyModel()
-    return model
+_URL = 'https://storage.googleapis.com/mledu-datasets/cats_and_dogs_filtered.zip'
+path_to_zip = tf.keras.utils.get_file('cats_and_dogs.zip', origin=_URL, extract=True)
+PATH = os.path.join(os.path.dirname(path_to_zip), 'cats_and_dogs_filtered')
+
+train_dir = os.path.join(PATH, 'train')
+validation_dir = os.path.join(PATH, 'validation')
+print(train_dir)
+BATCH_SIZE = 32
+IMG_SIZE = (96, 96)
+
+train_dataset = tf.keras.utils.image_dataset_from_directory(train_dir,
+                                                            shuffle=True,
+                                                            batch_size=BATCH_SIZE,
+                                                            image_size=IMG_SIZE)
 
 
-def GetInput():
-    """
-    Return a random tensor input matching the expected input shape of MyModel:
-    batch size 32, image size (96,96), 3 channels, dtype float32 in [0,255].
-    """
-    BATCH_SIZE = 32
-    IMG_SIZE = (96, 96)
-    # Generate random images in [0,255], float32 type
-    input_tensor = tf.random.uniform(
-        (BATCH_SIZE, IMG_SIZE[0], IMG_SIZE[1], 3),
-        minval=0,
-        maxval=255,
-        dtype=tf.float32
-    )
-    return input_tensor
 
+validation_dataset = tf.keras.utils.image_dataset_from_directory(validation_dir,
+                                                                 shuffle=True,
+                                                                 batch_size=BATCH_SIZE,
+                                                                 image_size=IMG_SIZE)
+
+
+
+
+
+class_names = train_dataset.class_names
+
+plt.figure(figsize=(10, 10))
+for images, labels in train_dataset.take(1):
+  for i in range(9):
+    ax = plt.subplot(3, 3, i + 1)
+    plt.imshow(images[i].numpy().astype("uint8"))
+    plt.title(class_names[labels[i]])
+    plt.axis("off")
+
+
+
+
+
+val_batches = tf.data.experimental.cardinality(validation_dataset)
+test_dataset = validation_dataset.take(val_batches // 5)
+validation_dataset = validation_dataset.skip(val_batches // 5)
+
+
+
+
+print('Number of validation batches: %d' % tf.data.experimental.cardinality(validation_dataset))
+print('Number of test batches: %d' % tf.data.experimental.cardinality(test_dataset))
+
+
+
+
+AUTOTUNE = tf.data.AUTOTUNE
+
+train_dataset = train_dataset.prefetch(buffer_size=AUTOTUNE)
+validation_dataset = validation_dataset.prefetch(buffer_size=AUTOTUNE)
+test_dataset = test_dataset.prefetch(buffer_size=AUTOTUNE)
+
+
+
+
+data_augmentation = tf.keras.Sequential([
+  tf.keras.layers.RandomFlip('horizontal'),
+  tf.keras.layers.RandomRotation(0.2),
+])
+
+
+
+for image, _ in train_dataset.take(1):
+  plt.figure(figsize=(10, 10))
+  first_image = image[0]
+  for i in range(9):
+    ax = plt.subplot(3, 3, i + 1)
+    augmented_image = data_augmentation(tf.expand_dims(first_image, 0))
+    plt.imshow(augmented_image[0] / 255)
+    plt.axis('off')
+
+
+
+
+preprocess_input = tf.keras.applications.mobilenet_v2.preprocess_input
+
+
+
+rescale = tf.keras.layers.Rescaling(1./127.5, offset=-1)
+
+
+
+# Create the base model from the pre-trained model MobileNet V2
+IMG_SHAPE = IMG_SIZE + (3,)
+base_model = tf.keras.applications.MobileNetV2(input_shape=IMG_SHAPE,
+                                               include_top=False,
+                                               weights='imagenet')
+
+
+
+
+image_batch, label_batch = next(iter(train_dataset))
+feature_batch = base_model(image_batch)
+print(feature_batch.shape)
+
+
+
+base_model.trainable = False
+
+
+
+# Let's take a look at the base model architecture
+base_model.summary()
+
+
+
+global_average_layer = tf.keras.layers.GlobalAveragePooling2D()
+feature_batch_average = global_average_layer(feature_batch)
+print(feature_batch_average.shape)
+
+
+
+prediction_layer = tf.keras.layers.Dense(1)
+prediction_batch = prediction_layer(feature_batch_average)
+print(prediction_batch.shape)
+
+
+
+inputs = tf.keras.Input(shape=(160, 160, 3))
+x = data_augmentation(inputs)
+x = preprocess_input(x)
+x = base_model(x, training=False)
+x = global_average_layer(x)
+x = tf.keras.layers.Dropout(0.2)(x)
+outputs = prediction_layer(x)
+model = tf.keras.Model(inputs, outputs)
+
+
+
+
+base_learning_rate = 0.0001
+model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=base_learning_rate),
+              loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
+              metrics=['accuracy'])
+
+
+
+
+model.summary()
+
+
+
+len(model.trainable_variables)
+
+
+
+initial_epochs = 10
+
+loss0, accuracy0 = model.evaluate(validation_dataset)
+
+
+
+
+print("initial loss: {:.2f}".format(loss0))
+print("initial accuracy: {:.2f}".format(accuracy0))
+
+
+
+
+history = model.fit(train_dataset,
+                    epochs=initial_epochs,
+                    validation_data=validation_dataset)
+
+
+
+acc = history.history['accuracy']
+val_acc = history.history['val_accuracy']
+
+loss = history.history['loss']
+val_loss = history.history['val_loss']
+
+plt.figure(figsize=(8, 8))
+plt.subplot(2, 1, 1)
+plt.plot(acc, label='Training Accuracy')
+plt.plot(val_acc, label='Validation Accuracy')
+plt.legend(loc='lower right')
+plt.ylabel('Accuracy')
+plt.ylim([min(plt.ylim()),1])
+plt.title('Training and Validation Accuracy')
+
+plt.subplot(2, 1, 2)
+plt.plot(loss, label='Training Loss')
+plt.plot(val_loss, label='Validation Loss')
+plt.legend(loc='upper right')
+plt.ylabel('Cross Entropy')
+plt.ylim([0,1.0])
+plt.title('Training and Validation Loss')
+plt.xlabel('epoch')
+plt.show()
+
+
+
+base_model.trainable = True
+
+
+
+# Let's take a look to see how many layers are in the base model
+print("Number of layers in the base model: ", len(base_model.layers))
+
+# Fine-tune from this layer onwards
+fine_tune_at = 100
+
+# Freeze all the layers before the `fine_tune_at` layer
+for layer in base_model.layers[:fine_tune_at]:
+  layer.trainable = False
+
+
+
+model.compile(loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
+              optimizer = tf.keras.optimizers.RMSprop(learning_rate=base_learning_rate/10),
+              metrics=['accuracy'])
+
+
+
+
+model.summary()
+
+
+
+len(model.trainable_variables)
+
+
+
+
+fine_tune_epochs = 10
+total_epochs =  initial_epochs + fine_tune_epochs
+
+history_fine = model.fit(train_dataset,
+                         epochs=total_epochs,
+                         initial_epoch=history.epoch[-1],
+                         validation_data=validation_dataset)
+
+
+
+acc += history_fine.history['accuracy']
+val_acc += history_fine.history['val_accuracy']
+
+loss += history_fine.history['loss']
+val_loss += history_fine.history['val_loss']
+
+
+
+
+plt.figure(figsize=(8, 8))
+plt.subplot(2, 1, 1)
+plt.plot(acc, label='Training Accuracy')
+plt.plot(val_acc, label='Validation Accuracy')
+plt.ylim([0.8, 1])
+plt.plot([initial_epochs-1,initial_epochs-1],
+          plt.ylim(), label='Start Fine Tuning')
+plt.legend(loc='lower right')
+plt.title('Training and Validation Accuracy')
+
+plt.subplot(2, 1, 2)
+plt.plot(loss, label='Training Loss')
+plt.plot(val_loss, label='Validation Loss')
+plt.ylim([0, 1.0])
+plt.plot([initial_epochs-1,initial_epochs-1],
+         plt.ylim(), label='Start Fine Tuning')
+plt.legend(loc='upper right')
+plt.title('Training and Validation Loss')
+plt.xlabel('epoch')
+plt.show()
+
+
+
+loss, accuracy = model.evaluate(test_dataset)
+print('Test accuracy :', accuracy)
+
+
+
+# Retrieve a batch of images from the test set
+image_batch, label_batch = test_dataset.as_numpy_iterator().next()
+predictions = model.predict_on_batch(image_batch).flatten()
+
+# Apply a sigmoid since our model returns logits
+predictions = tf.nn.sigmoid(predictions)
+predictions = tf.where(predictions < 0.5, 0, 1)
+
+print('Predictions:\n', predictions.numpy())
+print('Labels:\n', label_batch)
+
+plt.figure(figsize=(10, 10))
+for i in range(9):
+  ax = plt.subplot(3, 3, i + 1)
+  plt.imshow(image_batch[i].astype("uint8"))
+  plt.title(class_names[predictions[i]])
+  plt.axis("off")

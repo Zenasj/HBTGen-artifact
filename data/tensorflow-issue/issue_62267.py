@@ -1,55 +1,54 @@
-# tf.random.normal((3, 2, 2, 3, 4), dtype=tf.float32) ← The input shape inferred from the issue (input "x" tensor)
+import math
+import random
 
 import tensorflow as tf
+import traceback
 
-class MyModel(tf.keras.Model):
+def replace_special_values(tensor):
+    # Convert tensor to tf.float32 if it's not a supported dtype
+    supported_dtypes = [tf.float16, tf.float32, tf.float64, tf.bfloat16]
+    if tensor.dtype not in supported_dtypes:
+        original_dtype = tensor.dtype
+        tensor = tf.cast(tensor, tf.float32)
+    else :
+        original_dtype = None
+    
+    # Replace NaNs with zeros
+    tensor = tf.where(tf.math.is_nan(tensor), tf.zeros_like(tensor), tensor)
+    
+    # Replace positive infinities with a large number (e.g., 1e30)
+    tensor = tf.where(tf.math.is_inf(tensor), 100, tensor)
+    
+    # Replace negative infinities with a small number (e.g., -1e30)
+    tensor = tf.where(tf.math.is_inf(tensor) & tf.math.less(tensor, 0), -100, tensor)
+    
+    # Convert tensor back to its original dtype
+    if original_dtype is not None :
+        tensor = tf.cast(tensor, original_dtype)
+    return tensor
+
+class Network(tf.Module):
     def __init__(self):
         super().__init__()
-        # In this model, we encapsulate the operations:
-        # - IgammaGradA: gradient of the lower incomplete gamma function w.r.t "a"
-        # - DivNoNan: division that returns 0 where denominator is zero instead of NaN
-        #
-        # Based on the issue, the main source of discrepancy is due to
-        # randomness inside the call and jit_compile differences.
-        #
-        # To reproduce correct and comparable behavior,
-        # we accept x, y, z inputs externally so that repeated calls use same inputs.
-        #
-        # y and z correspond to the inputs for IgammaGradA.x and DivNoNan.x respectively.
-        # The issue shows y to be shape [4] and z shape [1,1,1,1].
-        #
-        # We will implement forward pass:
-        #   igamma_grad = IgammaGradA(a=x, x=y)
-        #   div_nonan = DivNoNan(y=igamma_grad, x=z)
-        # and output div_nonan
-        #
-        # This matches the reproducible example from the issue.
 
     @tf.function(jit_compile=True)
-    def call(self, x, y, z):
-        # Defensive casts and sanitizing NaNs or infinities not needed here,
-        # assuming inputs are well formed random tensors as in GetInput
+    def __call__(self, x):
+      
+      x = tf.raw_ops.IgammaGradA(a=x, x=tf.random.normal([4], dtype=tf.float32))        
+      x = tf.raw_ops.DivNoNan(y=x, x=tf.random.normal([1, 1, 1, 1], dtype=tf.float32))        
+      return x
 
-        igamma_grad = tf.raw_ops.IgammaGradA(a=x, x=y)
-        div_res = tf.raw_ops.DivNoNan(y=igamma_grad, x=z)
-        return div_res
+m = Network()
+inp = {
+    "x": tf.random.normal([3, 2, 2, 3,4], dtype=tf.float32),
+}
 
-
-def my_model_function():
-    # Return an instance of the model.
-    # No weights to load here.
-    return MyModel()
-
-
-def GetInput():
-    # Generate inputs matching expected shapes:
-    # x: [3, 2, 2, 3, 4], dtype float32 as per original input example
-    # y: [4], dtype float32 as used in IgammaGradA op in example
-    # z: [1, 1, 1, 1], dtype float32 as used in DivNoNan op in example
-
-    x = tf.random.normal([3, 2, 2, 3, 4], dtype=tf.float32)
-    y = tf.random.normal([4], dtype=tf.float32)
-    z = tf.random.normal([1, 1, 1, 1], dtype=tf.float32)
-
-    return (x, y, z)
-
+with tf.device('/CPU:0'):
+    tf.config.run_functions_eagerly(True)
+    no_op_res = m(**inp)
+    tf.config.run_functions_eagerly(False)
+    with tf.device('/CPU:0'):
+        op_res = m(**inp)
+    no_op_res = replace_special_values(no_op_res)
+    op_res = replace_special_values(op_res)
+    tf.debugging.assert_near(tf.cast(no_op_res, tf.float64), tf.cast(op_res, tf.float64), atol=0.001, rtol=0.001)

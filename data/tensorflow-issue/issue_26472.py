@@ -1,23 +1,48 @@
-# tf.random.uniform((B, 10), dtype=tf.float32) ← inferred input shape based on example using tf.zeros([3, 10])
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
+class MyModel(tf.keras.models.Model):
     def __init__(self):
         super(MyModel, self).__init__()
-        # A single dense layer with 5 output units as in the example
         self.layer = tf.keras.layers.Dense(5)
-
-    def call(self, x):
-        # Forward pass simply applies the dense layer
+        
+    def __call__(self, x):
         return self.layer(x)
+    
+model = MyModel()
 
-def my_model_function():
-    # Instantiate and return MyModel
-    return MyModel()
+# Build the model
+model(tf.zeros([3, 10]))
 
-def GetInput():
-    # Return a random tensor input that matches the expected (batch_size, 10)
-    # Using batch size 3 to mirror the example
-    return tf.random.uniform((3, 10), dtype=tf.float32)
+# this is something like a train_op that "changes" the content of the variable.
+assign_op = model.variables[1].assign( tf.ones_like(model.variables[1]) )
 
+# Let's create a session
+sess = tf.train.SingularMonitoredSession()
+#sess.run(tf.global_variables_initializer())
+
+# we can see the 'bias' variable is initialized to ZERO
+assert sess.run(model.variables[1]).mean() == 0.0
+
+# Now let's make the 'bias' variable to all one...
+sess.run(assign_op)
+
+# sure it is ONE ...
+assert sess.run(model.variables[1]).mean() == 1.0
+
+# Let's save the Keras model parameter. The bias is set to ONE, right ?????
+# Since model.save_weights try to create a new op (another bug #26430)
+# and the graph has been finalized, we will 'unfinalize' the graph with a bit of hack
+sess.graph._finalized = False
+model.save_weights('/tmp/keras-one.h5')
+sess.graph.finalize()
+
+
+# Let's see what is stored in the model file ....
+import h5py
+h = h5py.File("/tmp/keras-one.h5")
+assert h['dense']['dense']['bias:0'].value.mean() == 1.0     # <------ This will fail
+# Actual output is: array([0., 0., 0., 0., 0.], dtype=float32)

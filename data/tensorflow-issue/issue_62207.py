@@ -1,25 +1,29 @@
-# tf.random.uniform((10, 9, 8, 6), dtype=tf.bfloat16) ← inferred input shape and dtype from the issue example
+import random
 
 import tensorflow as tf
+import traceback
 
-class MyModel(tf.keras.Model):
+class Network(tf.Module):
     def __init__(self):
         super().__init__()
-        # No extra layers; just raw ops usage as per the issue.
 
     @tf.function(jit_compile=True)
-    def call(self, x):
-        # Perform Cos then Asinh using raw_ops, exactly as in the issue.
-        y = tf.raw_ops.Cos(x=x)
-        y = tf.raw_ops.Asinh(x=y)
-        return y
+    def __call__(self, x):
+      
+      x = tf.raw_ops.Cos(x=x, )        
+      x = tf.raw_ops.Asinh(x=x, )        
+      return x
 
-def my_model_function():
-    # Return an instance of MyModel for usage/testing.
-    return MyModel()
+m = Network()
+inp = {
+    "x": tf.random.uniform([10,9,8,6], -100, 100, dtype=tf.bfloat16),
+}
+        
+with tf.device('/GPU:0'):
+    tf.config.run_functions_eagerly(True)
+    no_op_res = m(**inp)
+    tf.config.run_functions_eagerly(False)
+    with tf.device('/GPU:0'):
+        op_res = m(**inp)
 
-def GetInput():
-    # Return a random input tensor matching the input shape and dtype used in the example.
-    # Shape: [10, 9, 8, 6], dtype: tf.bfloat16, range [-100, 100]
-    return tf.random.uniform([10, 9, 8, 6], minval=-100, maxval=100, dtype=tf.bfloat16)
-
+    tf.debugging.assert_near(tf.cast(no_op_res, tf.float64), tf.cast(op_res, tf.float64), atol=0.001, rtol=0.001)

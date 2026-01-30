@@ -1,12 +1,15 @@
-# torch.rand(B, 1, H, W, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class MyModel(nn.Module):
+
+def create_model():
+    return Net()
+
+
+class Net(nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
+        super(Net, self).__init__()
         self.conv1 = nn.Conv2d(1, 32, 3, 1)
         self.conv2 = nn.Conv2d(32, 64, 3, 1)
         self.dropout1 = nn.Dropout2d(0.25)
@@ -23,27 +26,33 @@ class MyModel(nn.Module):
         x = self.dropout2(x)
         x = self.fc2(x)
         output = F.log_softmax(x, dim=1)
+
         return output
 
     def log_weights(self, step, writer):
-        if isinstance(self, nn.DataParallel):
-            model = self.module
-        else:
-            model = self
-        writer.add_histogram('weights/conv1/weight', model.conv1.weight.data, step)
-        writer.add_histogram('weights/conv1/bias', model.conv1.bias.data, step)
-        writer.add_histogram('weights/conv2/weight', model.conv2.weight.data, step)
-        writer.add_histogram('weights/conv2/bias', model.conv2.bias.data, step)
-        writer.add_histogram('weights/fc1/weight', model.fc1.weight.data, step)
-        writer.add_histogram('weights/fc1/bias', model.fc1.bias.data, step)
-        writer.add_histogram('weights/fc2/weight', model.fc2.weight.data, step)
-        writer.add_histogram('weights/fc2/bias', model.fc2.bias.data, step)
+        writer.add_histogram('weights/conv1/weight', self.conv1.weight.data, step)
+        writer.add_histogram('weights/conv1/bias', self.conv1.bias.data, step)
+        writer.add_histogram('weights/conv2/weight', self.conv2.weight.data, step)
+        writer.add_histogram('weights/conv2/bias', self.conv2.bias.data, step)
+        writer.add_histogram('weights/fc1/weight', self.fc1.weight.data, step)
+        writer.add_histogram('weights/fc1/bias', self.fc1.bias.data, step)
+        writer.add_histogram('weights/fc2/weight', self.fc2.weight.data, step)
+        writer.add_histogram('weights/fc2/bias', self.fc2.bias.data, step)
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Assuming batch size (B) is 1, and input image size (H, W) is 28x28
-    B, C, H, W = 1, 1, 28, 28
-    return torch.rand(B, C, H, W, dtype=torch.float32)
-
+def train(use_cuda, model, epoch, optimizer, log_interval, train_loader, writer):
+    model.train()
+    for batch_idx, (data, target) in enumerate(train_loader):
+        if use_cuda:
+            data, target = data.cuda(), target.cuda()
+        data, target = Variable(data), Variable(target)
+        optimizer.zero_grad()
+        output = model(data)
+        loss = F.nll_loss(output, target)
+        loss.backward()
+        optimizer.step()
+        if batch_idx % log_interval == 0:
+            print(f'Train Epoch: {epoch} [{batch_idx * len(data)}/{len(train_loader.dataset)}'
+                  f'({100. * batch_idx / len(train_loader):.0f}%)]\tLoss: {loss.item():.6f}')
+            step = epoch * len(train_loader) + batch_idx
+            log_scalar('train_loss', loss.data.item(), step, writer)
+            model.log_weights(step, writer)

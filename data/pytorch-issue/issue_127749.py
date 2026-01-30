@@ -1,9 +1,10 @@
-# torch.rand(4, 400, 256, dtype=torch.float32)  # Inferred input shape from the issue
+import torch.nn as nn
+
 import torch.nn.functional as F
 import torch
 from torch import nn
 
-class MyModel(nn.Module):
+class GumbelVectorQuantizer(nn.Module):
     def __init__(self):
         super().__init__()
         self.num_groups = 32
@@ -24,11 +25,58 @@ class MyModel(nn.Module):
         codevector_probs = F.gumbel_softmax(hidden_states.float(), tau=self.temperature, hard=True).type_as(hidden_states)
         return codevector_probs
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(4, 400, 256, dtype=torch.float32).cuda()
+vq = GumbelVectorQuantizer().cuda()
+vq_compiled = torch.compile(vq)
 
+for i in range(1000):
+    x = torch.randn(4, 400, 256).cuda()
+    out = vq(x)
+    out_compiled = vq_compiled(x)
+
+    if out.isnan().any() or out_compiled.isnan().any():
+        print(f"{i} - eager: {out.isnan().sum()} NaNs, compiled: {out_compiled.isnan().sum()} NaNs")
+        break
+
+def gumbel_softmax(logits: Tensor, tau: float = 1, hard: bool = False, eps: float = 1e-10, dim: int = -1) -> Tensor:
+    gumbels = (
+        -torch.empty_like(logits, memory_format=torch.legacy_contiguous_format).exponential_().add_(eps).log()
+    )  # ~Gumbel(0,1)
+    gumbels = (logits + gumbels) / tau  # ~Gumbel(logits,tau)
+    y_soft = gumbels.softmax(dim)
+
+    if hard:
+        # Straight through.
+        index = y_soft.max(dim, keepdim=True)[1]
+        y_hard = torch.zeros_like(logits, memory_format=torch.legacy_contiguous_format).scatter_(dim, index, 1.0)
+        ret = y_hard - y_soft.detach() + y_soft
+    else:
+        # Reparametrization trick.
+        ret = y_soft
+    return ret
+
+
+F.gumbel_softmax = gumbel_softmax
+
+def gumbel_softmax(logits: Tensor, tau: float = 1, hard: bool = False, eps: float = 1e-10, dim: int = -1) -> Tensor:
+    if has_torch_function_unary(logits):
+        return handle_torch_function(gumbel_softmax, (logits,), logits, tau=tau, hard=hard, eps=eps, dim=dim)
+    if eps != 1e-10:
+        warnings.warn("`eps` parameter is deprecated and has no effect.")
+
+    with torch._dynamo.utils.preserve_rng_state():
+        gumbels = (
+            -torch.empty_like(logits, memory_format=torch.legacy_contiguous_format).exponential_().log()
+        )  # ~Gumbel(0,1)
+        gumbels = (logits + gumbels) / tau  # ~Gumbel(logits,tau)
+        y_soft = gumbels.softmax(dim)
+
+        if hard:
+            # Straight through.
+            index = y_soft.max(dim, keepdim=True)[1]
+            y_hard = torch.zeros_like(logits, memory_format=torch.legacy_contiguous_format).scatter_(dim, index, 1.0)
+            ret = y_hard - y_soft.detach() + y_soft
+        else:
+            # Reparametrization trick.
+            ret = y_soft
+        return ret

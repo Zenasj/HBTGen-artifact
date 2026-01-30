@@ -1,25 +1,18 @@
-# torch.rand(1, dtype=torch.float32)
 import torch
-import torch.nn as nn
+mu = torch.ones(1, requires_grad=True)
+x = torch.randn(1)
+loss = 0
+for _ in range(3):
+    x.detach_()
+    new_calc = torch.exp(mu)
+    x.copy_(new_calc)
+    loss += (x * 2).sum() #broken
+    # loss += torch.mul(x, 2) # broken
+    # loss += (x * torch.tensor([2.])).sum() #broken
+    # loss += ((x+0) * torch.tensor([2.])).sum() #works
+    # loss += (x+0)*torch.randn(1) #works
+    # loss += x+torch.randn(1) #works
+    # loss += torch.exp(x) #works
+loss.backward()
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.mu = nn.Parameter(torch.ones(1, requires_grad=True))
-
-    def forward(self, x):
-        loss = 0
-        for _ in range(3):
-            x.detach_()
-            new_calc = torch.exp(self.mu)
-            x.copy_(new_calc)
-            # Using problematic operation that triggers the error
-            loss += (x * 2).sum()  
-        return loss
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.randn(1)
-
+CONTRIBUTING.MD

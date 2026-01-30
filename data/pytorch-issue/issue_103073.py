@@ -1,21 +1,24 @@
-# torch.rand(10, 100000, dtype=torch.float32)
+import pyarrow as pa
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-    
-    def forward(self, x):
-        # x is a tensor of shape (10, N)
-        r = x[0].clone()  # Start with first tensor
-        for idx, t in enumerate(x):
+
+def test():
+    n = 100_000
+    my_arrow = pa.Table.from_pydict(
+        {f"c{i}": [float(x) for x in range(n)] for i in range(10)})
+    torch_tensors = [torch.tensor(c.to_numpy()) for c in my_arrow.columns]
+
+    def test_torch(tensors):
+        t0 = tensors[0]
+        r = t0
+        for idx, t in enumerate(tensors):
             r += (t * t + idx) / 2
         return r
 
-def my_model_function():
-    return MyModel()
+    test_torch_compiled = torch.compile(test_torch)
+    result = test_torch_compiled(torch_tensors)
+    print(result)
 
-def GetInput():
-    return torch.rand(10, 100000, dtype=torch.float32)
 
+if __name__ == '__main__':
+    test()

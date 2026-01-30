@@ -1,33 +1,34 @@
-# tf.random.uniform((B,), dtype=tf.float32) ← input is a batch of scalar floats
+import random
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
-import tensorflow as tf
+4.520166488224531 
+4.409448146820068 
+4.139582633972168
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Sequential-like architecture from the issue:
-        # Input(1) -> Dense(10) -> Activation('sigmoid') -> Dense(1)
-        self.dense1 = tf.keras.layers.Dense(10)
-        self.act = tf.keras.layers.Activation('sigmoid')
-        self.dense2 = tf.keras.layers.Dense(1)
+4.520166488224531 
+4.520166488224531 
+4.520166488224531
 
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.act(x)
-        x = self.dense2(x)
-        return x
+from tensorflow.keras.layers import Input, Dense, Activation
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.optimizers import RMSprop
+import numpy as np
+x = np.random.normal(1, 2, 10)
+y = np.random.normal(1, 2, 10)
 
-def my_model_function():
-    # Returns an instance of MyModel with default initialization
-    return MyModel()
+model = Sequential()
+model.add(Input(1))
+model.add(Dense(10))
+model.add(Activation("sigmoid"))
+model.add(Dense(1))
+model.summary()
 
-def GetInput():
-    # The original example used 1D inputs with 10 samples of scalar values.
-    # To keep flexible for batch size, we return a 1D tensor with shape (batch_size, 1).
-    # Here, batch_size=10 to match the original example.
-    # Inputs are scalar floats sampled from a normal distribution.
-    batch_size = 10
-    # Generate input tensor of shape (batch_size, 1), normal distribution ~ N(1,2)
-    x = tf.random.normal(shape=(batch_size, 1), mean=1.0, stddev=2.0, dtype=tf.float32)
-    return x
 
+rmsprop = RMSprop(lr=0.01)
+model.compile(loss='mean_squared_error', optimizer=rmsprop)
+hist = model.fit(x=x,y=y)
+_ = model.evaluate(x, y, verbose=0)
+pred = model.predict(x)
+print(np.mean((y-pred)**2), '\n', hist.history['loss'][0], '\n', _)

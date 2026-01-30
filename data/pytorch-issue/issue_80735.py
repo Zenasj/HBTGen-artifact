@@ -1,26 +1,58 @@
-# torch.rand(B, C, H, W, dtype=...)  # Not applicable for this model, as it deals with matrix inversion
+import time
+import torch as th
 
+N = 100
+X = th.randn(153531, 4, 4, device="cuda")
+
+X.inverse()
+
+th.cuda.synchronize()
+start = time.time()
+
+for _ in range(N):
+    X.inverse()
+
+th.cuda.synchronize()
+end = time.time()
+
+print("Time per inverse (ms):", 1000 * (end - start) / N)
+print("PyTorch Version:", th.__version__)
+
+import time
+import torch as th
 import torch
-import torch.nn as nn
+torch.manual_seed(0)
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # No specific parameters or layers to initialize for this model
+N = 100
+X = th.randn(153531, 4, 4, device="cuda")
 
-    def forward(self, X):
-        return X.inverse()
+# func_cls=torch.cholesky_inverse # 39/2
+# func_cls=torch.pinverse# 190/162
+# func_cls=torch.Tensor.inverse # 42/0.26
+func_cls=torch.Tensor.cholesky_inverse# 39/2
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+func_cls(X)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    N = 153531
-    C = 4
-    H = 4
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    X = torch.randn(N, C, H, device=device)
-    return X
 
+th.cuda.synchronize()
+start = time.time()
+
+
+for _ in range(N):
+    func_cls(X)
+
+
+th.cuda.synchronize()
+end = time.time()
+
+print("Time per inverse (ms):", 1000 * (end - start) / N)
+'''.
+torch.cholesky_inverse: 
+    1.12.0: 39.43123817443848 / 1.13.0: 2.6720738410949707
+torch.pinverse: 
+    1.12.0: 190.62803745269775 / 1.13.0: 162.25743532180786
+torch.cholesky_inverse: 
+    1.12.0: 42.09115982055664 / 1.13.0: 0.2670574188232422
+torch.cholesky_inverse: 
+    1.12.0: 39.01032209396362 / 1.13.0: 2.949252128601074
+'''

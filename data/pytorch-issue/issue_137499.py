@@ -1,23 +1,23 @@
-# torch.rand(32, 50, 768, dtype=torch.float32)
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self, hidden_size):
-        super().__init__()
-        self.weight = nn.Parameter(torch.randn(hidden_size, hidden_size), requires_grad=False)
-        self.layer_norm = nn.LayerNorm(hidden_size)
-    
-    def forward(self, inp):
-        matmul_output = inp @ self.weight
-        return self.layer_norm(matmul_output)
+# repro.py
+import torch
+torch.set_default_device("cuda")
+torch.set_grad_enabled(False)
 
-def my_model_function():
-    return MyModel(hidden_size=768)
+batch_size = 32
+seq_length = 50
+hidden_size = 768
 
-def GetInput():
-    batch_size = 32
-    seq_length = 50
-    hidden_size = 768
-    return torch.randn(batch_size, seq_length, hidden_size)
+inp = torch.randn(batch_size, seq_length, hidden_size)
+weight = torch.randn(hidden_size, hidden_size)
 
+layer_norm = torch.nn.LayerNorm(hidden_size)
+
+@torch.compile()
+def foo(inp, weight):
+    matmul_output = inp @ weight
+    final_output = layer_norm(matmul_output)
+    return final_output
+
+print(foo(inp, weight))

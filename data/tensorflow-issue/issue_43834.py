@@ -1,41 +1,107 @@
-# tf.random.uniform((B,), dtype=tf.int32) ← Input shape is a 1D tensor of integers representing token IDs (as in the dataset and IntegerLookup vocabulary)
+from tensorflow import keras
+from tensorflow.keras import layers
+
+3
+def make_model():
+  import tensorflow.keras as keras
+  
+  vocabulary = range(1, 11)
+  return keras.Sequential([
+    keras.layers.experimental.preprocessing.IntegerLookup(vocabulary=vocabulary),
+    keras.layers.Embedding(len(vocabulary) + 2, 8, input_length=1),
+    tf.keras.layers.Dense(1, activation='sigmoid')
+  ])
+
+for x in fitted_model.variables:
+  print(type(x))
 
 import tensorflow as tf
+import horovod.tensorflow.keras as hvd
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Vocabulary tokens from 1 to 10 inclusive
-        vocabulary = tf.range(1, 11, dtype=tf.int64)  # IntegerLookup expects int64 for vocab
-        
-        # IntegerLookup layer to convert input tokens to indices
-        self.lookup = tf.keras.layers.experimental.preprocessing.IntegerLookup(
-            vocabulary=vocabulary.numpy(), mask_token=None, oov_token=None
-        )
-        
-        # Embedding layer: vocab size + 2 for special tokens (mask and OOV)
-        # Embedding output dim 8, input_length=1 as per original example
-        self.embedding = tf.keras.layers.Embedding(input_dim=len(vocabulary) + 2, output_dim=8, input_length=1)
-        
-        # Output dense layer with sigmoid activation for binary classification
-        self.dense = tf.keras.layers.Dense(1, activation='sigmoid')
-        
-    def call(self, inputs, training=False):
-        x = self.lookup(inputs)  # Map input tokens to indices
-        x = self.embedding(x)    # Embed the indices
-        x = tf.squeeze(x, axis=1)  # Remove the length=1 dimension for embedding
-        x = self.dense(x)        # Binary prediction output
-        return x
+from sparkdl import HorovodRunner
 
-def my_model_function():
-    # Return an instance of MyModel - no special weight loading needed
-    return MyModel()
+def make_dataset():
+  import tensorflow as tf
+  from random import randrange
 
-def GetInput():
-    # Return a random integer tensor input matching expected input shape and dtype
-    # Batch size 32 (arbitrary), single token per input (length=1)
-    batch_size = 32
-    # Input tokens are integers in range [1, 10]
-    # Use tf.random.uniform to generate integer tokens between 1 and 10 inclusive
-    return tf.random.uniform(shape=(batch_size,), minval=1, maxval=11, dtype=tf.int32)
+  dataset = tf.data.Dataset.from_tensor_slices(
+    ([randrange(1, 11) for p in range(0, 10000)], [randrange(0,2) for p in range(0, 10000)])
+  )
+  dataset = dataset.repeat().batch(128)
+  return dataset
 
+def train():
+  import tensorflow as tf
+  import tensorflow.keras as keras
+  import horovod.tensorflow.keras as hvd
+  
+  # Initialize Horovod
+  hvd.init()
+
+  # Pin GPU to be used to process local rank (one GPU per process)
+  gpus = tf.config.experimental.list_physical_devices('GPU')
+  for gpu in gpus:
+      tf.config.experimental.set_memory_growth(gpu, True)
+  if gpus:
+      tf.config.experimental.set_visible_devices(gpus[hvd.local_rank()], 'GPU')
+
+  # Build model and dataset
+  dataset = make_dataset()
+  model = make_model()
+  # Horovod: adjust learning rate based on number of GPUs.
+  scaled_lr = 0.001 * hvd.size()
+  opt = tf.optimizers.Adam(scaled_lr)
+
+  # Horovod: add Horovod DistributedOptimizer.
+  opt = hvd.DistributedOptimizer(opt)
+
+  # Horovod: Specify `experimental_run_tf_function=False` to ensure TensorFlow
+  # uses hvd.DistributedOptimizer() to compute gradients.
+  model.compile(
+    loss=tf.losses.BinaryCrossentropy(from_logits=True),
+    optimizer=opt,
+    metrics=['AUC'],
+    experimental_run_tf_function=False
+  )
+
+  callbacks = [
+      # Horovod: broadcast initial variable states from rank 0 to all other processes.
+      # This is necessary to ensure consistent initialization of all workers when
+      # training is started with random weights or restored from a checkpoint.
+      hvd.callbacks.BroadcastGlobalVariablesCallback(0),
+  ]
+
+  model.fit(
+    dataset,
+    steps_per_epoch=500 // hvd.size(),
+    callbacks=callbacks,
+    epochs=2,
+    verbose=1 if hvd.rank() == 0 else 0
+  )
+  
+  return model
+
+hr = HorovodRunner(np=-1)
+fitted_model = hr.run(train)
+
+def train_local():
+  # Build model and dataset
+  dataset = make_dataset()
+  model = make_model()
+  
+  opt = tf.optimizers.Adam(0.001)
+  model.compile(
+    loss=tf.losses.BinaryCrossentropy(from_logits=True),
+    optimizer=opt,
+    metrics=['AUC'],
+    experimental_run_tf_function=False
+  )
+
+  model.fit(
+    dataset,
+    steps_per_epoch=100,
+    epochs=2,
+    verbose=1
+  )
+  
+  return model

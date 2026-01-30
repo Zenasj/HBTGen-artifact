@@ -1,42 +1,41 @@
-# torch.rand(B, C, H, W, dtype=...) ← Add a comment line at the top with the inferred input shape
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        try:
-            values, indices = torch.kthvalue(x, k=1, dim=0)
-            return values, indices
-        except IndexError as e:
-            # Handle the error for empty tensors
-            return None, None
+my_tensor = torch.tensor([])
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+torch.kthvalue(input=my_tensor, k=1) # Error
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # For demonstration, we will use an empty 2D tensor
-    return torch.tensor([[]])
+import torch
 
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# values, indices = model(input_tensor)
+my_tensor = torch.tensor([])
 
-# The issue described is related to the `torch.kthvalue` function and its behavior with empty tensors. The goal is to create a PyTorch model that encapsulates this behavior and provides a way to test it. Since the issue does not describe a specific model, we will create a simple model that uses `torch.kthvalue` and handles the edge case of empty tensors.
-# Here is the complete Python code file:
-# ### Explanation:
-# 1. **MyModel Class**:
-#    - The `MyModel` class is defined as a subclass of `nn.Module`.
-#    - The `forward` method attempts to compute the `kthvalue` of the input tensor along dimension 0.
-#    - If the input tensor is empty, an `IndexError` is caught, and the method returns `None, None`.
-# 2. **my_model_function**:
-#    - This function returns an instance of `MyModel`.
-# 3. **GetInput Function**:
-#    - This function returns an empty 2D tensor, which is used to demonstrate the behavior of `MyModel` with an empty tensor.
-# This code can be used to test the behavior of `torch.kthvalue` with empty tensors and handle the `IndexError` gracefully.
+torch.kthvalue(input=my_tensor, k=1, dim=0) # Error
+
+import torch
+
+my_tensor = torch.tensor([[]])
+
+torch.kthvalue(input=my_tensor, k=1) # Error
+
+my_tensor = torch.tensor([[[]]])
+
+torch.kthvalue(input=my_tensor, k=1) # Error
+
+import torch
+
+my_tensor = torch.tensor([[]])
+
+torch.kthvalue(input=my_tensor, k=1, dim=0)
+# torch.return_types.kthvalue(
+# values=tensor([]),
+# indices=tensor([], dtype=torch.int64))
+
+my_tensor = torch.tensor([[[]]])
+
+torch.kthvalue(input=my_tensor, k=1, dim=0)
+# torch.return_types.kthvalue(
+# values=tensor([], size=(1, 0)),
+# indices=tensor([], size=(1, 0), dtype=torch.int64))
+
+import torch
+
+torch.__version__ # 2.3.0+cu121

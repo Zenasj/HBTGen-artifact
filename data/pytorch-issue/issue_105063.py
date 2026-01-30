@@ -1,8 +1,14 @@
-# torch.rand(B, C, H, W, dtype=...)  # Add a comment line at the top with the inferred input shape
 import torch
 import torch.nn as nn
+from torch.ao.quantization import fuse_modules_qat, fuse_modules
 
-class ConvBNReLU(nn.Sequential):
+class DummyHook:
+    def _call__(self, module, module_in, module_out):
+        print(f"Called from {module}")
+
+
+# Declare a sub-module with well-known pattern for fusing (conv, bn, relu)
+class ConvBNReLU(torch.nn.Sequential):
     def __init__(self):
         super().__init__(
             nn.Conv2d(3, 3, 1, 1, bias=False),
@@ -10,7 +16,8 @@ class ConvBNReLU(nn.Sequential):
             nn.ReLU(inplace=False)
         )
 
-class NestedModule(nn.Module):
+        
+class NestedModule(torch.nn.Sequential):
     def __init__(self):
         super().__init__()
         self.conv1 = nn.Conv2d(3, 3, 1)
@@ -19,27 +26,24 @@ class NestedModule(nn.Module):
         for i in range(3):
             layers.append(ConvBNReLU())
         self.features = nn.Sequential(*layers)
-
+    
     def forward(self, x):
         x = self.conv1(x)
         x = self.relu1(x)
         x = self.features(x)
-        return x
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.nested_module = NestedModule()
 
-    def forward(self, x):
-        return self.nested_module(x)
+# Declare hooks in sub-sub modules
+h = DummyHook()
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+m = NestedModule()
+for sub_m in m.modules():
+    for layer in sub_m.modules():
+        layer.register_forward_hook(h)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    B, C, H, W = 1, 3, 224, 224  # Assuming a common input size for image processing
-    return torch.rand(B, C, H, W, dtype=torch.float32)
+# Run fuse_modules with or without quantization-aware training leads to the same error
 
+fuse_modules_qat(m, ['features.0.0', 'features.0.1', 'features.0.2'], inplace=False)
+
+m.eval()
+fuse_modules(m, ['features.0.0', 'features.0.1', 'features.0.2'], inplace=False)

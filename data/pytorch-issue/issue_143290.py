@@ -1,24 +1,56 @@
+import torch.nn as nn
+
 import torch
-from torch import nn
-from torch.nn.attention.flex_attention import flex_attention  # Import from user's provided path
+from torch.nn.attention.flex_attention import flex_attention
 
-# torch.rand(1, 8, 256, 128, dtype=torch.bfloat16, requires_grad=True)
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.flex_attention = torch.compile(flex_attention)  # Compile the function as in the issue
 
-    def forward(self, x):
-        return self.flex_attention(x, x, x)  # Uses same input for Q/K/V as in minimal repro
+flex_attention = torch.compile(flex_attention)
 
-def my_model_function():
-    return MyModel()  # Returns compiled model instance
 
-def GetInput():
-    return torch.randn(
-        (1, 8, 256, 128),
-        device='cuda',
-        dtype=torch.bfloat16,  # dtype set to trigger the error
-        requires_grad=True
-    )
+x = torch.randn(
+    (1, 8, 256, 128),
+    device='cuda',
+    dtype=torch.float,
+    requires_grad=True
+)
 
+flex_attention(x, x, x).sum().backward()
+
+import torch
+from torch.nn.attention.flex_attention import flex_attention
+
+flex_attention = torch.compile(flex_attention)
+
+x = torch.randn(
+    (1, 8, 256, 128),
+    device='cuda',
+    dtype=torch.float,
+    requires_grad=True
+)
+
+with torch.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=True):
+    output = flex_attention(x, x, x)
+
+output.sum().backward()
+
+import torch
+from torch.nn.attention.flex_attention import flex_attention
+
+flex_attention = torch.compile(flex_attention)
+
+emb = torch.nn.Embedding(128, 128, dtype=torch.float, device='cuda')
+lin = torch.nn.Linear(128, 128, dtype=torch.float, device='cuda', bias=False)
+
+x = torch.randint(
+    0, 128,
+    size=(1, 8, 256),
+    device='cuda',
+)
+
+with torch.autocast(device_type='cuda', dtype=torch.bfloat16, enabled=True):
+    x = emb(x)
+    x = flex_attention(x, x, x)
+    x = lin(x)
+    # x = flex_attention(x, x, x)  # uncomment this to break the code
+
+x.sum().backward()

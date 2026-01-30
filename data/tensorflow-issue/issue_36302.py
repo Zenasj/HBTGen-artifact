@@ -1,36 +1,34 @@
-# tf.random.uniform((10, None, 2), dtype=tf.float32) ← Input shape: batch=10, time_steps variable, features=2
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
+import numpy as np
+import time
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define the model layers as per the example in the issue:
-        # Variable-length time dimension input with 2 features
-        self.lstm_size = 256
-        self.lstm = tf.keras.layers.LSTM(self.lstm_size)
-        self.dense = tf.keras.layers.Dense(1, activation='linear')
+feature_dimension=2
+lstm_size=256
+learning_rate=0.0001
 
-    def call(self, inputs, training=False):
-        # inputs shape: (batch, time_steps, features)
-        # Forward pass through LSTM and Dense
-        x = self.lstm(inputs)
-        output = self.dense(x)
-        return output
+model = tf.keras.Sequential([
+    tf.keras.Input([None, feature_dimension]),
+    tf.keras.layers.LSTM(lstm_size),
+    tf.keras.layers.Dense(1, activation='linear')
+])
 
-def my_model_function():
-    # Instantiate and return the model
-    model = MyModel()
-    # Normally would call build or run once to initialize weights, but here just return the raw model.
-    return model
+model.compile(loss='mean_squared_error',
+              optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
+              metrics=['mse', 'mae'])
 
-def GetInput():
-    # Generate a valid input tensor that matches the model input
-    # Fixed batch size 10, variable time steps (choose 8 for example), features=2 matching issue input
-    batch_size = 10
-    time_steps = 8
-    feature_dimension = 2
+print('Model.predict')
+st = time.time()
+for i in range(5,100):
+    model.predict(np.array([[(0.1,0.1)]*i]*10))
+print(f'Model.predict in {time.time() - st}')
 
-    # Use tf.random.uniform with float32 which is typical for inputs
-    return tf.random.uniform((batch_size, time_steps, feature_dimension), dtype=tf.float32)
+print('Model.predict_on_batch')
+st = time.time()
+for i in range(5,100):
+    np.array(model.predict_on_batch(np.array([[(0.1,0.1)]*i]*10)))
 
+print(f'Model.predict_on_batch in {time.time() - st}')

@@ -1,26 +1,24 @@
-# tf.random.uniform((1, 2), dtype=tf.float32) ← Input shape inferred from issue, 1 sample with 2 features
-
 import tensorflow as tf
+from tensorflow.keras import layers
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Define a single Dense layer with 3 output units and sigmoid activation
-        self.dense_layer = tf.keras.layers.Dense(
-            units=3, 
-            activation='sigmoid', 
-            input_shape=(2,)
-        )
+# Import relevant packages
+from tensorflow.keras import Sequential
+from tensorflow.keras.layers import Dense
 
-    def call(self, inputs):
-        # Forward pass through the dense layer
-        return self.dense_layer(inputs)
+# Define the number of inputs and outputs
+n_input_nodes = 2
+n_output_nodes = 3
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+# First define the model 
+model = Sequential()
 
-def GetInput():
-    # Return a random float32 tensor shaped (1, 2) matching the input shape expected by MyModel
-    return tf.random.uniform(shape=(1, 2), dtype=tf.float32)
+'''TODO: Define a dense (fully connected) layer to compute z'''
+dense_layer = Dense(n_output_nodes, input_shape=(n_input_nodes,),activation='sigmoid') # TODO 
 
+# Add the dense layer to the model
+model.add(dense_layer)
+
+# Test model with example input
+x_input = tf.constant([[1.0,2.]], shape=(1,2))
+'''TODO: feed input into the model and predict the output!'''
+print(model.predict(x_input)) # TODO

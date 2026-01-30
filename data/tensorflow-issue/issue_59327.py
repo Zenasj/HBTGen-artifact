@@ -1,41 +1,28 @@
-# tf.ones([2, 3072], dtype=tf.float32)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
+
 import tensorflow as tf
 
-SIZE = int(1024 * 3)  # 3072
-RANGE = 80  # Number of Dense layers
+tf.config.set_soft_device_placement(True)
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Create a sequence of Dense layers with output size SIZE
-        self.layers_seq = [tf.keras.layers.Dense(SIZE) for _ in range(RANGE)]
-        # Use Adam optimizer (as per original code)
-        self.opt = tf.keras.optimizers.Adam(learning_rate=0.01)
+RANGE=80
+SIZE=int(1024*3)
 
-    @tf.function
-    def call(self, x, training=False):
-        # Forward pass through the chain of Dense layers
-        for layer in self.layers_seq:
-            x = layer(x)
-        return x
+opt = tf.keras.optimizers.Adam(learning_rate=0.01)
+model = tf.keras.Sequential([tf.keras.layers.Dense(SIZE) for _ in range(RANGE)])
 
-    @tf.function
-    def train_step(self):
-        # Runs one step of forward and backward passes with gradient update
-        with tf.device("/gpu:0"):
-            inp = tf.ones([2, SIZE], tf.float32)  # Input tensor shape as per original code
-            with tf.GradientTape() as tape:
-                y = self.call(inp, training=True)
-            gradients = tape.gradient(y, self.trainable_weights)
-            # Apply gradients to update weights
-            self.opt.apply_gradients(zip(gradients, self.trainable_weights))
-            return gradients
 
-def my_model_function():
-    # Return an instance of MyModel, optimizer and weights are initialized therein
-    return MyModel()
+@tf.function()
+def func():
+    with tf.device("/gpu:0"):
+        for _ in range(1):
+            print("STEP", _)
+            with tf.GradientTape() as t:
+                inp = tf.ones([2, SIZE], tf.float32)
+                y = model(inp)
+                gradients = t.gradient(y, model.trainable_weights)
+                opt.apply_gradients(zip(gradients, model.trainable_weights))
+        return gradients
 
-def GetInput():
-    # Return the input tensor matching the model's expected input shape and dtype
-    return tf.ones([2, SIZE], tf.float32)
-
+print(func())

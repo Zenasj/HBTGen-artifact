@@ -1,20 +1,12 @@
-# torch.tensor(20, dtype=torch.int64)  # Inferred input shape: scalar tensor
-
 import torch
-import torch.nn as nn
+import torch._dynamo
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
+torch._dynamo.config.capture_scalar_outputs = True
 
-    def forward(self, x):
-        return torch.tensor([x], dtype=torch.int64)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+@torch.compile(fullgraph=True)
+def f(x):
+    return torch.tensor([x], dtype=torch.int64)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.tensor(20, dtype=torch.int64)
 
+print(f(torch.tensor(20)))

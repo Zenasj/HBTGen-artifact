@@ -1,33 +1,22 @@
-# torch.rand(B, C, H, W, dtype=...)  # This issue does not specify an input shape, but the model expects a sparse matrix and a dense matrix.
+import torch.nn as nn
 
 import torch
+from torch import sparse
+from torch.nn import init
 from torch import nn
+from itertools import count
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.dense_matrix = nn.Parameter(torch.empty(10, 150))
-        nn.init.xavier_normal_(self.dense_matrix)
 
-    def forward(self, sparse_matrix):
-        # Perform sparse matrix multiplication
-        result = torch.sparse.mm(sparse_matrix, self.dense_matrix)
-        return result
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Create a sparse tensor with all zeros
+def main():
     idx = torch.LongTensor([[], []])
     values = torch.FloatTensor([])
-    sp_tensor = torch.sparse.FloatTensor(idx, values, torch.Size([3, 10]))
-    return sp_tensor
+    sp_tensor = sparse.FloatTensor(idx, values, torch.Size([3, 10]))
+    mat2 = nn.Parameter(init.xavier_normal_(torch.empty(10, 150)))
+    print(sp_tensor.to_dense())
+    for i in count():
+        spmm = sparse.mm(sp_tensor, mat2)
+        assert bool(torch.sum(torch.isnan(spmm)) == 0), "iter: {} ===> sparse mm nan happened.".format(i)
 
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
-# print(output)
 
+if __name__ == '__main__':
+    main()

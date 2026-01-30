@@ -1,107 +1,191 @@
-# tf.random.uniform((GLOBAL_BATCH_SIZE, 28, 28, 1), dtype=tf.float32) ← Input shape inferred from MNIST data with batch size
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
+model.save()
+
+tf.keras.models.load_model()
+
+model.save()
+
+import os
+import glob
+import numpy as np
 import tensorflow as tf
+tf.__version__
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Replicate the minimal Sequential model from the issue as functional layers inside the subclassed model
-        self.conv = tf.keras.layers.Conv2D(filters=32, strides=1, kernel_size=(4,4), input_shape=(28,28,1))
-        self.activation = tf.keras.layers.Activation('relu')
-        self.batchnorm = tf.keras.layers.BatchNormalization()
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense = tf.keras.layers.Dense(10)
-        
-    def call(self, inputs, training=False):
-        x = self.conv(inputs)
-        x = self.activation(x)
-        x = self.batchnorm(x, training=training)  # pass training flag for BatchNorm layer
-        x = self.flatten(x)
-        x = self.dense(x)
-        return x
+gpus = tf.config.experimental.list_logical_devices('GPU')
+print(gpus)
 
+RESULT_DIR = os.path.join(os.getcwd(), 'Test', 'Results')
+CHECKPOINT_FREQUENCY = 16
+LOG_EVERY = 1
+
+BATCH_SIZE_PER_GPU = 16
+NUM_GPUS = len(gpus)
+GLOBAL_BATCH_SIZE = BATCH_SIZE_PER_GPU * NUM_GPUS
+
+def get_model():
+    
+    model = tf.keras.Sequential([
+        tf.keras.layers.Conv2D(filters=32, strides=1, kernel_size=(4,4), input_shape=(28,28,1)),
+        tf.keras.layers.Activation('relu'),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Flatten(),
+        tf.keras.layers.Dense(10)
+    ])
+    
+    return model
 
 class SparseCategoricalLoss(tf.keras.losses.Loss):
-    """
-    Custom loss class replicating the SparseCategoricalLoss described in the issue. 
-    This custom loss slices inputs to num_classes for y_true and y_pred and applies sparse categorical crossentropy.
-    Includes 'loss_weight' to scale loss, and supports from_logits flag.
-    """
+    
     def __init__(self, num_classes, name='SparseCategoricalLoss', from_logits=False, loss_weight=1.0, *args, **kwargs):
-        super().__init__(name=name, *args, **kwargs)
+        
+        super().__init__(*args, **kwargs)
         self.num_classes = num_classes
-        self.from_logits = from_logits
+        self.name = name
+        self.from_logits=from_logits
         self.loss_weight = loss_weight
-
-        # Create internal SparseCategoricalCrossentropy with reduction NONE for custom weighting
-        self._sce = tf.keras.losses.SparseCategoricalCrossentropy(
-            from_logits=from_logits,
-            reduction=tf.keras.losses.Reduction.NONE,
-            name=name,
-        )
         
     def loss_fn(self, y_true, y_pred):
-        # According to original code, slicing first num_classes elements on axis=1 of y_true and y_pred
-        label = y_true[:, 0:self.num_classes]
-        logit = y_pred[:, 0:self.num_classes]
-        loss = self._sce(label, logit)
+        label = y_true[:,0:self.num_classes]
+        logit = y_pred[:,0:self.num_classes]
+        loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=self.from_logits,
+                                                             name=self.name,
+                                                             reduction=tf.keras.losses.Reduction.NONE)(label, logit)
         loss *= self.loss_weight
         return loss
+    
     
     def call(self, y_true, y_pred):
         total_loss = self.loss_fn(y_true, y_pred)
         return total_loss
-    
+
     def get_config(self):
+         
         config = super().get_config().copy()
         config.update({
-            'num_classes': self.num_classes,
-            'from_logits': self.from_logits,
-            'loss_weight': self.loss_weight,
+            'num_classes' : self.num_classes,
+            'name' : self.name,
+            'loss_weight' : self.loss_weight
         })
         return config
 
+loss = SparseCategoricalLoss(num_classes=10,
+                             from_logits=True,
+                             name='categorical_loss')
 
-def my_model_function():
-    """
-    Returns compiled MyModel instance as per original setup using MirroredStrategy scope.
-    Uses RMSprop optimizer with specified params, compiles model with custom SparseCategoricalLoss 
-    and accuracy metric.
-    """
-    strategy = tf.distribute.get_strategy()
-    with strategy.scope():
-        model = MyModel()
-        optimizer = tf.keras.optimizers.RMSprop(
-            learning_rate=0.001,
-            epsilon=1.0,
-            momentum=0.9,
-            rho=0.9
-        )
-        loss = SparseCategoricalLoss(num_classes=10, from_logits=True, name='categorical_loss')
-        model.compile(optimizer=optimizer, loss=loss, metrics=['acc'])
-    return model
+strategy = tf.distribute.MirroredStrategy()
 
+with strategy.scope():
+    
+    model = get_model()
+    
+    optimizer = tf.keras.optimizers.RMSprop(
+                                            learning_rate=0.001,
+                                            epsilon=1.0,
+                                            momentum=0.9,
+                                            rho=0.9
+                                           )
+    
+    model.compile(optimizer=optimizer, loss=loss, metrics=['acc'])
 
-def GetInput():
-    """
-    Returns a random tensor representative of the expected input to MyModel.
-    Shape: [GLOBAL_BATCH_SIZE, 28, 28, 1]
-    Using float32 values uniformly between 0 and 1.
-    The batch size is inferred from the example: batch_size_per_gpu * number_of_gpus.
-    For standalone reproducibility, we choose batch size 16 * 1 gpu = 16 by default.
-    """
-    # Assumption: Single GPU scenario. If distributed, batch size should be accordingly scaled.
-    batch_size = 16  # Using batch size per GPU as in the issue example
-    input_shape = (batch_size, 28, 28, 1)
-    return tf.random.uniform(input_shape, dtype=tf.float32)
+(X_train, Y_train), (X_test, Y_test) = tf.keras.datasets.mnist.load_data()
+X_train = np.expand_dims(X_train, 3)
+X_test = np.expand_dims(X_test, 3)
 
+class LoggingCallback(tf.keras.callbacks.Callback):
 
-# Additional notes:
-# - This model matches the minimal MNIST example from the issue.
-# - The loss class faithfully replicates the original custom SparseCategoricalLoss.
-# - The model is designed to be compiled with a distribution strategy externally.
-# - The input shape and dtype matches the usage inside the provided code snippets.
-# - The SparseCategoricalLoss slices input tensors on axis=1 which assumes y_true and y_pred have at least 'num_classes' width in axis 1.
-#   For MNIST typical labels, y_true is usually (batch,) of class indices. The original code suggests y_true shape having more dimensions or custom format,
-#   but here we follow the original slicing as is for faithfulness.
+    def __init__(self, result_dir, log_every, initial_step=0, checkpoint_frequency=None, **kwargs):
+        
+        super().__init__(**kwargs)
+        
+        # Create result directory
+        self.result_dir = result_dir
+        if not os.path.exists(result_dir):
+            os.makedirs(result_dir)
+        
+        # create checkpoint directory
+        checkpoint_dir = os.path.join(self.result_dir, 'checkpoint')
+        if not os.path.exists(checkpoint_dir):
+            os.makedirs(checkpoint_dir)
+        
+        # create tensorboard directory
+        tensorboard_dir = os.path.join(self.result_dir, 'tensorboard')
+        if not os.path.join(tensorboard_dir):
+            os.makedirs(tensorboard_dir)
+        
+        self.log_every = log_every
+        self.checkpoint_frequency = checkpoint_frequency
+        self.train_writer = tf.summary.create_file_writer( os.path.join(tensorboard_dir, 'train') )
+        self.step = initial_step
+        
+        
+    # Write metrics to TensorBoard    
+    def write_metrics_tensorboard(self, logs):
+        with self.train_writer.as_default():
+            for name, value in logs.items():
+                if name in ['batch', 'size']:
+                    continue
+                tf.summary.scalar(name, value, step=self.step)
+                
+                
+    def on_batch_end(self, batch, logs=None):
+        
+        self.step += 1
+        
+        # Write metrics to tensorboard
+        if self.step % self.log_every == 0:
+            self.write_metrics_tensorboard(logs)
+            
+        # Save model checkpoint (weights + optimizer state)
+        if self.checkpoint_frequency and self.step % self.checkpoint_frequency == 0:
+            name = 'model_step_%d.h5' % self.step
+            path = os.path.join(self.result_dir, 'checkpoint', name)
+            self.model.save( path )
 
+callbacks = LoggingCallback(result_dir=RESULT_DIR, log_every=LOG_EVERY, checkpoint_frequency=CHECKPOINT_FREQUENCY)
+
+model.fit(
+          x = X_train, 
+          y = Y_train, 
+          batch_size=GLOBAL_BATCH_SIZE,
+          epochs=7,
+          validation_data = (X_test, Y_test),
+          callbacks=callbacks,
+          verbose=1 
+         )
+
+del model
+del strategy
+
+previous_checkpoints = glob.glob(os.path.join(RESULT_DIR, 'checkpoint', '*'))
+previous_checkpoints.sort(key=lambda x : int(os.path.basename(x).split('_')[2].replace('.h5', '')) )
+latest_checkpoint = previous_checkpoints[-1]
+print('Found Latest Checkpoint : %s' % latest_checkpoint)
+    
+initial_step = int(os.path.basename(latest_checkpoint).split('_')[2].replace('.h5', ''))
+print('Resuming training from step %d' % initial_step)
+    
+new_callback = LoggingCallback(result_dir=RESULT_DIR, log_every=LOG_EVERY, initial_step=initial_step, checkpoint_frequency=CHECKPOINT_FREQUENCY)
+
+strategy = tf.distribute.MirroredStrategy()
+with strategy.scope():
+    model = tf.keras.models.load_model( latest_checkpoint, custom_objects={'SparseCategoricalLoss':SparseCategoricalLoss} )
+
+model.fit(
+          x = X_train, 
+          y = Y_train, 
+          batch_size=GLOBAL_BATCH_SIZE,
+          epochs=10,
+          validation_data = (X_test, Y_test),
+          callbacks=new_callback,
+          verbose=1 
+         )
+
+model.fit()
+
+model.save()
+
+tf.distribute.Strategy

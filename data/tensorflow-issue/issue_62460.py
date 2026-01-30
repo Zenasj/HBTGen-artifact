@@ -1,120 +1,438 @@
-# tf.random.uniform((B, 32, 32, 3), dtype=tf.float32) ← Input shape inferred from CIFAR-10 dataset (batch size B, height 32, width 32, 3 channels)
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
+tf.keras.Model.fit(x=generator)
+
+SparseCategoricalCrossentropy
+
+sparce_categorical_crossentropy
+
+# --------------------------------------------------------------------------------
+# CIFAR 10
+# --------------------------------------------------------------------------------
+USE_SPARCE_LABEL = True
+
+(x_train, y_train), (x_test, y_test) = tf.keras.datasets.cifar10.load_data()
+x_train, x_test = x_train / 255.0, x_test / 255.0
+x_train, x_validation, y_train, y_validation = train_test_split(
+    x_train, y_train, test_size=0.2, random_state=42
+)
+
+# One Hot Encoding the labels when USE_SPARCE_LABEL is False
+if not USE_SPARCE_LABEL:
+    y_train = keras.utils.to_categorical(y_train, NUM_CLASSES)
+    y_validation = keras.utils.to_categorical(y_validation, NUM_CLASSES)
+    y_test = keras.utils.to_categorical(y_test, NUM_CLASSES)
+
+
+# --------------------------------------------------------------------------------
+# Model
+# --------------------------------------------------------------------------------
+model: Model = Model(
+    inputs=inputs, outputs=outputs, name="cifar10"
+)
+
+# --------------------------------------------------------------------------------
+# Compile
+# --------------------------------------------------------------------------------
+if USE_SPARCE_LABEL:
+    loss_fn=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False)   # <--- cause incorrect behavior
+else:
+    loss_fn=tf.keras.losses.CategoricalCrossentropy(from_logits=False)
+
+learning_rate = 1e-3
+model.compile(
+    optimizer=Adam(learning_rate=learning_rate, beta_1=0.9, beta_2=0.999, epsilon=1e-08),
+    loss=loss_fn,     # <---- sparse categorical causes the incorrect behavior
+    metrics=["accuracy"]
+)
+
+# --------------------------------------------------------------------------------
+# Train 
+# --------------------------------------------------------------------------------
+batch_size = 16
+number_of_epochs = 10
+
+def data_label_generator(x, y):
+    def _f():
+        index = 0
+        length = len(x)
+        try: 
+            while True:                
+                yield x[index:index+batch_size], y[index:index+batch_size]
+                index = (index + batch_size) % length
+        except StopIteration:
+            return
+        
+    return _f
+
+earlystop_callback = tf.keras.callbacks.EarlyStopping(
+    patience=5,
+    restore_best_weights=True,
+    monitor='val_accuracy'
+)
+
+steps_per_epoch = len(y_train) // batch_size
+validation_steps = (len(y_validation) // batch_size) - 1  # To avoid run out of data for validation
+
+history = model.fit(
+    x=data_label_generator(x_train, y_train)(),  # <--- Generator
+    batch_size=batch_size,
+    epochs=number_of_epochs,
+    verbose=1,
+    validation_data=data_label_generator(x_validation, y_validation)(),
+    shuffle=True,
+    steps_per_epoch=steps_per_epoch,
+    validation_steps=validation_steps,
+    validation_batch_size=batch_size,
+    callbacks=[
+        earlystop_callback
+    ]
+)
+
+CategoricalCrossentropy
+
+USE_SPARSE_LABEL=True
+
+import numpy as np
 import tensorflow as tf
+from tensorflow import keras
+from keras import (
+    __version__
+)
 
-class MyModel(tf.keras.Model):
-    def __init__(self, num_classes=10, use_sparse_label=False):
-        super().__init__()
-        # Store config
-        self.num_classes = num_classes
-        self.use_sparse_label = use_sparse_label
 
-        # Build convolutional layers
-        self.conv1 = tf.keras.layers.Conv2D(
-            filters=32,
-            kernel_size=(3, 3),
-            strides=(1, 1),
-            padding="same",
-            activation='relu',
-            input_shape=(32, 32, 3)
-        )
-        self.bn1 = tf.keras.layers.BatchNormalization()
+from keras.layers import (
+    Layer,
+    Normalization,
+    Conv2D,
+    MaxPooling2D,
+    BatchNormalization,
+    Dense,
+    Flatten,
+    Dropout,
+    Reshape,
+    Activation,
+    ReLU,
+    LeakyReLU,
+)
+from keras.models import (
+    Model,
+)
+from keras.layers import (
+    Layer
+)
+from keras.optimizers import (
+    Adam
+)
+from sklearn.model_selection import train_test_split
 
-        self.conv2 = tf.keras.layers.Conv2D(
-            filters=64,
-            kernel_size=(3, 3),
-            strides=(1, 1),
-            padding="same",
-            activation='relu'
-        )
-        self.pool1 = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))
-        self.dropout1 = tf.keras.layers.Dropout(0.20)
+print("TensorFlow version: {}".format(tf.__version__))
+tf.keras.__version__ = __version__
+print("Keras version: {}".format(tf.keras.__version__))
 
-        self.conv3 = tf.keras.layers.Conv2D(
-            filters=128,
-            kernel_size=(3, 3),
-            strides=(1, 1),
-            padding="same",
-            activation='relu'
-        )
-        self.bn2 = tf.keras.layers.BatchNormalization()
-        self.pool2 = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))
-        self.dropout2 = tf.keras.layers.Dropout(0.20)
+# --------------------------------------------------------------------------------
+# CIFAR 10
+# --------------------------------------------------------------------------------
+NUM_CLASSES = 10
+INPUT_SHAPE = (32, 32, 3)
+USE_SPARCE_LABEL = False   # Setting False make it work as expected
 
-        # Fully connected layers
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(300, activation="relu")
-        self.bn3 = tf.keras.layers.BatchNormalization()
-        self.dropout3 = tf.keras.layers.Dropout(0.20)
-        self.dense2 = tf.keras.layers.Dense(200, activation="relu")
-        # Output layer - softmax activation for classification probabilities
-        self.outputs_layer = tf.keras.layers.Dense(num_classes, activation="softmax")
+(x_train, y_train), (x_test, y_test) = tf.keras.datasets.cifar10.load_data()
+x_train, x_test = x_train / 255.0, x_test / 255.0
+x_train, x_validation, y_train, y_validation = train_test_split(
+    x_train, y_train, test_size=0.2, random_state=42
+)
 
-    def call(self, inputs, training=False):
-        x = self.conv1(inputs)
-        x = self.bn1(x, training=training)
-        x = self.conv2(x)
-        x = self.pool1(x)
-        x = self.dropout1(x, training=training)
+# One Hot Encoding the labels
+if not USE_SPARCE_LABEL:
+    y_train = keras.utils.to_categorical(y_train, NUM_CLASSES)
+    y_validation = keras.utils.to_categorical(y_validation, NUM_CLASSES)
+    y_test = keras.utils.to_categorical(y_test, NUM_CLASSES)
 
-        x = self.conv3(x)
-        x = self.bn2(x, training=training)
-        x = self.pool2(x)
-        x = self.dropout2(x, training=training)
+# --------------------------------------------------------------------------------
+# Model
+# --------------------------------------------------------------------------------
+inputs = tf.keras.Input(
+    name='image',
+    shape=INPUT_SHAPE,
+    dtype=tf.float32
+) 
 
-        x = self.flatten(x)
-        x = self.dense1(x)
-        x = self.bn3(x, training=training)
-        x = self.dropout3(x, training=training)
-        x = self.dense2(x)
-        outputs = self.outputs_layer(x)
-        return outputs
+x = Conv2D(                                           
+    filters=32, 
+    kernel_size=(3, 3), 
+    strides=(1, 1), 
+    padding="same",
+    activation='relu', 
+    input_shape=INPUT_SHAPE
+)(inputs)
+x = BatchNormalization()(x)
+x = Conv2D(                                           
+    filters=64, 
+    kernel_size=(3, 3), 
+    strides=(1, 1), 
+    padding="same",
+    activation='relu'
+)(x)
+x = MaxPooling2D(                                     
+    pool_size=(2, 2)
+)(x)
+x = Dropout(0.20)(x)
 
-def my_model_function():
-    """
-    Creates and compiles an instance of MyModel,
-    with configuration matching the original setup:
-      - num_classes=10 (CIFAR-10)
-      - use_sparse_label controls the loss type and metrics
-    Compilation uses Adam optimizer with lr=1e-3,
-    and the appropriate loss and accuracy metric.
-    """
-    use_sparse_label = True  # Change here to False to use one-hot labels and CategoricalCrossentropy
+x = Conv2D(                                           
+    filters=128, 
+    kernel_size=(3, 3), 
+    strides=(1, 1), 
+    padding="same",
+    activation='relu'
+)(x)
+x = BatchNormalization()(x)
+x = MaxPooling2D(                                     
+    pool_size=(2, 2)
+)(x)
+x = Dropout(0.20)(x)
 
-    model = MyModel(num_classes=10, use_sparse_label=use_sparse_label)
+x = Flatten()(x)
+x = Dense(300, activation="relu")(x)
+x = BatchNormalization()(x)
+x = Dropout(0.20)(x)
+x = Dense(200, activation="relu")(x)
+outputs = Dense(NUM_CLASSES, activation="softmax")(x)
 
-    learning_rate = 1e-3
-    # Choose loss function and accuracy metric based on label format
-    if use_sparse_label:
-        # Sparse labels: use SparseCategoricalCrossentropy and SparseCategoricalAccuracy explicitly
-        loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False)
-        accuracy_metric = tf.keras.metrics.SparseCategoricalAccuracy(name='accuracy')
-    else:
-        # One-hot labels: use CategoricalCrossentropy and default accuracy
-        loss_fn = tf.keras.losses.CategoricalCrossentropy(from_logits=False)
-        accuracy_metric = "accuracy"  # string identifier works fine here
+model: Model = Model(
+    inputs=inputs, outputs=outputs, name="cifar10"
+)
 
-    model.compile(
-        optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate, beta_1=0.9, beta_2=0.999, epsilon=1e-08),
-        loss=loss_fn,
-        metrics=[accuracy_metric]
-    )
+# --------------------------------------------------------------------------------
+# Compile
+# --------------------------------------------------------------------------------
+learning_rate = 1e-3
 
-    # Model.build to set input shape for summary, optional but helpful
-    model.build((None, 32, 32, 3))
-    model.summary()
-    return model
+if USE_SPARCE_LABEL:
+    loss_fn=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False)
+else:
+    loss_fn=tf.keras.losses.CategoricalCrossentropy(from_logits=False)
 
-def GetInput():
-    """
-    Returns a random batch of input images to the model, shaped (batch_size, 32, 32, 3),
-    with float32 type normalized to [0,1].
-    Batch size is 16 as used in the original training code.
-    """
-    import numpy as np
-    batch_size = 16
-    input_shape = (batch_size, 32, 32, 3)
-    # Generate random float32 tensor to simulate CIFAR10-like image inputs scaled [0,1]
-    random_input = tf.random.uniform(input_shape, minval=0., maxval=1., dtype=tf.float32)
-    return random_input
+model.compile(
+    optimizer=Adam(learning_rate=learning_rate, beta_1=0.9, beta_2=0.999, epsilon=1e-08),
+    loss=loss_fn,
+    metrics=["accuracy"]
+)
+model.summary()
 
+
+# --------------------------------------------------------------------------------
+# Train
+# --------------------------------------------------------------------------------
+batch_size = 16
+number_of_epochs = 10
+
+def data_label_generator(x, y):
+    def _f():
+        index = 0
+        length = len(x)
+        try: 
+            while True:                
+                yield x[index:index+batch_size], y[index:index+batch_size]
+                index = (index + batch_size) % length
+        except StopIteration:
+            return
+        
+    return _f
+
+earlystop_callback = tf.keras.callbacks.EarlyStopping(
+    patience=5,
+    restore_best_weights=True,
+    monitor='val_accuracy'
+)
+
+steps_per_epoch = len(y_train) // batch_size
+validation_steps = (len(y_validation) // batch_size) - 1  # -1 to avoid run out of data for validation
+
+history = model.fit(
+    x=data_label_generator(x_train, y_train)(),
+    batch_size=batch_size,
+    epochs=number_of_epochs,
+    verbose=1,
+    validation_data=data_label_generator(x_validation, y_validation)(),
+    shuffle=True,
+    steps_per_epoch=steps_per_epoch,
+    validation_steps=validation_steps,
+    validation_batch_size=batch_size,
+    callbacks=[
+        earlystop_callback
+    ]
+)
+
+import numpy as np
+import tensorflow as tf
+from tensorflow import keras
+from keras import (
+    __version__
+)
+
+
+from keras.layers import (
+    Layer,
+    Normalization,
+    Conv2D,
+    MaxPooling2D,
+    BatchNormalization,
+    Dense,
+    Flatten,
+    Dropout,
+    Reshape,
+    Activation,
+    ReLU,
+    LeakyReLU,
+)
+from keras.models import (
+    Model,
+)
+from keras.layers import (
+    Layer
+)
+from keras.optimizers import (
+    Adam
+)
+from sklearn.model_selection import train_test_split
+
+print("TensorFlow version: {}".format(tf.__version__))
+tf.keras.__version__ = __version__
+print("Keras version: {}".format(tf.keras.__version__))
+
+# --------------------------------------------------------------------------------
+# CIFAR 10
+# --------------------------------------------------------------------------------
+NUM_CLASSES = 10
+INPUT_SHAPE = (32, 32, 3)
+USE_SPARCE_LABEL = False   # Setting False make it work as expected
+
+(x_train, y_train), (x_test, y_test) = tf.keras.datasets.cifar10.load_data()
+x_train, x_test = x_train / 255.0, x_test / 255.0
+x_train, x_validation, y_train, y_validation = train_test_split(
+    x_train, y_train, test_size=0.2, random_state=42
+)
+
+# One Hot Encoding the labels
+if not USE_SPARCE_LABEL:
+    y_train = keras.utils.to_categorical(y_train, NUM_CLASSES)
+    y_validation = keras.utils.to_categorical(y_validation, NUM_CLASSES)
+    y_test = keras.utils.to_categorical(y_test, NUM_CLASSES)
+
+# --------------------------------------------------------------------------------
+# Model
+# --------------------------------------------------------------------------------
+inputs = tf.keras.Input(
+    name='image',
+    shape=INPUT_SHAPE,
+    dtype=tf.float32
+) 
+
+x = Conv2D(                                           
+    filters=32, 
+    kernel_size=(3, 3), 
+    strides=(1, 1), 
+    padding="same",
+    activation='relu', 
+    input_shape=INPUT_SHAPE
+)(inputs)
+x = BatchNormalization()(x)
+x = Conv2D(                                           
+    filters=64, 
+    kernel_size=(3, 3), 
+    strides=(1, 1), 
+    padding="same",
+    activation='relu'
+)(x)
+x = MaxPooling2D(                                     
+    pool_size=(2, 2)
+)(x)
+x = Dropout(0.20)(x)
+
+x = Conv2D(                                           
+    filters=128, 
+    kernel_size=(3, 3), 
+    strides=(1, 1), 
+    padding="same",
+    activation='relu'
+)(x)
+x = BatchNormalization()(x)
+x = MaxPooling2D(                                     
+    pool_size=(2, 2)
+)(x)
+x = Dropout(0.20)(x)
+
+x = Flatten()(x)
+x = Dense(300, activation="relu")(x)
+x = BatchNormalization()(x)
+x = Dropout(0.20)(x)
+x = Dense(200, activation="relu")(x)
+outputs = Dense(NUM_CLASSES, activation="softmax")(x)
+
+model: Model = Model(
+    inputs=inputs, outputs=outputs, name="cifar10"
+)
+
+# --------------------------------------------------------------------------------
+# Compile
+# --------------------------------------------------------------------------------
+learning_rate = 1e-3
+
+if USE_SPARCE_LABEL:
+    loss_fn=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False)
+else:
+    loss_fn=tf.keras.losses.CategoricalCrossentropy(from_logits=False)
+
+model.compile(
+    optimizer=Adam(learning_rate=learning_rate, beta_1=0.9, beta_2=0.999, epsilon=1e-08),
+    loss=loss_fn,
+    metrics=["accuracy"]
+)
+model.summary()
+
+
+# --------------------------------------------------------------------------------
+# Train
+# --------------------------------------------------------------------------------
+batch_size = 16
+number_of_epochs = 10
+
+def data_label_generator(x, y):
+    def _f():
+        index = 0
+        length = len(x)
+        try: 
+            while True:                
+                yield x[index:index+batch_size], y[index:index+batch_size]
+                index = (index + batch_size) % length
+        except StopIteration:
+            return
+        
+    return _f
+
+earlystop_callback = tf.keras.callbacks.EarlyStopping(
+    patience=5,
+    restore_best_weights=True,
+    monitor='val_accuracy'
+)
+
+steps_per_epoch = len(y_train) // batch_size
+validation_steps = (len(y_validation) // batch_size) - 1  # -1 to avoid run out of data for validation
+
+history = model.fit(
+    x=data_label_generator(x_train, y_train)(),
+    batch_size=batch_size,
+    epochs=number_of_epochs,
+    verbose=1,
+    validation_data=data_label_generator(x_validation, y_validation)(),
+    shuffle=True,
+    steps_per_epoch=steps_per_epoch,
+    validation_steps=validation_steps,
+    validation_batch_size=batch_size,
+    callbacks=[
+        earlystop_callback
+    ]
+)

@@ -1,21 +1,34 @@
-# torch.rand(1, 1, 10, 10, dtype=torch.float32)
+import torch.nn as nn
+import random
+
+import numpy as np
 import torch
-from torch import nn
+device = torch.device("mps")
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv = nn.Conv2d(in_channels=1, out_channels=1, kernel_size=3)
-    
-    def forward(self, x):
-        return self.conv(x)
+conv = torch.nn.Conv2d(in_channels=1, out_channels=1, kernel_size=3).to(device)
 
-def my_model_function():
-    return MyModel()
+data = torch.tensor(np.random.uniform(size=(1, 10, 10, 1)), dtype=torch.float32).to(device)
+optimizer = torch.optim.Adam(conv.parameters(), lr=0.1)
+x = data.permute(0, 3, 1, 2)
+out = torch.sum(conv(x))
+loss = torch.nn.MSELoss()(out, torch.zeros_like(out))
+optimizer.zero_grad()
+out.backward()
+optimizer.step()
 
-def GetInput():
-    # Generate NHWC tensor and permute to NCHW (non-contiguous)
-    data = torch.rand(1, 10, 10, 1, dtype=torch.float32)
-    x = data.permute(0, 3, 1, 2)  # Shape becomes (1, 1, 10, 10)
-    return x
+3
+import numpy as np
+import torch
 
+device = torch.device("mps")
+
+conv = torch.nn.Conv2d(in_channels=1, out_channels=1, kernel_size=3).to(device)
+
+data = torch.tensor(np.random.uniform(size=(1, 10, 10, 1)), dtype=torch.float32).to(device)
+optimizer = torch.optim.Adam(conv.parameters(), lr=0.1)
+x = data.permute(0, 3, 1, 2).to(memory_format=torch.contiguous_format)
+out = torch.sum(conv(x))
+loss = torch.nn.MSELoss()(out, torch.zeros_like(out))
+optimizer.zero_grad()
+out.backward()
+optimizer.step()

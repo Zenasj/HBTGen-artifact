@@ -1,64 +1,173 @@
-# tf.random.uniform((batch_size, 256), dtype=tf.int64) and tf.random.uniform((batch_size, 256), dtype=tf.int64)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
+import sys
 import tensorflow as tf
 import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Embedding layers for two inputs
-        self.emb_a = tf.keras.layers.Embedding(
-            input_dim=20000,
-            output_dim=128,
-            embeddings_initializer=tf.keras.initializers.TruncatedNormal(stddev=0.02),
-            trainable=True
-        )
-        self.emb_b = tf.keras.layers.Embedding(
-            input_dim=20000,
-            output_dim=128,
-            embeddings_initializer=tf.keras.initializers.TruncatedNormal(stddev=0.02),
-            trainable=True
-        )
-        # Conv1D layers
-        self.conv_layers = [
-            tf.keras.layers.Conv1D(filters=128, kernel_size=3, activation="relu") for _ in range(5)
-        ]
-        # Pooling and Dense layers
-        self.global_max_pool = tf.keras.layers.GlobalMaxPooling1D()
-        self.dense1 = tf.keras.layers.Dense(64, activation='relu')
-        self.output_layer = tf.keras.layers.Dense(1, activation='sigmoid', name="output")
+def build_model_():
 
-    def call(self, inputs, training=False):
-        input_a, input_b = inputs["input_a"], inputs["input_b"]
-        # Pass through embeddings
-        emb_out_a = self.emb_a(input_a)
-        emb_out_b = self.emb_b(input_b)
-        x = emb_out_a + emb_out_b
-        # Pass through conv layers
-        for conv in self.conv_layers:
-            x = conv(x)
-        # Global max pooling and dense layers
-        x = self.global_max_pool(x)
-        x = self.dense1(x)
-        output = self.output_layer(x)
-        return output
+	input_a_size = 20
+	input_b_size = 4
+	num_classes = 2
+	len_embedding = 256
 
+	input_a = tf.keras.layers.Input(shape=(input_a_size,), name='input_a', dtype=np.uint8)
+	input_b = tf.keras.layers.Input(shape=(input_b_size,), name='input_b', dtype=np.float32)
 
-def my_model_function():
-    # Instantiate and return MyModel instance
-    return MyModel()
+	x = tf.keras.layers.Embedding(len_embedding, 100)(input_a)
+	x = tf.keras.layers.Conv1D(128, 4, activation='relu')(x)
+	x = tf.keras.layers.MaxPooling1D(4)(x)
+	x = tf.keras.layers.Flatten()(x)
+	branch_a = tf.keras.layers.Dense(64, activation='relu')(x)
 
+	x = tf.keras.layers.Dense(32, activation='relu')(input_b)
+	branch_b = tf.keras.layers.Dense(32, activation='relu')(x)
 
-def GetInput():
-    # Provide random valid input dict pair for MyModel
-    # Assumptions:
-    # - batch size 32 for demonstration (model can work with any batch size)
-    # - input_a and input_b expect integers in [0, 20000) with shape (batch_size, 256)
-    batch_size = 32
-    input_a = tf.random.uniform(
-        shape=(batch_size, 256), minval=0, maxval=20000, dtype=tf.int64
+	concat = tf.keras.layers.Concatenate()([
+				                            branch_a,
+				                            branch_b,
+				                           ])
+
+	x = tf.keras.layers.Dense(512, activation = 'relu')(concat)
+	output = tf.keras.layers.Dense(num_classes, name='output', activation='softmax')(x)
+
+	model = tf.keras.models.Model(inputs=[
+				                          input_a,
+				                          input_b,
+				                         ],
+				                  outputs=[output])
+
+	return model
+
+strategy = tf.distribute.MirroredStrategy(['/gpu:0', '/gpu:1'])
+with strategy.scope():
+    model = build_model_()
+    model.compile(loss = 'binary_crossentropy', optimizer = 'adam', metrics = ['accuracy'])
+
+y_train = True
+y_train = tf.keras.utils.to_categorical(y_train, 2)
+
+dataset = tf.data.Dataset.from_tensors(
+    (
+        {"input_a": [[1.], [1.], [1.], [1.], [1.], [1.], [1.], [1.], [1.], [1.], [1.], [1.], [1.], [1.], [1.], [1.], [1.], [1.], [1.], [1.]], 
+         "input_b": [[1.], [1.], [1.], [1.]],}, 
+        {"output": y_train},
     )
-    input_b = tf.random.uniform(
-        shape=(batch_size, 256), minval=0, maxval=20000, dtype=tf.int64
-    )
-    return {"input_a": input_a, "input_b": input_b}
+).repeat(1000000).batch(256)
 
+history = model.fit(
+    x = dataset,
+    epochs=10,
+    verbose = 1,
+)
+
+import os
+import sys
+
+import numpy as np
+import tensorflow as tf
+
+
+def build_model():
+    input_a = tf.keras.Input(shape=(256,), dtype=tf.int64, name="input_a")
+    input_b = tf.keras.Input(shape=(256,), dtype=tf.int64, name="input_b")
+
+    emb_a = tf.keras.layers.Embedding(
+        input_dim=20000,
+        output_dim=128,
+        input_length=256,
+        embeddings_initializer=tf.keras.initializers.TruncatedNormal(stddev=0.02),
+        trainable=True)
+    emb_b = tf.keras.layers.Embedding(
+        input_dim=20000,
+        output_dim=128,
+        input_length=256,
+        embeddings_initializer=tf.keras.initializers.TruncatedNormal(stddev=0.02),
+        trainable=True)
+
+    x = tf.keras.layers.add([emb_a(input_a), emb_b(input_b)])
+    x = tf.keras.layers.Conv1D(filters=128,
+                               kernel_size=3,
+                               activation="relu")(x)
+    x = tf.keras.layers.Conv1D(filters=128,
+                               kernel_size=3,
+                               activation="relu")(x)
+    x = tf.keras.layers.Conv1D(filters=128,
+                               kernel_size=3,
+                               activation="relu")(x)
+    x = tf.keras.layers.Conv1D(filters=128,
+                               kernel_size=3,
+                               activation="relu")(x)
+    x = tf.keras.layers.Conv1D(filters=128,
+                               kernel_size=3,
+                               activation="relu")(x)
+    x = tf.keras.layers.GlobalMaxPooling1D()(x)
+    x = tf.keras.layers.Dense(64, activation='relu')(x)
+    output = tf.keras.layers.Dense(1, activation='sigmoid', name="output")(x)
+
+    model = tf.keras.models.Model(
+        inputs=[
+            input_a,
+            input_b,
+        ],
+        outputs=output
+    )
+
+    return model
+
+
+def main():
+    assert len(sys.argv) == 2
+    os.environ["CUDA_VISIBLE_DEVICES"] = sys.argv[1]
+    gpus = sys.argv[1].split(",")
+    if len(gpus) == 1:
+        strategy = tf.distribute.get_strategy()
+    else:
+        strategy = tf.distribute.MirroredStrategy()
+
+    with strategy.scope():
+        model = build_model()
+        model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
+        model.summary()
+
+    batch_size = 1024 * strategy.num_replicas_in_sync
+    dataset = tf.data.Dataset.from_tensors(
+        (
+            {"input_a": np.random.randint(0, 20001, (256,), int),
+             "input_b": np.random.randint(0, 20001, (256,), int)},
+            {"output": np.random.randint(0, 2, (1,), int)},
+        )
+    ).repeat(1000000).batch(batch_size)
+
+    model.fit(
+        x=dataset,
+        epochs=10,
+        verbose=1,
+    )
+
+
+if __name__ == "__main__":
+    main()
+
+py
+dataset = tf.data.Dataset.from_tensors((
+  {"input_a": np.random.randint(0, 20001, (256,), int),
+   "input_b": np.random.randint(0, 20001, (256,), int)},
+  {"output": np.random.randint(0, 2, (1,), int)},
+)).repeat(1000000)
+# determine the cardinality/size of the dataset, then distribute it
+cardinality = tf.data.experimental.cardinality(dataset).numpy()
+dataset = strategy.experimental_distribute_dataset(dataset.batch(batch_size))
+# determine the number steps/epoch (necessary for distributed datasets)
+epochs = 10
+batches = cardinality // batch_size
+steps_per_epoch = batches // epochs
+# train the model...
+history = model.fit(
+  x=dataset,
+  epochs=epochs,
+  steps_per_epoch=steps_per_epoch,
+  verbose=1)

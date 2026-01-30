@@ -1,54 +1,59 @@
-# tf.random.uniform((1, 192, 192, 3), dtype=tf.float32) ← inferred input shape from the example (batch=1, height=192, width=192, channels=3)
+from tensorflow import keras
+from tensorflow.keras import models
 
+grads = K.gradients(class_output, last_conv_layer.output)[0]
+
+import numpy as np
+import cv2
 import tensorflow as tf
+tf.enable_eager_execution()
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # For demonstration, create a simple model mimicking the description:
-        # A convolutional base ending in a conv layer named 'conv2d_33'
-        # and some dense layers producing 2-class output as in the example.
-        # This is a placeholder model structure inferred from the issue.
-        
-        # Conv base layers (simplified and reduced)
-        self.conv1 = tf.keras.layers.Conv2D(16, 3, activation='relu', padding='same')
-        self.conv2 = tf.keras.layers.Conv2D(32, 3, activation='relu', padding='same')
-        # This layer is named 'conv2d_33' to match last_conv_layer in the example
-        self.conv_last = tf.keras.layers.Conv2D(64, 3, activation='relu', padding='same', name='conv2d_33')
-        self.pool = tf.keras.layers.GlobalAveragePooling2D()
-        self.dense = tf.keras.layers.Dense(2, activation='softmax')
-    
-    def call(self, inputs, training=False):
-        x = self.conv1(inputs)
-        x = self.conv2(x)
-        x = self.conv_last(x)
-        self.feature_maps = x  # save for later gradient use
-        x = self.pool(x)
-        output = self.dense(x)
-        return output
-    
-    @tf.function(jit_compile=True)
-    def get_grad_cam(self, inputs, class_index):
-        """
-        Compute the gradient of the output for `class_index` w.r.t. the last conv layer output.
-        Returns:
-          feature_maps: last conv layer output
-          grads: gradients of class output w.r.t. feature maps
-        """
-        with tf.GradientTape() as tape:
-            tape.watch(self.feature_maps)
-            preds = self.call(inputs)
-            # Pick the class output we want
-            class_output = preds[:, class_index]
-        grads = tape.gradient(class_output, self.feature_maps)
-        return self.feature_maps, grads
+model = tf.keras.models.load_model("model.h5")
+print(type(model))
+# tensorflow.python.keras.engine.sequential.Sequential
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+from dataset import prepare_dataset
+_, ds, _, _, _, _ = prepare_dataset() # ds is a tf.data.Dataset
+print(type(ds))
+# tensorflow.python.data.ops.dataset_ops.DatasetV1Adapter
 
-def GetInput():
-    # Create a random input tensor matching the input shape (batch, height, width, channels)
-    # Using float32 type as in typical image models
-    return tf.random.uniform((1, 192, 192, 3), dtype=tf.float32)
+it = train_ds.make_one_shot_iterator()
+img, label = it.get_next()
+print(type(img), img.shape)
+# <class 'tensorflow.python.framework.ops.EagerTensor'> (192, 192, 3)
 
+print(type(label), label.shape)
+# <class 'tensorflow.python.framework.ops.EagerTensor'> (2,)
+
+img = np.expand_dims(img, axis=0)
+print(img.shape)
+# (1, 192, 192, 3)
+
+predictions = model.predict(img)
+print(predictions)
+# array([[0.9711799 , 0.02882008]], dtype=float32)
+
+class_idx = np.argmax(predictions[0])
+print(class_idx)
+# 0
+
+class_output = model.output[:, class_idx]
+print(model.output, class_output)
+# Tensor("Softmax:0", shape=(?, 2), dtype=float32) Tensor("strided_slice_5:0", dtype=float32)
+
+last_conv_layer = model.get_layer('conv2d_33') # the last conv layer
+
+"""
+Now, the fun part: how do I compute the gradient of class_output with respect to
+the output of the last convolutional layer?
+"""
+
+with tf.GradientTape() as tape: 
+    print(label)
+    # tf.Tensor([1. 0.], shape=(2,), dtype=float32)
+    y_c = tf.reduce_sum(tf.multiply(model.output, label))
+    print(y_c)
+    # Tensor("Sum_4:0", shape=(), dtype=float32)
+    last_conv_layer = model.get_layer('activation_6')
+
+grad = tape.gradient(y_c, last_conv_layer.output)

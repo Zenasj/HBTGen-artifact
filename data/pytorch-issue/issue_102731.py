@@ -1,9 +1,34 @@
-# torch.rand(2, 2, dtype=torch.float32)
 import copy
+import os
+
 import torch
 import torch.nn as nn
+from torch.cuda.amp import GradScaler, autocast
+from torch.distributed import init_process_group
+from torch.distributed.fsdp.fully_sharded_data_parallel import \
+    FullyShardedDataParallel as FSDP
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.optim import AdamW
+
+
+def build_optimizer(model: nn.Module, paramwise=True):
+    base_lr = 1e-4
+    if paramwise:
+        param_groups = []
+        for name, param in model.named_parameters():
+            if name.endswith('weight'):
+                param_groups.append({'params': [param], 'lr': base_lr * 0.1})
+            else:
+                param_groups.append({'params': [param], 'lr': base_lr})
+        optimizer = AdamW(param_groups, lr=base_lr)
+    else:
+        optimizer = AdamW(model.parameters(), lr=base_lr)
+    return optimizer
+
+
 
 class ToyModel(nn.Module):
+
     def __init__(self, data_preprocessor=None):
         super().__init__()
         self.linear1 = nn.Linear(2, 2)
@@ -18,25 +43,36 @@ class ToyModel(nn.Module):
         outputs = self.linear2(outputs)
         return outputs
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.ddp_model = ToyModel()
-        self.fsdp_model = copy.deepcopy(self.ddp_model)  # Ensure initial weights/buffers match
 
-    def forward(self, x):
-        # Simulate AMP context and loss computation as per original issue
-        with torch.cuda.amp.autocast():
-            ddp_out = self.ddp_model(x)
-            fsdp_out = self.fsdp_model(x)
-            ddp_loss = ddp_out.sum()
-            fsdp_loss = fsdp_out.sum()
-        # Return 1.0 if losses differ beyond tolerance, else 0.0
-        return torch.tensor(1.0 if not torch.allclose(ddp_loss, fsdp_loss, atol=1e-5) else 0.0, dtype=torch.float32)
+if __name__ == '__main__':
+    init_process_group()
+    torch.cuda.set_device(int(os.getenv('LOCAL_RANK')))
+    # model: nn.Module = MODELS.build(cfg.model)
+    model1 = ToyModel().cuda()
+    model2 = copy.deepcopy(model1)
+    # train_dataloader = Runner.train_dataloader()
+    device_id = torch.cuda.current_device()
+    ddp_model = DDP(model1, device_ids=[device_id])
+    fsdp_model = FSDP(model2, device_id=device_id, use_orig_params=True, sync_module_states=True)
+    ddp_optim_wrapper = build_optimizer(ddp_model)
+    fsdp_optim_wrapper = build_optimizer(fsdp_model)
+    ddp_scaler = GradScaler()
+    fsdp_scaler = GradScaler()
+    with autocast():
+        for step in range(10):
+            data = torch.randn(2, 2).to(f'cuda:{device_id}')
+            ddp_loss = ddp_model(data).sum()
+            fsdp_loss = fsdp_model(data).sum()
 
-def my_model_function():
-    return MyModel()
+            ddp_scaler.scale(ddp_loss).backward()
+            fsdp_scaler.scale(fsdp_loss).backward()
 
-def GetInput():
-    return torch.rand(2, 2, dtype=torch.float32)
+            ddp_scaler.step(ddp_optim_wrapper)
+            ddp_scaler.update()
+            fsdp_scaler.step(fsdp_optim_wrapper)
+            fsdp_scaler.update()
 
+            ddp_optim_wrapper.zero_grad()
+            fsdp_optim_wrapper.zero_grad()
+            
+            print(f'step: {step} rank: {device_id} ddp_loss: {ddp_loss}, fsdp_loss: {fsdp_loss}')

@@ -1,20 +1,42 @@
-# torch.rand(64, 10)  # Input shape inferred from the minimal reproducing example
 import torch
 import torch.nn as nn
+import torch.multiprocessing as mp
+import torch.nn.functional as F
+from torch.autograd import Variable
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.layer = nn.Linear(10, 4)  # Matches the nn.Linear(10,4) in the issue's example
-        
-    def forward(self, x):
-        return self.layer(x)
 
-def my_model_function():
-    # Returns the model instance. No weights initialization beyond default
-    return MyModel()
+def task(pid, model):
+    x = Variable(torch.rand(64, 10))
+    y = model(x)
+    t = y.clone() * 0.99
+    loss = F.smooth_l1_loss(y, t)
 
-def GetInput():
-    # Returns a random tensor matching the input shape (64 samples, 10 features)
-    return torch.rand(64, 10)  # Matches the Variable(torch.rand(64, 10)) in the example
+    # here it breaks
+    loss.backward()
 
+    print("Process %d finished" % pid)
+
+
+if __name__ == "__main__":
+
+    # comment manual_seed and the CUDA initialization error is gone.
+    torch.manual_seed(23)
+
+    net = nn.Linear(10, 4)
+    net.share_memory()
+
+    processes = []
+    for pid in range(8):
+        p = mp.Process(target=task, args=(pid, net))
+        p.start()
+
+    for p in processes:
+        p.join()
+
+    print("Done.")
+
+for i, (data, labels) in enumerate(train_loader):
+    pass
+
+for i, (data, labels) in enumerate(train_loader):
+    pass

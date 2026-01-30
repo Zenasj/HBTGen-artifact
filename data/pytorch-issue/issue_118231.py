@@ -1,16 +1,21 @@
 import torch
-import operator
-from torch import nn
 
-# (torch.rand(4), torch.rand(4))  # Input is a tuple of two tensors of shape (4,)
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        x, y = inputs
-        return x * operator.pos(y)
+def test_unary_functions(self):
+        for op in (operator.pos,):
+            with self.subTest(op=op):
+                def fn(x, y):
+                    return x * op(y)
 
-def my_model_function():
-    return MyModel()
+                opt_fn = torch.compile(fullgraph=True, dynamic=True)(fn)
+                tensor1 = torch.ones(4)
+                tensor2 = torch.ones(4)
 
-def GetInput():
-    return (torch.rand(4), torch.rand(4))
+                def test(arg1, arg2):
+                    self.assertEqual(opt_fn(arg1, arg2), fn(arg1, arg2))
 
+                # test(tensor1, tensor2)
+                # print(fn(tensor1, -2))
+                # print(opt_fn(tensor1, -2))
+                # test(tensor1, -2)
+                # test(-2, tensor1)
+                test(-2, -2)

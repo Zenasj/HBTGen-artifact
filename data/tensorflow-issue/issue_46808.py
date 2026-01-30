@@ -1,39 +1,58 @@
-# tf.random.uniform((BATCH_SIZE, 28, 28, 1), dtype=tf.float32)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
+model.fit(train_dataset, epochs=12, callbacks=callbacks)
+
+strategy = tf.distribute.MirroredStrategy()
+
+import tensorflow_datasets as tfds
 import tensorflow as tf
+import os
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Simple CNN model from the shared code, matches input shape (28,28,1)
-        self.conv1 = tf.keras.layers.Conv2D(32, 3, activation='relu', input_shape=(28, 28, 1))
-        self.pool = tf.keras.layers.MaxPooling2D()
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(64, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(10)  # logits for 10 classes
+def scale(image, label):
+  image = tf.cast(image, tf.float32)
+  image /= 255
+  return image, label
 
-    def call(self, inputs, training=False):
-        x = self.conv1(inputs)
-        x = self.pool(x)
-        x = self.flatten(x)
-        x = self.dense1(x)
-        return self.dense2(x)
+def decay(epoch):
+  if epoch < 3:
+    return 1e-3
+  elif epoch >= 3 and epoch < 7:
+    return 1e-4
+  else:
+    return 1e-5
 
-def my_model_function():
-    # Returns a compiled instance of MyModel with sparse categorical crossentropy and Adam optimizer,
-    # matching the setup in the original code snippet.
-    model = MyModel()
-    model.compile(
-        loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
-        optimizer=tf.keras.optimizers.Adam(),
-        metrics=['accuracy']
-    )
-    return model
+print(tf.__version__)
+datasets, info = tfds.load(name='mnist', with_info=True, as_supervised=True)
+mnist_train, mnist_test = datasets['train'], datasets['test']
 
-def GetInput():
-    # Returns a batch of random inputs with shape (BATCH_SIZE, 28, 28, 1), dtype float32
-    # BATCH_SIZE is inferred from the original issue: 64 per replica, total batch size depends on devices,
-    # but we pick a typical batch size 64 here (single replica).
-    batch_size = 64
-    return tf.random.uniform((batch_size, 28, 28, 1), dtype=tf.float32)
+# strategy = tf.distribute.MirroredStrategy()
+strategy = tf.distribute.MirroredStrategy(cross_device_ops=tf.distribute.ReductionToOneDevice())
 
+print('Number of devices: {}'.format(strategy.num_replicas_in_sync))
+
+num_train_examples = info.splits['train'].num_examples
+num_test_examples = info.splits['test'].num_examples
+
+BUFFER_SIZE = 10000
+BATCH_SIZE_PER_REPLICA = 64
+BATCH_SIZE = BATCH_SIZE_PER_REPLICA * strategy.num_replicas_in_sync
+
+train_dataset = mnist_train.map(scale).cache().shuffle(BUFFER_SIZE).batch(BATCH_SIZE)
+eval_dataset = mnist_test.map(scale).batch(BATCH_SIZE)
+
+with strategy.scope():
+  model = tf.keras.Sequential([
+      tf.keras.layers.Conv2D(32, 3, activation='relu', input_shape=(28, 28, 1)),
+      tf.keras.layers.MaxPooling2D(),
+      tf.keras.layers.Flatten(),
+      tf.keras.layers.Dense(64, activation='relu'),
+      tf.keras.layers.Dense(10)
+  ])
+
+  model.compile(loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+                optimizer=tf.keras.optimizers.Adam(),
+                metrics=['accuracy'])
+
+model.fit(train_dataset, epochs=12, callbacks=[tf.keras.callbacks.LearningRateScheduler(decay)])

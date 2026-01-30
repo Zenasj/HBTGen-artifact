@@ -1,14 +1,10 @@
 import torch
-from torch import nn
+import os
 
-# torch.rand(3, 3, dtype=torch.float32)
-class MyModel(nn.Module):
-    def forward(self, x):
-        return torch.sin(x) + torch.cos(x)
+def foo(x: torch.Tensor) -> torch.Tensor:
+    return torch.sin(x) + torch.cos(x)
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(3, 3, dtype=torch.float32)
-
+print("main pid ", os.getpid())
+x = torch.rand(3, 3)
+x_eager = foo(x)
+x_pt2 = torch.compile(foo)(x)

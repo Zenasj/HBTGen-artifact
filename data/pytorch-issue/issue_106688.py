@@ -1,23 +1,41 @@
-# Inputs: 6 tensors (3x (5,4) and 3x (4,3)), all on CUDA
 import torch
-from torch import nn
+import logging
 
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        x1, x2, x3, w1, w2, w3 = inputs
-        x = torch.stack([x1, x2, x3])
-        w = torch.stack([w1, w2, w3])
-        return torch.bmm(x, w)
+torch._logging.set_logs(dynamo=logging.DEBUG, inductor=logging.DEBUG)
+torch._dynamo.config.suppress_errors = False
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    x1 = torch.randn(5, 4, device='cuda')
-    x2 = x1 + 1
-    x3 = x1 + 2
-    w1 = torch.randn(4, 3, device='cuda')
-    w2 = w1 + 1
-    w3 = w1 + 2
-    return (x1, x2, x3, w1, w2, w3)
+def fn(x1, x2, x3, w1, w2, w3):
+    x = torch.stack([x1, x2, x3])
+    w = torch.stack([w1, w2, w3])
 
+    y = torch.bmm(x, w)
+
+    return y
+
+x1 = torch.randn(5, 4).cuda()
+x2 = x1 + 1
+x3 = x1 + 2
+w1 = torch.randn(4, 3).cuda()
+w2 = w1 + 1
+w3 = w1 + 2
+
+args = [x1, x2, x3, w1, w2, w3]
+
+ref = fn(*args)
+print(ref)
+
+res = torch.compile(fn)(*args)
+print(res)
+
+buf3
+
+buf7
+
+mm
+
+bmm
+
+mm
+
+bmm

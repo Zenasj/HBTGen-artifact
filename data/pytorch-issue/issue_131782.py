@@ -1,17 +1,26 @@
-# torch.rand(3, dtype=torch.float32, device='cuda')
+py
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-    
-    def forward(self, x):
-        return x.sin()
+@torch.compile
+def f(x):
+    return x.sin()
 
-def my_model_function():
-    return MyModel()
+x = torch.randn(3, device='cuda')
 
-def GetInput():
-    return torch.rand(3, dtype=torch.float32, device='cuda')
+_graph = torch.cuda.CUDAGraph()
+with torch.cuda.graph(_graph):
+    y = f(x)
 
+import torch
+
+@torch.compile
+def f(x):
+    return x.sin()
+
+x = torch.randn(3, device='cuda')
+
+f(x)
+
+_graph = torch.cuda.CUDAGraph()
+with torch.cuda.graph(_graph):
+    y = f(x)

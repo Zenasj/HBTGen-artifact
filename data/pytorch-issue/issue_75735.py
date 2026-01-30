@@ -1,18 +1,13 @@
-# torch.rand(5, 8, 8, dtype=torch.float32)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.bmm_weight = nn.Parameter(torch.ones(8, 8, dtype=torch.float32))
+if __name__ == '__main__':
+    bmm_weight = torch.ones((8, 8), dtype=torch.float32, requires_grad=True)
+    a = torch.ones((5, 8, 8), dtype=torch.float32) * torch.arange(5)[:, None, None]
 
-    def forward(self, x):
-        return (self.bmm_weight * x).sum(dim=(1, 2))
+    b = bmm_weight * a
 
-def my_model_function():
-    return MyModel()
+    b = b.sum((1, 2))
+    grads = torch.autograd.grad(b, bmm_weight, torch.eye(len(b), dtype=b.dtype, device=b.device),
+                                retain_graph=True, create_graph=True, is_grads_batched=True)
 
-def GetInput():
-    return torch.rand(5, 8, 8, dtype=torch.float32)
-
+    print(grads[0].shape)

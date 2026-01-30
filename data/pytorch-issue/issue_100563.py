@@ -1,25 +1,95 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Assumed input shape (B=1, C=3, H=224, W=224)
-import torch
-import torch.nn as nn
+{'tag': 'cp311-cp311-linux_x86_64', 'torchaudio': '2.1.0.dev20230502+cu117', 'torch': '2.0.0'}
+{'tag': 'cp311-cp311-linux_x86_64', 'torchaudio': '2.1.0.dev20230503+cu117', 'torch': '2.0.0'}
+{'tag': 'cp311-cp311-macosx_10_9_x86_64', 'torchaudio': '2.1.0.dev20230501', 'torch': '2.0.0'}
+{'tag': 'cp38-cp38-linux_x86_64', 'torchaudio': '2.1.0.dev20230503+cu117', 'torch': '2.0.0'}
+{'tag': 'cp38-cp38-macosx_10_9_x86_64', 'torchaudio': '2.1.0.dev20230503', 'torch': '2.0.0'}
+{'tag': 'cp38-cp38-macosx_11_0_arm64', 'torchaudio': '2.1.0.dev20230503', 'torch': '2.0.0'}
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Basic CNN structure as no model details were provided in the issue
-        self.conv = nn.Conv2d(3, 16, kernel_size=3, padding=1)
-        self.pool = nn.MaxPool2d(2, 2)
-        self.fc = nn.Linear(16 * 112 * 112, 10)  # 112 = 224/2 after pooling
-
-    def forward(self, x):
-        x = self.pool(torch.relu(self.conv(x)))
-        x = x.view(x.size(0), -1)
-        return self.fc(x)
-
-def my_model_function():
-    # Returns a basic CNN model with placeholder architecture
-    return MyModel()
-
-def GetInput():
-    # Returns a random tensor matching the assumed input shape
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
-
+{'tag': 'cp310-cp310-linux_x86_64', 'torchaudio': '2.1.0.dev20230401+cu118', 'torch': '2.1.0.dev20230331'}
+{'tag': 'cp310-cp310-linux_x86_64', 'torchaudio': '2.1.0.dev20230415+cu117', 'torch': '2.1.0.dev20230414'}
+{'tag': 'cp310-cp310-linux_x86_64', 'torchaudio': '2.1.0.dev20230502+cu118', 'torch': '2.1.0.dev20230501'}
+{'tag': 'cp310-cp310-linux_x86_64', 'torchaudio': '2.1.0.dev20230503+cu118', 'torch': '2.1.0.dev20230501'}
+{'tag': 'cp310-cp310-linux_x86_64', 'torchaudio': '2.1.0.dev20230504+rocm5.3', 'torch': '2.1.0.dev20230502'}
+{'tag': 'cp310-cp310-linux_x86_64', 'torchaudio': '2.1.0.dev20230504+rocm5.4.2', 'torch': '2.1.0.dev20230502'}
+{'tag': 'cp310-cp310-macosx_10_9_x86_64', 'torchaudio': '2.1.0.dev20230423', 'torch': '2.1.0.dev20230422'}
+{'tag': 'cp310-cp310-macosx_11_0_arm64', 'torchaudio': '2.1.0.dev20230423', 'torch': '2.1.0.dev20230422'}
+{'tag': 'cp310-cp310-macosx_11_0_arm64', 'torchaudio': '2.1.0.dev20230424', 'torch': '2.1.0.dev20230422'}
+{'tag': 'cp310-cp310-win_amd64', 'torchaudio': '2.1.0.dev20230406+cpu\r', 'torch': '2.1.0.dev20230405'}
+{'tag': 'cp310-cp310-win_amd64', 'torchaudio': '2.1.0.dev20230406+cu117\r', 'torch': '2.1.0.dev20230405'}
+{'tag': 'cp310-cp310-win_amd64', 'torchaudio': '2.1.0.dev20230406+cu118\r', 'torch': '2.1.0.dev20230405'}
+{'tag': 'cp310-cp310-win_amd64', 'torchaudio': '2.1.0.dev20230412+cpu\r', 'torch': '2.1.0.dev20230411'}
+{'tag': 'cp310-cp310-win_amd64', 'torchaudio': '2.1.0.dev20230416+cpu\r', 'torch': '2.1.0.dev20230415'}
+{'tag': 'cp310-cp310-win_amd64', 'torchaudio': '2.1.0.dev20230427+cu118\r', 'torch': '2.1.0.dev20230426'}
+{'tag': 'cp310-cp310-win_amd64', 'torchaudio': '2.1.0.dev20230503+cu118\r', 'torch': '2.1.0.dev20230502'}
+{'tag': 'cp310-cp310-win_amd64', 'torchaudio': '2.1.0.dev20230504+cu117\r', 'torch': '2.1.0.dev20230503'}
+{'tag': 'cp310-cp310-win_amd64', 'torchaudio': '2.1.0.dev20230504+cu118\r', 'torch': '2.1.0.dev20230503'}
+{'tag': 'cp310-cp310-win_amd64', 'torchaudio': '2.1.0.dev20230504+cu121\r', 'torch': '2.1.0.dev20230503'}
+{'tag': 'cp311-cp311-linux_x86_64', 'torchaudio': '2.1.0.dev20230429+cu117', 'torch': '2.1.0.dev20230428'}
+{'tag': 'cp311-cp311-linux_x86_64', 'torchaudio': '2.1.0.dev20230502+cpu', 'torch': '2.1.0.dev20230501'}
+{'tag': 'cp311-cp311-linux_x86_64', 'torchaudio': '2.1.0.dev20230504+rocm5.3', 'torch': '2.1.0.dev20230502'}
+{'tag': 'cp311-cp311-linux_x86_64', 'torchaudio': '2.1.0.dev20230504+rocm5.4.2', 'torch': '2.1.0.dev20230502'}
+{'tag': 'cp311-cp311-macosx_10_9_x86_64', 'torchaudio': '2.1.0.dev20230405', 'torch': '2.1.0.dev20230404'}
+{'tag': 'cp311-cp311-macosx_10_9_x86_64', 'torchaudio': '2.1.0.dev20230423', 'torch': '2.1.0.dev20230422'}
+{'tag': 'cp311-cp311-macosx_10_9_x86_64', 'torchaudio': '2.1.0.dev20230424', 'torch': '2.1.0.dev20230422'}
+{'tag': 'cp311-cp311-macosx_10_9_x86_64', 'torchaudio': '2.1.0.dev20230430', 'torch': '2.1.0.dev20230429'}
+{'tag': 'cp311-cp311-macosx_11_0_arm64', 'torchaudio': '2.1.0.dev20230423', 'torch': '2.1.0.dev20230422'}
+{'tag': 'cp311-cp311-macosx_11_0_arm64', 'torchaudio': '2.1.0.dev20230424', 'torch': '2.1.0.dev20230422'}
+{'tag': 'cp311-cp311-win_amd64', 'torchaudio': '2.1.0.dev20230406+cpu\r', 'torch': '2.1.0.dev20230405'}
+{'tag': 'cp311-cp311-win_amd64', 'torchaudio': '2.1.0.dev20230406+cu118\r', 'torch': '2.1.0.dev20230405'}
+{'tag': 'cp311-cp311-win_amd64', 'torchaudio': '2.1.0.dev20230422+cpu\r', 'torch': '2.1.0.dev20230421'}
+{'tag': 'cp311-cp311-win_amd64', 'torchaudio': '2.1.0.dev20230427+cu118\r', 'torch': '2.1.0.dev20230426'}
+{'tag': 'cp311-cp311-win_amd64', 'torchaudio': '2.1.0.dev20230501+cu117\r', 'torch': '2.1.0.dev20230430'}
+{'tag': 'cp311-cp311-win_amd64', 'torchaudio': '2.1.0.dev20230504+cpu\r', 'torch': '2.1.0.dev20230503'}
+{'tag': 'cp311-cp311-win_amd64', 'torchaudio': '2.1.0.dev20230504+cu117\r', 'torch': '2.1.0.dev20230503'}
+{'tag': 'cp311-cp311-win_amd64', 'torchaudio': '2.1.0.dev20230504+cu118\r', 'torch': '2.1.0.dev20230503'}
+{'tag': 'cp311-cp311-win_amd64', 'torchaudio': '2.1.0.dev20230504+cu121\r', 'torch': '2.1.0.dev20230503'}
+{'tag': 'cp38-cp38-linux_x86_64', 'torchaudio': '2.1.0.dev20230415+cu118', 'torch': '2.1.0.dev20230414'}
+{'tag': 'cp38-cp38-linux_x86_64', 'torchaudio': '2.1.0.dev20230503+rocm5.4.2', 'torch': '2.1.0.dev20230502'}
+{'tag': 'cp38-cp38-linux_x86_64', 'torchaudio': '2.1.0.dev20230504+rocm5.3', 'torch': '2.1.0.dev20230502'}
+{'tag': 'cp38-cp38-linux_x86_64', 'torchaudio': '2.1.0.dev20230504+rocm5.4.2', 'torch': '2.1.0.dev20230502'}
+{'tag': 'cp38-cp38-macosx_10_9_x86_64', 'torchaudio': '2.1.0.dev20230403', 'torch': '2.1.0.dev20230402'}
+{'tag': 'cp38-cp38-macosx_10_9_x86_64', 'torchaudio': '2.1.0.dev20230404', 'torch': '2.1.0.dev20230402'}
+{'tag': 'cp38-cp38-macosx_10_9_x86_64', 'torchaudio': '2.1.0.dev20230423', 'torch': '2.1.0.dev20230422'}
+{'tag': 'cp38-cp38-macosx_10_9_x86_64', 'torchaudio': '2.1.0.dev20230424', 'torch': '2.1.0.dev20230422'}
+{'tag': 'cp38-cp38-macosx_11_0_arm64', 'torchaudio': '2.1.0.dev20230423', 'torch': '2.1.0.dev20230422'}
+{'tag': 'cp38-cp38-win_amd64', 'torchaudio': '2.1.0.dev20230404+cu118\r', 'torch': '2.1.0.dev20230403'}
+{'tag': 'cp38-cp38-win_amd64', 'torchaudio': '2.1.0.dev20230405+cu118\r', 'torch': '2.1.0.dev20230404'}
+{'tag': 'cp38-cp38-win_amd64', 'torchaudio': '2.1.0.dev20230406+cpu\r', 'torch': '2.1.0.dev20230405'}
+{'tag': 'cp38-cp38-win_amd64', 'torchaudio': '2.1.0.dev20230406+cu117\r', 'torch': '2.1.0.dev20230405'}
+{'tag': 'cp38-cp38-win_amd64', 'torchaudio': '2.1.0.dev20230406+cu118\r', 'torch': '2.1.0.dev20230405'}
+{'tag': 'cp38-cp38-win_amd64', 'torchaudio': '2.1.0.dev20230407+cu118\r', 'torch': '2.1.0.dev20230406'}
+{'tag': 'cp38-cp38-win_amd64', 'torchaudio': '2.1.0.dev20230409+cu118\r', 'torch': '2.1.0.dev20230408'}
+{'tag': 'cp38-cp38-win_amd64', 'torchaudio': '2.1.0.dev20230410+cu118\r', 'torch': '2.1.0.dev20230409'}
+{'tag': 'cp38-cp38-win_amd64', 'torchaudio': '2.1.0.dev20230412+cu118\r', 'torch': '2.1.0.dev20230411'}
+{'tag': 'cp38-cp38-win_amd64', 'torchaudio': '2.1.0.dev20230413+cu118\r', 'torch': '2.1.0.dev20230412'}
+{'tag': 'cp38-cp38-win_amd64', 'torchaudio': '2.1.0.dev20230501+cu117\r', 'torch': '2.1.0.dev20230430'}
+{'tag': 'cp38-cp38-win_amd64', 'torchaudio': '2.1.0.dev20230504+cu117\r', 'torch': '2.1.0.dev20230503'}
+{'tag': 'cp38-cp38-win_amd64', 'torchaudio': '2.1.0.dev20230504+cu118\r', 'torch': '2.1.0.dev20230503'}
+{'tag': 'cp38-cp38-win_amd64', 'torchaudio': '2.1.0.dev20230504+cu121\r', 'torch': '2.1.0.dev20230503'}
+{'tag': 'cp39-cp39-linux_x86_64', 'torchaudio': '2.1.0.dev20230401+cu118', 'torch': '2.1.0.dev20230331'}
+{'tag': 'cp39-cp39-linux_x86_64', 'torchaudio': '2.1.0.dev20230401+rocm5.3', 'torch': '2.1.0.dev20230331'}
+{'tag': 'cp39-cp39-linux_x86_64', 'torchaudio': '2.1.0.dev20230415+cu117', 'torch': '2.1.0.dev20230414'}
+{'tag': 'cp39-cp39-linux_x86_64', 'torchaudio': '2.1.0.dev20230501+cu117', 'torch': '2.1.0.dev20230430'}
+{'tag': 'cp39-cp39-linux_x86_64', 'torchaudio': '2.1.0.dev20230502+cu117', 'torch': '2.1.0.dev20230501'}
+{'tag': 'cp39-cp39-linux_x86_64', 'torchaudio': '2.1.0.dev20230503+rocm5.4.2', 'torch': '2.1.0.dev20230502'}
+{'tag': 'cp39-cp39-linux_x86_64', 'torchaudio': '2.1.0.dev20230504+rocm5.3', 'torch': '2.1.0.dev20230502'}
+{'tag': 'cp39-cp39-linux_x86_64', 'torchaudio': '2.1.0.dev20230504+rocm5.4.2', 'torch': '2.1.0.dev20230502'}
+{'tag': 'cp39-cp39-macosx_10_9_x86_64', 'torchaudio': '2.1.0.dev20230423', 'torch': '2.1.0.dev20230422'}
+{'tag': 'cp39-cp39-macosx_10_9_x86_64', 'torchaudio': '2.1.0.dev20230424', 'torch': '2.1.0.dev20230422'}
+{'tag': 'cp39-cp39-win_amd64', 'torchaudio': '2.1.0.dev20230404+cu118\r', 'torch': '2.1.0.dev20230403'}
+{'tag': 'cp39-cp39-win_amd64', 'torchaudio': '2.1.0.dev20230405+cu118\r', 'torch': '2.1.0.dev20230404'}
+{'tag': 'cp39-cp39-win_amd64', 'torchaudio': '2.1.0.dev20230406+cpu\r', 'torch': '2.1.0.dev20230405'}
+{'tag': 'cp39-cp39-win_amd64', 'torchaudio': '2.1.0.dev20230406+cu117\r', 'torch': '2.1.0.dev20230405'}
+{'tag': 'cp39-cp39-win_amd64', 'torchaudio': '2.1.0.dev20230406+cu118\r', 'torch': '2.1.0.dev20230405'}
+{'tag': 'cp39-cp39-win_amd64', 'torchaudio': '2.1.0.dev20230407+cu118\r', 'torch': '2.1.0.dev20230406'}
+{'tag': 'cp39-cp39-win_amd64', 'torchaudio': '2.1.0.dev20230408+cpu\r', 'torch': '2.1.0.dev20230407'}
+{'tag': 'cp39-cp39-win_amd64', 'torchaudio': '2.1.0.dev20230408+cu118\r', 'torch': '2.1.0.dev20230407'}
+{'tag': 'cp39-cp39-win_amd64', 'torchaudio': '2.1.0.dev20230409+cu118\r', 'torch': '2.1.0.dev20230408'}
+{'tag': 'cp39-cp39-win_amd64', 'torchaudio': '2.1.0.dev20230410+cu118\r', 'torch': '2.1.0.dev20230409'}
+{'tag': 'cp39-cp39-win_amd64', 'torchaudio': '2.1.0.dev20230412+cu118\r', 'torch': '2.1.0.dev20230411'}
+{'tag': 'cp39-cp39-win_amd64', 'torchaudio': '2.1.0.dev20230413+cu118\r', 'torch': '2.1.0.dev20230412'}
+{'tag': 'cp39-cp39-win_amd64', 'torchaudio': '2.1.0.dev20230428+cu118\r', 'torch': '2.1.0.dev20230427'}
+{'tag': 'cp39-cp39-win_amd64', 'torchaudio': '2.1.0.dev20230501+cu118\r', 'torch': '2.1.0.dev20230430'}
+{'tag': 'cp39-cp39-win_amd64', 'torchaudio': '2.1.0.dev20230504+cu117\r', 'torch': '2.1.0.dev20230503'}
+{'tag': 'cp39-cp39-win_amd64', 'torchaudio': '2.1.0.dev20230504+cu118\r', 'torch': '2.1.0.dev20230503'}
+{'tag': 'cp39-cp39-win_amd64', 'torchaudio': '2.1.0.dev20230504+cu121\r', 'torch': '2.1.0.dev20230503'}

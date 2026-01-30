@@ -1,25 +1,17 @@
-# torch.rand(B, 10, 1, 1, dtype=torch.float32)
+tb.add_scalar('loss', loss, global_step=self.train_step)
+
+t0 = time()
+s = Summary(value=[Summary.Value(tag='loss', simple_value=float(loss))])
+print(time()-t0)
+
 import torch
-import torch.nn as nn
+import time
+from torch.utils.tensorboard import SummaryWriter
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.fc = nn.Linear(10, 1)
-    
-    def forward(self, x):
-        x = x.view(x.size(0), -1)  # Flatten input tensor
-        return self.fc(x).mean()  # Return scalar value for logging
 
-def my_model_function():
-    model = MyModel()
-    # Initialize weights to avoid undefined parameters
-    with torch.no_grad():
-        model.fc.weight.fill_(0.1)
-        model.fc.bias.fill_(0.1)
-    return model
+tb_writer = SummaryWriter(log_dir=f"file://tensorboard",
+                          max_queue=100)
+for i in range(100):
+    tb_writer.add_scalar("train/epoch", i, i)
 
-def GetInput():
-    B = 1  # Batch size inferred from example loop
-    return torch.rand(B, 10, 1, 1, dtype=torch.float32)
-
+time.sleep(10)

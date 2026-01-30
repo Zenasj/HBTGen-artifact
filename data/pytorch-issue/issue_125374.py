@@ -1,21 +1,29 @@
-# (torch.rand(512, 512, dtype=torch.bfloat16, device='cuda'), torch.rand(512, 512, dtype=torch.bfloat16, device='cuda'))
 import torch
-from torch import nn
+import os
+import sys
+import shutil
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-    
-    def forward(self, x):
-        a, b = x
-        return torch.mm(a, b)
+directory_path = '/tmp/torchinductor_chilli/'
+if os.path.exists(directory_path) and os.path.isdir(directory_path):
+    shutil.rmtree(directory_path)
+import torch._inductor.config
+torch.set_default_device('cuda')
 
-def my_model_function():
-    return MyModel()
+torch._dynamo.config.automatic_dynamic_shapes = False
+# Needed since changing args to function causes recompiles
+torch._dynamo.config.cache_size_limit = 1000
 
-def GetInput():
-    N = 512
-    a = torch.randn(N, N, dtype=torch.bfloat16, device='cuda')
-    b = torch.randn(N, N, dtype=torch.bfloat16, device='cuda')
-    return (a, b)
+@torch.compile(mode="max-autotune-no-cudagraphs")
+def f(a, b):
+    return torch.mm(a, b)
 
+try:
+    for N in range(512, 1024, 16):
+        print(N)
+        a = torch.randn(N, N, dtype=torch.bfloat16)
+        b = torch.randn(N, N, dtype=torch.bfloat16)
+        f(a, b)
+except Exception as e:
+    print(e)
+    sys.exit(1)
+sys.exit(0)

@@ -1,48 +1,60 @@
-# tf.random.uniform((B, 5), dtype=tf.float32) ← Input shape inferred: batch_size x 5 features
+import random
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
-import tensorflow as tf
+def get_model(num_inputs, num_outputs):
+    from keras.layers import Dense, Input
+    from keras.models import Model
 
-class MyModel(tf.keras.Model):
-    def __init__(self, num_inputs=5, num_outputs=3):
-        super().__init__()
-        # Simple Dense layer producing multiple outputs (num_outputs)
-        self.dense = tf.keras.layers.Dense(num_outputs)
-
-    def call(self, inputs):
-        # inputs shape: (batch_size, num_inputs)
-        return self.dense(inputs)
+    inputs = Input((num_inputs,))
+    outputs = Dense(num_outputs)(inputs)
+    return Model(inputs, outputs)
 
 
-class CustomAUC(tf.keras.metrics.AUC):
-    """
-    AUC metric for a single output in a multi-output scenario.
-    Extends tf.keras.metrics.AUC but only evaluates on one output index.
-    """
-    def __init__(self, output_index, name=None, **kwargs):
-        # Provide a distinct name per output
-        if not name:
-            name = f"custom_auc_{output_index}"
-        super().__init__(name=name, **kwargs)
-        self.output_index = output_index
+def get_custom_auc(output):
+    import tensorflow as tf
 
-    def update_state(self, y_true, y_pred, sample_weight=None):
-        # Select the relevant output slice
-        y_true_slice = y_true[:, self.output_index]
-        y_pred_slice = y_pred[:, self.output_index]
-        # AUC expects predictions to be in [0,1] for ROC AUC - 
-        # so we apply sigmoid activation here for safety.
-        y_pred_slice = tf.math.sigmoid(y_pred_slice)
-        return super().update_state(y_true_slice, y_pred_slice, sample_weight)
+    # I may also want to use other metrics other than AUC (e.g. BinaryAccuracy).
+    auc = tf.metrics.AUC()
+
+    @tf.function
+    def custom_auc(y_true, y_pred):
+        y_true = y_true[:, output]
+        y_pred = y_pred[:, output]
+        auc.update_state(y_true, y_pred)
+        return auc.result()
+
+    custom_auc.__name__ = "custom_auc_" + str(output)
+    return custom_auc
 
 
-def my_model_function():
-    # Return an instance of MyModel with default parameters (5 inputs, 3 outputs)
-    return MyModel(num_inputs=5, num_outputs=3)
+def train():
+    import numpy as np
+
+    num_inputs = 5
+   
+    # I want to implement an AUC metric for each of these outputs SEPARATELY.
+    num_outputs = 3 
+
+    num_examples = 10
+
+    model = get_model(num_inputs, num_outputs)
+
+    # Create a separate AUC metric for each of the outputs.
+    metrics = [get_custom_auc(m) for m in range(num_outputs)]
+
+    # I want to visualize the metrics for each of the outputs (separately) during training.
+    model.compile(loss='mse', metrics=metrics, optimizer='adam')
+
+    print(model.metrics)
+
+    # Error occurs when calling fit.
+    model.fit(np.random.rand(num_examples, num_inputs), np.zeros((num_examples, num_outputs)))
 
 
-def GetInput():
-    # Return a random tensor matching expected input shape
-    # Using float32 for compatibility with common TF models
-    # Shape: (batch_size=8, num_inputs=5)
-    return tf.random.uniform((8, 5), minval=0, maxval=1, dtype=tf.float32)
+if __name__ == '__main__':
+    train()
 
+priority
+
+department

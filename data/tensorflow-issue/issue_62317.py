@@ -1,69 +1,42 @@
-# tf.random.uniform(()) ← Text input is a scalar string tensor, no fixed numerical shape
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
-from tensorflow.keras.layers import Input, TextVectorization, Embedding, GlobalAveragePooling1D, Dense
-from tensorflow.keras.models import Model
+from tensorflow import keras
+import pandas as pd
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # TextVectorization adapted on sample data from the issue:
-        self.vectorizer = TextVectorization(
-            max_tokens=20,
-            output_mode='int',
-            output_sequence_length=5,
-            pad_to_max_tokens=True
-        )
-        # We will adapt the vectorizer in __init__ with example data:
-        example_text = tf.constant([
-            "This is shit",
-            "I hate this",
-            "Great I love this!!!"
-        ])
-        self.vectorizer.adapt(example_text)
+from keras.layers import Input, TextVectorization, Embedding, GlobalAveragePooling1D, Dense
+from keras.models import Model
 
-        # Embedding layer, updated to use current Keras API without `input_length` (deprecated)
-        self.embedding = Embedding(input_dim=20, output_dim=100)
+train_df = pd.DataFrame({'review':['This is shit', 'I hate this', 'Great I love this!!!'],
+                         'label': [0, 0, 1]})
+X_train = train_df['review'].values
+y_train = train_df['label'].values
 
-        self.pooling = GlobalAveragePooling1D()
-        self.output_layer = Dense(1, activation='sigmoid', name='output')
+# Define a Functional model:
+vectorizer = TextVectorization(max_tokens=20, output_mode='int', output_sequence_length=5, pad_to_max_tokens=True)
+vectorizer.adapt(X_train)
 
-    def call(self, inputs):
-        # inputs is a batch of strings: shape (batch_size, 1) or (batch_size,)
-        x = self.vectorizer(inputs)
-        x = self.embedding(x)
-        x = self.pooling(x)
-        output = self.output_layer(x)
-        return output
+text_input = Input(shape=(1,), dtype=tf.string, name='text_input')
+vectorizer_text = vectorizer(text_input)
+embedding = Embedding(input_dim=20, input_length=5, output_dim=100)(vectorizer_text)
+pooled = GlobalAveragePooling1D()(embedding)
+output = Dense(1, activation='sigmoid', name='output')(pooled)
 
+# Create the functional model
+model = Model(inputs=text_input, outputs=output)
 
-def my_model_function():
-    # Returns an instance of the model compiled with RMSprop optimizer
-    model = MyModel()
+# Compile
+optimizer_config = {'class_name': 'rmsprop', 'config': {'lr': 0.0001}}
+model.compile(optimizer=tf.keras.optimizers.get(optimizer_config), loss='binary_crossentropy', metrics=['accuracy'])
 
-    # Based on the issue discussion:
-    # Use optimizer config with updated parameter names compatible with Keras 3+ / TF 2.20
-    optimizer_config = {'class_name': 'RMSprop', 'config': {'learning_rate': 0.0001}}
-    optimizer = tf.keras.optimizers.get(optimizer_config)
+# Train the model
+model.fit(X_train, y_train, epochs=10)
 
-    model.compile(
-        optimizer=optimizer,
-        loss='binary_crossentropy',
-        metrics=['accuracy']
-    )
-    return model
+# Save the model:
+save_path = '/content/'
+model.save(save_path + 'my_model.keras')
 
-
-def GetInput():
-    # Return a batch of random string tensors matching input shape expected by MyModel
-    # Input shape expected: a batch of shape (batch_size,), dtype string.
-    # We use some example sentences similar to those used for adapting the vectorizer
-    texts = [
-        "I love TensorFlow",
-        "This model is great",
-        "Keras makes life easier",
-        "Bug fixes are important",
-    ]
-    # Convert to a tensor of shape (batch_size,)
-    return tf.constant(texts)
-
+# Load the model:
+loaded_model = tf.keras.models.load_model(save_path + 'my_model.keras')

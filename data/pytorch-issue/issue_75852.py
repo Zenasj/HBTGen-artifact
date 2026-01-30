@@ -1,29 +1,11 @@
-# torch.rand(1, requires_grad=True) ← Add a comment line at the top with the inferred input shape
-
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, params):
-        # Cast params to complex float to avoid the error
-        out = torch.stack([params.cfloat(), 1j * params], dim=1)
-        return out.sum()
+params = torch.rand(1, requires_grad=True)
+out = torch.stack([params, 1j*params], 1)
+loss = out.sum()
+print(loss)
+loss.backward()
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+out = torch.stack([params.cfloat(), 1j*params], 1)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(1, requires_grad=True)
-
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# loss = model(input_tensor)
-# loss.backward()
-
-# This code defines a `MyModel` class that takes a single parameter and stacks it with its imaginary counterpart. The `GetInput` function generates a random tensor with `requires_grad=True` to match the input expected by `MyModel`. The `forward` method casts the input to complex float to avoid the error described in the issue.
+out = torch.cat([params.unsqueeze(1), 1j*params.unsqueeze(1)], 1)

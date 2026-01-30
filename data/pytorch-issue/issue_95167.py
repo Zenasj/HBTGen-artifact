@@ -1,47 +1,57 @@
-# torch.randint(0, 8, (20,), dtype=torch.long), torch.sort(torch.randint(0, 20, (3,), dtype=torch.long))[0], torch.randn(2, requires_grad=True)
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-class MyModel(nn.Module):
+import torch
+class BasicModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.weight = nn.Parameter(torch.randn(8, 2), requires_grad=True)  # Matches weight shape in original example
 
-    def embedding_forward(self, input_indices, offsets):
-        return F.embedding_bag(
-            input_indices,
-            self.weight,
-            offsets=offsets,
-            mode='mean',
-            sparse=False,
-            scale_grad_by_freq=False,
-            max_norm=-1.0  # Key parameter causing the issue
-        )
-    
-    def f_forward(self, x):
-        # Reproduces the second minimal example's in-place mutation pattern
-        temp = x.detach()
-        temp.add_(1)
-        return x * 2
+    def forward(self, input_dict):
+        return torch.nn.functional.embedding_bag(**input_dict)
 
-    def forward(self, inputs):
-        input_indices, offsets, x = inputs  # Unpack both scenarios' inputs
-        emb_out = self.embedding_forward(input_indices, offsets)
-        f_out = self.f_forward(x)
-        return emb_out, f_out  # Return both outputs for error observation
 
-def my_model_function():
-    return MyModel()
+if __name__ == "__main__":
+    input_dict = {
+        "input": torch.LongTensor(
+            [3, 1, 1, 5, 4, 3, 2, 6, 3, 5, 6, 5, 6, 0, 6, 4, 3, 5, 7, 7]
+        ),
+        "weight": torch.tensor(
+            [
+                [0.4597, 0.3764],
+                [0.0013, 0.1590],
+                [0.3964, 0.0136],
+                [0.2254, 0.2905],
+                [0.8277, 0.8274],
+                [0.6265, 0.7479],
+                [0.1626, 0.6431],
+                [0.1259, 0.1363],
+            ],
+            requires_grad=True,
+        ),
+        "offsets": torch.LongTensor([0, 3, 10]),
+        "mode": "mean",
+        "sparse": False,
+        "scale_grad_by_freq": False,
+        "max_norm": -1.0,
+    }
 
-def GetInput():
-    # Generate inputs for both scenarios:
-    # 1. EmbeddingBag scenario inputs
-    input_indices = torch.randint(0, 8, (20,), dtype=torch.long)  # Matches indices in original example
-    offsets = torch.sort(torch.randint(0, 20, (3,), dtype=torch.long))[0]  # Ensure sorted offsets
-    
-    # 2. Minimal in-place mutation scenario input
-    x = torch.randn(2, requires_grad=True)  # Matches second example's input
-    
-    return (input_indices, offsets, x)
+    model = BasicModule()
+    model = torch.compile(model)
+    fwd_res = model(input_dict)
+    print(fwd_res)
 
+import torch
+
+@torch.compile(backend="aot_eager")
+def f(x):
+    x.detach().add_(1)
+    return x * 2
+
+out = f(torch.ones(2, requires_grad=True))
+
+x.mul_(2).detach().mul_(3)
+
+def f(x):
+    x.mul_(2)
+    with torch.no_grad():
+        x.mul_(3)
+    x.mul_(4)

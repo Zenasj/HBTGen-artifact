@@ -1,17 +1,14 @@
-# torch.rand(20, 10, dtype=torch.float32)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        return x
+def foo():
+    current =  '''
+        graph(%x : Float(20:10, 10:1)):
+            return (%x)
+    '''
+    graph = torch._C.parse_ir(current)
+    print(graph)
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(20, 10, dtype=torch.float32)
-
+    desired =  '''
+        graph(%x : Float(20, 10, strides=[10, 1])):
+            return (%x)
+    '''

@@ -1,27 +1,34 @@
-# tf.random.uniform(()) ← The model input is a scalar tensor (single float) as seen in the example train(x) where x is a scalar
-
 import tensorflow as tf
+from tensorflow.python import pywrap_mlir
+from pathlib import Path
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Variables similar to those in the example tf.Module
-        self.w = tf.Variable(5.0, name='weight')
-        self.b = tf.Variable(0.0, name='bias')
 
-    @tf.function
-    def call(self, x):
-        # Emulate the 'train' method behavior: update w and b by adding x
-        self.w.assign_add(x)
-        self.b.assign_add(x)
-        return self.w
+class MyModel(tf.Module):
+  def __init__(self, **kwargs):
+    super().__init__(**kwargs)
+    self.w = tf.Variable(5.0, name='weight')
+    self.b = tf.Variable(0.0, name='bias')
 
-def my_model_function():
-    # Return an instance of MyModel with initialized variables
-    return MyModel()
+  @tf.function
+  def train(self, x):
+    self.w.assign_add(x)
+    self.b.assign_add(x)
+    return self.w
 
-def GetInput():
-    # Return a scalar float tensor as input for MyModel
-    # Corresponds to tf.constant(3.0) or similar scalar float used in the example
-    return tf.random.uniform(shape=(), dtype=tf.float32)
 
+m = MyModel()
+m.train(tf.constant(3.0))
+m.train(tf.constant(4.0))
+tf.saved_model.save(m, '/tmp/simple-model')
+
+
+def convert_to_hlo(model_path: str):
+  result = pywrap_mlir.experimental_convert_saved_model_to_mlir(
+      model_path, "", show_debug_info=False)
+  pipeline = ["tf-lower-to-mlprogram-and-hlo"]
+  result = pywrap_mlir.experimental_run_pass_pipeline(
+      result, ",".join(pipeline), show_debug_info=False)
+  return result
+
+Path("/tmp/simple-model.mlir").write_text(
+  convert_to_hlo("/tmp/simple-model"))

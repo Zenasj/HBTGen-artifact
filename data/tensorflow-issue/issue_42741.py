@@ -1,39 +1,61 @@
-# tf.random.uniform((B, 784), dtype=tf.float32)  <- Input shape inferred from SimpleModel's input_shape=(784,)
-
 import tensorflow as tf
 from tensorflow import keras
+from tensorflow.keras import layers
 
-class MyModel(tf.keras.Model):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        # Replicating the SimpleModel architecture described in the issue
-        # Dense(512, relu) -> Dropout(0.2) -> Dense(10)
-        # input shape: (None, 784)
-        self.layer_1 = keras.layers.Dense(512, activation='relu', input_shape=(784,))
-        self.layer_2 = keras.layers.Dropout(0.2)
-        self.layer_3 = keras.layers.Dense(10)
+checkpoint_path = "training_1/cp.ckpt"
+checkpoint_dir = os.path.dirname(checkpoint_path)
 
-    def call(self, inputs, training=False):
-        x = self.layer_1(inputs)
-        x = self.layer_2(x, training=training)
-        return self.layer_3(x)
+# Create a callback that saves the model's weights
+cp_callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_path,
+                                                 save_weights_only=True,
+                                                 verbose=1)
 
+# Train the model with the new callback
+model.fit(train_images, 
+          train_labels,  
+          epochs=10,
+          validation_data=(test_images,test_labels),
+          callbacks=[cp_callback])  # Pass callback to training
 
-def my_model_function():
-    # Return an instance of MyModel
-    model = MyModel()
-    # Typical compilation for classification task (not strictly required here but good practice)
-    model.compile(optimizer='adam',
-                  loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
-                  metrics=['accuracy'])
-    return model
+checkpoint_path = "training_1/cp.ckpt"
+checkpoint_dir = os.path.dirname(checkpoint_path)
 
+# Create a callback that saves the model's weights
+cp_callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_path,
+                                                 save_weights_only=False,   # <- this is the change I made 
+                                                 verbose=1)
 
-def GetInput():
-    # Create a random batch of input data with shape (B, 784)
-    # Use batch size 32 as a common default
-    batch_size = 32
-    input_shape = (batch_size, 784)
-    # Using float32 as it's standard for TF keras models
-    return tf.random.uniform(input_shape, dtype=tf.float32)
+# Train the model with the new callback
+model.fit(train_images, 
+          train_labels,  
+          epochs=10,
+          validation_data=(test_images,test_labels),
+          callbacks=[cp_callback])  # Pass callback to training
 
+class SimpleModel(tf.keras.Model):
+  def __init__(self, **kwargs):
+    super().__init__(**kwargs)
+    self.layer_1 = keras.layers.Dense(512, activation='relu', input_shape=(784,))
+    self.layer_2 = keras.layers.Dropout(0.2)
+    self.layer_3 = keras.layers.Dense(10)
+  
+  def call(self, inputs):
+    x = self.layer_1(inputs)
+    x = self.layer_2(x)
+    return self.layer_3(x)
+
+def set_model(self, model):
+    self.model = model
+    # Use name matching rather than `isinstance` to avoid circular dependencies.
+    if (not self.save_weights_only and
+        not model._is_graph_network and  # pylint: disable=protected-access
+        model.__class__.__name__ != 'Sequential'):
+      self.save_weights_only = True
+
+class CustomCheckpoint(tf.keras.callbacks.ModelCheckpoint):
+    def set_model(self, model):
+        self.model = model
+
+class CustomCheckpoint(tf.keras.callbacks.ModelCheckpoint):
+    def set_model(self, model):
+        self.model = model

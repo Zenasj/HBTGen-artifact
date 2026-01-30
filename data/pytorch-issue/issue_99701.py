@@ -1,53 +1,78 @@
-# torch.rand(B, S, E, dtype=torch.float32)  # B=batch_size, S=sequence_length, E=embedding_dim
-import torch
 import torch.nn as nn
+import random
 
-class CustomMultiheadAttention(nn.Module):
-    def __init__(self, embed_dim, num_heads):
-        super().__init__()
-        self.embed_dim = embed_dim
-        self.num_heads = num_heads
-        self.head_dim = embed_dim // num_heads
-        assert self.head_dim * num_heads == embed_dim, "embed_dim must be divisible by num_heads"
-        self.in_proj = nn.Linear(embed_dim, 3 * embed_dim)
-        self.out_proj = nn.Linear(embed_dim, embed_dim)
+import torch
+from torch import nn
+import onnxruntime
+import numpy as np
 
-    def forward(self, query, key, value):
-        tgt_len, bsz, embed_dim = query.size()
-        src_len, _, _ = key.size()
-        assert embed_dim == self.embed_dim, f"Expected {self.embed_dim}, got {embed_dim}"
+# using pytorch native Transformer
+model = nn.Transformer(
+    d_model=512,
+    nhead= 8,
+    num_encoder_layers = 6,
+    num_decoder_layers= 6,
+    dim_feedforward= 2048,
+    dropout= 0.1,
+    batch_first=True,
+    norm_first=True
+)
 
-        qkv = self.in_proj(query)
-        q, k, v = torch.split(qkv, self.embed_dim, dim=-1)
+model.eval()
+model.cuda()
 
-        # Fix: use src_len/tgt_len as symbolic dimensions instead of tensor.shape[0]
-        q = q.contiguous().view(tgt_len, bsz * self.num_heads, self.head_dim).transpose(0, 1)
-        k = k.contiguous().view(src_len, bsz * self.num_heads, self.head_dim).transpose(0, 1)
-        v = v.contiguous().view(src_len, bsz * self.num_heads, self.head_dim).transpose(0, 1)
+# onnx export
+with torch.inference_mode(), torch.cuda.amp.autocast():
+    torch.onnx.export(
+        model=model, 
+        args=(
+            torch.randn(1, 30, 512, device="cuda"),
+            torch.randn(1, 30, 512, device="cuda"),
+        ), 
+        f="test.onnx", 
+        verbose=False, 
+        input_names=["tgt", "memory"], 
+        output_names=[ "out" ],
+        do_constant_folding=True,
+        export_params=True,
+        dynamic_axes={
+            "tgt": {0: 'batch_size', 1: "enc_seq_length"},        # variable length axes
+            "memory": {0: 'batch_size', 1: "dec_seq_length"},
+            "out": {0: 'batch_size', 1: "out_seq_length"}
+        },
 
-        # Simplified attention computation (for demonstration)
-        attn_weights = torch.bmm(q, k.transpose(1, 2)) / (self.head_dim ** 0.5)
-        attn_weights = torch.softmax(attn_weights, dim=-1)
-        attn_output = torch.bmm(attn_weights, v)
-        attn_output = attn_output.transpose(0, 1).contiguous().view(tgt_len, bsz, self.embed_dim)
-        return self.out_proj(attn_output), None  # Dummy attention weights
+    )
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.d_model = 512
-        self.nhead = 8
-        self.attention = CustomMultiheadAttention(self.d_model, self.nhead)
-        self.norm = nn.LayerNorm(self.d_model)
+assert 'CUDAExecutionProvider' in onnxruntime.get_available_providers()
+device_name = 'gpu'
 
-    def forward(self, x):
-        attn_output, _ = self.attention(x, x, x)
-        return self.norm(x + attn_output)
+sess_options = onnxruntime.SessionOptions()
+dec_session = onnxruntime.InferenceSession(
+    "test.onnx", 
+    sess_options,
+    providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+)
 
-def my_model_function():
-    return MyModel()
+# the following works
+mem = np.random.rand(1, 30, 512).astype(np.float32)
+tgt = np.random.rand(1, 30, 512).astype(np.float32)
+ort_inputs = {"memory": mem, "tgt": tgt}
+ort_outs = dec_session.run(None, ort_inputs)
+out = ort_outs[0]
+print("this works!")
 
-def GetInput():
-    # Returns a random input tensor matching (batch_size, seq_len, embedding_dim)
-    return torch.rand(1, 30, 512, dtype=torch.float32)
+# the following also works
+mem = np.random.rand(5, 30, 512).astype(np.float32)
+tgt = np.random.rand(5, 30, 512).astype(np.float32)
+ort_inputs = {"memory": mem, "tgt": tgt}
+ort_outs = dec_session.run(None, ort_inputs)
+out = ort_outs[0]
+print("this also works!")
 
+# the following does not work
+mem = np.random.rand(1, 20, 512).astype(np.float32)
+tgt = np.random.rand(1, 20, 512).astype(np.float32)
+ort_inputs = {"memory": mem, "tgt": tgt}
+ort_outs = dec_session.run(None, ort_inputs)
+out = ort_outs[0]
+print("this also also works!")

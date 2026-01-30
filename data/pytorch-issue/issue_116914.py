@@ -1,22 +1,19 @@
-# torch.rand(3, 2, dtype=torch.float32)
-import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
+import torch
+
+class Model(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.relu = nn.ReLU()
-        # Register aa as a buffer to avoid it being treated as an input during export
-        self.register_buffer('aa', torch.tensor([[0], [1], [2]], dtype=torch.float32))
+        self.relu = torch.nn.ReLU()
 
     def forward(self, x):
-        aa_expanded = self.aa.expand_as(x)
-        return self.relu(aa_expanded)
+        aa = torch.tensor([[0], [1], [2]])
+        aa.expand_as(x)
+        return self.relu(aa)
 
-def my_model_function():
-    return MyModel()
+x = torch.ones(3, 2)
+exported_program = export(Model(), args=(x,))
+unflattened_module = unflatten(exported_program)
 
-def GetInput():
-    # Generate random input matching expected shape (3,2)
-    return torch.rand(3, 2, dtype=torch.float32)
-
+unflattened_module(x)

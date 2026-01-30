@@ -1,8 +1,8 @@
-# torch.rand(2, 1, dtype=torch.float32) ← Add a comment line at the top with the inferred input shape
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+
+class ModuleListTruncated(nn.Module):
     def __init__(self):
         super().__init__()
         self.fcs = nn.ModuleList([nn.Linear(1, 1) for _ in range(2)])
@@ -12,11 +12,9 @@ class MyModel(nn.Module):
             x = fc(x)
         return x
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(2, 1, dtype=torch.float32)
+x = torch.rand(2, 1)
+mod_truncated = ModuleListTruncated()
 
+# torch.export.export(mod_truncated, (x,), strict=True)  # passes
+torch.export.export(mod_truncated, (x,), strict=False)  # fails

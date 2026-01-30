@@ -1,32 +1,23 @@
-# torch.rand(B, C, dtype=torch.float16)
-import torch
 import torch.nn as nn
+
+import torch
 import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def __init__(self, in_features=6, out_features=2):
-        super().__init__()
-        self.weight = nn.Parameter(torch.randn(out_features, in_features, dtype=torch.float16))
+torch.set_printoptions(20)
+inputs=torch.randn(2,6, dtype=torch.float16)
+weights=torch.randn(2,6, dtype=torch.float16)
 
-    def forward(self, x):
-        # Compute standard linear output
-        standard = F.linear(x, self.weight)
-        
-        # Split input and weights for distributed computation
-        x1, x2 = x.split([3, 3], dim=1)  # Split input features into two parts
-        w1, w2 = self.weight.split([3, 3], dim=1)  # Split weights' columns into two parts
-        
-        # Compute distributed outputs and sum them
-        part1 = F.linear(x1, w1)
-        part2 = F.linear(x2, w2)
-        distributed = part1 + part2
-        
-        # Return the difference between standard and distributed outputs
-        return standard - distributed
+outputs=F.linear(
+    inputs,
+    inputs
+)
 
-def my_model_function():
-    return MyModel()
+input1, input2=inputs.split(3,dim=1)
+weight1, weight2=inputs.split(3, dim=1)
 
-def GetInput():
-    return torch.rand(2, 6, dtype=torch.float16)
-
+dist_output=F.linear(input1, weight1)+F.linear(input2, weight2)
+print(
+    dist_output==outputs,'\n',
+    outputs,'\n',
+    dist_output, '\n'
+)

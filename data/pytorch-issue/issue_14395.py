@@ -1,21 +1,16 @@
-# torch.rand(B, C, D, H, W, dtype=torch.float32)
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Core layer causing ONNX export issue
-        self.pool = nn.AdaptiveAvgPool3d(1)
-    
-    def forward(self, x):
-        return self.pool(x)
+avg_pool = nn.AdaptiveAvgPool3d(1)
 
-def my_model_function():
-    # Returns the model instance with default initialization
-    return MyModel()
+torch_out = torch.onnx._export(model,
+                                   input,
+                                   "model_caff2.onnx",
+                                   export_params=False)
 
-def GetInput():
-    # Returns random 5D tensor (B,C,D,H,W) compatible with 3D convolution
-    return torch.rand(1, 3, 16, 64, 64, dtype=torch.float32)
-
+import onnx
+import caffe2.python.onnx.backend as onnx_caffe2_backend
+model = onnx.load(onnx_file_path)
+prepared_backend = onnx_caffe2_backend.prepare(model)
+W = {model.graph.input[0].name: input_tensor.data.numpy()}
+c2_out = prepared_backend.run(W)[0]

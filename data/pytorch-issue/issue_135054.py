@@ -1,32 +1,23 @@
-# torch.rand(1, 2, dtype=torch.float32)
-import torch
-from torch import nn
+[Singleton(), InputDim(input_dim=1), Flatten(input_dims=(InputDim(input_dim=2), InputDim(input_dim=3)))]
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Encapsulate both scenarios (shard dimension size 1 vs others)
-        self.view_op = nn.Identity()  # Placeholder for view operation logic
-    
-    def forward(self, x):
-        # Simulate the view operation and compare behavior for different cases
-        # Case 1: dimension 0 size 1 (problematic case)
-        # Case 2: dimension 0 size >1 (non-problematic case)
-        # Compare outputs using placeholder logic
-        if x.shape[0] == 1:
-            # Simulate replication (e.g., return all dimensions as replicated)
-            return x.view(-1)  # Simplified replication effect
-        else:
-            # Maintain sharded behavior
-            return x.view(x.shape)  # No change
-        
-        # Return comparison result (placeholder)
-        return torch.tensor(True)  # Indicates difference between cases
+[InputDim(input_dim=0), InputDim(input_dim=1), Flatten(input_dims=(InputDim(input_dim=2), InputDim(input_dim=3)))]
 
-def my_model_function():
-    return MyModel()
+self.assertEqual(
+    view_groups([1, 1, 3, 2, 1, 1], [6, 1, 1, 1]),
+    (
+        Flatten((InputDim(2), InputDim(3))),
+        Singleton(),
+        Singleton(),
+        Singleton(),
+    ),
+)
+# since the change in the PR modifies rules and it becomes 
+# (Flatten(input_dims=(InputDim(input_dim=2), InputDim(input_dim=3))), InputDim(input_dim=4), InputDim(input_dim=5), Singleton())
 
-def GetInput():
-    # Input that triggers the problematic case (dimension 0 size 1)
-    return torch.rand(1, 2, dtype=torch.float32)
-
+self.dimmap_test(
+    Tensor.view,
+    (randn(1, 1, 42, 1, 24, 1), -1),
+    (Flatten((InputDim(2), InputDim(4))),),
+)
+# since the change in the PR modifies rules and it becomes 
+# (Flatten(input_dims=(InputDim(input_dim=2), InputDim(input_dim=3), InputDim(input_dim=4))),)

@@ -1,24 +1,26 @@
-# tf.random.uniform((B, 1), dtype=tf.float32) ← Input shape inferred from example: input_shape=(1,)
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
+from tensorflow import keras
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Simple dense layer matching the sample from the issue: Dense(1, input_shape=(1,))
-        self.dense = tf.keras.layers.Dense(1)
+fetches = [lambda: whatever_I_write_here_is_ignored]
 
-    def call(self, inputs, training=False):
-        # Forward pass through dense layer
-        return self.dense(inputs)
+var = tf.Variable([[3.0]])
+model = keras.models.Sequential([keras.layers.Dense(1, input_shape=(1,))])
+model.compile(loss="mse", optimizer="adam")
+model._function_kwargs = {"fetches": fetches, "should_fail": "ignored_as_well"}
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+model.fit([[7.0]], [[9.0]], epochs=2)
 
-def GetInput():
-    # Generate a random tensor compatible with input_shape=(1,)
-    # Assuming batch size = 4 for example
-    batch_size = 4
-    return tf.random.uniform((batch_size, 1), dtype=tf.float32)
+import keras
+import tensorflow as tf
 
+fetches = [lambda: whatever_I_write_here_is_ignored]
+
+var = tf.Variable([[3.0]])
+model = keras.models.Sequential([keras.layers.Dense(1, input_shape=(1,))])
+model.compile(loss="mse", optimizer="adam")
+model._function_kwargs = {"fetches": fetches, "should_fail": "ignored_as_well"}
+
+model.fit([[7.0]], [[9.0]], epochs=2)

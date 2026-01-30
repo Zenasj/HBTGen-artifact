@@ -1,20 +1,25 @@
-# torch.rand(B, 10, dtype=torch.float32)  # Example input shape from DDP training (B=20)
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.layer = nn.Linear(10, 10)  # Matches the DDP example's input/output dimensions
+# directly calling c10d APIs from python
+with torch.autograd.profiler.profile() as prof:
+    pending_work = []
+    for i in range(5):
+        w = dist.all_reduce(torch.ones(i), async_op=True)
+        pending_work.append(ww)
+    for w in pending_work:
+        w.wait()
+            
+# Should show time and ideally shapes for each input
+print(prof.key_averages.table())
 
-    def forward(self, x):
-        return self.layer(x)
+# DDP training, should include profiling of c10d calls. 
+ddp_model = DDP(model, device_ids=[torch.cuda.current_device()])
+# forward pass of models with c10d collectives should be profiled. 
+with torch.autograd.profiler.profile() as prof:
+    outputs = ddp_model(torch.randn(20, 10).to(torch.cuda.current_device()))
+    loss_fn(outputs, labels).backward()
 
-def my_model_function():
-    # Returns a model instance matching the DDP example's structure
-    return MyModel()
-
-def GetInput():
-    # Returns input matching the DDP example's torch.randn(20, 10)
-    return torch.randn(20, 10, dtype=torch.float32)
-
+with profiler():
+    with record_funcion("allreduce"):
+        work = dist.all_reduce(async_op = True)
+    work.wait()

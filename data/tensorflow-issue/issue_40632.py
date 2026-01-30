@@ -1,49 +1,89 @@
-# tf.random.uniform((N, N), dtype=tf.float32) for each input, with 2 inputs concatenated along last axis
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
+import numpy as np
+from tensorflow.keras.optimizers import Adam
 
-class MyModel(tf.keras.Model):
+print(tf.__version__)
+
+class MultiInputLinear(tf.keras.layers.Layer):
     def __init__(self, output_dim=32, n_inputs=2):
-        super(MyModel, self).__init__()
+        super(MultiInputLinear, self).__init__()
         self.output_dim = output_dim
         self.n_inputs = n_inputs
-        self.W_list = []
+
 
     def build(self, input_shapes):
-        # input_shapes is list of shapes for each input tensor, each shape (batch_size, input_dim)
         self.input_dim = input_shapes[0][1]
 
-        # Create separate weights for each input; do NOT concatenate here to preserve gradient tracking
+        self.W = tf.concat(
+            [
+                self.add_weight(
+                    name=f'W_{i}',
+                    shape=(self.input_dim, self.output_dim),
+                    initializer='random_normal',
+                    trainable=True
+                ) for i in range(self.n_inputs)
+            ], axis=0
+        )
+
+    def call(self, inputs):  
+        supports = tf.concat(inputs, axis=-1)        
+        return tf.matmul(supports, self.W)
+
+N = 100
+A = [np.random.normal(size=(N, N)) for _ in range(2)]
+y = np.random.binomial(1, .1, size=(N, 32))
+
+A_in = [tf.keras.layers.Input(batch_size=N, shape=(N, )) for _ in range(2)]
+Y = MultiInputLinear(y.shape[1], 2)(A_in)
+
+model = tf.keras.models.Model(inputs=A_in, outputs=Y)
+model.compile(loss='categorical_crossentropy', optimizer=Adam())
+
+model.fit(A, y, batch_size=N)
+
+import tensorflow as tf
+import numpy as np
+from tensorflow.keras.optimizers import Adam
+
+class MultiInputLinear(tf.keras.layers.Layer):
+    def __init__(self, output_dim=32, n_inputs=2):
+        super(MultiInputLinear, self).__init__()
+        self.output_dim = output_dim
+        self.n_inputs = n_inputs
+
+
+    def build(self, input_shapes):
+        self.input_dim = input_shapes[0][1]
+
         self.W_list = [
-            self.add_weight(
-                name=f'W_{i}',
-                shape=(self.input_dim, self.output_dim),
-                initializer='random_normal',
-                trainable=True
-            ) for i in range(self.n_inputs)
-        ]
+                self.add_weight(
+                    name=f'W_{i}',
+                    shape=(self.input_dim, self.output_dim),
+                    initializer='random_normal',
+                    trainable=True
+                ) for i in range(self.n_inputs)
+            ]
 
-    def call(self, inputs):
-        # inputs: list of tensors (batch_size, input_dim)
-        # Concatenate inputs along last axis to get combined (batch_size, input_dim * n_inputs)
+    def call(self, inputs):  
         supports = tf.concat(inputs, axis=-1)
-
-        # Concatenate weights to (input_dim * n_inputs, output_dim)
         W = tf.concat(self.W_list, axis=0)
 
-        # Multiply supports with weights
         return tf.matmul(supports, W)
 
+N = 100
+A = [np.random.normal(size=(N, N)) for _ in range(2)]
+y = np.random.binomial(1, .1, size=(N, 32))
 
-def my_model_function():
-    # Instantiate MyModel with 2 inputs and output dim 32 as in the example
-    return MyModel(output_dim=32, n_inputs=2)
+A_in = [tf.keras.layers.Input(batch_size=N, shape=(N, )) for _ in range(2)]
+Y = MultiInputLinear(y.shape[1], 2)(A_in)
 
+model = tf.keras.models.Model(inputs=A_in, outputs=Y)
+model.compile(loss='categorical_crossentropy', optimizer=Adam())
 
-def GetInput():
-    # According to example: batch_size N=100, each input tensor shape (N, N)
-    N = 100
-    # Generate 2 random input tensors shaped (N, N)
-    # Use tf.random.uniform to produce float32 tensors compatible with model
-    return [tf.random.uniform((N, N), dtype=tf.float32) for _ in range(2)]
-
+model.fit(A, y, batch_size=N)

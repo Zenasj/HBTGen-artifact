@@ -1,44 +1,33 @@
-# torch.rand(B, 3, 736, 1312, dtype=torch.float32)
 import torch
-import torch.nn as nn
+import numpy as np
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # InceptionResNetv2 backbone (simplified structure)
-        self.backbone = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3),
-            nn.InstanceNorm2d(64),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
-            # InceptionA blocks (hypothetical)
-            nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1),
-            nn.InstanceNorm2d(128),
-            nn.ReLU(inplace=True),
-            # FPN layers (simplified)
-            nn.Conv2d(128, 256, kernel_size=1),
-            nn.InstanceNorm2d(256),
-            nn.ReLU(inplace=True),
-        )
-        # Feature Pyramid Network (FPN) head
-        self.fpn_head = nn.Sequential(
-            nn.Conv2d(256, 128, kernel_size=3, padding=1),
-            nn.InstanceNorm2d(128),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(128, 3, kernel_size=1),
-        )
+dummy_input = torch.randn(1, 3, 736, 1312, device='cpu', requires_grad=True)
+inputs = ['input']
+outputs = ['output']
+dynamic_axes = {'input':{1:'height', 2:'width'},
+                           'output':{1:'height', 2:'width'}}
+torch.onnx.export(predictor.model.eval(), dummy_input, "FPNInception.onnx",
+                             export_params=True, do_constant_folding=True,
+                             input_names=inputs, output_names=outputs, dynamic_axes=dynamic_axes,
+                             opset_version=12, verbose=False)
 
-    def forward(self, x):
-        x = self.backbone(x)
-        x = self.fpn_head(x)
-        return x
+#summary_input is a copy input tensor with preprocessing from Predictor class
+import onnxruntime
+ort_session = onnxruntime.InferenceSession('data/'+n_model+'/'+n_model+'.onnx')
+def to_numpy(tensor):
+    return tensor.detach().cpu().numpy() if tensor.requires_grad else tensor.cpu().numpy()
+inputs = [node for node in ort_session.get_inputs()][0]
+outputs = [node.name for node in ort_session.get_outputs()]
+y_pred = predictor.model.eval()(*summary_input)
+pred_onx = ort_session.run(outputs, {inputs.name: to_numpy(*summary_input)})
+output = pred_onx [0]
 
-def my_model_function():
-    # Initialize model with default parameters (weights loading omitted due to missing checkpoint)
-    model = MyModel()
-    return model
-
-def GetInput():
-    # Input tensor matching the exported dummy input dimensions
-    return torch.randn(1, 3, 736, 1312, dtype=torch.float32)
-
+out = np.transpose(output[0,:,:,:], (1, 2, 0))
+print(np.max(out), '   ', np.min(out))
+out += 1
+out = out / 2  * 255
+out = out[:h,:w,:].astype('uint8')
+out = cv2.cvtColor(out, cv2.COLOR_RGB2BGR)
+plt.imshow(out)
+plt.title('output')
+plt.show()

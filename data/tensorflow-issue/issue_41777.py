@@ -1,57 +1,58 @@
-# tf.random.uniform((B, 2), dtype=tf.int64) ← Input features 'm1' and 'm2', each of shape (1,)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
+
 import tensorflow as tf
 from tensorflow.python.feature_column import feature_column_v2 as fc
+metadata = {'m1': tf.ones(shape=(100,1)), 'm2': tf.ones(shape=(100,1)),'label':tf.ones(shape=(100,1))}
+num_samples = 100
+dnn_optimizer = tf.keras.optimizers.Adagrad(
+                learning_rate=1
+            )
+def meta_dict_gen():
+    for i in range(num_samples):
+        ls = {}
+        for key, val in metadata.items():
+            ls[key] = val[i]
+        yield ls
+# DATASET CREATION
+d = tf.data.Dataset.from_generator(
+    meta_dict_gen,
+    output_types={k: tf.float32 for k in metadata},
+    output_shapes={'m1': (1,), 'm2': (1),'label':(1)})
+d = d.shuffle(
+        buffer_size=10 * 8
+    )
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
 
-        # Define feature columns: categorical column with hash bucket for 'm1',
-        # embedded into vector of dim 1; numeric column for 'm2'
-        m1_cat_col = fc.categorical_column_with_hash_bucket(key='m1', hash_bucket_size=2, dtype=tf.int64)
-        m1_emb_col = fc.embedding_column(m1_cat_col, dimension=1, combiner='mean')
-        m2_num_col = fc.numeric_column('m2', shape=(1,))
-        self.feature_columns = [m1_emb_col, m2_num_col]
+features = {'m1':1,'m2':1}
+def label_map(d):
+    
+    label = d.pop('label')
+    reshaped_label = tf.reshape(label, [-1, label.shape[-1]])
+    reshaped_elem = {
+        key: tf.reshape(d[key], [-1, d[key].shape[-1]])
+        for key in d if key in features.keys()
+    }
+    
+    return reshaped_elem, reshaped_label
+d = d.map(map_func=label_map)
 
-        # DenseFeatures layer to process input features into embeddings / tensors
-        self.dense_features = tf.keras.layers.DenseFeatures(self.feature_columns, name='d_embedded')
+# CREATING DENSE FEATURE LAYER
+d_columns = [tf.feature_column.embedding_column(fc.categorical_column_with_hash_bucket(key='m1', hash_bucket_size=2, dtype=tf.int64),dimension=1,combiner='mean'),
+tf.feature_column.numeric_column(
+                    'm2', shape=(1,))]
 
-        # Single Dense output layer (binary classification output)
-        self.output_layer = tf.keras.layers.Dense(1, activation='sigmoid')
+d_features = {}
+d_features['m1'] = tf.keras.Input(shape=(1,), name='m1', dtype=tf.int64, sparse=False)
+d_features['m2'] = tf.keras.Input(shape=(1,), name='m2', dtype=tf.int64, sparse=False)
 
-    def call(self, inputs, training=False):
-        """
-        inputs: dict with keys 'm1' (int64 tensor, shape (batch,1)),
-                              'm2' (int64 tensor, shape (batch,1))
-        """
-        x = self.dense_features(inputs)  # Extract dense features from input dict
-        x = self.output_layer(x)
-        return x
 
-def my_model_function():
-    # Return an instance of MyModel compiled with Adagrad optimizer and binary crossentropy loss
-    dnn_optimizer = tf.keras.optimizers.Adagrad(learning_rate=1)
-    model = MyModel()
-    model.compile(optimizer=dnn_optimizer, loss='binary_crossentropy', metrics=['binary_crossentropy'])
-    return model
+#CREATING MODEL
 
-def GetInput():
-    """
-    Generate a batch of input features as a dict of tensors suitable for MyModel.
-    - 'm1': int64 tensor with shape (batch_size, 1), categorical input values 0 or 1
-    - 'm2': float32 tensor with shape (batch_size, 1), numeric input values
-    We'll produce integer values for 'm1' as needed by categorical_column_with_hash_bucket.
-    """
-    batch_size = 8  # arbitrary batch size
-
-    # 'm1' categorical hash bucket input: random integers 0 or 1, shape (batch_size, 1), dtype int64
-    m1_input = tf.random.uniform(shape=(batch_size, 1), minval=0, maxval=2, dtype=tf.int64)
-
-    # 'm2' numeric input: random floats cast to int64 (to match original code dtype), shape (batch_size, 1)
-    # NOTE: original code used int64 dtype for numeric input; we keep consistent with that.
-    # Casting a float uniform to int64 in [0,100) as example numeric input.
-    m2_input_float = tf.random.uniform(shape=(batch_size, 1), minval=0, maxval=100, dtype=tf.float32)
-    m2_input = tf.cast(m2_input_float, tf.int64)
-
-    return {'m1': m1_input, 'm2': m2_input}
-
+d_input = tf.keras.layers.DenseFeatures(d_columns, name='d_embedded')(d_features)
+d_output = tf.keras.layers.Dense(1)(d_input)
+d_model = tf.keras.Model(d_features,d_output)
+d_model.compile()
+d_model.compile(optimizer = dnn_optimizer,loss= 'binary_crossentropy',metrics = ['binary_crossentropy'])
+d_model.fit(d)

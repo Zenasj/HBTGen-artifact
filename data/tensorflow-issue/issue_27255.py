@@ -1,10 +1,9 @@
-# tf.random.uniform((B, 784), dtype=tf.float32) ← input shape [batch_size, 784]
+import random
 
+from abc import abstractmethod
 import tensorflow as tf
+import logging
 
-def expand_bias_to(bias, shape):
-    # utility function to reshape bias for broadcasting
-    return tf.reshape(bias, [1] * (len(shape) - len(bias.shape)) + bias.shape.as_list())
 
 class Function(object):
     def __init__(self, name=None):
@@ -20,14 +19,23 @@ class Function(object):
                          **kwargs)
 
 
+def expand_bias_to(bias, shape):
+    return tf.reshape(bias, [1] * (len(shape) - len(bias.shape)) + bias.shape.as_list())
+
+
+def call_or_get(maybe_callable, *args, **kwargs):
+    if callable(maybe_callable):
+        return maybe_callable(*args, **kwargs)
+    else:
+        return maybe_callable
+
+
 class ParametricFunction(Function):
-    def __init__(self, initializers=None, name=None):
+    def __init__(self, initializers, name=None):
         super(ParametricFunction, self).__init__(name=name)
         self.initializers = initializers
 
     def __call__(self, params, inputs, return_inputs=False, return_outputs=False, **kwargs):
-        # The base __call__ calls the abstract call method.
-        # Return (result, extra) tuple for interface compatibility.
         result, extra = super(ParametricFunction, self). \
             __call__(params, inputs,
                      return_inputs=return_inputs,
@@ -35,20 +43,18 @@ class ParametricFunction(Function):
                      **kwargs)
         return result, extra
 
+    @abstractmethod
     def call(self, params, inputs, **kwargs):
-        # Must be implemented in subclasses
         raise NotImplementedError()
 
 
 class Affine(ParametricFunction):
-    def __init__(self, out_dim, name=None):
+    def __init__(self, out_dim,
+                 name=None):
         super(Affine, self).__init__(initializers=None, name=name)
         self.out_dim = out_dim
 
     def call(self, params, inputs, **kwargs):
-        # params expected to be tuple/list:
-        # if length 2: (weight, bias)
-        # else: (weight,), bias assumed zero
         if len(params) == 2:
             w, b = params
             b = expand_bias_to(b, inputs.shape)
@@ -57,40 +63,27 @@ class Affine(ParametricFunction):
         return tf.matmul(inputs, w) + b, None
 
 
-class MyModel(tf.keras.Model):
-    """
-    This model encapsulates the Affine function as a submodule.
-    Inputs: Tensor of shape [batch_size, 784]
-    Params: tuple of (weight tensor [784,784], bias tensor [784])
-    The forward returns logits as tf.matmul(input, W) + b
-    """
-    def __init__(self):
-        super().__init__()
-        self.affine = Affine(out_dim=784)
-
-    def call(self, inputs_tuple, training=False):
-        # inputs_tuple expected as (params, inputs)
-        params, inputs = inputs_tuple
-        # params is a tuple of tf.Variable or tf.Tensor: (W, b)
-        logits, extra = self.affine(params, inputs, return_inputs=False, return_outputs=False)
-        return logits
+# !!! IF THIS IS COMMENTED OUT IT WORKS !!!
+@tf.function
+def train_one_step(variables, batch):
+    model = Affine(784)
+    logits, extra = model(variables, batch, return_inputs=False, return_outputs=False)
+    loss_value = tf.reduce_mean(logits ** 2)
+    return loss_value
 
 
-def my_model_function():
-    # Create MyModel instance with no special weights initialization needed here
-    return MyModel()
+def main():
+    batch_size = 100
+    tf.get_logger().setLevel(logging.WARNING)
+    params = (tf.Variable(initial_value=tf.random.normal([784, 784]), name="W"),
+              tf.Variable(initial_value=tf.zeros([784]), name="b"))
+    data = tf.random.normal([batch_size, 784])
+
+    for epoch in range(10):
+        loss = train_one_step(params, data)
+        epoch += 1
+        print("Epoch {}, loss: {:0.3f}".format(epoch, loss))
 
 
-def GetInput():
-    # Return a tuple (params, inputs)
-    # params is tuple of weights and bias tensors compatible with Affine layer
-    batch_size = 100  # reasonable batch size
-    input_dim = 784
-    output_dim = 784
-    # Initialize random weights and bias tensors
-    weights = tf.random.normal([input_dim, output_dim], dtype=tf.float32)
-    bias = tf.zeros([output_dim], dtype=tf.float32)
-    inputs = tf.random.uniform([batch_size, input_dim], dtype=tf.float32)
-    params = (weights, bias)
-    return (params, inputs)
-
+if __name__ == '__main__':
+    main()

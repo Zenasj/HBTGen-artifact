@@ -1,52 +1,41 @@
-# tf.random.uniform((B, 100, 100, 3), dtype=tf.float32)  ← Based on the Keras Conv2D example input_shape
+import random
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
-import tensorflow as tf
+import numpy as np
+import keras
+from keras.models import Sequential
+from keras.layers import Dense, Dropout, Flatten
+from keras.layers import Conv2D, MaxPooling2D
+from keras.optimizers import SGD
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
 
-        # First Conv stack similar to Keras Sequential example
-        self.conv_stack1 = tf.keras.Sequential([
-            tf.keras.layers.Conv2D(32, (3,3), activation='relu', padding='valid'),
-            tf.keras.layers.Conv2D(32, (3,3), activation='relu', padding='valid'),
-            tf.keras.layers.MaxPooling2D(pool_size=(2, 2)),
-            tf.keras.layers.Dropout(0.25)
-        ])
+x_train = np.random.random((100,100,100,3))
+y_train = keras.utils.to_categorical(np.random.randint(10, size=(100, 1)), num_classes=10)
+x_test = np.random.random((20,100,100,3))
+y_test = keras.utils.to_categorical(np.random.randint(10, size=(20,1)), num_classes=10)
 
-        # Second Conv stack
-        self.conv_stack2 = tf.keras.Sequential([
-            tf.keras.layers.Conv2D(64, (3,3), activation='relu', padding='valid'),
-            tf.keras.layers.Conv2D(64, (3,3), activation='relu', padding='valid'),
-            tf.keras.layers.MaxPooling2D(pool_size=(2, 2)),
-            tf.keras.layers.Dropout(0.25)
-        ])
 
-        # Dense layers after flattening
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(256, activation='relu')
-        self.dropout_final = tf.keras.layers.Dropout(0.5)
-        self.dense_out = tf.keras.layers.Dense(10, activation='softmax')
+model = Sequential()
 
-    def call(self, inputs, training=False):
-        x = self.conv_stack1(inputs, training=training)
-        x = self.conv_stack2(x, training=training)
-        x = self.flatten(x)
-        x = self.dense1(x)
-        x = self.dropout_final(x, training=training)
-        out = self.dense_out(x)
-        return out
 
-def my_model_function():
-    # Return an instance of MyModel
-    model = MyModel()
+model.add(Conv2D(32, (3,3), activation='relu', input_shape=(100,100,3)))
+model.add(Conv2D(32, (3,3), activation='relu'))
+model.add(MaxPooling2D(pool_size=(2, 2)))
+model.add(Dropout(0.25))
 
-    # Since there's no pretrained weights given, just return the model as is.
-    # Note: Compilation etc. is not done here as it's usually done externally.
-    return model
+model.add(Conv2D(64, (3, 3), activation='relu'))
+model.add(Conv2D(64, (3, 3), activation='relu'))
+model.add(MaxPooling2D(pool_size=(2, 2)))
+model.add(Dropout(0.25))
 
-def GetInput():
-    # Return a random tensor matching the expected input shape
-    # Batch size 1 to keep example simple; can adjust as needed.
-    return tf.random.uniform((1, 100, 100, 3), dtype=tf.float32)
+model.add(Flatten())
+model.add(Dense(256, activation='relu'))
+model.add(Dropout(0.5))
+model.add(Dense(10, activation='softmax'))
 
+sgd = SGD(lr=0.01, decay=1e-6, momentum=0.9, nesterov=True)
+model.compile(loss='categorical_crossentropy', optimizer=sgd)
+
+model.fit(x_train, y_train, batch_size=32, epochs=10)

@@ -1,58 +1,29 @@
-# tf.random.uniform((50,)) ← Input shape is (50,), a 1D tensor of 50 floats as per example
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Single dense layer as per the example Sequential model
-        self.dense = tf.keras.layers.Dense(1, input_shape=(1,))
+X, y = tf.random.uniform((50,)), tf.random.uniform((50,))
+X_val, y_val = tf.random.uniform((5,)), tf.random.uniform((5,))
 
-        # We keep an optimizer attribute to emulate the compile/recompile scenario
-        # Use default SGD without learning rate initially
-        self.optimizer = tf.keras.optimizers.SGD()
-        self.loss_fn = tf.keras.losses.MeanSquaredError()
+lr_scheduler = tf.keras.callbacks.LearningRateScheduler(schedule=lambda epoch,lr: lr*0.995, verbose=1)
 
-    def call(self, inputs, training=False):
-        # Forward pass: dense layer output
-        return self.dense(inputs)
+model = tf.keras.models.Sequential([tf.keras.layers.Dense(1, input_shape=(1,))])
 
-    def compile_model(self, learning_rate=None):
-        # Method to set optimizer with learning_rate, mimicking .compile()
-        if learning_rate is None:
-            self.optimizer = tf.keras.optimizers.SGD()
-        else:
-            # We force the learning rate dtype to float32 to mimic the fix for the issue
-            # The issue was that using a Python float results in float64, causing loading errors.
-            # So we convert learning_rate to a tf.float32 scalar explicitly.
-            # This corresponds to the workaround commented in issue:
-            # optimizer=tf.keras.optimizers.SGD(learning_rate=float(...))  # workaround
-            if isinstance(learning_rate, float):
-                lr = tf.constant(learning_rate, dtype=tf.float32)
-            elif isinstance(learning_rate, tf.Tensor):
-                lr = tf.cast(learning_rate, tf.float32)
-            else:
-                lr = tf.constant(float(learning_rate), dtype=tf.float32)
-            self.optimizer = tf.keras.optimizers.SGD(learning_rate=lr)
-        # Loss fn stays the same, mse
+model.compile(optimizer=tf.keras.optimizers.SGD(), loss='mse')
 
-    @tf.function(jit_compile=True)
-    def train_step(self, x, y):
-        with tf.GradientTape() as tape:
-            predictions = self.call(x, training=True)
-            loss = self.loss_fn(y, predictions)
-        grads = tape.gradient(loss, self.trainable_variables)
-        self.optimizer.apply_gradients(zip(grads, self.trainable_variables))
-        return loss
+history = model.fit(X, y, epochs=1, validation_data=(X_val,y_val), callbacks=[lr_scheduler])
 
-def my_model_function():
-    # Return an instance of MyModel with default initialization
-    model = MyModel()
-    model.compile_model()
-    return model
+model.save_weights('tmp_model')
 
-def GetInput():
-    # Return a random uniform tensor of shape (50, 1) to match Dense layer input_shape=(1,)
-    # Input in the example is 1D data points, so shape (50,1) as batch of 50 scalar values.
-    return tf.random.uniform((50, 1), dtype=tf.float32)
+model.compile(
+    optimizer=tf.keras.optimizers.SGD(learning_rate=history.history['lr'][-1]*0.1),
+    #optimizer=tf.keras.optimizers.SGD(learning_rate=float(history.history['lr'][-1]*0.1)), # work-around
+    loss='mse'
+)
 
+model.fit(X, y, epochs=1, validation_data=(X_val,y_val), callbacks=[lr_scheduler])
+model.load_weights('tmp_model')

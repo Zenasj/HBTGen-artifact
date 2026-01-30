@@ -1,32 +1,130 @@
-# tf.random.uniform((1, 10, 20), dtype=tf.float32) ← The input shape is (batch=1, timesteps=10, features=20) as per the original model
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+
+import tensorflow as tf
+import numpy as np
+
+inp = tf.keras.Input([10,20], batch_size = 1, name = "input_0")
+x = tf.keras.layers.LSTM(inp.shape[2],
+                             return_sequences = True)(inp)
+model_lstm = tf.keras.Model(inputs=inp, outputs=x)
+
+rep_data = tf.data.Dataset.from_tensor_slices(np.float32(np.random.random_sample((10,1,10,20))))
+
+def representative_dataset():
+        for data in rep_data:
+            yield {
+            "input_0": data,
+            }
+
+converter = tf.lite.TFLiteConverter.from_keras_model(model_lstm)
+
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.target_spec.supported_ops = [
+tf.lite.OpsSet.TFLITE_BUILTINS,
+#comment line below to run at int 8
+tf.lite.OpsSet.EXPERIMENTAL_TFLITE_BUILTINS_ACTIVATIONS_INT16_WEIGHTS_INT8
+]
+converter.representative_dataset = representative_dataset
+
+calibrated_model = converter.convert()
+
+interpreter = tf.lite.Interpreter(model_content = calibrated_model)
+interpreter.allocate_tensors()
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # LSTM layer with units equal to input feature dimension, return_sequences=True as in issue
-        self.lstm = tf.keras.layers.LSTM(20, return_sequences=True)
+inp = tf.keras.Input([1, 1], batch_size = 1, name = "input_0")
+x = tf.keras.layers.LSTM(inp.shape[2], return_sequences = True)(inp)
+model_lstm = tf.keras.Model(inputs=inp, outputs=x)
 
-    def call(self, inputs):
-        return self.lstm(inputs)
+# convert the model to TFLite
+converter = tf.lite.TFLiteConverter.from_keras_model(model_lstm)
+tflite_model = converter.convert()
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+# allocate tensors
+interpreter = tf.lite.Interpreter(model_content=tflite_model)
+interpreter.allocate_tensors()
 
-def GetInput():
-    # Return a random tensor with shape (1, 10, 20) matching the input to the LSTM
-    # dtype tf.float32 as per typical TF default and issue examples
-    return tf.random.uniform((1, 10, 20), dtype=tf.float32)
+import tensorflow as tf
+import numpy as np
 
-# ---
-# ### Explanation / Assumptions:
-# - The input to the original Keras LSTM model was `Input([10,20], batch_size=1)`. The batch dimension is fixed at 1, time steps 10, features 20.
-# - The LSTM layer had `units=inp.shape[2]` (i.e., 20 units) and `return_sequences=True`.
-# - The simplified MyModel mimics this setup exactly for compatibility.
-# - The input returned by `GetInput()` matches the required input shape exactly.
-# - The original issue revolved around TFLite quantization of this model, but here we only provide the original model code, ready for TF2.20 XLA JIT compilation, as requested.
-# - No quantization or conversion logic is included as it belongs to separate conversion and runtime steps described in the issue context.
-# - Comments explain assumptions and ensure clarity of the shape/dtype.
-# This provides a minimal, complete, standalone TF Keras model matching the issue scenario and runnable with the given input shape.
+inp = tf.keras.Input([1, 1], batch_size = 1, name = "input_0")
+x = tf.keras.layers.LSTM(inp.shape[2], return_sequences = True)(inp)
+model_lstm = tf.keras.Model(inputs=inp, outputs=x)
+
+# pick some representative dataset
+rep_data = tf.data.Dataset.from_tensor_slices(np.float32(np.random.random_sample((10,1,1,1))))
+
+def representative_dataset():
+    for data in rep_data:
+        yield [data]
+
+# convert model to TFLite with representative dataset
+converter = tf.lite.TFLiteConverter.from_keras_model(model_lstm)
+converter.representative_dataset = representative_dataset
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+tflite_model = converter.convert()
+
+# allocate tensors
+interpreter = tf.lite.Interpreter(model_content=tflite_model)
+interpreter.allocate_tensors()
+
+tflite_model = converter.convert()
+
+converter.target_spec.supported_ops = [
+    tf.lite.OpsSet.TFLITE_BUILTINS,
+    tf.lite.OpsSet.EXPERIMENTAL_TFLITE_BUILTINS_ACTIVATIONS_INT16_WEIGHTS_INT8
+]
+tflite_model = converter.convert()
+
+EXPERIMENTAL_TFLITE_BUILTINS_ACTIVATIONS_INT16_WEIGHTS_INT8
+
+UNIDIRECTIONAL_SEQUENCE_LSTM
+
+EXPERIMENTAL_TFLITE_BUILTINS_ACTIVATIONS_INT16_WEIGHTS_INT8
+
+OpsSet
+
+converter.target_spec.supported_types = [tf.int8]
+
+import tensorflow as tf
+import numpy as np
+
+inp = tf.keras.Input([1, 1], batch_size = 1, name = "input_0")
+x = tf.keras.layers.LSTM(inp.shape[2], return_sequences = True)(inp)
+model_lstm = tf.keras.Model(inputs=inp, outputs=x)
+
+# pick some representative dataset
+rep_data = tf.data.Dataset.from_tensor_slices(np.float32(np.random.random_sample((10,1,1,1))))
+
+def representative_dataset():
+    for data in rep_data:
+        yield [data]
+
+# convert model to TFLite with representative dataset
+converter = tf.lite.TFLiteConverter.from_keras_model(model_lstm)
+converter.representative_dataset = representative_dataset
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.target_spec.supported_types = [tf.int8]
+converter.target_spec.supported_ops = [
+    tf.lite.OpsSet.TFLITE_BUILTINS,
+    tf.lite.OpsSet.EXPERIMENTAL_TFLITE_BUILTINS_ACTIVATIONS_INT16_WEIGHTS_INT8
+]
+tflite_model = converter.convert()
+
+# allocate tensors
+interpreter = tf.lite.Interpreter(model_content=tflite_model)
+interpreter.allocate_tensors()
+
+py
+import torch
+import torchvision
+import ai_edge_torch
+
+rnn = torch.nn.LSTM(10, 20, 2)
+sample_inputs = (torch.randn(5, 3, 10),)
+
+edge_model = ai_edge_torch.convert(rnn.eval(), sample_inputs)
+edge_model.export("rnn.tflite")

@@ -1,75 +1,204 @@
-# tf.random.uniform((B, 5078), dtype=tf.float32) ← Input shape inferred from original model input_dim=5078, batch dimension B is dynamic
+import random
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
+model=tf.keras.models.Sequential()
+model.add(tf.keras.layers.Dense(units=64, input_dim=5078, activation="relu"))
+model.add(tf.keras.layers.Dense(units=32, activation="relu"))
+model.add(tf.keras.layers.Dense(units=100, activation="relu"))
+model.add(tf.keras.layers.Dense(units=24, activation="sigmoid"))
+
+model.compile(optimizer="Adam", loss="binary_crossentropy", metrics=["acc"])
+
+model.fit(X_train, y_train,
+ batch_size=32,
+ epochs=100, verbose=1,
+ validation_split=0.15,
+ shuffle=True)
+
+def random_batch(X,y, batch_size=32):
+    idx= np.random.randint(len(X), size=batch_size)
+    return X[idx], y[idx]
+
+##Further split train data to training set and validation set
+
+X_train, X_val, y_train, y_val = train_test_split(
+    X_train, y_train, test_size=0.15, random_state=1)
+
+##Run autodiff on model
+
+n_epochs=100
+batch_size=32
+n_steps=len(X_train)//batch_size
+
+optimizer=tf.keras.optimizers.Adam()
+loss=tf.keras.losses.BinaryCrossentropy()
+
+metricLoss=tf.keras.metrics.BinaryCrossentropy()
+metricsAcc=tf.keras.metrics.BinaryAccuracy()
+
+val_acc_metric=tf.keras.metrics.BinaryAccuracy()
+val_acc_loss=tf.keras.metrics.BinaryCrossentropy()
+
+
+train_loss_results = []
+train_accuracy_results = []
+
+validation_loss_results = []
+validation_accuracy_results = []
+
+# for loop iterate over epochs
+for epoch in range(n_epochs):
+
+    print("Epoch {}/{}".format(epoch, n_epochs))
+
+    # for loop iterate over batches
+    for step in range(1, n_steps + 1):
+        X_batch, y_batch=random_batch(X_train.values, y_train)
+
+        # gradientTape autodiff
+        with tf.GradientTape() as tape:
+            y_pred=model(X_batch, training=True)
+            loss_values=loss(y_batch, y_pred)
+        gradients=tape.gradient(loss_values, model.trainable_weights)
+        optimizer.apply_gradients(zip(gradients, model.trainable_weights))
+
+        metricLoss(y_batch, y_pred)
+        metricsAcc.update_state(y_batch, y_pred)
+
+        # Loss and accuracy
+        train_loss_results.append(loss_values)
+        train_accuracy_results.append(metricsAcc.result())
+
+        # Read out training results
+        readout = 'Epoch {}, Training loss: {}, Training accuracy: {}'
+        print(readout.format(epoch + 1, loss_values,
+                              metricsAcc.result() * 100))
+
+        metricsAcc.reset_states
+
+        # Run a validation loop at the end of each epoch
+
+    for valbatch in range(1+ n_steps +1):
+        X_batchVal, y_batchVal = random_batch(X_val.values, y_val)
+
+        val_logits = model(X_batchVal)
+        # Update val metrics
+        val_acc_metric(y_batchVal, val_logits)
+        val_acc = val_acc_metric.result()
+
+        val_acc_metric.update_state(y_batchVal, val_logits)
+
+        val_loss=val_acc_loss(y_batchVal, val_logits)
+
+        validation_loss_results.append(val_loss)
+        validation_accuracy_results.append(val_acc_metric.result())
+
+        # Read out validation results
+        print( 'Validation loss: ' , float(val_loss),'Validation acc: %s' % (float(val_acc * 100),) )
+
+        val_acc_metric.reset_states()
+
+# -*- coding: utf8 -*-
+
+import numpy as np
 import tensorflow as tf
+from sklearn.model_selection import train_test_split
+from tensorflow import keras as tfk
 
-class MyModel(tf.keras.Model):
+
+class Test(tfk.Model):
     def __init__(self):
-        super(MyModel, self).__init__()
-        # Construct the Sequential model architecture as described
-        self.dense1 = tf.keras.layers.Dense(units=64, activation="relu", input_shape=(5078,))
-        self.dense2 = tf.keras.layers.Dense(units=32, activation="relu")
-        self.dense3 = tf.keras.layers.Dense(units=100, activation="relu")
-        self.output_layer = tf.keras.layers.Dense(units=24, activation="sigmoid")
-        
-        # Metrics for comparison/fusion purpose
-        # Binary Accuracy metric to be used with model.fit (acc) and gradientTape
-        self.metric_fit_acc = tf.keras.metrics.BinaryAccuracy(name="fit_acc")
-        self.metric_tape_acc = tf.keras.metrics.BinaryAccuracy(name="tape_acc")
-        self.loss_fn = tf.keras.losses.BinaryCrossentropy()
-        self.optimizer = tf.keras.optimizers.Adam()
+        super(Test, self).__init__()
+        self.embedding_layer = tfk.layers.Embedding(50000, 300)
+        self.conv1d_layer = tfk.layers.Conv1D(256, 5)
+        self.pool_layer = tfk.layers.MaxPool1D(pool_size=5, strides=2)
+        self.dense1_layer = tfk.layers.Dense(128, activation=tfk.activations.relu)
+        self.dense2_layer = tfk.layers.Dense(10, activation=tfk.activations.softmax)
 
-    def call(self, inputs, training=False):
-        # Forward pass through the network
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        x = self.dense3(x)
-        y_pred = self.output_layer(x)
+    def call(self, inputs, training=None, mask=None):
+        hidden = self.embedding_layer(inputs)
+        hidden = self.conv1d_layer(hidden)
+        hidden = self.pool_layer(hidden)
+        hidden = tfk.layers.Flatten()(hidden)
+        hidden = self.dense1_layer(hidden)
+        y_pred = self.dense2_layer(hidden)
         return y_pred
 
-    def train_step_tape(self, x_batch, y_batch):
-        # Custom training step using tf.GradientTape similar to the user loop
-        with tf.GradientTape() as tape:
-            y_pred = self.call(x_batch, training=True)
-            loss_value = self.loss_fn(y_batch, y_pred)
-        grads = tape.gradient(loss_value, self.trainable_variables)
-        self.optimizer.apply_gradients(zip(grads, self.trainable_variables))
-        self.metric_tape_acc.update_state(y_batch, y_pred)
-        return loss_value, self.metric_tape_acc.result()
-    
-    def reset_metrics(self):
-        self.metric_fit_acc.reset_states()
-        self.metric_tape_acc.reset_states()
+
+class Test2(tfk.Model):
+    def __init__(self):
+        super(Test2, self).__init__()
+        self.embedding_layer = tfk.layers.Embedding(50000, 300)
+        self.rnn_layer = tfk.layers.LSTM(200)
+        self.dense1_layer = tfk.layers.Dense(128, activation=tfk.activations.relu)
+        self.dense2_layer = tfk.layers.Dense(10, activation=tfk.activations.softmax)
+
+    def call(self, inputs, training=None, mask=None):
+        hidden = self.embedding_layer(inputs)
+        hidden = self.rnn_layer(hidden)
+        hidden = self.dense1_layer(hidden)
+        y_pred = self.dense2_layer(hidden)
+        return y_pred
 
 
-def my_model_function():
-    # Return an instance of MyModel fully initialized with optimizer and loss
-    model = MyModel()
-    # Compile model for model.fit to work with consistency of optimizer, loss and metric
-    model.compile(
-        optimizer=model.optimizer,
-        loss=model.loss_fn,
-        metrics=[model.metric_fit_acc]
-    )
-    return model
+gpus = tf.config.experimental.list_physical_devices("GPU")
+for gpu in gpus:
+    tf.config.experimental.set_memory_growth(gpu, True)
+epochs = 30
+x = np.random.randint(low=0, high=50000, size=(10000, 128))
+y = np.random.randint(low=0, high=10, size=(10000,))
+x_train, x_val, y_train, y_val = train_test_split(x, y, test_size=0.2)
+trainset = tf.data.Dataset.zip(
+    (tf.data.Dataset.from_tensor_slices(x_train), tf.data.Dataset.from_tensor_slices(y_train))).batch(300)
+valset = tf.data.Dataset.zip(
+    (tf.data.Dataset.from_tensor_slices(x_val), tf.data.Dataset.from_tensor_slices(y_val))).batch(300)
+# model = Test()
+model = Test2()
+train_acc = tf.metrics.SparseCategoricalAccuracy()
+val_acc = tf.metrics.SparseCategoricalAccuracy()
+train_loss = tf.metrics.Mean()
+val_loss = tf.metrics.Mean()
+loss_object = tf.losses.SparseCategoricalCrossentropy()
+optimizer = tf.optimizers.Adam()
+
+model.compile(optimizer=optimizer, loss=loss_object, metrics=[train_acc])
+model.fit(x_train, y_train, validation_data=(x_val, y_val), batch_size=300, epochs=epochs)
+
+# model = Test()
+model = Test2()
 
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # The input shape is (batch_size, 5078), here batch size arbitrarily chosen as 32
-    return tf.random.uniform((32, 5078), dtype=tf.float32)
+@tf.function
+def train_op(x, y):
+    with tf.GradientTape() as tape:
+        y_pred = model(x)
+        loss = loss_object(y, y_pred)
+        train_loss.update_state(loss)
+        train_acc.update_state(y, y_pred)
+        tf.print(y_pred)
+        grads = tape.gradient(loss, model.trainable_variables)
+    optimizer.apply_gradients(zip(grads, model.trainable_variables))
 
-# ---
-# ### Explanation and Assumptions
-# - The original user's model is a standard dense Sequential model with input_dim=5078, so input is (B, 5078), B is dynamic batch size.
-# - Output size is 24 with sigmoid activation, so presumably multi-label binary classification.
-# - The main observed issue was discrepancy in binary accuracy metric calculation between `model.fit()` vs `tf.GradientTape`.
-# - To fuse both approaches into one class:
-#   - We provide both a `train_step_tape` method implementing the GradientTape training step with manual metric update.
-#   - The model is compiled with optimizer, loss, and metric so its `.fit()` method also works consistently.
-# - Metric states for the two methods (fit and tape) are kept separately as `metric_fit_acc` and `metric_tape_acc` to clearly track them separately.
-# - Reset method for metrics added for resetting states after epochs if needed.
-# - `GetInput()` creates a random uniform float tensor with shape (32, 5078) matching model input.
-# - The code aligns with TensorFlow 2.20.0, uses standard layers, and can be compiled under XLA if wrapped in a tf.function with jit_compile=True externally.
-# - Comments explain assumptions on shapes and functionality.
-# - This fully embeds the key points of the issue (model architecture, dataset shape, fitting and gradient tape discrepancy) in one manageable class and utility functions.
-# Let me know if you want me to generate training/evaluation loops on top of this baseline model class!
+
+@tf.function
+def val_op(x, y):
+    y_pred = model(x)
+    loss = loss_object(y, y_pred)
+    val_loss.update_state(loss)
+    val_acc.update_state(y, y_pred)
+
+
+for epoch in range(epochs):
+    print("Epoch {}/{}".format(epoch + 1, epochs))
+    bar = tfk.utils.Progbar(len(y_train), unit_name="sample", stateful_metrics={"loss", "acc"})
+    log_values = []
+    for batch_x, batch_y in trainset:
+        train_op(batch_x, batch_y)
+        log_values.append(("loss", train_loss.result().numpy()))
+        log_values.append(("acc", train_acc.result().numpy()))
+        bar.add(len(batch_y), log_values)
+    for batch_x, batch_y in valset:
+        val_op(batch_x, batch_y)
+    print("val_loss -", val_loss.result().numpy(), "val_acc -", val_acc.result().numpy())

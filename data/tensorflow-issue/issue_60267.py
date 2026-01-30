@@ -1,59 +1,80 @@
-# tf.random.uniform((B, 30, 30), dtype=tf.int32)  ← Based on input shape (batch_size, 30, 30) from the issue example
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
+import numpy as np
+import keras
 import tensorflow as tf
+import sklearn.model_selection
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Following the architecture from the issue's example sequential model
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(64, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(64, activation='relu')
-        # Output units = number of classes, inferred as 51 from the issue example
-        self.logits = tf.keras.layers.Dense(51)
-        # A SparseCategoricalCrossentropy loss layer to compute loss internally (for comparison purpose)
-        self.loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
-    
-    @tf.function(jit_compile=True)
-    def call(self, inputs, training=False, sample_weight=None, labels=None):
-        """
-        Forward pass returning logits.
-        If labels and sample_weight are provided, return weighted loss as a scalar tensor,
-        else return raw logits.
-        
-        This design reflects the scenario in the issue:
-        - inputs: input tensor of shape (B, 30, 30)
-        - sample_weight: sample weights for each input, shape (B,) or None
-        - labels: sparse class labels, shape (B,) or None
+X = np.random.randint(low=300, high=900, size=(215699, 30, 30))
+y = np.random.randint(low=0, high=51, size=(215699,))
+X_trn, X_val, y_trn, y_val = sklearn.model_selection.train_test_split(X, y)
 
-        If sample_weight and labels are given, compute the weighted loss,
-        else just output the logits.
-        """
-        x = self.flatten(inputs)
-        x = self.dense1(x)
-        x = self.dense2(x)
-        logits = self.logits(x)
+m = tf.keras.Sequential(
+    [
+        keras.layers.Input(shape=X.shape[1:]),
+        keras.layers.Flatten(),
+        keras.layers.Dense(units=64, activation="relu",),
+        keras.layers.Dense(units=64, activation="relu",),
+        keras.layers.Dense(len(np.unique(y))),
+    ]
+)
+m.compile(
+    optimizer=keras.optimizers.Adam(1e-5),
+    loss=keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+)
 
-        if (labels is not None) and (sample_weight is not None):
-            # Compute unweighted loss per sample
-            unweighted_loss = self.loss_fn(labels, logits, sample_weight=None, reduction=tf.keras.losses.Reduction.NONE)
-            # If sample_weight is provided, apply it per sample manually
-            weighted_loss = unweighted_loss * tf.cast(sample_weight, unweighted_loss.dtype)
-            # Return mean weighted loss scalar for validation or training step
-            return tf.reduce_mean(weighted_loss)
-        else:
-            return logits
+sample_weights_val = np.ones(y_val.shape)
 
-def my_model_function():
-    # Return an instance of MyModel
-    # This uses default initialization (weights initialized randomly)
-    return MyModel()
+history = m.fit(
+    X_trn,
+    y_trn,
+    validation_data=(X_val, y_val, sample_weights_val),
+    batch_size=128,
+    epochs=5,
+)
 
-def GetInput():
-    # Return a random input tensor matching the expected input shape (B, 30, 30)
-    # Here we simulate integer inputs as in the example, scaled uniformly between 300 and 900.
-    # We pick an arbitrary batch size of 128 to match batch size from the issue example.
-    batch_size = 128
-    inp = tf.random.uniform(shape=(batch_size, 30, 30), minval=300, maxval=900, dtype=tf.int32)
-    return inp
+py
+model.fit(
+    X_trn, 
+    y_trn,
+    # NOTE: Validation loss is *incorrect* because it doesn't take into account the class weights
+    validation_data=(X_val, y_val),
+    class_weight=calculate_weights_for_my_imbalanced_classes(y_trn),
+)
 
+py
+import numpy as np
+import keras
+import tensorflow as tf
+import sklearn.model_selection
+
+X = np.random.randint(low=300, high=900, size=(215699, 30, 30))
+y = np.random.randint(low=0, high=51, size=(215699,))
+X_trn, X_val, y_trn, y_val = sklearn.model_selection.train_test_split(X, y)
+
+m = tf.keras.Sequential(
+    [
+        keras.layers.Input(shape=X.shape[1:]),
+        keras.layers.Flatten(),
+        keras.layers.Dense(units=64, activation="relu",),
+        keras.layers.Dense(units=64, activation="relu",),
+        keras.layers.Dense(len(np.unique(y))),
+    ]
+)
+m.compile(
+    optimizer=tf.keras.optimizers.legacy.Adam(1e-5),
+    loss=keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+)
+
+sample_weights_val = np.ones(y_val.shape)
+
+history = m.fit(
+    X_trn,
+    y_trn,
+    validation_data=(X_val, y_val, sample_weights_val),
+    batch_size=128,
+    epochs=5,
+)

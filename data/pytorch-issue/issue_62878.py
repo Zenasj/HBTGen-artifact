@@ -1,24 +1,41 @@
-# torch.rand(B, 3, 224, 224, dtype=torch.float32)  # Assuming standard image input size and batch dimension
+import torchvision
+
+from __future__ import print_function
+import argparse
 import torch
-import torch.nn as nn
+import torch.utils.data
+from torch import nn, optim
+from torch.nn import functional as F
+from torchvision import datasets, transforms
 from torchvision import models
+from torchvision.utils import save_image
+from torchvision.datasets import ImageFolder
+import torch.backends.cudnn as cudnn
+import random
+import os
+import tqdm
+train_on_gpu = torch.cuda.is_available()
+device = torch.device("cuda:0" if train_on_gpu else "cpu")
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.backbone = models.resnet18(pretrained=True)  # Inferred from typical usage in image classification
-        # Modify the final layer for custom classes (assumed 10 classes based on common practice)
-        num_ftrs = self.backbone.fc.in_features
-        self.backbone.fc = nn.Linear(num_ftrs, 10)  # Placeholder for number of classes
+data_transform = transforms.Compose([transforms.ToTensor()])
+train_data_root = r'D:\DeepLearning\Data\train'
+train_dataset = ImageFolder(train_data_root, transform=data_transform)
+train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=1,
+                                           shuffle=True, num_workers=2)
+test_data_root = r'D:\DeepLearning\Data\train'
+test_dataset = ImageFolder(test_data_root, transform=data_transform)
+test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1,
+                                          shuffle=True, num_workers=2)
+def train(epoch):
+    for iteration, (images, labels) in enumerate(train_loader):  ###here is wrong location
+        images = images.to(device)
+        labels = labels.to(device)
+if __name__ == '__main__':
+    best_acc = 0
+    epoches =12
+    for epoch in range(1, epoches + 1):
+        train(epoch)
+        print("===> Epoch({}/{})".format(epoch,epoches))
 
-    def forward(self, x):
-        return self.backbone(x)
-
-def my_model_function():
-    # Returns a ResNet-18 model with modified final layer for 10 classes
-    return MyModel()
-
-def GetInput():
-    # Generates a random image tensor matching ResNet input requirements
-    return torch.rand(2, 3, 224, 224)  # Batch size 2, 3 channels, 224x224 resolution
-
+for d in train_dataset:
+    print(d)

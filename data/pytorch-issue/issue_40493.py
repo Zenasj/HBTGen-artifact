@@ -1,26 +1,33 @@
-# torch.rand(B, 5, 5, 10, dtype=torch.float32)  # Input shape (B, C=5, H=5, W=10)
-import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
+import torch
+
+
+class MyNetwork(torch.nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
-        # Lazy modules infer input channels from first input
-        self.conv1 = nn.LazyConv2d(4, 2)  # Output channels=4, kernel=2
-        self.conv2 = nn.LazyConv2d(4, 2)
-        self.linear = nn.LazyLinear(10)  # Output features=10
+        super(MyNetwork, self).__init__()
+        self.conv_1 = torch.nn.Conv2d(torch.nn.parameter.ParameterMode.Infer, 4, 2)
+        self.conv_2 = torch.nn.Conv2d(torch.nn.parameter.ParameterMode.Infer, 4, 2)
+        self.linear = torch.nn.Linear(torch.nn.parameter.ParameterMode.Infer, 10)
 
     def forward(self, x):
-        x = self.conv1(x).clamp(min=0)  # ReLU equivalent
-        x = self.conv2(x).clamp(min=0)
-        # Flatten for linear layer
-        x = x.view(x.size(0), -1)
-        return self.linear(x)
+        y = self.conv_1(x).clamp(min=0)
+        z = self.conv_2(y).clamp(min=0)
+        return self.linear(z)
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    # Generate input with shape (batch, 5, 5, 10)
-    return torch.rand(1, 5, 5, 10, dtype=torch.float32)
+net = MyNetwork()
+net.infer_parameters(torch.ones(5, 5, 5, 10))
+print(net.conv_1.weight.shape)
+print(net.conv_2.weight.shape)
+print(net.linear.weight.shape)
 
+Linear(ParameterMode.Infer, 10)
+
+Linear(5, 10, defer_parameters=True)
+
+lin1 = nn.Linear(infer, 5)
+lin2 = nn.Linear(infer, 5)
+lin2.weight = lin1.weight
+lin1.infer_parameters(torch.ones(5, 10))
+# now lin2 has the same (initialized) weight

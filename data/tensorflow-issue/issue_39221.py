@@ -1,69 +1,131 @@
-# tf.random.uniform((B,)) with dictionary keys 'f1' and 'f2' as string categorical features
+import random
+from tensorflow import keras
+from tensorflow.keras import models
+
+feature_columns = []
+
+categorical = tf.feature_column.categorical_column_with_vocabulary_list(
+        key='f1', vocabulary_list=['x1','x2','x3'],
+        num_oov_buckets=0)
+one_hot = feature_column.indicator_column(categorical)
+feature_columns.append(one_hot)
+
+categorical = tf.feature_column.categorical_column_with_vocabulary_list(
+        key='f2', vocabulary_list=['x1','x2','x3','x4','x5','x6'],
+        num_oov_buckets=5)
+embedding = feature_column.embedding_column(categorical, dimension=10)
+feature_columns.append(embedding)
+
+feature_layer = tf.keras.layers.DenseFeatures(feature_columns)
+
+model = tf.keras.Sequential([
+  feature_layer,
+  layers.Dense(20, activation='relu'),
+  layers.Dense(1,activation='softsign')
+])
+    
+model.compile(optimizer='adam',
+              loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
+              metrics=['accuracy'])
+
+
+def df_to_dataset(dataframe, shuffle=True, batch_size=32):
+    dataframe = dataframe.copy()
+    labels = dataframe.pop('target')
+    ds = tf.data.Dataset.from_tensor_slices((dict(dataframe), labels))
+    if shuffle:
+        ds = ds.shuffle(buffer_size=len(dataframe))
+    ds = ds.batch(batch_size)
+    return ds
+
+train = df_to_dataset(train)
+val = df_to_dataset(val)
+
+model.fit(train,
+          validation_data=val,
+          epochs=2)
+
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
 
 import tensorflow as tf
+from tensorflow.keras.layers import Activation, Dropout, Flatten, Dense
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.models import load_model,Model
+from tensorflow import feature_column
 from tensorflow.keras import layers
-from tensorflow.keras import feature_column
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define categorical feature columns as in provided example
-        # f1: categorical_column_with_vocabulary_list with vocab ['x1','x2','x3']
-        categorical_f1 = feature_column.categorical_column_with_vocabulary_list(
-            key='f1', vocabulary_list=['x1','x2','x3'], num_oov_buckets=0)
-        one_hot_f1 = feature_column.indicator_column(categorical_f1)
 
-        # f2: categorical_column_with_vocabulary_list with vocab ['x1','x2','x3','x4','x5','x6']
-        # with 5 OOV buckets and embedding dimension 10
-        categorical_f2 = feature_column.categorical_column_with_vocabulary_list(
-            key='f2', vocabulary_list=['x1','x2','x3','x4','x5','x6'], num_oov_buckets=5)
-        embedding_f2 = feature_column.embedding_column(categorical_f2, dimension=10)
+def df_to_dataset(dataframe, shuffle=True, batch_size=32):
+  dataframe = dataframe.copy()
+  labels = dataframe.pop('target')
+  ds = tf.data.Dataset.from_tensor_slices((dict(dataframe), labels))
+  if shuffle:
+    ds = ds.shuffle(buffer_size=len(dataframe))
+  ds = ds.batch(batch_size)
+  return ds
 
-        self.feature_columns = [one_hot_f1, embedding_f2]
-        self.feature_layer = tf.keras.layers.DenseFeatures(self.feature_columns)
+###--------- sample dataset ---------
+n = 10000
+data = pd.DataFrame({'f1':np.random.choice(['x1','x2','x3'], n, replace=True),
+                     'f2':np.random.choice(['x1','x2','x3','x4','x5','x6'], n, replace=True),
+                     'target':np.random.choice([0,1], n, replace=True)})
 
-        # Dense layers as per example
-        self.dense1 = layers.Dense(20, activation='relu')
-        self.dense2 = layers.Dense(1, activation='softsign')
+train,val = train_test_split(data,test_size=0.2)
+train,new_train = train_test_split(train,test_size=0.2)
 
-    def call(self, inputs, training=False):
-        # inputs: dictionary of tensors with keys 'f1' and 'f2', each tensor shape (B,)
-        x = self.feature_layer(inputs)
-        x = self.dense1(x)
-        x = self.dense2(x)
-        return x
 
-def my_model_function():
-    # Return an instance of MyModel
-    model = MyModel()
-    # Compile the model with same optimizer, loss and metrics as in example
-    model.compile(
-        optimizer='adam',
-        loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
-        metrics=['accuracy']
-    )
-    return model
+###--------- define features columns ---------
+feature_columns = []
 
-def GetInput():
-    # Return a dictionary of inputs matching the feature columns expected by MyModel.
-    # Each feature is a batch of string tensors.
-    # For simplicity, batch size = 8.
-    batch_size = 8
+categorical = tf.feature_column.categorical_column_with_vocabulary_list(
+        key='f1', vocabulary_list=['x1','x2','x3'],
+        num_oov_buckets=0)
+one_hot = feature_column.indicator_column(categorical)
+feature_columns.append(one_hot)
 
-    # f1 categories ['x1', 'x2', 'x3']
-    # Generate random choices from list as string tensors
-    f1_choices = tf.constant(['x1', 'x2', 'x3'])
-    f1_idx = tf.random.uniform(shape=(batch_size,), minval=0, maxval=3, dtype=tf.int32)
-    f1_input = tf.gather(f1_choices, f1_idx)
+categorical = tf.feature_column.categorical_column_with_vocabulary_list(
+        key='f2', vocabulary_list=['x1','x2','x3','x4','x5','x6'],
+        num_oov_buckets=5)
+embedding = feature_column.embedding_column(categorical, dimension=10)
+feature_columns.append(embedding)
 
-    # f2 categories ['x1','x2','x3','x4','x5','x6'] plus OOV buckets (handled internally)
-    f2_choices = tf.constant(['x1','x2','x3','x4','x5','x6'])
-    f2_idx = tf.random.uniform(shape=(batch_size,), minval=0, maxval=6, dtype=tf.int32)
-    f2_input = tf.gather(f2_choices, f2_idx)
+feature_layer = tf.keras.layers.DenseFeatures(feature_columns)
 
-    inputs = {
-        'f1': f1_input,
-        'f2': f2_input
-    }
-    return inputs
+###--------- define and compile model ---------
+model = tf.keras.Sequential([
+  feature_layer,
+  layers.Dense(20, activation='relu'),
+  layers.Dense(1,activation='softsign')
+])
+    
+model.compile(optimizer='adam',
+              loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
+              metrics=['accuracy'])
 
+
+train = df_to_dataset(train)
+val = df_to_dataset(val)
+new_train = df_to_dataset(new_train)
+
+#----------- train model first time - all its ok --------
+model.fit(train,
+          validation_data=val,
+          epochs=2)
+
+model.save('basic_model',save_format='tf')
+
+###------------- first update, no errors -------------------------
+model_update1 = tf.keras.models.load_model('basic_model')
+model_update1.fit(new_train,
+          validation_data=val,
+          epochs=2)
+
+model_update1.save('update1',save_format='tf')
+
+###------------- 2nd update is problem and generate errors -------------------------
+model_update2 = tf.keras.models.load_model('update1')
+model_update2.fit(new_train,
+          validation_data=val,
+          epochs=2)

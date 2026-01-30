@@ -1,17 +1,15 @@
-# torch.rand(1, dtype=torch.float32)  # Input shape: (1,)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        return x * x
+# bench.py
+x = torch.zeros(1, device='cpu', requires_grad=True)
 
-def my_model_function():
-    return MyModel()
+start_fw = time.time()
+for _ in range(100000):
+    x = x * x
+end_fw = time.time()
 
-def GetInput():
-    return torch.rand(1, requires_grad=True)
-
+start_bw = time.time()
+x.backward()
+end_bw = time.time()
+print("Forward\t", end_fw-start_fw, end="\t")
+print("Backward\t", end_bw-start_bw)

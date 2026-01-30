@@ -1,81 +1,87 @@
-# tf.random.uniform((B, H, W, C), dtype=tf.float32) ← inferred input shape in the sample code is (batch, 2, 2, 3)
+import random
 
 import tensorflow as tf
+import numpy as np
 
-class MyModel(tf.keras.Model):
+class Sampler:
     def __init__(self, sample_size=10):
-        super().__init__()
-        # sample_size is the fixed limit for pool1 size
-        self.sample_size = sample_size
-        # We keep pool1 as a tf.TensorArray to mimic "pool" that retains up to sample_size samples
-        # Since TensorArray state updates in tf.function are tricky, we keep pool1 as a tf.Variable tensor
-        # This is a workaround because passing TensorArray as arg is limited in autograph/Tf.function.
-        self.pool1 = tf.Variable(tf.zeros([0, 2, 2, 3], dtype=tf.float32),
-                                 shape=tf.TensorShape([None, 2, 2, 3]), trainable=False)
-
+        self.sample_size = tf.Variable(sample_size, dtype=tf.int32)
+        self.samples = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
+     
     @tf.function
-    def call(self, items):
-        # items: [batch_size, height=2, width=2, channels=3]
-        batch_size = tf.shape(items)[0]
+    def get_new_samples(self, data):
+        size = tf.shape(data)[0]
+        new_samples = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
+        
+        for i in range(size):
+            if self.samples.size() < self.sample_size:
+                self.samples.write(i, data[i,:])
+                new_samples.write(i, data[i, :])
+            else:
+                if (tf.random.uniform([1]) > 0.5):
+                    idx = np.random.randint(0, size)
+                    new_sample = self.samples.read(idx)
+                    self.samples.write(idx, data[i, :])
+                    new_samples.write(i, new_sample)
+                else:
+                    new_samples.write(i, data[i, :])
+        return new_samples.stack()
+        
+    
+    def __call__(self, data):
+        return tf.cond(tf.equal(self.sample_size, 0),
+                      true_fn=lambda: data,
+                      false_fn=self.get_new_samples(data))
 
-        pool1_size = tf.shape(self.pool1)[0]
+s = Sampler()
+s(tf.convert_to_tensor(np.random.rand(5, 3).astype(np.float32)))
 
-        # Because TensorArray in tf.function with external scope is problematic,
-        # We simulate pool1 as a tensor variable, updated with tf.concat when new samples added.
+import tensorflow as tf
+import numpy as np
 
-        # new_items tensorarray to collect outputs
-        new_items = tf.TensorArray(dtype=tf.float32, size=batch_size)
+pool1 = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
+pool2 = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
+new_items = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
 
-        # Loop over batch, sampling and updating pool1 if not full yet
-        # (This mimics the logic: populate pool1 until full with first items,
-        # then only output items without updating pool1 after full.)
-        def body(i, pool_tensor, out_ta):
-            cond = tf.less(tf.shape(pool_tensor)[0], self.sample_size)
+def write_to_array(array, idx, item):
+    array = array.write(idx, item)
+    return array
 
-            def fill_pool():
-                # Append current item to pool1
-                updated_pool = tf.concat([pool_tensor, items[i:i+1]], axis=0)
-                updated_out_ta = out_ta.write(i, items[i])
-                return updated_pool, updated_out_ta
+@tf.function
+def sampler(items, array1, array2):
+    num_items = tf.shape(items)[0]
+    for i in tf.range(num_items):
+        if array1.size() < 10:
+            array1 = write_to_array(array1, i, items[i, :, :, :])
+            array2 = write_to_array(array2, i, items[i, :, :, :])
+        else:
+            array2 = write_to_pool(array2, i, items[i, :, :, :])
+    return array2.stack()
 
-            def sample_from_pool():
-                # Output current item as is (no replacement logic here for simplicity)
-                # The original complex sampling logic involving random replaced sample and TensorArray reads
-                # has autograph limitations, so to meet autograph compatibility, simplified here.
-                updated_pool = pool_tensor
-                updated_out_ta = out_ta.write(i, items[i])
-                return updated_pool, updated_out_ta
+items = tf.convert_to_tensor(np.random.rand(2, 2, 2, 3).astype(np.float32))
+sampler(items, pool1, new_items)
 
-            pool_tensor, out_ta = tf.cond(cond, fill_pool, sample_from_pool)
-            return i + 1, pool_tensor, out_ta
+import tensorflow as tf
+import numpy as np
 
-        i = tf.constant(0)
-        i, final_pool, final_out = tf.while_loop(
-            lambda i, pool, out_ta: tf.less(i, batch_size),
-            body,
-            loop_vars=[i, self.pool1, new_items],
-            shape_invariants=[
-                i.get_shape(),
-                tf.TensorShape([None, 2, 2, 3]),
-                tf.TensorShape(None)
-            ]
-        )
-        # Update self.pool1 to final pool outside tf.function on purpose, assign outside or use tf.Variable.assign
-        # Because assign inside tf.function in a method is possible with tf.Variable.assign
-        self.pool1.assign(final_pool)
+pool1 = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
+pool2 = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
 
-        result = final_out.stack()  # shape: [batch_size, 2, 2, 3]
-        return result
+def write_to_array(array, idx, item):
+    array = array.write(idx, item)
+    return array
 
+@tf.function
+def sampler(items, array1):
+    num_items = tf.shape(items)[0]
+    new_items = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
+    for i in tf.range(num_items):
+        if array1.size() < 10:
+            array1 = write_to_array(array1, i, items[i, :, :, :])
+            new_items = write_to_array(new_items, i, items[i, :, :, :])
+        else:
+            new_items = write_to_array(new_items, i, items[i, :, :, :])
+    return new_items.stack()
 
-def my_model_function():
-    # Create an instance of MyModel
-    return MyModel(sample_size=10)
-
-
-def GetInput():
-    # Input shape inferred from the example: (batch=5, height=2, width=2, channels=3)
-    # batch size 5 is arbitrary positive integer
-    input_tensor = tf.random.uniform(shape=(5, 2, 2, 3), dtype=tf.float32)
-    return input_tensor
-
+items = tf.convert_to_tensor(np.random.rand(2, 2, 2, 3).astype(np.float32))
+sampler(items, pool1, new_items)

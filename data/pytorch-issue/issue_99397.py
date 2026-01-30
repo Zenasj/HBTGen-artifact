@@ -1,25 +1,26 @@
-# torch.rand(32, 32, dtype=torch.float32, device='cuda')  # Inferred input shape
+import torch
+x=torch.empty([32, 32]).cuda()
+with torch.cuda.graph(torch.cuda.CUDAGraph()):
+    torch.matmul(x,x)
 
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.matmul = torch.matmul
+@torch.jit.script
+def f(x):
+    return 2*x+1
 
-    def forward(self, x):
-        return self.matmul(x, x)
+x=torch.randn([32, 32]).cuda()
+g0 = torch.cuda.CUDAGraph()
+with torch.cuda.graph(g0):
+    y = f(x)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+g1 = torch.cuda.CUDAGraph()
+with torch.cuda.graph(g1):
+    y = f(x)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(32, 32, dtype=torch.float32, device='cuda')
+import torch
+x=torch.empty([32, 32]).cuda()
+torch.matmul(x,x)
 
-# Warmup to initialize CUBLAS
-x = GetInput()
-torch.matmul(x, x)
-
+with torch.cuda.graph(torch.cuda.CUDAGraph()):
+    torch.matmul(x,x)

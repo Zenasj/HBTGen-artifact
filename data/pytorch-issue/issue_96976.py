@@ -1,21 +1,13 @@
-# torch.rand(1, 3, 64, 64, dtype=torch.float32)
 import torch
+import torchvision
+
+from torch import nn
 from torchvision.models import resnet50
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.model = resnet50()  # Use torchvision's ResNet50 as the core model
+torch.set_default_device('mps')
 
-    def forward(self, x):
-        return self.model(x)
+img = torch.rand(1,3,64,64)
+r50 = resnet50()
 
-def my_model_function():
-    # Returns the wrapped ResNet50 model
-    return MyModel()
-
-def GetInput():
-    # Generates a random input tensor matching ResNet's expected dimensions
-    return torch.rand(1, 3, 64, 64, dtype=torch.float32)
-
+ccompiled_r50 = torch.compile(r50)
+ccompiled_r50(img)

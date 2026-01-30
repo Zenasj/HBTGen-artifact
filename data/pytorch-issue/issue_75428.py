@@ -1,17 +1,13 @@
-# torch.rand(1, 2, 224, 224, dtype=torch.float32)
-import torch
+import torch.onnx
 import torch.nn as nn
 
-class MyModel(nn.Module):
+class test_torch(nn.Module):
     def __init__(self):
         super().__init__()
-        
     def forward(self, x):
-        return torch.minimum(x, x)
+        x= torch.minimum(x, x)
+        return x
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.randn(1, 2, 224, 224)
-
+net = test_torch()
+test_input = torch.randn(1, 2, 224, 224) 
+torch.onnx.export(net.to('cpu'), test_input,'convnet.onnx')

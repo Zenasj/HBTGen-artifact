@@ -1,42 +1,64 @@
-# tf.random.uniform((batch_size, 1), dtype=tf.float32)
+import random
+
 import tensorflow as tf
-import numpy as np
+import numpy as np 
+print(tf.__version__)
+from tensorflow import keras as k
+tf.compat.v1.disable_eager_execution()
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        self.dense1 = tf.keras.layers.Dense(10, activation='tanh')
-        self.dense2 = tf.keras.layers.Dense(1)
+class Data(k.utils.Sequence):
+    """
+    Converts fit() into fit_generator() interface.
+    """
 
-    def call(self, inputs, training=False):
-        x = inputs
-        x = self.dense1(x)
-        x = self.dense2(x)
-        return x
+    def __init__(self, inputs, outputs, sample_weights, batch_size, shuffle):
+        self._inputs = inputs
+        self._outputs = outputs
+        self._sample_weights = sample_weights
+        self._size = inputs[0].shape[0]
+        self._batch_size = batch_size
+        self._num_batches = int((self._size-1)/batch_size) + 1
+        self._shuffle = shuffle
+        self._ids = np.arange(0, self._size)
+        self._reshuffle()
+        print("\nTotal samples: {} ".format(self._size))
+        print("Batch size: {} ".format(min(self._batch_size, self._size)))
+        print("Total batches: {} \n".format(self._num_batches))
 
-def my_model_function():
-    # Instantiate MyModel and compile similarly to the original example
-    model = MyModel()
-    # Compile with mean squared error loss (matching example)
-    model.compile(loss=tf.keras.losses.MeanSquaredError())
-    return model
+    def __len__(self):
+        return self._num_batches
 
-def GetInput():
-    # The original input was a 2D array of shape (batch_size, 1) with float values [0,1]
-    # We'll choose batch size 32 based on the example batch size
-    batch_size = 32
-    # Generate random floats in [0,1] matching the input shape (batch_size, 1)
-    inputs = tf.random.uniform((batch_size, 1), dtype=tf.float32)
-    return inputs
+    def __getitem__(self, index):
+        start = index * self._batch_size
+        end = min(start + self._batch_size, self._size)
+        ids = self._ids[start: end]
+        inputs = [v[ids, :] for v in self._inputs]
+        outputs = [v[ids, :] for v in self._outputs]
+        sample_weights = [v[ids] for v in self._sample_weights]
+        return inputs, outputs, sample_weights
+    
+    def on_epoch_end(self):
+        self._reshuffle()
 
-# ---
-# ### Explanation / assumptions:
-# - The original minimal example model used a single input of shape `(None, 1)` (i.e. `(batch_size, 1)`) and two dense layers.
-# - Since the original issue deals with batch size misreporting in a custom Sequence wrapper, the Keras model itself is simple: input shape `(1,)` per sample, batch size 32 mentioned.
-# - For `GetInput()`, I provide a random tensor of shape `(32, 1)` with `float32` as typical input type for TF models.
-# - The original code used `tf.compat.v1.disable_eager_execution()`, but the task requires TF 2.20 compatibility with XLA compilation, so I kept the model definition TF 2 style.
-# - The `my_model_function()` returns a compiled instance of `MyModel` with a matching loss.
-# - No external generator or sequencing, just the core model as requested.
-# - The model fits TF 2.20 and is compatible with XLA jit compilation using `@tf.function(jit_compile=True)` since it uses standard Keras layers.
-# - Comments added on top for the inferred input shape from `tf.random.uniform`.
-# This completes the transformation of the reported model snippet into the required Python structure.
+    def get_data(self):
+        return self._inputs, self._outputs, self._sample_weights
+
+    def _reshuffle(self):
+        if self._num_batches > 1 and self._shuffle:
+            self._ids = np.random.choice(self._size, self._size, replace=False)
+
+
+x = k.Input((1,))
+l1 = k.layers.Dense(10, activation='tanh')(x)
+y = k.layers.Dense(1)(l1)
+
+model = k.Model(x, y)
+model.compile(loss=k.losses.MSE)
+
+inputs = [np.linspace(0, 1, 1000).reshape(-1,1)]
+outputs = list(map(lambda x: np.sin(2*x), inputs))
+weights = list(map(lambda x: np.ones(x.size), inputs))
+
+dg = Data(inputs, outputs, weights, 32, True)
+
+model.fit(dg, epochs=10)

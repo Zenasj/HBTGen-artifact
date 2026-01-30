@@ -1,38 +1,29 @@
-# torch.rand(B, 3, 224, 224, dtype=torch.float32)
-import torch
-import torch.nn as nn
+#run style transfer
+max_iter = 500
+show_iter = 50
+optimizer = optim.LBFGS([opt_img]);
+n_iter=[0]
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Simplified VGG-like model for style transfer (partial structure)
-        self.features = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(64, 64, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2, stride=2),  # Layer 4 (0-based index)
-            nn.Conv2d(64, 128, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(128, 128, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2, stride=2),  # Layer 9
-        )
+while n_iter[0] <= max_iter:
+
+    def closure():
+        optimizer.zero_grad()
+        
+        out = vgg(opt_img, loss_layers)
+        layer_losses = [weights[a] * loss_fns[a](A, targets[a]) for a,A in enumerate(out)]
+        
+        loss = sum(layer_losses)
+        loss.backward()
+        n_iter[0]+=1
+        #print loss
+        if n_iter[0]%show_iter == (show_iter-1):
+            print('Iteration: %d, loss: %f'%(n_iter[0]+1, loss.item()))
+#             print([loss_layers[li] + ': ' +  str(l.data[0]) for li,l in enumerate(layer_losses)]) #loss of each layer
+        return loss
+
+    optimizer.step(closure)
     
-    def forward(self, x):
-        outputs = []
-        for i, layer in enumerate(self.features):
-            x = layer(x)
-            # Capture outputs from layers relevant to style transfer (e.g., layers 0, 4, 9)
-            if i in [0, 4, 9]:
-                outputs.append(x)
-        return outputs
-
-def my_model_function():
-    # Initialize the model with default weights
-    return MyModel()
-
-def GetInput():
-    # Generate a random image tensor (batch_size=1, 3 channels, 224x224)
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
-
+#display result
+out_img = postp(opt_img.data[0].cpu().squeeze())
+imshow(out_img)
+gcf().set_size_inches(10,10)

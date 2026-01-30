@@ -1,16 +1,33 @@
-# torch.rand(1, 2, 3, 4, dtype=torch.float32)
+import torch.nn as nn
+
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
+
+class MyModule(torch.nn.Module):
     def forward(self, x):
-        # Convert tensor size to Python int to avoid tracing errors
-        split_size = int(x.size(1))
-        return torch.split(x, split_size)  # Split along dimension 1
+        return torch.split(x, x.size(1))
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    return torch.randn(1, 2, 3, 4)
+m = MyModule()
+x = torch.randn(1, 2, 3, 4)
 
+# ok to run the model
+m(x)
+
+# fail to trace it
+print(torch.jit.trace(m, x))
+
+import torch
+
+class MyModule(torch.nn.Module):
+    def forward(self, x):
+        x_size = int(x.size(1))
+        return torch.split(x, x_size)
+
+
+m = MyModule()
+x = torch.randn(1, 2, 3, 4)
+
+m(x)
+
+print(torch.jit.trace(m, x))

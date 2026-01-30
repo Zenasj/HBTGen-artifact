@@ -1,46 +1,66 @@
-# torch.rand(B, C, H, W, dtype=...)  # Add a comment line at the top with the inferred input shape
-
 import torch
-import torch.nn as nn
-import torch.optim as optim
+import torch.distributed.checkpoint as dcp
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1)
-        self.relu = nn.ReLU()
-        self.fc = nn.Linear(64 * 32 * 32, 10)
+def run(rank, world_size, resume="ckpt"):
+    args = argparse.Namespace(local_rank=rank, world_size=world_size)
+    state_dict = {"model": model, "optim": optim, "epoch": 0, "args":vars(args)}
+    if os.path.exists(resume):
+        dcp.load(state_dict, checkpoint_id=resume)
+        _print(f"Resuming from epoch {state_dict['epoch']}")
+    f = None
+    for epoch in range(NUM_EPOCHS):
+        state_dict['epoch'] = epoch
+        try:
+            #torch.manual_seed(epoch)
+            x, y = _input()
 
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.relu(x)
-        x = x.view(x.size(0), -1)
-        x = self.fc(x)
-        return x
+            loss = loss_calc(model(x), y)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+            _print(f"{epoch=} {loss=}")
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    B, C, H, W = 4, 3, 32, 32  # Batch size, Channels, Height, Width
-    return torch.rand(B, C, H, W, dtype=torch.float32)
+            loss.backward()
+            optim.step()
+            optim.zero_grad()
 
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
+            if epoch>0 and epoch % SAVE_PERIOD == 0:
+                if f is not None:
+                    f.result()
+                f = dcp.state_dict_saver.async_save(
+                    state_dict, checkpoint_id=CHECKPOINT_DIR
+                )
 
-# The provided issue describes a problem with PyTorch's distributed checkpointing (DCP) where non-tensor values, such as the `epoch` and `args`, are not being updated correctly when using `dcp.load` or `dcp.async_save`. The issue also mentions that `argparse.Namespace` cannot be saved using `dcp.async_save`.
-# Since the issue is about the DCP functionality and not about a specific model, we will create a simple model and a function to demonstrate the use of DCP. We will also include a function to generate a random input tensor for the model.
-# Here is the complete Python code file:
-# ### Explanation:
-# 1. **MyModel Class**:
-#    - A simple convolutional neural network (CNN) with one convolutional layer followed by a ReLU activation and a fully connected layer.
-#    - The input shape is assumed to be `(B, 3, 32, 32)` where `B` is the batch size, and the input has 3 channels (e.g., RGB images).
-# 2. **my_model_function**:
-#    - Returns an instance of `MyModel`.
-# 3. **GetInput Function**:
-#    - Generates a random tensor with the shape `(4, 3, 32, 32)` to match the expected input of `MyModel`.
-# This code provides a complete and self-contained example of a simple PyTorch model and a function to generate a valid input tensor. It does not include the DCP functionality, as the issue was about the DCP library and not about the model itself. If you need to integrate DCP, you would need to use the `torch.distributed.checkpoint` module and handle the state dictionary as described in the issue.
+            if epoch>0 and FAULT_PERIOD > 0 and epoch % FAULT_PERIOD == 0:
+                raise InjectedException("Fault injection!")
+        except InjectedException as e:
+            dist.barrier()
+
+            _print("Trainer encountered exception:")
+            traceback.print_tb(e.__traceback__)
+
+            _print("Reloading model from last checkpoint!")
+            if f is not None:
+                f.result()
+
+def dcp_load(
+    dcp_checkpoint_dir: Union[str, os.PathLike],
+    no_dist=True,
+):
+    """
+    Given a directory containing a DCP checkpoint, this function will load it into a
+    state dict and return it as torch.load does.
+
+    Args:
+        dcp_checkpoint_dir: Directory containing the DCP checkpoint.
+
+    .. warning::
+        To avoid OOM, it's recommended to only run this function on a single rank.
+    """
+    sd: STATE_DICT_TYPE = {}
+
+    _load_state_dict(
+        sd,
+        storage_reader=FileSystemReader(dcp_checkpoint_dir),
+        planner=_EmptyStateDictLoadPlanner(),
+        no_dist=no_dist,
+    )
+    return sd

@@ -1,13 +1,11 @@
-# torch.rand(3, dtype=torch.float)  # Input shape is a 1D tensor of size 3
 import torch
-from torch import nn
 
 class CustomRepeatInterleave(torch.autograd.Function):
     @staticmethod
     def forward(ctx, input, repeats):
         ctx.repeats = repeats
         output = input.repeat_interleave(repeats)
-        ctx.mark_dirty(output)  # Issue's problematic line
+        ctx.mark_dirty(output)
         return output
 
     @staticmethod
@@ -15,20 +13,15 @@ class CustomRepeatInterleave(torch.autograd.Function):
         repeats = ctx.repeats
         grad_input = torch.zeros_like(ctx.saved_tensors[0])
         for i in range(repeats):
-            grad_input += grad_output[i]  # As per user's fixed code
+            grad_input += grad_output[i]  # Fixed the closing parenthesis here
         return grad_input, None
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        
-    def forward(self, x):
-        repeats = 2
-        return CustomRepeatInterleave.apply(x, repeats)
+# Example usage
+x = torch.tensor([1.0, 2.0, 3.0], requires_grad=True)
+repeats = 2
+y = CustomRepeatInterleave.apply(x, repeats)
 
-def my_model_function():
-    return MyModel()
+z = y.sum()
+z.backward()
 
-def GetInput():
-    return torch.rand(3, dtype=torch.float)  # Matches the example's input shape
-
+print(x.grad)

@@ -1,32 +1,53 @@
-# tf.random.uniform((1, 28, 28), dtype=tf.float32) ← Input shape for batch_size=1, steps=28, input_size=28
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define a bidirectional LSTM layer with 20 units returning sequences
-        self.bidir_lstm = tf.keras.layers.Bidirectional(
-            tf.keras.layers.LSTM(20, return_sequences=True))
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense = tf.keras.layers.Dense(10, activation=tf.nn.softmax, name='output')
+model = tf.keras.models.Sequential([
+    tf.keras.layers.Input(shape=(28, 28), name='input'),
+    tf.keras.layers.Bidirectional(
+        tf.keras.layers.LSTM(20, return_sequences=True)),
+    tf.keras.layers.Flatten(),
+    tf.keras.layers.Dense(10, activation=tf.nn.softmax, name='output')
+])
+model.compile(optimizer='adam',
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
+model.summary()
 
-    def call(self, inputs, training=False):
-        x = self.bidir_lstm(inputs)
-        x = self.flatten(x)
-        return self.dense(x)
+run_model = tf.function(lambda x: model(x))
+# This is important, let's fix the input size.
+BATCH_SIZE = 1
+STEPS = 28
+INPUT_SIZE = 28
+concrete_func = run_model.get_concrete_function(
+    tf.TensorSpec([BATCH_SIZE, STEPS, INPUT_SIZE], model.inputs[0].dtype))
 
-def my_model_function():
-    # Instantiate the model and compile it with adam optimizer.
-    model = MyModel()
-    # The original example set up metrics and loss, prepare for categorical classification
-    model.compile(optimizer='adam',
-                  loss='sparse_categorical_crossentropy',
-                  metrics=['accuracy'])
-    return model
+# model directory.
+MODEL_DIR = "keras_lstm"
 
-def GetInput():
-    # Return a random float32 tensor with the shape expected by MyModel:
-    # batch_size=1, steps=28, input_size=28
-    return tf.random.uniform((1, 28, 28), dtype=tf.float32)
+# converter = tf.lite.TFLiteConverter.from_concrete_functions([concrete_func])
+# converter = tf.lite.TFLiteConverter.from_saved_model(MODEL_DIR)
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+converter.experimental_new_converter = True
+tflite_model = converter.convert()
 
+with tf.io.gfile.GFile('tflite_test.tflite', 'wb') as f:
+    f.write(tflite_model)
+
+run_model = tf.function(lambda x: model(x))
+# This is important, let's fix the input size.
+BATCH_SIZE = 1
+STEPS = 28
+INPUT_SIZE = 28
+concrete_func = run_model.get_concrete_function(
+    tf.TensorSpec([BATCH_SIZE, STEPS, INPUT_SIZE], model.inputs[0].dtype))
+
+# model directory.
+MODEL_DIR = "keras_lstm"
+model.save(MODEL_DIR, save_format="tf", signatures=concrete_func)
+
+converter = tf.lite.TFLiteConverter.from_saved_model(MODEL_DIR)
+tflite_model = converter.convert()

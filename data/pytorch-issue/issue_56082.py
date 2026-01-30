@@ -1,44 +1,84 @@
-# torch.rand(B, C, H, W, dtype=...)  # Add a comment line at the top with the inferred input shape
-import torch
-import torch.nn as nn
+import ruamel.yaml
+from ruamel.yaml.tokens import CommentToken
+from ruamel.yaml.error import CommentMark
+from tools.codegen.model import *  # noqa: F403
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3, stride=1, padding=1)
-        self.relu = nn.ReLU()
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
-        self.fc = nn.Linear(16 * 16 * 16, 10)  # Assuming input size is 32x32
+with open("aten/src/ATen/native/native_functions.yaml", "r") as f:
+    contents = f.read()
 
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.relu(x)
-        x = self.pool(x)
-        x = x.view(-1, 16 * 16 * 16)
-        x = self.fc(x)
-        return x
+yaml = ruamel.yaml.YAML()
+yaml.preserve_quotes = True
+yaml.width = 1000
+yaml.boolean_representation = ['False', 'True']
+r = yaml.load(contents)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+convert = '''\
+acos
+acosh
+asin
+asinh
+atan
+atanh
+cos
+cosh
+digamma
+erf
+erfc
+erfinv
+exp
+expm1
+exp2
+lgamma
+log
+log10
+log1p
+log2
+reciprocal
+sigmoid
+sin
+sinc
+sinh
+special_entr
+sqrt
+tan
+tanh'''.split()
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    batch_size = 4
-    channels = 3
-    height = 32
-    width = 32
-    return torch.rand(batch_size, channels, height, width, dtype=torch.float32)
+for e in r:
+    f = NativeFunction.from_yaml(e, Location("", 0))
+    if f.structured or f.structured_delegate is not None:
+        continue
+    n = f.func.name.name.base
+    if n not in convert:
+        continue
+    # mutate e to make changes
+    if f.func.kind() == SchemaKind.out:
+        e.insert(1, 'structured', True)
+        e.insert(2, 'structured_inherits', 'TensorIteratorBase')
+    else:
+        # TODO: The .out overload assumption is not sound in general
+        e.insert(1, 'structured_delegate', f'{n}.out')
 
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
+        e['dispatch'].pop('CPU', None)
+        e['dispatch'].pop('CUDA', None)
+        e['dispatch'].pop('CPU, CUDA', None)
+        e['dispatch'].pop('CompositeExplicitAutograd', None)
 
-# The provided GitHub issue does not contain any specific PyTorch model or code that needs to be extracted and converted into a complete Python code file. The issue is about porting unary float functions to a structured format in the PyTorch codebase, and it includes a script for modifying the `native_functions.yaml` file.
-# Since there is no model or function to extract, I will create a simple example of a PyTorch model and input generation function that meets the specified structure and constraints.
-# ### Explanation:
-# 1. **MyModel Class**: A simple convolutional neural network (CNN) with one convolutional layer, ReLU activation, max pooling, and a fully connected layer.
-# 2. **my_model_function**: Returns an instance of `MyModel`.
-# 3. **GetInput Function**: Generates a random tensor with the shape `(B, C, H, W)` where `B` is the batch size, `C` is the number of channels, and `H` and `W` are the height and width of the input image. The data type is `torch.float32`.
-# This code can be used as a starting point for a more complex model or for testing purposes.
+        *_, last_k = e.keys()
+        needs_fixup = False
+
+        if not e['dispatch']:
+            if last_k == 'dispatch':
+                needs_fixup = True
+            del e['dispatch']
+
+        # Manually fix up newlines at the end, because ruamel
+        # made some bad life choices about where to associate trailing
+        # whitespace for nested dicts; see
+        # https://stackoverflow.com/questions/42172399/modifying-yaml-using-ruamel-yaml-adds-extra-new-lines
+        if needs_fixup:
+            *_, last_k = e.keys()
+            # post_key, pre_key, post_value, pre_value
+            e.ca.items[last_k] = [None, None, CommentToken('\n\n', CommentMark(0), None), None]
+
+with open("aten/src/ATen/native/native_functions.yaml.new", "w") as f:
+    yaml.dump(r, f)

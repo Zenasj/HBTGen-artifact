@@ -1,24 +1,12 @@
-# torch.rand(1, 4, dtype=torch.float32)  # Assuming a batch size of 1 and 4 categories for Categorical distribution
-
-import torch
-from torch import nn
+kj
+import torch as t
 from torch.distributions import Categorical
+probs = t.tensor([.3, .3, .399, .001])
+y_test = t.tensor([0, 1, 2, 1, 2, 2, 3])
+print(t.exp(Categorical(probs=probs).log_prob(y_test)))
+print(t.exp(Categorical(logits=t.log(probs)).log_prob(y_test)))
+print(t.exp(Categorical(logits=t.logit(probs)).log_prob(y_test)))
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Define a simple model that outputs logits
-        self.fc = nn.Linear(4, 4)
-
-    def forward(self, x):
-        logits = self.fc(x)
-        return logits
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(1, 4, dtype=torch.float32)
-
+tensor([0.3000, 0.3000, 0.3990, 0.3000, 0.3990, 0.3990, 0.0010])
+tensor([0.3000, 0.3000, 0.3990, 0.3000, 0.3990, 0.3990, 0.0010])
+tensor([0.2816, 0.2816, 0.4362, 0.2816, 0.4362, 0.4362, 0.0007])

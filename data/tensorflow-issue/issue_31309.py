@@ -1,31 +1,45 @@
-# tf.random.uniform((32, 1, 100), dtype=tf.float32)
+import math
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
+
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # LSTM with 200 units, returning only the last output in the sequence
-        self.lstm_layer = tf.keras.layers.LSTM(200, return_sequences=False)
-        # Dense layer to map to embedding size 100
-        self.dense_layer = tf.keras.layers.Dense(100)
-    
-    def call(self, inputs, training=False):
-        x = self.lstm_layer(inputs)
-        output = self.dense_layer(x)
-        return output
+batch_size = 32  # no problem if this is 1
+sequence_len = 1
+embedding_size = 100
 
+x_train = np.random.randn(batch_size, sequence_len, embedding_size)
+y_train = np.random.randn(batch_size, embedding_size)
+sample_weight = np.random.randn(batch_size)  # no problem if this is None
+
+train_input = tf.keras.Input(shape=(sequence_len, embedding_size),
+                             batch_size=batch_size)
+
+lstm_layer = tf.keras.layers.LSTM(200,
+                                  return_sequences=False,
+                                  )(train_input)
+
+dense_layer = tf.keras.layers.Dense(embedding_size,
+                                    )(lstm_layer)
+
+model = tf.keras.models.Model(inputs=train_input, outputs=dense_layer)
+
+model.summary()
+
+# Custom loss function. This function could of course be replaced with
+# tf.keras.losses.mean_squared_error, but I have a use case where I need a
+# custom loss function.
 class customLoss(tf.keras.losses.Loss):
     def call(self, y_true, y_pred):
-        # Per-sample loss: mean squared error reduced across last dimension
-        # This matches the expected shape to support sample_weight properly.
-        return tf.reduce_mean(tf.math.squared_difference(y_true, y_pred), axis=-1)
+        return tf.reduce_mean(tf.math.squared_difference(y_true, y_pred))
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+model.compile(optimizer=tf.keras.optimizers.RMSprop(lr=0.001),
+              loss=customLoss())
 
-def GetInput():
-    # Returns a random tensor matching input shape: (batch_size=32, sequence_len=1, embedding_size=100)
-    # Using float32 as typical for embeddings and LSTM input.
-    return tf.random.uniform((32, 1, 100), dtype=tf.float32)
-
+loss = model.train_on_batch(x_train,
+                            y=y_train,
+                            sample_weight=sample_weight)

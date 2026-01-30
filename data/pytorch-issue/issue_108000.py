@@ -1,14 +1,23 @@
-# torch.rand(1, 0, dtype=torch.float32)  # Inferred input shape from issue's [1, 0] example
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return torch.logical_not(x)
+class CustomModel(nn.Module):
+    def __init__(self):
+        super(CustomModel, self).__init__()
 
-def my_model_function():
-    return MyModel()
+    def forward(self, inputs):
+        return torch.logical_not(**inputs)
 
-def GetInput():
-    return torch.empty(1, 0, dtype=torch.float32)  # Matches the input shape [1, 0]
+ip_size = [1, 0]
+input_tensor = torch.randn(ip_size)
+cuda_inputs = input_tensor.clone().to('cuda')
+out = torch.empty(0)
+cuda_out = input_tensor.clone().to('cuda')
 
+mymodel = CustomModel()
+no_op_info = mymodel({'input': input_tensor, 'out': out})
+
+mymodel.to('cuda')
+op_info = torch.compile(mymodel.forward, mode='reduce-overhead')({'input': cuda_inputs, 'out': cuda_out})
+
+print(op_info)

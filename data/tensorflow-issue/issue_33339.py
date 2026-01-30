@@ -1,59 +1,108 @@
-# tf.random.uniform((B, None), dtype=tf.string) ← Input is a sparse string tensor with variable length sequences for 'color' feature
+from tensorflow import keras
+from tensorflow.keras import layers
+
 import tensorflow as tf
+import os
+import json
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Feature column setup: categorical_column with vocabulary and embedding_column
-        color_column = tf.feature_column.categorical_column_with_vocabulary_list(
-            'color', ['R', 'G', 'B'], dtype=tf.string)
-        self.color_embedding = tf.feature_column.embedding_column(color_column, 4)
-        # DenseFeatures layer to process feature columns
-        self.dense_features = tf.keras.layers.DenseFeatures([self.color_embedding])
-        # Final output layer with sigmoid activation for binary classification
-        self.output_dense = tf.keras.layers.Dense(1, activation='sigmoid')
+os.environ['TF_CONFIG'] = json.dumps({
+    'cluster': {
+        'worker': ["localhost:12345", "localhost:23456"]
+    },
+    'task': {'type': 'worker', 'index': 1}
+})
 
-    def call(self, inputs, training=False):
-        # Extract embedding features
-        x = self.dense_features(inputs)
-        # Forward through output dense layer
-        out = self.output_dense(x)
-        return out
+# generate fake data
+def serialize_example(value):
+    feature = {
+      'color': tf.train.Feature(bytes_list=tf.train.BytesList(value=value)),
+    }
+    example_proto = tf.train.Example(features=tf.train.Features(feature=feature))
+    return example_proto.SerializeToString()
 
-def my_model_function():
-    # Instantiate and return MyModel instance within distribution strategy scope (optional)
-    # Here, just create model normally:
-    return MyModel()
+tfrecord_writer = tf.io.TFRecordWriter('./color.tfrecord')
+for each in [['G', 'R'], ['B'], ['B', 'G'], ['R']]:
+    tfrecord_writer.write(serialize_example(each))
+tfrecord_writer.close()
 
-def GetInput():
-    # Build a sample batch input dictionary matching the expected input:
-    # - Sparse tensor for 'color' with variable-length sequences
-    # We'll create a batch of size 1 with sequences like ['G', 'R'], ['B'], etc.
+# build feature column
+color_column = tf.feature_column.categorical_column_with_vocabulary_list('color', ['R', 'G', 'B'], dtype=tf.string)
+color_embeding = tf.feature_column.embedding_column(color_column, 4) # tf.feature_column.indicator_column(color_column)
+
+inputs = {}
+inputs['color'] = tf.keras.layers.Input(name='color', shape=(None, ), sparse=True, dtype='string')
+
+# build model
+with tf.distribute.experimental.MultiWorkerMirroredStrategy().scope():
+    dense = tf.keras.layers.DenseFeatures([color_embeding])(inputs)
+    output = tf.keras.layers.Dense(1, activation='sigmoid')(dense)
+    model = tf.keras.Model(inputs, output)
+    model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+
+# build dataset
+def parse(example_proto):
+    feature_description = {
+        'color': tf.io.VarLenFeature(tf.string)
+    }
+    parsed_features = tf.io.parse_single_example(example_proto, feature_description)
+    return parsed_features, True
     
-    # Sparse tensor indices for batch 0, variable length
-    indices = tf.constant([[0, 0], [0, 1]])
-    values = tf.constant(['G', 'R'])
-    dense_shape = tf.constant([1, 2])
+dataset = tf.data.TFRecordDataset('./color.tfrecord').map(parse).repeat().batch(1)
 
-    # Construct SparseTensor
-    sparse_input = tf.SparseTensor(indices=indices, values=values, dense_shape=dense_shape)
+model.fit(dataset, epochs=3, steps_per_epoch=1)
+
+import tensorflow as tf
+import os
+import json
+
+os.environ['TF_CONFIG'] = json.dumps({
+    'cluster': {
+        'worker': ["localhost:12345", "localhost:23456"]
+    },
+    'task': {'type': 'worker', 'index': 1}
+})
+
+# generate dummy dataset
+def serialize_example(value):
+    feature = {
+      'color': tf.train.Feature(bytes_list=tf.train.BytesList(value=value)),
+    }
+    example_proto = tf.train.Example(features=tf.train.Features(feature=feature))
+    return example_proto.SerializeToString()
+
+tfrecord_writer = tf.io.TFRecordWriter('./color.tfrecord')
+for each in [['G', 'R'], ['B'], ['B', 'G'], ['R']]:
+    tfrecord_writer.write(serialize_example(each))
+tfrecord_writer.close()
+
+# build feature column
+color_column = tf.feature_column.categorical_column_with_vocabulary_list('color', ['R', 'G', 'B'], dtype=tf.string)
+color_embeding = tf.feature_column.embedding_column(color_column, 4) # tf.feature_column.indicator_column(color_column)
+
+inputs = {}
+inputs['color'] = tf.keras.layers.Input(name='color', shape=(None, ), sparse=True, dtype='string')
+
+# build model
+with tf.distribute.experimental.MultiWorkerMirroredStrategy().scope():
+    dense = tf.keras.layers.DenseFeatures([color_embeding])(inputs)
+    output = tf.keras.layers.Dense(1, activation='sigmoid')(dense)
+    model = tf.keras.Model(inputs, output)
+    model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+
+# build dataset
+def parse(example_proto):
+    feature_description = {
+        'color': tf.io.VarLenFeature(tf.string)
+    }
+    parsed_features = tf.io.parse_single_example(example_proto, feature_description)
+    return parsed_features, True
     
-    # Wrap in dict
-    inputs = {'color': sparse_input}
-    return inputs
+dataset = tf.data.TFRecordDataset('./color.tfrecord').map(parse).batch(1).repeat()
 
-# ---
-# ### Explanation and assumptions:
-# - The original issue and code show a Keras model using a variable-length sparse string input for a feature column named `'color'`.
-# - The feature column is a categorical column with fixed vocabulary ['R', 'G', 'B'] wrapped in an embedding column of dimension 4.
-# - The input shape is `(batch_size, None)` because variable-length sequences per batch element.
-# - Input is sparse (`sparse=True, dtype=tf.string`).
-# - The model uses `tf.keras.layers.DenseFeatures` to handle feature columns.
-# - The model outputs a single scalar with sigmoid activation.
-# - `GetInput()` returns a batch input dictionary with the requisite sparse tensor for the 'color' feature.
-# - The batch size is 1 for simplicity.
-# - This reflects the minimal example in the issue.
-# - Distribution strategy and dataset options are omitted as those relate to training orchestration rather than model definition or input signature.
-# - The model is compatible with TF 2.20.0 and can be compiled with XLA.
-# - No test code is included.
-# This code should work standalone to create a TensorFlow 2 Keras model matching the issue's input and model setup. It meets the requirements by providing a `MyModel` class, `my_model_function()` to instantiate it, and generator function `GetInput()` that creates a valid input for the model call.
+######### ↓ ↓ ↓ change ↓ ↓ ↓ #######
+options = tf.data.Options()  
+options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.OFF  # AutoShardPolicy.DATA  also not works
+dataset = dataset.with_options(options) 
+
+
+model.fit(dataset, epochs=3, steps_per_epoch=1)

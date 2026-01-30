@@ -1,30 +1,69 @@
-# tf.random.uniform((B, 20), dtype=tf.float32) ← Input shape inferred from issue example using shape (batch_size, 20)
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
-import tensorflow as tf
+import keras
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define a simple model matching the example:
-        # Input shape: (None, 20)
-        # Single Dense layer with 10 units
-        self.dense = tf.keras.layers.Dense(10)
+class InterruptingCallback(keras.callbacks.Callback):
+   def on_epoch_begin(self, epoch, logs=None):
+     if epoch == 4:
+       raise RuntimeError('Interrupting!')
 
-    def call(self, inputs, training=False):
-        # Forward pass through the dense layer
-        return self.dense(inputs)
+callback = keras.callbacks.BackupAndRestore(backup_dir="/tmp/backup")
 
-def my_model_function():
-    # Create an instance of MyModel
-    model = MyModel()
-    # Explicitly build the model by passing an input shape batch - ensures the model is built before fit
-    model.build(input_shape=(None, 20))
-    # Compile with SGD optimizer and mse loss as seen in the example
-    model.compile(optimizer=tf.keras.optimizers.SGD(), loss='mse')
-    return model
+# Define the model with an explicit input shape
+model = keras.models.Sequential([
+    keras.layers.InputLayer(input_shape=(20,)),  # Specify the input shape
+    keras.layers.Dense(10)
+])
 
-def GetInput():
-    # Return a random tensor with shape compatible with model input: (batch_size, 20)
-    # Batch size is chosen arbitrarily as 5 to match example data shape (5, 20)
-    return tf.random.uniform((5, 20), dtype=tf.float32)
+model.compile(keras.optimizers.SGD(), loss='mse')
 
+# Now the model is built before training
+try:
+    model.fit(np.arange(100).reshape(5, 20), np.zeros(5), epochs=10,
+              batch_size=1, callbacks=[callback, InterruptingCallback()],
+              verbose=0)
+except Exception as e:
+    print(e)
+
+history = model.fit(np.arange(100).reshape(5, 20), np.zeros(5),
+                    epochs=10, batch_size=1, callbacks=[callback],
+                    verbose=0)
+
+print(len(history.history['loss']))
+
+import keras
+import numpy as np
+
+class InterruptingCallback(keras.callbacks.Callback):
+   def on_epoch_begin(self, epoch, logs=None):
+     if epoch == 4:
+       raise RuntimeError('Interrupting!')
+
+callback = keras.callbacks.BackupAndRestore(backup_dir="/tmp/backup")
+
+# Define the model without specifying input shape
+model = keras.models.Sequential([
+    keras.layers.Dense(10)
+])
+
+model.compile(keras.optimizers.SGD(), loss='mse')
+
+# Build the model by passing a batch of data
+model.build(input_shape=(None, 20))  # Here, 20 is the number of features in your input data
+
+# Now the model is built before calling fit
+try:
+    model.fit(np.arange(100).reshape(5, 20), np.zeros(5), epochs=10,
+              batch_size=1, callbacks=[callback, InterruptingCallback()],
+              verbose=0)
+except Exception as e:
+    print(e)
+
+history = model.fit(np.arange(100).reshape(5, 20), np.zeros(5),
+                    epochs=10, batch_size=1, callbacks=[callback],
+                    verbose=0)
+
+print(len(history.history['loss']))

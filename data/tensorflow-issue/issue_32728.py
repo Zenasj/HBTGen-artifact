@@ -1,33 +1,39 @@
-# tf.random.uniform((None, None, None, 3), dtype=tf.float32)  ← Assumed typical input shape for InceptionV3 is (B, H, W, 3) with float32
-
+import sys 
+import os
 import tensorflow as tf
+import gc
+import time
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Using the Keras InceptionV3 model without top classification layer, pretrained on ImageNet
-        # This assumes input is compatible: float32 tensor with shape (batch, height, width, 3)
-        # Using include_top=False to get feature representation only
-        self.inception = tf.keras.applications.InceptionV3(include_top=False, weights='imagenet')
+class InceptionV3Graph:
+    def __init__(self, graph_path):
+        with tf.gfile.FastGFile(graph_path, 'rb') as f:
+            graph_def = tf.GraphDef()
+            graph_def.ParseFromString(f.read())
+            _ = tf.import_graph_def(graph_def, name='')
+        self.sess = tf.Session(graph=tf.get_default_graph())
 
-    def call(self, inputs, training=False):
-        # Forward pass through the Inception V3 base
-        features = self.inception(inputs, training=training)
-        # Global average pooling to get fixed-size output vector per image
-        pooled = tf.keras.layers.GlobalAveragePooling2D()(features)
-        return pooled
+    def close(self):
+        tf.reset_default_graph()
+        gc.collect()
+        self.sess.close()
 
-def my_model_function():
-    # Return an instance of MyModel with pretrained InceptionV3 base
-    return MyModel()
-
-def GetInput():
-    # Generate a random batch input tensor to match Inception V3 expected input shape
-    # InceptionV3 typically expects 299x299 images with 3 channels, float32 in [0, 255] preprocessed to [-1, 1]
-    batch_size = 1  # batch size 1 for simplicity
-    height, width, channels = 299, 299, 3
-    x = tf.random.uniform((batch_size, height, width, channels), minval=0, maxval=255, dtype=tf.float32)
-    # Preprocess input according to InceptionV3 expectations
-    x = tf.keras.applications.inception_v3.preprocess_input(x)
-    return x
-
+if __name__ == "__main__":
+    graph_path = "/path/to/classify_image_graph_def.pb" # you can get classify_image_graph_def.pb from http://download.tensorflow.org/models/image/imagenet/inception-2015-12-05.tgz
+    N_GRAPHS = 100 
+    graphs = dict()
+    for i in range(N_GRAPHS):
+        print("Loading graph {}".format(i+1))
+        graphs[i] = InceptionV3Graph(graph_path)
+        # If you uncomment these two lines below there won't be any the memory leak
+        #graphs[i].close()
+        #del graphs[i]
+    for i in range(N_GRAPHS):
+        print("Unloading graph {}".format(i+1))
+        if i in graphs:
+            graphs[i].close()
+            del graphs[i]
+    print(graphs)
+    gc.collect()
+    print("All graphs unloaded")
+    time.sleep(120)
+    print("Quitting...")

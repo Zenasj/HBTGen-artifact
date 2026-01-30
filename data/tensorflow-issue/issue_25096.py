@@ -1,26 +1,34 @@
-# tf.random.uniform((B, 5), dtype=tf.float32)  ← Input shape inferred from input_shape=[5]
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
+from tensorflow import keras
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Dense layer with units=1
-        # Followed by a softplus activation implemented using a standard callable (tf.nn.softplus)
-        # This avoids the error when Keras tries to use a Layer instance as an activation
-        self.dense = tf.keras.layers.Dense(1)
+#### BAD (raise AttributeError):
+my_softplus = keras.layers.Activation("softplus")
+#my_softplus = keras.layers.Lambda(tf.nn.softplus)
+#my_softplus = keras.layers.Lambda(lambda X: tf.nn.softplus(X))
+#my_softplus = keras.layers.Lambda(tf.function(lambda X: tf.nn.softplus(X)))
 
-    def call(self, inputs):
-        x = self.dense(inputs)
-        # Use tf.nn.softplus directly, as recommended in the issue discussion for stable usage
-        return tf.nn.softplus(x)
+#### GOOD:
+#my_softplus = "softplus"
+#my_softplus = tf.nn.softplus
+#my_softplus = lambda X: tf.nn.softplus(X)
+#my_softplus = tf.function(lambda X: tf.nn.softplus(X))
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+model = keras.models.Sequential([
+    keras.layers.Dense(1, activation=my_softplus, input_shape=[5])
+])
 
-def GetInput():
-    # Generate a random tensor of shape (batch_size, 5) with float32 dtype
-    # Batch size here is arbitrarily chosen as 4 for demonstration
-    return tf.random.uniform((4, 5), dtype=tf.float32)
+from tensorflow import keras
 
+class MyActivation(keras.layers.Layer):
+    def __init__(self, activation=None, **kwargs):
+        self.activation = keras.layers.Activation(activation)
+        super(MyActivation, self).__init__(**kwargs)
+    def call(self, X):
+        return self.activation(X + 1.)
+
+model = keras.models.Sequential([
+    MyActivation(activation="softplus", input_shape=[5])
+])

@@ -1,20 +1,29 @@
-# torch.rand(B, C, H, W, dtype=...)  # The input shape is inferred to be (B, C, H, W) based on the example inputs
-
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+import torch
+
+class DimModel(torch.nn.Module):
     def forward(self, input):
         out = input * 2
         out *= out.dim()
         return out
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+m = torch.jit.script(DimModel())
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # Inferred from the example inputs in the issue
-    return torch.randn(1, 2, 3, requires_grad=True)
+input_1 = torch.arange(6).view(2, 3)
+print(m(input_1))
+"""
+outputs tensor([[ 0,  4,  8],
+        [12, 16, 20]])
+"""
 
+input_2 = torch.arange(6).view(1, 2, 3)
+print(m(input_2))
+"""
+outputs tensor([[[ 0,  4,  8],
+         [12, 16, 20]]])
+
+but should be tensor([[[ 0,  6, 12],
+         [18, 24, 30]]])
+The correct result can also be produced if DimModel()(input_1) is commented
+"""

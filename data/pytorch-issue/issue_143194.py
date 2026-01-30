@@ -1,21 +1,42 @@
-# torch.rand(B, 2, 1, 1, dtype=torch.float32)  # Inferred input shape from the example
-import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
+from torch.distributed._composable.fsdp import fully_shard
+from torch.distributed.device_mesh import init_device_mesh
+import torch
+from torchao.float8 import (
+    CastConfig,
+    Float8LinearConfig,
+    ScalingType,
+    convert_to_float8_training,
+)
+
+
+class M(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.l = nn.Linear(2, 2)  # Matches the original Linear layer in the issue's code
+        self.l = torch.nn.Linear(2, 2)
 
     def forward(self, x):
-        # Flatten 4D input (B, C, H, W) to 2D (B, C*H*W) to match Linear layer's expectation
-        x = x.view(x.size(0), -1)
         return self.l(x)
+    
 
-def my_model_function():
-    return MyModel()  # Returns the model instance with default initialization
+mesh = init_device_mesh("cuda", (2, 2, 2), mesh_dim_names=("ddp", "fsdp", "abcd"))
 
-def GetInput():
-    # Returns a random 4D tensor matching the inferred input shape
-    return torch.randn(2, 2, 1, 1)  # B=2, C=2, H=1, W=1 (matches example's torch.randn(2, 2))
+with torch.device(torch.cuda.current_device()):
+    model = M()
+    x = torch.randn(2, 2, device=torch.cuda.current_device())
 
+model = convert_to_float8_training(
+    model,
+    config=Float8LinearConfig(
+        enable_fsdp_float8_all_gather=True,
+        cast_config_input=CastConfig(scaling_type=ScalingType("dynamic")),
+        cast_config_weight=CastConfig(scaling_type=ScalingType("dynamic")),
+        cast_config_grad_output=CastConfig(scaling_type=ScalingType("dynamic")),
+        force_recompute_fp8_weight_in_bwd=True,
+    ),
+    module_filter_fn=lambda mod, fqn: fqn != "output",
+)
+model = fully_shard(model, mesh=mesh["ddp", "fsdp"])
+
+y = model(x)

@@ -1,50 +1,42 @@
-# tf.random.uniform((2, 4, 64, 64, 64), dtype=tf.float32) ← input shape and type from example
+import math
+import random
+from tensorflow import keras
 
+from __future__ import absolute_import, division, print_function, unicode_literals
+import functools
+
+import numpy as np
 import tensorflow as tf
 from tensorflow.keras import layers, activations
 
-class MyModel(tf.keras.Model):
-    """
-    A combined model encapsulating two ways of applying softmax on inputs:
-    - Using layers.Activation('softmax') which defaults to axis=-1 and accepts dtype
-    - Using activations.softmax function which allows specifying axis but no dtype argument
-    
-    The forward pass produces a boolean tensor indicating elementwise equality
-    of the two outputs, highlighting the observed differences in behavior.
 
-    This fused model demonstrates the issue:
-    layers.Activation('softmax', dtype='float32') applies softmax on last axis (-1) with float32 output,
-    while activations.softmax inputs softmax on axis=1, but dtype can't be set directly.
-
-    The comparison outputs False in most places due to axis mismatch.
-    """
-
+class SFM1(tf.keras.Model):
     def __init__(self):
-        super(MyModel, self).__init__()
-        # layers.Activation defaults axis=-1, with dtype float32 (mixed precision compatible)
-        self.sfm1 = layers.Activation('softmax', dtype='float32')
-
+        super(SFM1, self).__init__()
+        self.output_layer = layers.Activation('softmax', dtype='float32')
+    
     def call(self, inputs):
-        # Apply softmax using layers.Activation - axis=-1 by default
-        out1 = self.sfm1(inputs)
+        return self.output_layer(inputs)
 
-        # Apply softmax function specifying axis=1 but internally casting inputs to float32 for mixed precision support
-        # This is the recommended workaround from the discussion
-        cast_inputs = tf.dtypes.cast(inputs, dtype=tf.float32)
-        out2 = activations.softmax(cast_inputs, axis=1)
+class SFM2(tf.keras.Model):
+    def __init__(self):
+        super(SFM2, self).__init__()
+        
+    
+    def call(self, inputs):
+        return activations.softmax(inputs, axis=1)
+    
+x = tf.random.uniform((2, 4, 64, 64, 64), dtype=tf.float32)
+sfm1 = SFM1()
+y1 = sfm1(x)
 
-        # Return boolean tensor showing elementwise equality (mostly False due to axis difference)
-        comparison = tf.math.equal(out1, out2)
-        return comparison
+sfm2 = SFM2()
+y2= sfm2(x)
 
+tf.math.equal(y1, y2)
 
-def my_model_function():
-    # Instantiate and return MyModel
-    return MyModel()
+tf.dtypes.cast(activations.softmax(inputs, axis=1), dtype=tf.float32)
 
-def GetInput():
-    # Generate input tensor matching the example shape (2,4,64,64,64) with float32 dtype
-    # This is the same shape as used in the example: batch=2, channels=4 (channel first), H=64, W=64, D=64 (assuming 3D spatial)
-    # Leaves the model behavior consistent with given use case
-    return tf.random.uniform((2, 4, 64, 64, 64), dtype=tf.float32)
+activations.softmax(tf.dtypes.cast(inputs, dtype=tf.float32), axis=1)
 
+layer = tf.keras.layers.Softmax(axis=1, dtype=tf.float32)

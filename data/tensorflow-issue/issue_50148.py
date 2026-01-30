@@ -1,10 +1,50 @@
-# tf.random.uniform((B, 28, 28, 1), dtype=tf.float32)
-import tensorflow as tf
-from tensorflow.keras import layers, Model, Input
-import tensorflow_model_optimization as tfmot
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
-# A No-Op QuantizeConfig to allow annotating BatchNormalization layers without actual quantization
-class NoOpQuantizeConfig(tfmot.quantization.keras.QuantizeConfig):
+import tempfile
+import os
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Dense, Input, Flatten, BatchNormalization
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Reshape, ZeroPadding2D
+from tensorflow.keras.datasets import mnist
+import tensorflow_model_optimization as tfmot
+from tensorflow_model_optimization.python.core.quantization.keras import quantize_config
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+import argparse
+import numpy as np
+(X_train, y_train), (X_test, y_test) = mnist.load_data()
+y_train = tf.keras.utils.to_categorical(y_train, num_classes=10)
+y_test = tf.keras.utils.to_categorical(y_test, num_classes=10)
+X_train = (np.expand_dims(X_train,3))
+X_test = (np.expand_dims(X_test,3))
+print(X_train.shape, y_train.shape, X_test.shape, y_test.shape)
+train_datagen =ImageDataGenerator(
+    rescale=1./255,
+    featurewise_center=True,#mean=0
+    featurewise_std_normalization=True,#/std
+    rotation_range=20,
+    # preprocessing_function=my_random_crop
+)
+
+test_datagen=ImageDataGenerator(
+    rescale=1./255,
+    featurewise_center=True,
+    featurewise_std_normalization=True,
+)
+train_datagen.fit(X_train)
+test_datagen.fit(X_test)
+# parser = argparse.ArgumentParser()
+# parser.add_argument(
+#      '-trtm', '--trtmodel', type=str, default='../F_TorrentNet.trt')
+# parser.add_argument(
+#         '-m', '--model', type=str, default='F_TorrentNet.pth')
+# args = parser.parse_args()
+class NoOpQuantizeConfig(quantize_config.QuantizeConfig):
+    """QuantizeConfig which does not quantize any part of the layer."""
+
     def get_weights_and_quantizers(self, layer):
         return []
 
@@ -22,94 +62,118 @@ class NoOpQuantizeConfig(tfmot.quantization.keras.QuantizeConfig):
 
     def get_config(self):
         return {}
-
 quantize_config = NoOpQuantizeConfig()
+def LeNet():
+    inputs = Input(shape=(28, 28,1))
+    # x = Reshape((28, 28, 1), input_shape=(28, 28))(inputs)
+    x = ZeroPadding2D(padding=(2, 2))(inputs)
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define LeNet part
-        self.lenet_padding = layers.ZeroPadding2D(padding=(2, 2))
-        self.lenet_conv1 = layers.Conv2D(6, 5, strides=(1, 1), activation='relu')
-        self.lenet_bn1 = tfmot.quantization.keras.quantize_annotate_layer(
-            layers.BatchNormalization(), quantize_config=quantize_config)
-        self.lenet_pool1 = layers.MaxPooling2D(pool_size=(2, 2))
-        self.lenet_conv2 = layers.Conv2D(16, 5, strides=(1, 1), activation='relu')
-        self.lenet_bn2 = tfmot.quantization.keras.quantize_annotate_layer(
-            layers.BatchNormalization(), quantize_config=quantize_config)
-        self.lenet_pool2 = layers.MaxPooling2D(pool_size=(2, 2))
-        self.lenet_flatten = layers.Flatten()
-        self.lenet_dense1 = layers.Dense(120, activation='relu')
-        self.lenet_bn3 = tfmot.quantization.keras.quantize_annotate_layer(
-            layers.BatchNormalization(), quantize_config=quantize_config)
-        self.lenet_dense2 = layers.Dense(84, activation='relu')
-        self.lenet_bn4 = tfmot.quantization.keras.quantize_annotate_layer(
-            layers.BatchNormalization(), quantize_config=quantize_config)
-        self.lenet_output = layers.Dense(10, activation='softmax')
+    h = Conv2D(6, 5, strides=(1, 1), activation='relu')(x)
+    # h_nor = BatchNormalization()(h)
+    h_nor = tfmot.quantization.keras.quantize_annotate_layer(
+      BatchNormalization(), quantize_config=quantize_config)(h)
+    h_max = MaxPooling2D(pool_size=(2, 2))(h_nor)
 
-        # Define XMLP part
-        self.xmlp_flatten = layers.Flatten()
-        self.xmlp_dense1 = layers.Dense(512, activation='linear')
-        self.xmlp_bn1 = tfmot.quantization.keras.quantize_annotate_layer(
-            layers.BatchNormalization(), quantize_config=quantize_config)
-        self.xmlp_dense2 = layers.Dense(512, activation='relu')
-        self.xmlp_dense3 = layers.Dense(512, activation='linear')
-        self.xmlp_bn2 = tfmot.quantization.keras.quantize_annotate_layer(
-            layers.BatchNormalization(), quantize_config=quantize_config)
-        self.xmlp_dense4 = layers.Dense(512, activation='relu')
-        self.xmlp_dense5 = layers.Dense(512, activation='linear')
-        self.xmlp_bn3 = tfmot.quantization.keras.quantize_annotate_layer(
-            layers.BatchNormalization(), quantize_config=quantize_config)
-        self.xmlp_dense6 = layers.Dense(512, activation='relu')
-        self.xmlp_dense7 = layers.Dense(256, activation='linear')
-        self.xmlp_bn4 = tfmot.quantization.keras.quantize_annotate_layer(
-            layers.BatchNormalization(), quantize_config=quantize_config)
-        self.xmlp_dense8 = layers.Dense(256, activation='relu')
-        self.xmlp_output = layers.Dense(10, activation='softmax')
+    h = Conv2D(16, 5, strides=(1, 1), activation='relu')(h_max)
+    # h_nor = BatchNormalization()(h)
+    h_nor = tfmot.quantization.keras.quantize_annotate_layer(
+        BatchNormalization(), quantize_config=quantize_config)(h)
+    h_max = MaxPooling2D(pool_size=(2, 2))(h_nor)
 
-    def call(self, inputs, training=False):
-        # LeNet forward
-        x = self.lenet_padding(inputs)
-        x = self.lenet_conv1(x)
-        x = self.lenet_bn1(x, training=training)
-        x = self.lenet_pool1(x)
-        x = self.lenet_conv2(x)
-        x = self.lenet_bn2(x, training=training)
-        x = self.lenet_pool2(x)
-        x = self.lenet_flatten(x)
-        x = self.lenet_dense1(x)
-        x = self.lenet_bn3(x, training=training)
-        x = self.lenet_dense2(x)
-        x = self.lenet_bn4(x, training=training)
-        lenet_out = self.lenet_output(x)
+    h = Flatten()(h_max)
 
-        # XMLP forward
-        y = self.xmlp_flatten(inputs)
-        y = self.xmlp_dense1(y)
-        y = self.xmlp_bn1(y, training=training)
-        y = self.xmlp_dense2(y)
-        y = self.xmlp_dense3(y)
-        y = self.xmlp_bn2(y, training=training)
-        y = self.xmlp_dense4(y)
-        y = self.xmlp_dense5(y)
-        y = self.xmlp_bn3(y, training=training)
-        y = self.xmlp_dense6(y)
-        y = self.xmlp_dense7(y)
-        y = self.xmlp_bn4(y, training=training)
-        y = self.xmlp_dense8(y)
-        xmlp_out = self.xmlp_output(y)
+    d = Dense(120, activation='relu')(h)
+    # d_nor = BatchNormalization()(d)
+    d_nor=tfmot.quantization.keras.quantize_annotate_layer(
+     BatchNormalization(), quantize_config=quantize_config)(d)
+    d = Dense(84, activation='relu')(d_nor)
+    # d_nor = BatchNormalization()(d)
+    d_nor = tfmot.quantization.keras.quantize_annotate_layer(
+        BatchNormalization(), quantize_config=quantize_config)(d)
 
-        # For demonstration, output a dictionary with both outputs
-        # One could implement comparison or fusion logic here if needed
-        return {'LeNet': lenet_out, 'XMLP': xmlp_out}
 
-def my_model_function():
-    # Create an instance of MyModel composed of two submodels from the issue.
-    return MyModel()
+    y = Dense(10, activation='softmax')(d_nor)
 
-def GetInput():
-    # Return a random tensor input of shape (batch, height, width, channels)
-    # MNIST images are (28,28,1) grayscale images.
-    batch_size = 4  # Can be any batch size
-    return tf.random.uniform((batch_size, 28, 28, 1), dtype=tf.float32, minval=0.0, maxval=1.0)
+    model = Model(inputs=inputs, outputs = y)
+    model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
+                  loss='categorical_crossentropy', metrics=['accuracy'])
+    return model
+def XMLP():
+    inputs = Input(shape=(28, 28,1))
+    h = Flatten()(inputs)
 
+    # h = Dense(512, activation='relu',
+    #           kernel_initializer=tf.keras.initializers.random_normal(mean=0, stddev=0.01))(h)
+    # h_nor = BatchNormalization()(h)
+    h=Dense(512,activation='linear')(h)
+    # h_nor=BatchNormalization()(h)
+    h_nor=tfmot.quantization.keras.quantize_annotate_layer(
+    BatchNormalization(), quantize_config=quantize_config)(h)
+    h =Dense(512,activation='relu')(h_nor)
+
+    # h = Dense(512, activation='relu',
+    #           kernel_initializer=tf.keras.initializers.random_normal(mean=0, stddev=0.01))(h_nor)
+    # h_nor = BatchNormalization()(h)
+    h = Dense(512, activation='linear')(h)
+    # h_nor = BatchNormalization()(h)
+    h_nor = tfmot.quantization.keras.quantize_annotate_layer(
+        BatchNormalization(), quantize_config=quantize_config)(h)
+    h = Dense(512, activation='relu')(h_nor)
+
+    # h = Dense(512, activation='relu',
+    #           kernel_initializer=tf.keras.initializers.random_normal(mean=0, stddev=0.01))(h_nor)
+    # h_nor = BatchNormalization()(h)
+    h = Dense(512, activation='linear')(h)
+    # h_nor = BatchNormalization()(h)
+    h_nor = tfmot.quantization.keras.quantize_annotate_layer(
+        BatchNormalization(), quantize_config=quantize_config)(h)
+    h = Dense(512, activation='relu')(h_nor)
+
+    # h = Dense(256, activation='relu',
+    #           kernel_initializer=tf.keras.initializers.random_normal(mean=0, stddev=0.01))(h_nor)
+    # h_nor = BatchNormalization()(h)
+    h = Dense(256, activation='linear')(h)
+    # h_nor = BatchNormalization()(h)
+    h_nor = tfmot.quantization.keras.quantize_annotate_layer(
+        BatchNormalization(), quantize_config=quantize_config)(h)
+    h = Dense(256, activation='relu')(h_nor)
+    y = Dense(10, activation='softmax')(h)
+
+    model = Model(inputs=inputs, outputs=y)
+    model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
+                  loss='categorical_crossentropy', metrics=['accuracy'])
+    return model
+
+model=LeNet()
+model.fit_generator(train_datagen.flow(X_train, y_train, batch_size=50, shuffle=True),
+                    steps_per_epoch=len(X_train) / 50, epochs=40)
+tf.saved_model.save(model, 'mlp')
+model.summary()
+quantize_annotate_layer = tfmot.quantization.keras.quantize_annotate_layer
+quantize_annotate_model = tfmot.quantization.keras.quantize_annotate_model
+quantize_scope = tfmot.quantization.keras.quantize_scope
+with tf.keras.utils.custom_object_scope({'NoOpQuantizeConfig': NoOpQuantizeConfig}):
+    q_aware_model = tfmot.quantization.keras.quantize_model(model)
+    q_aware_model.summary()
+# `quantize_model` requires a recompile.
+print("qat_____")
+q_aware_model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
+                  loss='categorical_crossentropy', metrics=['accuracy'])
+# q_aware_model.fit(X_train, y_train, batch_size=50, epochs=40)
+q_aware_model.fit_generator(train_datagen.flow(X_train, y_train, batch_size=50, shuffle=True),
+                    steps_per_epoch=len(X_train) / 50, epochs=40)
+# q_aware_model.save('lenet-qat.h5')
+tf.saved_model.save(q_aware_model, 'mlp-qat')
+q_aware_model.summary()
+_, baseline_model_accuracy = model.evaluate(test_datagen.flow(X_test,y_test,batch_size=50,shuffle=False),
+ verbose=1)
+
+_, q_aware_model_accuracy = q_aware_model.evaluate(test_datagen.flow(X_test,y_test,batch_size=50,shuffle=False),
+   verbose=1)
+
+print('Baseline test accuracy:', baseline_model_accuracy)
+print('Quant test accuracy:', q_aware_model_accuracy)
+converter = tf.lite.TFLiteConverter.from_keras_model(q_aware_model)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+quantized_tflite_model = converter.convert()
+open("converted_Lenet-new.tflite", "wb").write(quantized_tflite_model )

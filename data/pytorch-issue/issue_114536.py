@@ -1,14 +1,13 @@
-# torch.rand(3, dtype=torch.double, device='cuda', requires_grad=True)
 import torch
-from torch import nn
+from torch.autograd.gradcheck import gradcheck
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return x ** 2.0
+torch.set_default_tensor_type("torch.cuda.FloatTensor") # <2.0.0
+# torch.set_default_device("cuda") # >2.0.0
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    return torch.rand(3, dtype=torch.double, device='cuda', requires_grad=True)
+x = torch.randn(3, dtype=torch.double, requires_grad=True)
 
+def func(inp):
+  return inp ** 2.0
+
+assert gradcheck(func, x, fast_mode=True)

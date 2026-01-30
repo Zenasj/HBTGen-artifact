@@ -1,28 +1,19 @@
-# torch.rand(1, 3, 224, 224, dtype=torch.float32)
 import torch
 import torchvision
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Load the original model and set to eval mode (critical fix from comments)
-        self.original = torchvision.models.segmentation.fcn_resnet101(pretrained=True, num_classes=21)
-        self.original.eval()
-        # Create TorchScript version of the same model (must be done in eval mode)
-        self.scripted = torch.jit.script(self.original)
+# Load a segmentation model from torchvision
+model = torchvision.models.segmentation.fcn_resnet101(pretrained=True, progress=True, num_classes=21)
 
-    def forward(self, x):
-        # Run both models and compare outputs
-        orig_out = self.original(x)['out']
-        script_out = self.scripted(x)['out']
-        # Check numerical equivalence with tolerance (addresses original discrepancy)
-        are_close = torch.allclose(orig_out, script_out, atol=1e-5, rtol=1e-5)
-        return torch.tensor([are_close], dtype=torch.bool)  # Return boolean as tensor
+example = torch.ones(1, 3, 224, 224) 
 
-def my_model_function():
-    return MyModel()
+out = model(example)['out']
 
-def GetInput():
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
+print(type(out), out.shape)
 
+traced_script_module = torch.jit.script(model)
+
+output = traced_script_module(example)['out']
+
+print(type(output), output.shape)
+
+print(out[0, 1, :, :], output[0, 1, :, :])

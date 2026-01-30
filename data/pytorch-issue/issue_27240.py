@@ -1,26 +1,33 @@
-# torch.rand(128, 30754, dtype=torch.float32)  # Inferred input shape
+import torch
+import torch.nn
+
+x = torch.randn(128, 30754)
+fc1 = nn.Linear(30754, 512)
+y = fc1(x)
+
+"""
+OUTPUT:
+y is a tensor of shape (128, 512) that is filled with nan:
+tensor([[nan, nan, nan,  ..., nan, nan, nan],
+        [nan, nan, nan,  ..., nan, nan, nan],
+        [nan, nan, nan,  ..., nan, nan, nan],
+        ...,
+        [nan, nan, nan,  ..., nan, nan, nan],
+        [nan, nan, nan,  ..., nan, nan, nan],
+        [nan, nan, nan,  ..., nan, nan, nan]], grad_fn=<AddmmBackward>)
+"""
+
+fc2 = nn.Linear(30754, 1)
+z = fc2(x) # z is a (128, 1) real-valued vector
 
 import torch
 import torch.nn as nn
+x = torch.randn(128, 30754)
+fc1 = nn.Linear(30754, 512)
+y = fc1(x)
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.fc1 = nn.Linear(30754, 512)
-        self.relu = nn.ReLU()
-        self.fc2 = nn.Linear(512, 1)
-
-    def forward(self, x):
-        x = self.fc1(x)
-        x = self.relu(x)
-        x = self.fc2(x)
-        return x
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(128, 30754, dtype=torch.float32)
-
+import torch
+import torch.nn as nn
+x = torch.randn(128, 30754, device='cuda')
+fc1 = nn.Linear(30754, 512).cuda()
+y = fc1(x)

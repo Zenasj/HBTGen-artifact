@@ -1,69 +1,125 @@
-# tf.random.uniform((B, 500, 500, 1), dtype=tf.float32) ← Input shape inferred from resize_image_500 output and Conv2D layers
+from tensorflow import keras
+from tensorflow.keras import models
 
+import os
+import random
+import numpy as np
+from PIL import Image
+import multiprocessing 
 import tensorflow as tf
+from resizeimage import resizeimage
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = tf.keras.layers.Conv2D(8, kernel_size=(5, 5), strides=(1, 1), activation='relu', input_shape=(500,500,1))
-        self.pool1 = tf.keras.layers.MaxPooling2D(pool_size=(2, 2), strides=(2, 2))
+def images_list(path):
+    images_list = []
+    XY = []
+    with open(path,"r") as file:
+        images_list = file.read().split('\n')
+        XY = [row.split(" ") for row in images_list if len(row.split(" ")) > 1]
+    return np.asarray(XY)
 
-        self.conv2 = tf.keras.layers.Conv2D(16, kernel_size=(5, 5), strides=(1, 1), activation='relu')
-        self.pool2 = tf.keras.layers.MaxPooling2D(pool_size=(2, 2), strides=(2, 2))
+def load_images(X,Y,i):
+    root = 'E:\\images\\rvl-cdip\\rvl-cdip\\images'
+    img_matrixes = []
+    labels = []
+    length = len(X)
+    for index in range(len(X)):
+        matrix = Image.open(os.path.join(root, X[index].replace('/',"\\")))
+        img_matrixes.append(resize_image_500(matrix))
+        labels.append(Y[index])
+        
+    img_matrixes = np.asarray(img_matrixes)
+    labels = np.asarray(labels)
+    
+    assert len(img_matrixes) == len(labels)
+          
+    #print("{}: Loaded {} images".format(i,length))
+          
+    return np.reshape(img_matrixes,(img_matrixes.shape[0],500,500,1)),labels
 
-        self.conv3 = tf.keras.layers.Conv2D(32, kernel_size=(5, 5), strides=(1, 1), activation='relu')
-        self.pool3 = tf.keras.layers.MaxPooling2D(pool_size=(3, 3), strides=(2, 2))
+def resize_image(img):
+    np_img = np.asarray(img)
+    
+    if(np_img.shape[1] < 3235):
+        missing_width = 3235 - np_img.shape[1]
+        white_matrix = np.empty((1000,missing_width),dtype=float)
+        white_matrix.fill(255)
+        np_img = np.hstack((np_img, white_matrix))
+        
+    assert np_img.shape[0] == 1000
+    assert np_img.shape[1] == 3235
+    
+    return np_img
 
-        self.conv4 = tf.keras.layers.Conv2D(64, kernel_size=(5, 5), strides=(1, 1), activation='relu')
-        self.pool4 = tf.keras.layers.MaxPooling2D(pool_size=(3, 3), strides=(2, 2))
+def resize_image_500(img):
+    resized = resizeimage.resize_cover(img, [500, 500])
+    np_img = np.asarray(resized)
+    
+    assert np_img.shape[0] == 500
+    assert np_img.shape[1] == 500
+    
+    return np_img
 
-        self.flatten = tf.keras.layers.Flatten()
+def iterate_minibatches(inputs, targets, batchsize):
+    assert len(inputs) == len(targets)
+    indices = np.arange(len(inputs))
+    np.random.shuffle(indices)
+    i = 0 
+    for start_idx in np.arange(0, len(inputs) - batchsize + 1, batchsize):
+        excerpt = indices[start_idx:start_idx + batchsize]
+        i+=1
+        yield load_images(inputs[excerpt], targets[excerpt],i)
 
-        self.dense1 = tf.keras.layers.Dense(1024, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(1024, activation='relu')
+from tensorflow.keras import layers
 
-        # Note: The original code had no final classification layer 
-        # with softmax or logits. Typically for classification you'd add:
-        # self.classifier = tf.keras.layers.Dense(num_classes, activation='softmax')
-        # But since label quantification and number of classes is unknown here,
-        # we keep it as in original.
+model = tf.keras.models.Sequential()
+#H1
+model.add(layers.Conv2D(8, kernel_size=(5, 5), strides=(1, 1),
+                 activation='relu'))
+model.add(layers.MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
+#H2
+model.add(layers.Conv2D(16, kernel_size=(5, 5), strides=(1, 1),
+                 activation='relu'))
+model.add(layers.MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
+#H3
+model.add(layers.Conv2D(32, kernel_size=(5, 5), strides=(1, 1),
+                 activation='relu'))
+model.add(layers.MaxPooling2D(pool_size=(3, 3), strides=(2, 2)))
+#H4
+model.add(layers.Conv2D(64, kernel_size=(5, 5), strides=(1, 1),
+                 activation='relu'))
+model.add(layers.MaxPooling2D(pool_size=(3, 3), strides=(2, 2)))
+#H5
+model.add(layers.Flatten())
+#Dense
+model.add(layers.Dense(1024, activation='relu'))
+model.add(layers.Dense(1024, activation='relu'))
 
-    def call(self, inputs, training=False):
-        x = self.conv1(inputs)
-        x = self.pool1(x)
+model.compile(loss=tf.keras.losses.CategoricalCrossentropy(),
+              optimizer='adam',
+              metrics=[tf.keras.metrics.Accuracy()])
+#Training data
+XY_train =  images_list(train_path)
+X_train = XY_train[:,0]
+Y_train = XY_train[:,1].astype(int)
 
-        x = self.conv2(x)
-        x = self.pool2(x)
+#Testing data
+XY_test =  images_list(test_path)
+X_test = XY_test[:,0]
+Y_test = XY_test[:,1].astype(int)
 
-        x = self.conv3(x)
-        x = self.pool3(x)
+#Validation data
+XY_val = images_list(valid_path)
+X_val = XY_val[:,0]
+Y_val = XY_val[:,1].astype(int)
 
-        x = self.conv4(x)
-        x = self.pool4(x)
-
-        x = self.flatten(x)
-        x = self.dense1(x)
-        x = self.dense2(x)
-        return x
-
-def my_model_function():
-    # Return an instance of MyModel
-    model = MyModel()
-    # Compile with reasonable placeholders for a classification problem.
-    # The original used CategoricalCrossentropy (likely for one-hot labels),
-    # but metrics.Accuracy does not work well with sparse labels directly.
-    # We replicate the setup as close as possible.
-    model.compile(
-        optimizer='adam',
-        loss=tf.keras.losses.CategoricalCrossentropy(),
-        metrics=[tf.keras.metrics.Accuracy()]
-    )
-    return model
-
-def GetInput():
-    # Return a random tensor input matching the expected input to MyModel
-    # Batch size arbitrary, e.g. 8
-    batch_size = 8
-    # Single channel grayscale images 500x500
-    return tf.random.uniform((batch_size, 500, 500, 1), dtype=tf.float32)
-
+batch_size = 750
+history = model.fit_generator(generator=iterate_minibatches(X_train, Y_train,batch_size),
+                                  validation_data=iterate_minibatches(X_test, Y_test, batch_size),
+                                  # validation_data=None,
+                                  steps_per_epoch=len(X_train)//batch_size,
+                                  validation_steps=len(X_test)//batch_size,
+                                  verbose=1,
+                                  epochs=100,
+                                  use_multiprocessing=True,
+                                  workers=multiprocessing.cpu_count() 
+                             )

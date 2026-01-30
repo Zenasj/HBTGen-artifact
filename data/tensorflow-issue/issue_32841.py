@@ -1,46 +1,83 @@
-# tf.random.uniform((B, 784), dtype=tf.float32) ← Batch size is dynamic, input is flattened 28x28 grayscale image
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
+import json
+import os
 import tensorflow as tf
+from tensorflow.contrib.learn.python.learn.datasets.mnist import read_data_sets
+data_dir = '.\\MNIST_data'
+log_dir = '.\log_dist'
+batch_size = 512
+tf.logging.set_verbosity(tf.logging.INFO)
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Model structure inferred from the keras_model function in the issue
-        # Two Conv2D layers with 32 and 64 filters respectively, kernel size 3, stride 2, ReLU activation
-        # With dropout 0.5 after each conv
-        # Followed by GlobalAvgPool2D and Dense layer with 10 units (softmax)
-        self.reshape = tf.keras.layers.Reshape([28, 28, 1], name='input_image')
-        self.conv1 = tf.keras.layers.Conv2D(32, kernel_size=3, strides=2, activation='relu', name='cnn0')
-        self.dropout1 = tf.keras.layers.Dropout(0.5, name='dropout0')
-        self.conv2 = tf.keras.layers.Conv2D(64, kernel_size=3, strides=2, activation='relu', name='cnn1')
-        self.dropout2 = tf.keras.layers.Dropout(0.5, name='dropout1')
-        self.global_avg_pool = tf.keras.layers.GlobalAvgPool2D(name='average')
-        self.dense = tf.keras.layers.Dense(10, activation='softmax', name='output')
+def keras_model(lr, decay):
+    """Return a CNN Keras model"""
+    input_tensor = tf.keras.layers.Input(shape=(784,), name='input')
 
-    def call(self, inputs, training=False):
-        # inputs expected shape: (batch_size, 784)
-        x = self.reshape(inputs)       # (B, 28, 28, 1)
-        x = self.conv1(x)
-        x = self.dropout1(x, training=training)
-        x = self.conv2(x)
-        x = self.dropout2(x, training=training)
-        x = self.global_avg_pool(x)
-        x = self.dense(x)
-        return x
+    temp = tf.keras.layers.Reshape([28, 28, 1], name='input_image')(input_tensor)
+    for i, n_units in enumerate([32, 64]):
+        temp = tf.keras.layers.Conv2D(n_units, kernel_size=3, strides=(2, 2),
+                                      activation='relu', name='cnn'+str(i))(temp)
+        temp = tf.keras.layers.Dropout(0.5, name='dropout'+str(i))(temp)
+    temp = tf.keras.layers.GlobalAvgPool2D(name='average')(temp)
+    output = tf.keras.layers.Dense(10, activation='softmax', name='output')(temp)
 
-def my_model_function():
-    # Return an instance of MyModel
-    model = MyModel()
-    # Compile to mimic original setup with Adam optimizer and sparse categorical crossentropy
-    # Decay argument deprecated in TF 2.x Adam, replaced with learning rate schedules; omitted here
-    model.compile(
-        optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
-        loss='sparse_categorical_crossentropy',
-        metrics=['accuracy'])
+    model = tf.keras.models.Model(inputs=input_tensor, outputs=output)
+    optimizer = tf.keras.optimizers.Adam(lr=lr, decay=decay)
+    model.compile(optimizer=optimizer, loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+    print(model.summary())
     return model
 
-def GetInput():
-    # Return a random input tensor mimicking MNIST flattened images (batch_size=512 is typical)
-    # We keep batch size flexible for real usage; here, let's return batch size 512 as in example
-    return tf.random.uniform((512, 784), dtype=tf.float32)
 
+def main():
+    """Main function"""
+    data = read_data_sets(data_dir,
+                          one_hot=False,
+                          fake_data=False)
+    model = keras_model(lr=0.001, decay=0.001)
+    config = tf.estimator.RunConfig(
+                model_dir=log_dir,
+                save_summary_steps=1,
+                save_checkpoints_steps=100)
+    estimator = tf.keras.estimator.model_to_estimator(model, model_dir=log_dir, config=config)
+
+    train_input_fn = tf.estimator.inputs.numpy_input_fn(
+                         x={'input': data.train.images},
+                         y=data.train.labels,
+                         num_epochs=None,   # run forever
+                         batch_size=batch_size,
+                         shuffle=True)
+    eval_input_fn = tf.estimator.inputs.numpy_input_fn(
+                         x={'input': data.test.images},
+                         y=data.test.labels,
+                         num_epochs=1,
+                         shuffle=False)
+
+    train_spec = tf.estimator.TrainSpec(input_fn=train_input_fn,
+                                        max_steps=2000)
+    eval_spec = tf.estimator.EvalSpec(input_fn=eval_input_fn,
+                                      #throttle_secs=1,
+                                      steps=None    # until the end of evaluation data
+                                      )
+
+    evaluate_result = tf.estimator.train_and_evaluate(estimator, train_spec, eval_spec)
+    print("Evaluation results:")
+    for key in evaluate_result[0].keys():
+        print("   {}: {}".format(key, evaluate_result[0][key]))
+
+if __name__ == '__main__':
+    TF_CONFIG = {
+        'task': {
+            'type': 'chief/worker/ps',
+            'index': 0
+        },
+        'cluster': {
+            'chief': [...],
+            'worker': [...],
+            'ps': [...]
+        }
+    }
+    os.environ['TF_CONFIG'] = json.dumps(TF_CONFIG)
+    main()

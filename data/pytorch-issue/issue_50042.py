@@ -1,30 +1,24 @@
-# torch.rand(1, 24, 6, 6, dtype=torch.float32)
+import torch.nn as nn
+
 import torch
-from torch import nn
+group_val = 24
+ifm = torch.ones([1, group_val, 6, 6], dtype=torch.float32)
+weights = torch.ones([group_val, 1, 3, 3], dtype=torch.float32)
+op = torch.nn.Conv2d(
+        in_channels=group_val,
+        out_channels=group_val,
+        kernel_size=[3,3],
+        stride=[2,2],
+        padding=[1,1],
+        dilation=[1,1],
+        groups=group_val,
+        bias=False,
+        padding_mode='zeros'
+    )
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.conv = nn.Conv2d(
-            in_channels=24,
-            out_channels=24,
-            kernel_size=3,
-            stride=2,
-            padding=1,
-            groups=24,
-            bias=False,
-            padding_mode='zeros'  # Explicitly set to match original issue
-        )
-
-    def forward(self, x):
-        return self.conv(x)
-
-def my_model_function():
-    model = MyModel()
-    with torch.no_grad():
-        model.conv.weight.fill_(1.0)  # Replicate original weight initialization
-    return model
-
-def GetInput():
-    return torch.rand(1, 24, 6, 6, dtype=torch.float32)
-
+op.weight.data = weights
+res = op(ifm)
+print(res)
+grad_in = torch.ones(res.shape, dtype=torch.float32)
+res.backward(grad_in)
+print(op.weight.grad)

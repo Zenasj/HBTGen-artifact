@@ -1,22 +1,19 @@
-# torch.tensor(5)  # Input is a scalar integer tensor (shape ())
+import torch.nn as nn
+
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        x = x.item()  # Convert input tensor to integer
-        y = torch.zeros((x, x + 2), device='cuda')
-        for i in range(2):
-            inp = torch.rand((x, x + i), device='cuda')
-            weight = torch.rand((x + 2, x + i), device='cuda')
-            bias = torch.rand((x, x + 2), device='cuda')
-            linear_out = torch.nn.functional.linear(inp, weight, bias)
-            y += torch.sin(linear_out)
-        return y
+def fn(x: int):
+    y = torch.zeros((x, x+2)).cuda()
+    for i in range(2):
+        inp = torch.rand((x, x+i)).cuda()
+        weight = torch.rand((x+2, x+i)).cuda()
+        bias = torch.rand((x, x+2)).cuda()
+        y += torch.sin(torch.nn.functional.linear(inp, weight, bias))
+    return y
 
-def my_model_function():
-    return MyModel()
+fn.__disable_jit_function_caching__ = True
 
-def GetInput():
-    return torch.tensor(5, device='cuda')
-
+with torch.jit.fuser("fuser2"):
+    fn_s = torch.jit.script(fn)
+    fn_s(5)
+    fn_s(5)

@@ -1,35 +1,16 @@
-# torch.rand(0, 5, 5, dtype=torch.float64)
+results = dict()
 import torch
-from torch import nn
+input = torch.rand([0, 5, 5], dtype=torch.float64)
+dim = 33
+try:
+  results["res_cpu"] = torch.logcumsumexp(input, dim)
+except Exception as e:
+  results["err_cpu"] = str(e)
+input_cuda = input.cuda()
+try:
+  results["res_gpu"] = torch.logcumsumexp(input_cuda, dim)
+except Exception as e:
+  results["err_gpu"] = str(e)
 
-class MyModel(nn.Module):
-    def __init__(self, dim=33):
-        super().__init__()
-        self.dim = dim  # Dimension out of range as per the issue
-    
-    def forward(self, input):
-        # Compute CPU result/error
-        cpu_err, cpu_res = None, None
-        try:
-            cpu_res = torch.logcumsumexp(input, self.dim)
-        except Exception as e:
-            cpu_err = str(e)
-        
-        # Compute CUDA result/error
-        input_cuda = input.cuda()
-        gpu_err, gpu_res = None, None
-        try:
-            gpu_res = torch.logcumsumexp(input_cuda, self.dim)
-        except Exception as e:
-            gpu_err = str(e)
-        
-        # Check if discrepancy exists (CPU has error but CUDA does not)
-        discrepancy = (cpu_err is not None) and (gpu_err is None)
-        return torch.tensor(discrepancy, dtype=torch.bool)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(0, 5, 5, dtype=torch.float64)
-
+print(results)
+# {'err_cpu': 'Dimension out of range (expected to be in range of [-3, 2], but got 33)', 'res_gpu': tensor([], device='cuda:0', size=(0, 5, 5), dtype=torch.float64)}

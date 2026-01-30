@@ -1,14 +1,18 @@
-# torch.rand(B, 1, 2, 1, dtype=torch.float32)
 import torch
-from torch import nn
+import torch._dynamo as dynamo
+ 
+dynamo.reset()
+ 
+def toy_example(inp):
+    class A:
+        def __init__():
+            pass
+        def something():
+            pass
+    return inp + 2
+ 
+compiled_fn = torch.compile(toy_example, backend="inductor")
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return x + 2
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(1, 1, 2, 1, dtype=torch.float32)
-
+inp = torch.arange(2)
+r1 = compiled_fn(inp)
+print(f"r1 = {r1}")

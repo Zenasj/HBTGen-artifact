@@ -1,25 +1,30 @@
-# torch.rand(B, 10, dtype=torch.float32)
+import torch.nn as nn
+
 import torch
 from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Matches the parameter size in the issue's reproduction code
-        self.param = nn.Parameter(torch.randn(10)) 
-        # Dummy layer to form a valid model structure
-        self.fc = nn.Linear(10, 5) 
+import gc
 
-    def forward(self, x):
-        # Example forward pass using the parameter
-        return self.fc(x + self.param)
+def main():
+    param = nn.Parameter(torch.randn(10))
 
-def my_model_function():
-    # Returns a model instance with initialized parameters
-    return MyModel()
+    optim = torch.optim.Adam([param])
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optim, lambda epoch: 1.0)
+    del scheduler
 
-def GetInput():
-    # Generates input matching the model's forward requirements
-    B = 1  # Inferred batch size from issue's single parameter usage
-    return torch.rand(B, 10, dtype=torch.float32)
+    print(gc.get_referrers(optim))
+    
+    gc.collect()
+    del optim
+    print(gc.collect())
 
+if __name__ == '__main__':
+    main()
+
+def _update_last_epoch(epoch=None):
+      if epoch is None:
+          epoch = self.last_epoch + 1
+      self.last_epoch = epoch
+
+for param_group, lr in zip(self.optimizer.param_groups, self.get_lr()):
+      param_group['lr'] = lr

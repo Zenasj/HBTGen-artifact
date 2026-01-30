@@ -1,27 +1,21 @@
-# tf.random.uniform((B, 10), dtype=tf.float32) ← inferred input shape from example: input_dim=10 for model
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # A simple dense layer matching the described example
-        self.dense = tf.keras.layers.Dense(4, input_shape=(10,))
+tf.enable_eager_execution()  # It works without this line
 
-    def call(self, inputs, training=False):
-        # Forward pass through the dense layer
-        return self.dense(inputs)
+x, y = np.random.randn(100, 10), np.random.randn(100, 4)
+model = tf.keras.models.Sequential([tf.keras.layers.Dense(4, input_dim=10)])
+model.compile(tf.train.RMSPropOptimizer(0.001), 'mse')
 
-def my_model_function():
-    # Instantiate the model and compile it as done in the example
-    model = MyModel()
-    # Using RMSProp optimizer with learning rate 0.001 and MSE loss, matching the original snippet
-    optimizer = tf.keras.optimizers.RMSprop(learning_rate=0.001)
-    model.compile(optimizer=optimizer, loss='mse')
-    return model
+model.fit(x, y)  # Fitting without a generator works in eager mode
 
-def GetInput():
-    # Create a random input tensor matching the expected shape (batch_size, 10)
-    # Using batch size 32 as a common default; dtype float32 for compatibility
-    return tf.random.uniform(shape=(32, 10), dtype=tf.float32)
+class Iterator:
+    def __next__(self):
+        return x, y
 
+model.fit_generator(Iterator(), steps_per_epoch=10)

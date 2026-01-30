@@ -1,27 +1,17 @@
-# torch.rand(B, 10, dtype=torch.float32)
-from dataclasses import dataclass
 import torch
-from torch import nn
 
+from dataclasses import dataclass
+
+# Define the dataclass
 @dataclass
 class MyDataClass:
     __slots__ = ["x", "y"]
     x: int
-    y: int
-
-class MyModel(nn.Module):
-    def __init__(self, config):
-        super().__init__()
-        self.config = config
-        self.linear = nn.Linear(config.x, config.y)
-    
-    def forward(self, x):
-        return self.linear(x)
-
-def my_model_function():
-    config = MyDataClass(x=10, y=5)
-    return MyModel(config)
-
-def GetInput():
-    return torch.rand(2, 10, dtype=torch.float32)
-
+    y: str
+# Create an instance of the dataclass
+my_data = MyDataClass(x=2, y=3)
+# Save the dataclass to a file
+torch.save(my_data, "my_data.pt")
+with torch.serialization.safe_globals([MyDataClass]):
+    loaded_my_data = torch.load("my_data.pt", weights_only=True)
+# AttributeError: 'MyDataClass' object has no attribute '__dict__'

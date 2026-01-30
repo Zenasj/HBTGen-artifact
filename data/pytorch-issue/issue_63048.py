@@ -1,27 +1,25 @@
-# torch.rand(B, 4, dtype=torch.float32)
 import torch
-import torch.nn as nn
+from functorch import make_fx, grad, vmap, functionalize
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        
-    def forward(self, x):
-        # Example 1: view and in-place add
-        tmp1 = torch.ones_like(x)
-        y = x.view_as(tmp1)
-        y.add_(tmp1)
-        
-        # Example 2: in-place add on temporary
-        tmp2 = torch.ones_like(x)
-        tmp2.add_(x)
-        
-        return y + tmp2
+def f(x):  # tests that inputs are still successfully mutated
+    tmp = torch.ones(4)
+    y = x.view(4)
+    y.add_(tmp)
+    return x
 
-def my_model_function():
-    return MyModel()
+def f(x):  # test the free variable mutation case, which currently breaks in functorch
+    tmp = torch.ones(4)
+    tmp.add_(x)
+    return tmp
 
-def GetInput():
-    # Matches input shape (B=2, 4 elements)
-    return torch.rand(2, 4)  # Batch size 2 as in test examples
+batched_input = torch.ones(2, 4)
+vmap(functionalize((f)))(batched_input)
+vmap(functionalize((f2)))(batched_input)
 
+import torch
+import torch_xla.core.xla_model as xm
+
+device = xm.xla_device()
+a = torch.ones(2, 2, device=device)
+b = a.view(4)
+a.add_(1) # successfully mutates b

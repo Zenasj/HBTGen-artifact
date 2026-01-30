@@ -1,31 +1,48 @@
-# torch.rand(B, 3, 128, 128, dtype=torch.float)  # Input shape inferred from dataset generation
-import torch
+from __future__ import print_function
 import h5py
 import numpy as np
-from torch import nn
+import random
+import os
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Dummy model to satisfy structure requirements (issue doesn't describe a model, so using placeholder)
-        self.fc = nn.Linear(3*128*128, 10)  # Example layer based on input shape
-    
-    def forward(self, x):
-        return self.fc(x.view(x.size(0), -1))
+if not os.path.exists('./data_h5'):
+        os.makedirs('./data_h5')
 
-def my_model_function():
-    return MyModel()
+for index in range(100):
+    data = np.random.uniform(0,1, size=(3,128,128))
+    data = data[None, ...]
+    print (data.shape)
+    with h5py.File('./data_h5/' +'%s.h5' % (str(index)), 'w') as f:
+        f['data'] = data
 
-def GetInput():
-    # Returns a random tensor matching the expected input shape (B, 3, 128, 128)
-    batch_size = 2  # Matches DataLoader's batch_size=2 in original code
-    return torch.rand(batch_size, 3, 128, 128, dtype=torch.float)
+import h5py
+import torch.utils.data as data
+import glob
+import torch
+import numpy as np
+import os
+class custom_h5_loader(data.Dataset):
 
-# Okay, let's tackle this problem. The user is having an issue with their PyTorch dataloader when trying to run it in two terminals simultaneously. The error is related to HDF5 files not being accessible because they're locked. The main problem seems to be that HDF5 isn't thread-safe, so when multiple processes try to access the same files, they can't get a lock, leading to the OSError.
-# First, looking at the code provided, the custom_h5_loader class in custom_h5_loader.py is loading all the HDF5 files upfront in the __init__ method. Each time an instance of the dataset is created, it opens all the HDF5 files and keeps them open. When running two processes (like in two terminals), each process tries to open the same files again, which causes the locking issue because the files are already open in the first process.
-# The solution here is to avoid keeping the HDF5 files open all the time. Instead, each __getitem__ should open the file, read the data, and then close it. This way, each data access is independent and doesn't hold the file open across multiple accesses, preventing the lock contention.
-# So, modifying the custom_h5_loader's __init__ to just store the file paths instead of opening them, and then opening each file in __getitem__ when needed. Also, making sure to close the file after reading. That should resolve the locking problem because each process/thread will handle their own file access without holding onto the files.
-# Another thing to note is that when using multiple workers (num_workers=4), PyTorch's DataLoader uses multiprocessing, which can lead to issues if the dataset isn't picklable or if resources aren't managed properly. By deferring the file opening to __getitem__, each worker can handle their own file I/O without interfering with others.
-# Testing this change should allow both terminals to run without file locking errors. Additionally, the user mentioned a previous attempt with a solution from another issue led to a pickling error. That might be because they tried to share the dataset across processes in a way that wasn't picklable. By restructuring the dataset to not hold open files, we avoid those issues.
-# Putting this all together, the revised code for custom_h5_loader.py should have the __init__ store the file paths, and __getitem__ open each file when needed, then close it immediately. This approach should make the dataset thread-safe and compatible with multiple workers and processes.
-# </think>
+    def __init__(self, root_path):
+        self.hdf5_list = [x for x in glob.glob(os.path.join(root_path, '*.h5'))]
+        self.data_list = []
+        for ind in range (len(self.hdf5_list)):
+            self.h5_file = h5py.File(self.hdf5_list[ind])
+            data_i = self.h5_file.get('data')     
+            self.data_list.append(data_i)
+
+    def __getitem__(self, index):
+        self.data = np.asarray(self.data_list[index])   
+        return (torch.from_numpy(self.data).float())
+
+    def __len__(self):
+        return len(self.hdf5_list)
+
+from dataloader import custom_h5_loader
+import torch
+import torchvision.datasets as dsets
+
+train_h5_dataset = custom_h5_loader('./data_h5')
+h5_loader = torch.utils.data.DataLoader(dataset=train_h5_dataset, batch_size=2, shuffle=True, num_workers=4)      
+for epoch in range(100000):
+    for i, data in enumerate(h5_loader):       
+        print (data.shape)

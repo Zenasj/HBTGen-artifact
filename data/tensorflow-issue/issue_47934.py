@@ -1,61 +1,105 @@
-# tf.random.uniform((B, 150, 150, 3), dtype=tf.float32)  # Input shape based on the cats_vs_dogs dataset example
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
+import tensorflow_datasets as tfds
+import matplotlib.pyplot as plt
+from tensorflow import keras
+from tensorflow.keras import layers
 import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Data augmentation layers as defined in the issue's code
-        self.data_augmentation = tf.keras.Sequential([
-            tf.keras.layers.experimental.preprocessing.RandomFlip("horizontal"),
-            tf.keras.layers.experimental.preprocessing.RandomRotation(0.1),
-        ])
-        # Normalization layer to scale inputs from [0, 255] to [-1, +1]
-        self.norm_layer = tf.keras.layers.experimental.preprocessing.Normalization()
-        mean = np.array([127.5, 127.5, 127.5])
-        var = mean ** 2
-        self.norm_layer.set_weights([mean, var])
+# tfds.disable_progress_bar()
 
-        # Load pre-trained Xception base model without top classifier layers
-        # This layer is frozen initially (not trainable)
-        self.base_model = tf.keras.applications.Xception(
-            weights="imagenet",
-            input_shape=(150, 150, 3),
-            include_top=False,
+train_ds, validation_ds, test_ds = tfds.load(
+    "cats_vs_dogs",
+    # Reserve 10% for validation and 10% for test
+    split=["train[:40%]", "train[40%:50%]", "train[50%:60%]"],
+    as_supervised=True,  # Include labels
+)
+
+print("Number of training samples: %d" % tf.data.experimental.cardinality(train_ds))
+print(
+    "Number of validation samples: %d" % tf.data.experimental.cardinality(validation_ds)
+)
+print("Number of test samples: %d" % tf.data.experimental.cardinality(test_ds))
+
+plt.figure(figsize=(10, 10))
+for i, (image, label) in enumerate(train_ds.take(9)):
+    ax = plt.subplot(3, 3, i + 1)
+    plt.imshow(image)
+    plt.title(int(label))
+    plt.axis("off")
+
+size = (150, 150)
+
+train_ds = train_ds.map(lambda x, y: (tf.image.resize(x, size), y))
+validation_ds = validation_ds.map(lambda x, y: (tf.image.resize(x, size), y))
+test_ds = test_ds.map(lambda x, y: (tf.image.resize(x, size), y))
+
+batch_size = 32
+
+train_ds = train_ds.cache().batch(batch_size).prefetch(buffer_size=10)
+validation_ds = validation_ds.cache().batch(batch_size).prefetch(buffer_size=10)
+test_ds = test_ds.cache().batch(batch_size).prefetch(buffer_size=10)
+
+data_augmentation = keras.Sequential(
+    [
+        layers.experimental.preprocessing.RandomFlip("horizontal"),
+        layers.experimental.preprocessing.RandomRotation(0.1),
+    ]
+)
+
+for images, labels in train_ds.take(1):
+    plt.figure(figsize=(10, 10))
+    first_image = images[0]
+    for i in range(9):
+        ax = plt.subplot(3, 3, i + 1)
+        augmented_image = data_augmentation(
+            tf.expand_dims(first_image, 0), training=True
         )
-        self.base_model.trainable = False  # freeze base model weights
+        plt.imshow(augmented_image[0].numpy().astype("int32"))
+        plt.title(int(labels[0]))
+        plt.axis("off")
 
-        # Head layers on top of base model
-        self.global_avg_pool = tf.keras.layers.GlobalAveragePooling2D()
-        self.dropout = tf.keras.layers.Dropout(0.2)
-        self.classifier = tf.keras.layers.Dense(1)
-    
-    def call(self, inputs, training=False):
-        # inputs shape: (batch_size, 150, 150, 3)
-        x = self.data_augmentation(inputs, training=training)
-        x = self.norm_layer(x)
-        # base_model runs in inference mode to preserve batch norm statistics
-        x = self.base_model(x, training=False)  
-        x = self.global_avg_pool(x)
-        x = self.dropout(x, training=training)
-        outputs = self.classifier(x)
-        return outputs
 
-def my_model_function():
-    """
-    Return an instance of MyModel.
-    """
-    return MyModel()
+base_model = keras.applications.Xception(
+    weights="imagenet",  # Load weights pre-trained on ImageNet.
+    input_shape=(150, 150, 3),
+    include_top=False,
+)  # Do not include the ImageNet classifier at the top.
 
-def GetInput():
-    """
-    Return a random tensor input that matches the input expected by MyModel.
-    The input shape is (batch_size, 150, 150, 3) with dtype float32.
-    Values simulate images with pixel range [0,255].
-    """
-    batch_size = 32  # typical training batch size in example
-    input_shape = (batch_size, 150, 150, 3)
-    # Generate random float32 tensor with range 0-255 to simulate raw image pixels
-    return tf.random.uniform(input_shape, minval=0, maxval=255, dtype=tf.float32)
+# Freeze the base_model
+base_model.trainable = False
 
+# Create new model on top
+inputs = keras.Input(shape=(150, 150, 3))
+x = data_augmentation(inputs)  # Apply random data augmentation
+
+# Pre-trained Xception weights requires that input be normalized
+# from (0, 255) to a range (-1., +1.), the normalization layer
+# does the following, outputs = (inputs - mean) / sqrt(var)
+norm_layer = keras.layers.experimental.preprocessing.Normalization()
+mean = np.array([127.5] * 3)
+var = mean ** 2
+# Scale inputs to [-1, +1]
+x = norm_layer(x)
+norm_layer.set_weights([mean, var])
+
+# The base model contains batchnorm layers. We want to keep them in inference mode
+# when we unfreeze the base model for fine-tuning, so we make sure that the
+# base_model is running in inference mode here.
+x = base_model(x, training=False)
+x = keras.layers.GlobalAveragePooling2D()(x)
+x = keras.layers.Dropout(0.2)(x)  # Regularize with dropout
+outputs = keras.layers.Dense(1)(x)
+model = keras.Model(inputs, outputs)
+
+# model.summary()
+
+model.compile(
+    optimizer=keras.optimizers.Adam(),
+    loss=keras.losses.BinaryCrossentropy(from_logits=True),
+    metrics=[keras.metrics.BinaryAccuracy()],
+)
+
+epochs = 20
+model.fit(train_ds, epochs=epochs, validation_data=validation_ds)

@@ -1,29 +1,44 @@
-# torch.rand(2, 4, 5, dtype=torch.float)
+import torch.nn as nn
+import numpy as np
+
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # LSTM with input_size=5, hidden_size=5, bidirectional=True, batch_first=True
-        self.lstm = nn.LSTM(
-            input_size=5,
-            hidden_size=5,
-            num_layers=2,
-            bidirectional=True,
-            batch_first=True
-        )
-    
-    def forward(self, x):
-        # Returns only the output tensor (ignores hidden states)
-        return self.lstm(x)[0]
-
-def my_model_function():
-    # Initialize LSTM with fixed seed for reproducibility
+def test_lstm(num_layers, bidirectional, batch_first):
     torch.manual_seed(1234)
-    return MyModel()
+    lstm = torch.nn.LSTM(5, 5, num_layers=num_layers, bidirectional=bidirectional, batch_first=batch_first)
+    lstm.eval()
+    inp = torch.randn(4, 1, 5)
+    if batch_first:
+        inp = inp.transpose(0, 1)
+    print("num_layers {} bidirectional {} batch_first {}".format(num_layers, bidirectional, batch_first), end="  ")
+    print(torch.linalg.norm(lstm(inp)[0]).item(), end="  ")
+    print(torch.linalg.norm(lstm.to("mps")(inp.to("mps"))[0]).item())
 
-def GetInput():
-    # Random input matching batch_first=True (batch, seq_len, features)
-    return torch.randn(2, 4, 5, dtype=torch.float)
+test_lstm(2, True, True)   # bad
+test_lstm(2, True, False)  # bad
+test_lstm(1, True, True)   # bad
 
+test_lstm(2, False, True)  # ok
+test_lstm(1, False, True)  # ok
+test_lstm(1, False, False) # ok
+
+import torch
+
+def test_lstm(num_layers, bidirectional, batch_first):
+    torch.manual_seed(1234)
+    lstm = torch.nn.LSTM(5, 5, num_layers=num_layers, bidirectional=bidirectional, batch_first=batch_first)
+    lstm.eval()
+    inp = torch.randn(4, 2, 5)   # the only change I made was to make a batch of size 2
+    if batch_first:
+        inp = inp.transpose(0, 1)
+    print("num_layers {} bidirectional {} batch_first {}".format(num_layers, bidirectional, batch_first), end="  ")
+    print(torch.linalg.norm(lstm(inp)[0]).item(), end="  ")
+    print(torch.linalg.norm(lstm.to("mps")(inp.to("mps"))[0]).item())
+
+test_lstm(2, True, True)   # bad                                                                                                                                                     
+test_lstm(2, True, False)  # bad                                                                                                                                                     
+test_lstm(1, True, True)   # bad                                                                                                                                                     
+
+test_lstm(2, False, True)  # ok                                                                                                                                                      
+test_lstm(1, False, True)  # ok                                                                                                                                                      
+test_lstm(1, False, False) # ok

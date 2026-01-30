@@ -1,38 +1,46 @@
-# Input is a tuple (pred1 (scalar bool), x1 (3,3), pred2 (scalar bool), x2 (3), x3 (3))
-import torch
-from functorch.experimental.control_flow import cond
 import torch.nn as nn
 
-class MyModel(nn.Module):
+import torch
+from functorch.experimental.control_flow import cond
+
+
+class Module(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.linear = nn.Linear(3, 3)  # From first example's model
-        self.f1 = lambda x1, x2: x1 + x2  # From second example's f1
-        self.f2 = lambda x1, x2: x1 * x2  # From second example's f2
+        self.linear = torch.nn.Linear(3, 3)
 
-    def forward(self, inputs):
-        pred1, x1, pred2, x2, x3 = inputs
-        # First condition (linear model)
-        def true_fn1(val):
-            return self.linear(val) * 2
-        def false_fn1(val):
-            return self.linear(val) * -1
-        res1 = cond(pred1, true_fn1, false_fn1, [x1])
+    def forward(self, pred, x):
+        def true_fn(val):
+            return self.linear(val) * torch.tensor(2)
 
-        # Second condition (f1/f2)
-        res2 = cond(pred2, self.f1, self.f2, [x2, x3])
+        def false_fn(val):
+            return self.linear(val) * torch.tensor(-1)
 
-        return (res1, res2)
+        return cond(pred, true_fn, false_fn, [x])
 
-def my_model_function():
-    return MyModel()
+mod = Module()
+mod = torch.compile(mod)
+x = torch.randn([3, 3])
+pred = torch.tensor(x[0][0].item() < 0)
+real_result = mod.forward(pred, x)
 
-def GetInput():
-    # Generate inputs for both conditions
-    x1 = torch.randn(3, 3)
-    pred1 = torch.tensor(x1[0, 0].item() < 0)
-    x2 = torch.randn(3)
-    x3 = torch.randn(3)
-    pred2 = torch.tensor(True)  # Fixed for reproducibility
-    return (pred1, x1, pred2, x2, x3)
+import torch
+from functorch.experimental.control_flow import cond
 
+
+x = torch.randn((3,))
+
+
+def f1(x1, x2):
+    return x1 + x2
+
+
+def f2(x1, x2):
+    return x1 * x2
+
+
+@torch.compile()
+def f(z):
+    return cond(z, f1, f2, [x, x])
+
+f(torch.tensor(True))

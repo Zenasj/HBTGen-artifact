@@ -1,17 +1,34 @@
-# torch.rand(1, 2, 8, 8, dtype=torch.float, device='cuda', memory_format=torch.channels_last)
+import torch.nn as nn
+
 import torch
-from torch import nn
+import traceback
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return torch.nn.functional.interpolate(x, size=16, mode='nearest')
+print(torch.__version__)
 
-def my_model_function():
-    return MyModel()
+def test(f):
+    try:
+        _test(f)
+    except:
+        traceback.print_exc()
 
-def GetInput():
-    x = torch.randn(1, 2, 8, 8, dtype=torch.float, device='cuda') \
+def _test(f):
+    x = torch.randn(1, 2, 8, 8, dtype=torch.float, device='cuda')\
         .to(memory_format=torch.channels_last)
     x.requires_grad_()
-    return x
 
+    # y = torch.nn.functional.relu(x)
+    y = f(x)
+    g = torch.randn_like(y)
+
+    assert y.is_contiguous(memory_format=torch.channels_last)
+    assert g.is_contiguous(memory_format=torch.channels_last)
+    y.backward(g)
+    assert x.grad.is_contiguous(memory_format=torch.channels_last)
+
+    torch.cuda.synchronize()
+
+
+if __name__ == '__main__':
+    test(lambda x: torch.nn.functional.max_pool2d(x, 3))
+    test(torch.nn.functional.relu)
+    test(lambda x: torch.nn.functional.interpolate(x, 16))

@@ -1,35 +1,39 @@
-# torch.rand(4, 4, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
-
 import torch
-import torch.nn as nn
+import torch.multiprocessing as mp
 import torch.distributed as dist
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.q_buffer = torch.rand([4, 4])
+def main_worker(rank, world_size, args):
+    dist.init_process_group(
+        backend="nccl",
+        init_method="tcp://127.0.0.1:9001",
+        world_size=world_size,
+        rank=rank,
+    )
+    print("process begin", rank)
 
-    def forward(self, x):
-        Q, R = torch.linalg.qr(x)
-        return Q.contiguous(), R.contiguous()
+    if rank == 0:
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+        q_buffer = torch.rand([4,4]).to(0)      
+        Q,R = torch.linalg.qr(q_buffer)
+        print("local before q_buffer",Q)
+        dist.send(Q,1)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand([4, 4], dtype=torch.float32)
 
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# Q, R = model(input_tensor)
-# print(Q, R)
+                    
 
-# ### Explanation:
-# 1. **Class Definition**: The `MyModel` class is defined to encapsulate the QR decomposition and ensure the tensors are contiguous.
-# 2. **Forward Method**: The `forward` method performs the QR decomposition and returns the contiguous tensors.
-# 3. **Model Function**: The `my_model_function` returns an instance of `MyModel`.
-# 4. **GetInput Function**: The `GetInput` function generates a random tensor of shape (4, 4) which is the input expected by `MyModel`.
-# This code ensures that the tensors are contiguous before any further operations, addressing the issue described in the GitHub issue.
+
+    elif rank == 1:
+
+        q_buffer = torch.rand([4,4]).to(1)
+
+        dist.recv(q_buffer,0)
+
+        print("recv",q_buffer,q_buffer.shape)
+
+
+def main():
+    mp.spawn(main_worker, nprocs=2, args=(2, 2))
+
+
+if __name__ == "__main__":
+    main()

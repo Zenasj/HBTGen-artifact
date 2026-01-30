@@ -1,58 +1,22 @@
-# tf.random.uniform((4, 2), dtype=tf.float32) ← inferred input shape and dtype from issue example
+var_delta = m_t / (K.sqrt(v_t) + epsilon_t)
+var_update = state_ops.assign_sub(var, lr_t * var_delta, use_locking=self._use_locking)
 
-import tensorflow as tf
-from tensorflow.keras import backend as K
-from tensorflow.python.ops import math_ops
+X1 = math_ops.sqrt(v_t)
+X2 = K.sqrt(v_t)
+Y1 = m_t / (math_ops.sqrt(v_t) + epsilon_t)
+Y2 = m_t / (K.sqrt(v_t) + epsilon_t)
 
-class MyModel(tf.keras.Model):
-    """
-    This model demonstrates the difference between outputs of math_ops.sqrt (tf.Tensor)
-    and K.sqrt (Keras Tensor), and performs a numerical comparison between them.
-    The forward method returns a boolean tensor indicating element-wise equality within a tolerance.
-    """
+print(X1);       print(X2);       print()
+print(Y1);       print(Y2);       print()
+print(type(X1)); print(type(X2)); print()
+print(type(Y1)); print(type(Y2)); print()
+print("type(ref) =", type(var))
 
-    def __init__(self, epsilon=1e-7):
-        super().__init__()
-        # Small epsilon added to denominator as in the example
-        self.epsilon = epsilon
+from tensorflow.python.framework.ops import Tensor, EagerTensor
+print(Tensor.__doc__) # OK
+print(EagerTensor.__doc__) # returns None
 
-    def call(self, inputs):
-        # inputs is a tf.Tensor of shape (4, 2) with dtype float32
-        v_t = inputs
-        m_t = tf.ones_like(v_t)  # Placeholder numerator tensor same shape as v_t
-        lr_t = tf.constant(0.01, dtype=v_t.dtype)  # Dummy learning rate scalar
+from inspect import getsource
+print(getsource(EagerTensor)) # OSError: could not find class definition
 
-        # Compute sqrt using math_ops.sqrt (produces a tf.Tensor, eager, evaluated)
-        sqrt_math = math_ops.sqrt(v_t)
-        # Compute sqrt using K.sqrt (produces a Keras symbolic Tensor, deferred)
-        sqrt_keras = K.sqrt(v_t)
-
-        # Perform the analogous division operation from the example
-        y_math = m_t / (sqrt_math + self.epsilon)
-        y_keras = m_t / (sqrt_keras + self.epsilon)
-
-        # To compare these, we need to evaluate both as tensors
-        # In TF2, K.sqrt returns a symbolic tensor, but call runs eagerly,
-        # so both are Tensor-like and can be converted to concrete tf.Tensor
-
-        # Because K.sqrt returns a symbolic Tensor in graph mode,
-        # but we are in eager mode here, it behaves similarly to tf.sqrt.
-        # So this code runs eagerly and both are tf.Tensors.
-
-        # Calculate element-wise absolute difference
-        diff = tf.abs(y_math - y_keras)
-
-        # Return boolean tensor of whether diff elements are close within tolerance (1e-6)
-        return tf.less_equal(diff, 1e-6)
-
-
-def my_model_function():
-    # Create and return an instance of MyModel
-    return MyModel()
-
-
-def GetInput():
-    # Generate a random uniform input tensor of shape (4, 2) with float32 dtype,
-    # matching the example inputs from the issue
-    return tf.random.uniform((4, 2), minval=1e-4, maxval=1e-2, dtype=tf.float32)
-
+EagerTensor = c_api.TFE_Py_InitEagerTensor(_EagerTensorBase)

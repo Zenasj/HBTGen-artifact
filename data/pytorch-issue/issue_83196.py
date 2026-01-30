@@ -1,36 +1,29 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
-
-import torch
 import torch.nn as nn
+
+F.pixel_shuffle(x.cpu(), 2).to('mps')
+
 import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def __init__(self, inFM, outFM, kSize, outSize, stride=1, padding=0, output_padding=0):
-        super(MyModel, self).__init__()
-        self.pixel_shuffle_layers = nn.Sequential(
-            nn.Conv2d(inFM, 4 * outFM, kSize, stride=1, padding=padding),
-            nn.PixelShuffle(stride),
-            nn.LayerNorm([outFM, outSize, outSize]),
-            nn.LeakyReLU(0.2, inplace=True)
-        )
-        
-        self.conv_transpose_layers = nn.Sequential(
-            nn.ConvTranspose2d(inFM, outFM, kSize, stride=stride, padding=padding, output_padding=output_padding),
-            nn.LayerNorm([outFM, outSize, outSize]),
-            nn.LeakyReLU(0.2, inplace=True)
-        )
+class PixelShuffle(nn.Module):
+    def __init__(self, upscale_factor):
+        super(PixelShuffle, self).__init__()
+        self.upscale_factor = upscale_factor
 
     def forward(self, x):
-        pixel_shuffle_output = self.pixel_shuffle_layers(x)
-        conv_transpose_output = self.conv_transpose_layers(x)
-        return pixel_shuffle_output, conv_transpose_output
+        batch_size, channels, height, width = x.size()
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel(inFM=512, outFM=128, kSize=3, outSize=64, stride=2, padding=1, output_padding=1)
+        # Calculate the new height and width
+        new_height = height * self.upscale_factor
+        new_width = width * self.upscale_factor
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    B, C, H, W = 64, 512, 32, 32
-    return torch.rand(B, C, H, W, dtype=torch.float32)
+        # Calculate the channel size after shuffling
+        new_channels = channels // (self.upscale_factor ** 2)
 
+        # Reshape the input tensor
+        x = x.view(batch_size, new_channels, self.upscale_factor, self.upscale_factor, height, width)
+
+        # Transpose and flatten the tensor
+        x = x.permute(0, 1, 4, 2, 5, 3).contiguous()
+        x = x.view(batch_size, new_channels, new_height, new_width)
+
+        return x

@@ -1,16 +1,14 @@
-# torch.rand(2, 4, 4, 4, dtype=torch.float32)  # Inferred input shape from C++ example's frame structure
 import torch
-from torch import nn
+class Model(torch.jit.ScriptModule):
+    def __init__(self):
+        super(Model, self).__init__()
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Returns the first element of the first "frame" tensor in the input structure
-        return x[0, 0]
+    @torch.jit.script_method
+    def forward(self, x_list_list):
+        # type: (List[List[Tensor]]) -> Tensor
 
-def my_model_function():
-    return MyModel()
+        return x_list_list[0][0]
 
-def GetInput():
-    # Matches the C++ example's input structure (2 frames, 4 tensors per frame, each 4x4)
-    return torch.rand(2, 4, 4, 4, dtype=torch.float32)
 
+m = Model()
+m.save("./model.pt")

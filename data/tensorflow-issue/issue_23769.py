@@ -1,24 +1,27 @@
-# tf.random.uniform((32, 20), dtype=tf.float32) ← inferred input shape from the minimal example (batch=32, features=20)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
 
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define the layers matching original model from issue description
-        self.dense1 = tf.keras.layers.Dense(10, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(5)
-    
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        return self.dense2(x)
+model = tf.keras.Sequential([
+    tf.keras.layers.Dense(10, activation='relu', input_shape=(20,)),
+    tf.keras.layers.Dense(5)
+])
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+# With the following line uncommented, it works.
+# model(model.input)
 
-def GetInput():
-    # Return a random tensor input matching the input expected by MyModel:
-    # batch size 32 (from the original example)
-    return tf.random.uniform((32, 20), dtype=tf.float32)
+def loss(y_true, y_pred):
+    loss = tf.keras.losses.mean_squared_error(y_true, y_pred)
 
+    # Feed zeros to the model and add the mean of the output to the loss
+    y_pred_zeros = model(tf.zeros((32, 20)))
+
+    return loss + tf.reduce_mean(y_pred_zeros)
+
+model.compile('sgd', loss=loss)
+
+x_train, y_train = np.random.randn(100, 20), np.random.randn(100, 5)
+model.fit(x_train, y_train)

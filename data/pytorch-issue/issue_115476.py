@@ -1,17 +1,40 @@
-# torch.rand(1, 1, 2, 2, dtype=torch.float32)  # Inferred from the 2x2 tensor in the distributed example
 import torch
-from torch import nn
+a = torch.Tensor([2,3])
+print(a)
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        return x.neg()  # Matches the operation in the distributed example's "a.neg()"
+import os
+import time
+import numpy as np
+import torch
+import torch.multiprocessing as mp
+import torch.distributed as dist
+from torch.distributed._tensor import DTensor, DeviceMesh, Shard, Replicate, distribute_tensor,zeros
 
-def my_model_function():
-    return MyModel()
+def run(rank, size):
 
-def GetInput():
-    return torch.rand(1, 1, 2, 2, dtype=torch.float32)  # Matches 2x2 input structure from the example
+  a = torch.tensor([[0, 2.], [3, 0]])
+  a.neg()
 
+
+def init_process(rank_id, size, fn, backend='gloo'):
+    """ Initialize the distributed environment. """
+    os.environ['MASTER_ADDR'] = '127.0.0.1'
+    os.environ['MASTER_PORT'] = '12347'
+    os.environ[
+        "TORCH_DISTRIBUTED_DEBUG"
+    ] = "DETAIL" 
+    dist.init_process_group(backend, rank=rank_id, world_size=size)
+    fn(rank_id, size)
+
+if __name__ == "__main__":
+    big_tensor = torch.arange(0,16).reshape(4,4)
+    size = 1
+    processes = []
+    mp.set_start_method("spawn")
+    for rank in range(size):
+        p = mp.Process(target=init_process, args=(rank, size, run))
+        p.start()
+        processes.append(p)
+
+    for p in processes:
+        p.join()

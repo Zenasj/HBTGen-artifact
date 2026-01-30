@@ -1,30 +1,37 @@
-# tf.random.uniform((B, 32, 32, 3), dtype=tf.float32)  # Input shape based on example: batch size unspecified (B), height=32, width=32, channels=3
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
 
+import pathlib
+
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Conv2D with kernel size 3x3, dilation rate 2, filters=3, no bias (to separate bias handling explicitly)
-        # However, original example does not specify bias=False; default is bias=True.
-        # We keep bias=True to replicate the original model logic that showed the issue.
-        self.conv = tf.keras.layers.Conv2D(
-            filters=3, kernel_size=3, dilation_rate=2, padding='valid', use_bias=True
-        )
+print(tf.__version__)
 
-    def call(self, inputs):
-        # Forward pass through Conv2D layer
-        x = self.conv(inputs)
-        return x
+i = tf.keras.layers.Input(shape=(32, 32, 3))
+o = tf.keras.layers.Conv2D(3, 3, dilation_rate=2)(i)
+model = tf.keras.Model(inputs=[i], outputs=[o])
+
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+
+def representative_data_gen():
+    yield [np.random.random((1, 32, 32, 3)).astype(np.float32)]
 
 
-def my_model_function():
-    # Return an instance of MyModel initialized with default weights
-    return MyModel()
+converter.representative_dataset = representative_data_gen
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+tflite_model = converter.convert()
 
+tflite_models_dir = pathlib.Path("/tmp/")
+tflite_model_file = tflite_models_dir / "dilation_model.tflite"
+tflite_model_file.write_bytes(tflite_model)
 
-def GetInput():
-    # Return random input tensor matching the model input: (batch_size=1, height=32, width=32, channels=3)
-    # Use uniform distribution, dtype float32, to match example input type
-    return tf.random.uniform((1, 32, 32, 3), dtype=tf.float32)
+interpreter = tf.lite.Interpreter(model_content=tflite_model)
+interpreter.allocate_tensors()
+input_details = interpreter.get_input_details()[0]
 
+interpreter.set_tensor(input_details["index"], np.random.random((1, 32, 32, 3)).astype(np.float32))
+interpreter.invoke()
+output_details = interpreter.get_output_details()[0]
+output = interpreter.get_tensor(output_details["index"])[0]

@@ -1,11 +1,72 @@
-# torch.rand(B, 1, 28, 28, dtype=torch.float32)  # MNIST input shape
+def save_activations(name, mod, inp, out):
+    activations[name] = out
+
+forward_handles = {}
+
+for name, module in model.named_modules():
+    forward_handles[name] = module.register_forward_hook(partial(save_activations, name))
+
+import torch
+import torchvision as tv
+
+import collections
+from functools import partial
+
+transforms = tv.transforms.Compose([tv.transforms.RandomResizedCrop(224, scale=(0.5, 1.)),
+                                    tv.transforms.RandomHorizontalFlip(),
+                                    tv.transforms.ToTensor()]) 
+
+train = tv.datasets.StanfordCars('/home/ec2-user/SageMaker/data/cars/', download=True, transform=transforms)
+model = tv.models.resnet50()
+
+model.fc = torch.nn.Linear(in_features=model.fc.in_features, out_features=len(train.classes))
+
+model = model.to('cuda')
+
+dataloader = torch.utils.data.DataLoader(train, batch_size=128, shuffle=True, num_workers=8, prefetch_factor=2, pin_memory=True)
+
+loss_func = torch.nn.CrossEntropyLoss()
+optimizer = torch.optim.AdamW(model.parameters())
+    
+activations = dict() # collections.defaultdict(list)
+
+def save_activations(name, mod, inp, out):
+    activations[name] = inp
+
+forward_handles = {}
+
+for name, module in model.named_modules():
+    forward_handles[name] = module.register_forward_hook(partial(save_activations, name))
+
+model = torch.compile(model, mode="reduce-overhead")
+
+for i in range(2):
+    activations.clear()
+    batch = next(iter(dataloader))
+    optimizer.zero_grad()
+    x, y = batch
+    with torch.cuda.amp.autocast(enabled=True, dtype=torch.bfloat16):
+        pred = model(x.to('cuda'))
+        loss = loss_func(pred, y.to('cuda'))
+    loss.backward()
+    optimizer.step()
+
+print(f"Recorded Layers: {activations.keys()}\n\n")
+print(f"Expected Layers: {forward_handles.keys()}")
+
+from __future__ import print_function
+import argparse
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.optim as optim
+from torchvision import datasets, transforms
+from torch.optim.lr_scheduler import StepLR
 
-class MyModel(nn.Module):
+
+class Net(nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
+        super(Net, self).__init__()
         self.conv1 = nn.Conv2d(1, 32, 3, 1)
         self.conv2 = nn.Conv2d(32, 64, 3, 1)
         self.dropout1 = nn.Dropout(0.25)
@@ -25,57 +86,133 @@ class MyModel(nn.Module):
         x = F.relu(x)
         x = self.dropout2(x)
         x = self.fc2(x)
-        return F.log_softmax(x, dim=1)
+        output = F.log_softmax(x, dim=1)
+        return output
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    return torch.rand(1, 1, 28, 28, dtype=torch.float32)
+def train(args, model, device, train_loader, optimizer, epoch, activations):
+    model.train()
+    for batch_idx, (data, target) in enumerate(train_loader):
+        activations.clear()
+        data, target = data.to(device), target.to(device)
+        optimizer.zero_grad()
+        output = model(data)
+        loss = F.nll_loss(output, target)
+        loss.backward()
+        optimizer.step()
+        if batch_idx % args.log_interval == 0:
+            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                epoch, batch_idx * len(data), len(train_loader.dataset),
+                100. * batch_idx / len(train_loader), loss.item()))
+            if args.dry_run:
+                break
 
-# Okay, let's tackle this problem. The user wants me to generate a complete Python code file based on the provided GitHub issue and comments. The goal is to replicate the scenario where using torch.compile causes some hooks to not capture all layers, as described in the issue.
-# First, I need to understand the structure required. The output must include a MyModel class, a function my_model_function that returns an instance of MyModel, and a GetInput function that provides a valid input tensor. The code should be in a single Python code block with comments specifying the input shape.
-# Looking at the issue, the original code uses ResNet50 and a MNIST model. Since the problem occurs with both, I need to decide which model to use. The user mentioned that if there are multiple models discussed, I should fuse them into a single MyModel. But in this case, the two examples (ResNet50 and MNIST's Net) are separate. However, the issue is about the hook behavior with torch.compile, so maybe they want a model that demonstrates the problem, which could be the MNIST model since it's simpler and provided in a complete script.
-# The MNIST model (Net class) is defined with conv layers, dropout, and linear layers. The ResNet50 example uses a pre-trained model but modified. Since the MNIST code is fully provided in a comment, I'll base MyModel on the MNIST's Net class. 
-# The input shape for MNIST is (batch, 1, 28, 28), so the GetInput function should return a tensor like torch.rand(B, 1, 28, 28). 
-# The hooks are registered for all modules, but when compiled, some aren't captured. The model must include hooks to replicate the issue. However, the generated code shouldn't have the testing or training loops, just the model and input functions. 
-# Wait, the problem is that when using torch.compile, the hooks don't capture all layers. To create a model that shows this, the MyModel should have the necessary layers and hooks. But according to the structure, the code shouldn't include test code. So the model itself should have the hooks registered? Or is the hook part part of the user's code outside the model? Hmm, the user's code in the comments registers the hooks after creating the model. Since the generated code must include the model and the functions, perhaps the model should have the hooks as part of its definition, but the problem mentions that the hooks are registered in the user's code. 
-# Wait, the structure requires the code to have MyModel as a class, and the functions. The hooks are part of the user's usage, but the model itself is MyModel. The issue is that when compiled, the hooks don't capture all layers. The generated code must be a model that when compiled with hooks, shows the discrepancy. But the code structure here is to provide the model, the input function, and a model function. The hooks are set up by the user's code outside, so perhaps the model just needs to have the layers that would be hooked. 
-# Therefore, MyModel should be the Net class from the MNIST example. The my_model_function returns an instance of it. The GetInput function creates a random tensor of the correct shape. 
-# Now, checking the MNIST code:
-# The Net class has conv1, conv2, dropout1, etc. The forward function uses these modules. The hooks are registered for all modules. The problem is that when compiled, some hooks aren't triggered. 
-# The input shape for MNIST is (B, 1, 28, 28), so the comment at the top should be torch.rand(B, 1, 28, 28, dtype=torch.float32). 
-# Putting it all together:
-# The MyModel class will be the Net class from the MNIST example. The my_model_function initializes it. The GetInput function returns a random tensor with that shape. 
-# Wait, but in the MNIST example, the model is compiled with torch.compile(model), so the code must allow for that. The generated MyModel is correct as the Net class. 
-# I need to make sure that the code is exactly as per the structure. The class name must be MyModel, so I'll rename Net to MyModel. Also, the save_activations function and the hook registration are part of the user's code outside the model, so they aren't part of the model class. Since the generated code shouldn't include test code or main blocks, the model itself just needs to have the layers. 
-# Thus, the code will look like:
-# class MyModel(nn.Module):
-#     def __init__(self):
-#         super().__init__()
-#         self.conv1 = nn.Conv2d(1, 32, 3, 1)
-#         self.conv2 = nn.Conv2d(32, 64, 3, 1)
-#         self.dropout1 = nn.Dropout(0.25)
-#         self.dropout2 = nn.Dropout(0.5)
-#         self.fc1 = nn.Linear(9216, 128)
-#         self.fc2 = nn.Linear(128, 10)
-#     def forward(self, x):
-#         x = self.conv1(x)
-#         x = F.relu(x)
-#         x = self.conv2(x)
-#         x = F.relu(x)
-#         x = F.max_pool2d(x, 2)
-#         x = self.dropout1(x)
-#         x = torch.flatten(x, 1)
-#         x = self.fc1(x)
-#         x = F.relu(x)
-#         x = self.dropout2(x)
-#         x = self.fc2(x)
-#         return F.log_softmax(x, dim=1)
-# def my_model_function():
-#     return MyModel()
-# def GetInput():
-#     return torch.rand(1, 1, 28, 28, dtype=torch.float32)
-# Wait, but the input should have a batch size, but the exact batch size isn't critical, so using 1 is okay. The dtype is float32, but in the MNIST example, they use ToTensor which gives float32. 
-# So this should meet the requirements. The input shape comment is correct. The model is named MyModel, and the functions are as required. The hooks are part of the user's code outside, but the model structure is correct to demonstrate the issue when compiled.
-# </think>
+
+def test(model, device, test_loader):
+    model.eval()
+    test_loss = 0
+    correct = 0
+    with torch.no_grad():
+        for data, target in test_loader:
+            data, target = data.to(device), target.to(device)
+            output = model(data)
+            test_loss += F.nll_loss(output, target, reduction='sum').item()  # sum up batch loss
+            pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
+            correct += pred.eq(target.view_as(pred)).sum().item()
+
+    test_loss /= len(test_loader.dataset)
+
+    print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
+        test_loss, correct, len(test_loader.dataset),
+        100. * correct / len(test_loader.dataset)))
+
+
+def main():
+    # Training settings
+    parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
+    parser.add_argument('--batch-size', type=int, default=64, metavar='N',
+                        help='input batch size for training (default: 64)')
+    parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
+                        help='input batch size for testing (default: 1000)')
+    parser.add_argument('--epochs', type=int, default=1, metavar='N',
+                        help='number of epochs to train (default: 14)')
+    parser.add_argument('--lr', type=float, default=1.0, metavar='LR',
+                        help='learning rate (default: 1.0)')
+    parser.add_argument('--gamma', type=float, default=0.7, metavar='M',
+                        help='Learning rate step gamma (default: 0.7)')
+    parser.add_argument('--no-cuda', action='store_true', default=False,
+                        help='disables CUDA training')
+    parser.add_argument('--no-mps', action='store_true', default=False,
+                        help='disables macOS GPU training')
+    parser.add_argument('--dry-run', action='store_true', default=False,
+                        help='quickly check a single pass')
+    parser.add_argument('--seed', type=int, default=1, metavar='S',
+                        help='random seed (default: 1)')
+    parser.add_argument('--log-interval', type=int, default=10, metavar='N',
+                        help='how many batches to wait before logging training status')
+    parser.add_argument('--save-model', action='store_true', default=False,
+                        help='For Saving the current Model')
+    args = parser.parse_args()
+    use_cuda = not args.no_cuda and torch.cuda.is_available()
+    use_mps = not args.no_mps and torch.backends.mps.is_available()
+
+    torch.manual_seed(args.seed)
+
+    if use_cuda:
+        print("Using CUDA device")
+        device = torch.device("cuda")
+    elif use_mps:
+        device = torch.device("mps")
+    else:
+        device = torch.device("cpu")
+
+    train_kwargs = {'batch_size': args.batch_size}
+    test_kwargs = {'batch_size': args.test_batch_size}
+    if use_cuda:
+        cuda_kwargs = {'num_workers': 1,
+                       'pin_memory': True,
+                       'shuffle': True}
+        train_kwargs.update(cuda_kwargs)
+        test_kwargs.update(cuda_kwargs)
+
+    transform=transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize((0.1307,), (0.3081,))
+        ])
+    dataset1 = datasets.MNIST('../data', train=True, download=True,
+                       transform=transform)
+    dataset2 = datasets.MNIST('../data', train=False,
+                       transform=transform)
+    train_loader = torch.utils.data.DataLoader(dataset1,**train_kwargs)
+    test_loader = torch.utils.data.DataLoader(dataset2, **test_kwargs)
+
+    model = Net().to(device)
+
+    import collections
+    from functools import partial
+    activations = dict()  # collections.defaultdict(list)
+    forward_handles = {}
+    def save_activations(name, mod, inp, out):
+        activations[name] = inp
+
+    for name, module in model.named_modules():
+        forward_handles[name] = module.register_forward_hook(partial(save_activations, name))
+
+    model = torch.compile(model)
+    optimizer = optim.Adadelta(model.parameters(), lr=args.lr)
+
+    scheduler = StepLR(optimizer, step_size=1, gamma=args.gamma)
+    for epoch in range(1, args.epochs + 1):
+        train(args, model, device, train_loader, optimizer, epoch, activations)
+        test(model, device, test_loader)
+        scheduler.step()
+
+    if args.save_model:
+        torch.save(model.state_dict(), "mnist_cnn.pt")
+
+    print(f"Recorded Layers: {activations.keys()}\n\n")
+    print(f"Recorded Layers: {activations['conv1']} \n\n")
+    print(f"Expected Layers: {forward_handles.keys()}")
+
+if __name__ == '__main__':
+    main()

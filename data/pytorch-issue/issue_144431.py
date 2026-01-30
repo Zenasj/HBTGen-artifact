@@ -1,17 +1,27 @@
-# torch.rand(4096, 8192, dtype=torch.bfloat16, device="cuda")  # Non-contiguous input example
 import torch
-from torch import nn
+import fire
+from torch._inductor.utils import do_bench_using_profiling
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return torch.max(x)
+torch.manual_seed(0)
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    x = torch.randn(4096, 8192, dtype=torch.bfloat16, device="cuda")
-    # Create non-contiguous tensor via transpose operations as in the original repro
-    x = x.t().contiguous().t()  
+def get_max(x):
+    x = torch.max(x)
     return x
 
+def run(is_contiguous: bool = True):
+    x = torch.randn(4096, 8192, dtype=torch.bfloat16, device="cuda")
+
+    if not is_contiguous:
+        x = x.t().contiguous().t()
+
+    get_max_c = torch.compile(get_max)
+
+    # warmup
+    y = get_max_c(x)
+
+    # perf
+    duration_microseconds = do_bench_using_profiling(lambda: get_max_c(x))
+    print('duration in microseconds', duration_microseconds)
+
+if __name__ == '__main__':
+    fire.Fire(run)

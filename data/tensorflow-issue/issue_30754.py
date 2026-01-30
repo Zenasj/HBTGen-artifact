@@ -1,26 +1,44 @@
-# tf.random.uniform((B, 16000, 40), dtype=tf.float32)  # B=batch size, 16000 timesteps, 40 features per timestep
+import math
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # LSTM with 10 units, input shape (16000, 40) as per the issue example
-        self.lstm = tf.keras.layers.LSTM(10, input_shape=(16000, 40))
+model = tf.keras.Sequential(
+    [tf.keras.layers.LSTM(10, input_shape=(16000, 40))]
+)
+model.build()
 
-    def call(self, inputs, training=False):
-        # Forward pass through LSTM
-        return self.lstm(inputs)
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+converter.target_spec.supported_ops = set(
+    [tf.lite.OpsSet.TFLITE_BUILTINS, tf.lite.OpsSet.SELECT_TF_OPS]
+)
 
-def my_model_function():
-    # Return an instance of MyModel
-    # No pretrained weights specified in the issue, so default initialization
-    return MyModel()
+tflite_model = converter.convert()
 
-def GetInput():
-    # Generate a random input tensor with shape (batch_size, 16000, 40)
-    # batch_size chosen = 1 as a reasonable default for illustration
-    batch_size = 1
-    # tf.float32 to match typical dtype used with LSTMs and as in the issue
-    return tf.random.uniform((batch_size, 16000, 40), dtype=tf.float32)
+sample_rate = 16000.0
+# A Tensor of [batch_size, num_samples] mono PCM samples in the range [-1, 1].
+pcm = tf.compat.v1.placeholder(tf.float32, [None, None])
 
+# A 1024-point STFT with frames of 64 ms and 75% overlap.
+stfts = tf.signal.stft(pcm, frame_length=1024, frame_step=256,
+                       fft_length=1024)
+spectrograms = tf.abs(stfts)
+
+# Warp the linear scale spectrograms into the mel-scale.
+num_spectrogram_bins = stfts.shape[-1].value
+lower_edge_hertz, upper_edge_hertz, num_mel_bins = 80.0, 7600.0, 80
+linear_to_mel_weight_matrix = tf.signal.linear_to_mel_weight_matrix(
+  num_mel_bins, num_spectrogram_bins, sample_rate, lower_edge_hertz,
+  upper_edge_hertz)
+mel_spectrograms = tf.tensordot(
+  spectrograms, linear_to_mel_weight_matrix, 1)
+mel_spectrograms.set_shape(spectrograms.shape[:-1].concatenate(
+  linear_to_mel_weight_matrix.shape[-1:]))
+
+# Compute a stabilized log to get log-magnitude mel-scale spectrograms.
+log_mel_spectrograms = tf.math.log(mel_spectrograms + 1e-6)
+
+# Compute MFCCs from log_mel_spectrograms and take the first 13.
+mfccs = tf.signal.mfccs_from_log_mel_spectrograms(
+  log_mel_spectrograms)[..., :13]

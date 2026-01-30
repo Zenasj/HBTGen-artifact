@@ -1,18 +1,35 @@
-# torch.rand((), dtype=torch.float32)  # Scalar input as in the issue example
+import torch.nn as nn
+
 import torch
-from torch import nn
+from tvm import relay
+import onnx
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.prelu = nn.PReLU()  # Core PyTorch PReLU module causing the ONNX export issue
+model = torch.nn.PReLU()
 
-    def forward(self, x):
-        return self.prelu(x)
+onnx_model = "test.onnx"
 
-def my_model_function():
-    return MyModel()  # Returns the problematic PReLU model instance
+torch.onnx.export(model, (torch.tensor(1.0),), onnx_model, verbose=True)
 
-def GetInput():
-    return torch.rand((), dtype=torch.float32)  # Matches scalar input shape from the issue's test case
+mod, params = relay.frontend.from_onnx(onnx.load(onnx_model))
 
+mod = relay.transform.InferType()(mod)
+
+import onnxruntime
+import torch
+
+model = torch.nn.PReLU()
+onnx_model = "test.onnx"
+torch.onnx.export(model, (torch.tensor(1.0),), onnx_model, verbose=True)
+i_sess = onnxruntime.InferenceSession(onnx_model)
+i_sess.run([], {"input": torch.tensor(1.0).numpy(),})
+
+import onnxruntime
+import torch
+
+model = torch.nn.PReLU()
+onnx_model = "test.onnx"
+torch.onnx.export(model, (torch.tensor(1.0),), onnx_model, verbose=True)
+i_sess = onnxruntime.InferenceSession(onnx_model)
+i_sess.run([], {"input": torch.tensor(1.0).numpy(),})
+
+print(f'{onnxruntime.__version__=}; {torch.__version__=}')

@@ -1,36 +1,42 @@
-# tf.range(600), tf.random.uniform((600,), dtype=tf.float64) ← Input shape inferred from original model producing 600-length vectors
-
+import random
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # No trainable parameters; logic directly creates tensors
+class CppTfTest(tf.Module):
+
+    def __init__(self, name=None):
+        super().__init__(name=name)
 
     @tf.function
-    def call(self, inputs=None):
-        # Inputs is unused, as original callable produces fixed-length outputs
-        
-        # frames: 1D int32 tensor [0..599]
-        frames = tf.range(600, dtype=tf.int32)
-        
-        # bpm: random uniform float64 tensor shape (600,) value range [0, 90)
+    def call(self):
+
+        frames = tf.range(600)
+
         bpm = tf.random.uniform(
-            shape=(600,),
+            tf.TensorShape([600,]),
             minval=0,
             maxval=90,
-            dtype=tf.float64
-        )
-        
-        # Return the two tensors as a tuple
+            dtype=tf.dtypes.float64
+            )
+
         return bpm, frames
 
-def my_model_function():
-    # Return an instance of MyModel (no special initialization needed)
-    return MyModel()
+cpp_tf_test = CppTfTest()
+tf.saved_model.save(
+    cpp_tf_test,
+    'cpp_tf_test',
+    signatures=cpp_tf_test.call.get_concrete_function()
+    )
 
-def GetInput():
-    # Since the original model has no inputs, create a dummy input tensor to satisfy TF Keras signature
-    # Use a dummy tensor of shape (1,) int32 zero as a placeholder input
-    return tf.zeros((1,), dtype=tf.int32)
+converter = tf.lite.TFLiteConverter.from_saved_model('cpp_tf_test')
 
+converter.target_spec = tf.lite.TargetSpec(
+    supported_ops=[tf.lite.OpsSet.TFLITE_BUILTINS],
+    experimental_select_user_tf_ops=[
+        'RandomUniform', 'Mul'
+        ]
+)
+
+tflite_model = converter.convert()
+
+with open('cpp_tf_test.tflite', 'wb') as f:
+  f.write(tflite_model)

@@ -1,17 +1,9 @@
-# torch.rand(100, dtype=torch.float32)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        return torch.sin(x)
+torch.set_default_device("cuda:0")
+@torch.compile
+def test(x):
+  return torch.sin(x)
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(100)  # Matches the minimal repro input shape
-
+a = torch.zeros(100)
+test(a)

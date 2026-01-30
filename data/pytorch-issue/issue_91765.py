@@ -1,21 +1,33 @@
-# torch.rand(B, 1, dtype=torch.float32)
+#!/usr/bin/env python3
+import matplotlib.pyplot as plt
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Matches the 10-element parameter from the original example's context
-        self.params = nn.Parameter(torch.randn(10))
+# Setup optimizer + scheduler
+epochs = 5
+steps_per_epoch = 10
+params = torch.randn(10).requires_grad_(True)
+optimizer = torch.optim.SGD([params], lr=0.01, momentum=0.9)
+scheduler = torch.optim.lr_scheduler.OneCycleLR(
+    optimizer, max_lr=0.01, steps_per_epoch=steps_per_epoch, epochs=epochs
+)
 
-    def forward(self, x):
-        # Dummy forward to satisfy model structure; uses the parameter
-        return self.params.sum()  # Returns scalar, but input compatibility is maintained
+# Collect lrs
+lrs = []
+for step in range(epochs * steps_per_epoch):
+    optimizer.step()
+    scheduler.step()
+    lrs.append(optimizer.param_groups[0]["lr"])
 
-def my_model_function():
-    return MyModel()
+# Create plot
+plt.figure()
+plt.title("OneCycleLR Learning Rate Scaling")
+plt.plot(lrs)
+plt.yscale("log")
+plt.xlabel("Steps")
+plt.ylabel("Learning Rate")
+plt.savefig("/tmp/OneCycleLR.png")
 
-def GetInput():
-    B = 1  # Minimal batch size for simplicity
-    return torch.rand(B, 1, dtype=torch.float32)  # Matches the inferred input shape
-
+# Print LRs
+print("Min lr: ", scheduler.optimizer.param_groups[0]["min_lr"])
+print("Actual last lr: ", lrs[-1])
+print("Last three lrs: ", lrs[-3:])

@@ -1,22 +1,19 @@
-# torch.rand(B, C, dtype=torch.float32, device='cuda')
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-class MyModel(nn.Module):
+import torch
+
+class MyModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.lin = nn.Linear(100, 10)  # Matches the Linear layer in the issue's example
-        
+        self.lin = torch.nn.Linear(100, 10)
+
     def forward(self, x):
-        return F.relu(self.lin(x))  # Uses ReLU as in the original model
+        return torch.nn.functional.relu(self.lin(x))
 
-def my_model_function():
-    # Return an instance of MyModel, initialized in eval mode and moved to CUDA
-    model = MyModel().eval().cuda()
-    return model
-
-def GetInput():
-    # Returns a random input tensor matching the model's expected input (CUDA device)
-    return torch.randn(8, 100, dtype=torch.float32, device='cuda')
-
+model = MyModule().eval().cuda()
+x = torch.randn(8, 100).cuda()
+opt_model = torch.compile(model)
+exp = torch.export.export(opt_model, (x,))
+torch.export.save(exp, "model.ep")
+new_model = torch.export.load("model.ep")
+new_model(x)

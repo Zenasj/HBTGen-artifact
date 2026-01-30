@@ -1,11 +1,11 @@
-# torch.rand(3, 4, dtype=torch.float32) ← Add a comment line at the top with the inferred input shape
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+import torch
+
+class MyModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.layer = nn.Linear(4, 4)
+        self.layer = torch.nn.Linear(4, 4)
         self.step = 0
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -13,16 +13,26 @@ class MyModel(nn.Module):
         self.step += 1
         return self.layer(x)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+m = MyModule()
+opt_m = torch.compile(backend="eager")(m)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(3, 4)
+x = torch.randn(3, 4)
+print(opt_m(x))
 
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
+x = torch.randn(4, 4)
+print(opt_m(x))
 
+x = torch.randn(5, 4)
+print(opt_m(x))
+
+self.step
+
+nn.Module
+
+nn.Module
+
+torch.SymInt/Float
+
+nn.Module
+
+torch.mark_dynamic

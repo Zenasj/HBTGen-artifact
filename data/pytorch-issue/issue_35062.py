@@ -1,23 +1,30 @@
-# torch.rand(0, 4, dtype=torch.float32)
 import torch
-from torch import nn
+a = torch.rand(0, 4)
+print(a.max(1))
+print(a.min(1))
 
-class MyModel(nn.Module):
-    def __init__(self, dim=1):
-        super().__init__()
-        self.dim = dim  # Dimension to apply reduction (matches test case)
+torch.return_types.max(
+values=tensor([]),
+indices=tensor([], dtype=torch.int64))
+torch.return_types.max(
+values=tensor([]),
+indices=tensor([], dtype=torch.int64))
 
-    def forward(self, x):
-        # Compute max and min along specified dimension for comparison
-        max_val, _ = x.max(self.dim, keepdim=False)
-        min_val, _ = x.min(self.dim, keepdim=False)
-        return max_val, min_val
+import torch
+a = torch.rand(0, 4)
+torch.from_numpy(a.max(1).values.numpy())
 
-def my_model_function():
-    # Returns an instance with default dimension (1) as per test cases
-    return MyModel()
+import torch
+a = torch.rand(0, 1)
 
-def GetInput():
-    # Returns zero-sized tensor matching test input shape (0,4)
-    return torch.rand(0, 4, dtype=torch.float32)
+torch = a.max() # not specify a dimension
+# output:  RuntimeError: operation does not have an identity.
 
+torch =  a.max(1)
+# output:  torch.return_types.max(values=tensor([]),indices=tensor([], dtype=torch.int64))
+
+torch = a.max(3)
+# output: IndexError: Dimension out of range (expected to be in range of [-2, 1], but got 3)
+
+torch = a.max(120)
+# output: IndexError: Dimension out of range (expected to be in range of [-2, 1], but got 120)

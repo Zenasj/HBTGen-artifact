@@ -1,42 +1,34 @@
-# torch.rand(1, 333, 1536, dtype=torch.bfloat16)
-import torch
 import torch.nn as nn
+
+import torch
 import torch.nn.functional as F
+from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        dim = 1536
-        hidden_dim = 4096
-        self.w1 = nn.Linear(dim, hidden_dim * 2, bias=False)
-        self.w2 = nn.Linear(hidden_dim, dim, bias=False)
+torch.use_deterministic_algorithms(True)
 
-    def swiglu_forward(self, x):
-        x, gate = self.w1(x).chunk(2, dim=-1)
-        return self.w2(F.silu(x) * gate)
+dim = 1536
+hidden_dim = 4096
+seqlen = 333  # Define seqlen as a variable
 
-    def forward(self, x):
-        with torch.autocast("cuda", dtype=torch.bfloat16):
-            output_full = self.swiglu_forward(x)
-            # Compute chunked output
-            seqlen = x.size(1)
-            pad = (4 - seqlen % 4) % 4
-            x_padded = F.pad(x, (0, 0, 0, pad))
-            chunks = x_padded.chunk(4, dim=1)
-            chunk_outputs = [self.swiglu_forward(chunk) for chunk in chunks]
-            output_chunked = torch.cat(chunk_outputs, dim=1)
-            output_chunked = output_chunked[:, :seqlen, :]
-            # Check closeness
-            are_close = torch.allclose(
-                output_full, output_chunked, rtol=1e-3, atol=1e-3
-            )
-        return torch.tensor(are_close, dtype=torch.bool, device=x.device)
+w1 = nn.Linear(dim, hidden_dim * 2, bias=False)
+w2 = nn.Linear(hidden_dim, dim, bias=False)
+w1, w2 = w1.cuda(), w2.cuda()
 
-def my_model_function():
-    model = MyModel()
-    model.cuda()
-    return model
+def swiglu_forward(w1, w2, x):
+    x, gate = w1(x).chunk(2, dim=-1)
+    return w2(F.silu(x) * gate)
 
-def GetInput():
-    return torch.randn(1, 333, 1536, dtype=torch.bfloat16, device="cuda")
+x = torch.randn(1, seqlen, dim).cuda()
 
+with torch.autocast("cuda", dtype=torch.bfloat16):
+    x = x.to(torch.bfloat16)
+    output_full = swiglu_forward(w1, w2, x)
+    x_padded = F.pad(x, (0, 0, 0, (4 - seqlen % 4) % 4))
+    chunks = x_padded.chunk(4, dim=1)
+
+    chunk_outputs = [swiglu_forward(w1, w2, chunk) for chunk in chunks]
+    output_chunked = torch.cat(chunk_outputs, dim=1)
+    output_chunked = output_chunked[:, :seqlen, :]
+
+    torch.testing.assert_close(output_full, output_chunked, rtol=1e-3, atol=1e-3)
+    print("Test passed successfully!")

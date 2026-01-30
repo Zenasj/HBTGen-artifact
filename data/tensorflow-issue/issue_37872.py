@@ -1,39 +1,34 @@
-# tf.random.uniform((B,), dtype=tf.string) ← The input is a batch of text strings for sentiment analysis
-
 import tensorflow as tf
-from tensorflow.keras.layers import Dense
-import tensorflow_hub as hub
+from tensorflow import keras
 
-class MyModel(tf.keras.Model):
-    def __init__(self, embedding="https://tfhub.dev/google/nnlm-en-dim128/1", name="MyModel", **kwargs):
-        super(MyModel, self).__init__(name=name, **kwargs)
-        # Embedding layer from TF Hub for text input, output dimension is 128
-        self.embedding_layer = hub.KerasLayer(embedding, trainable=True, dtype=tf.string)
-        # Two dense layers: first with ReLU, second with sigmoid for binary classification
-        self.dense1 = Dense(16, activation='relu')
-        self.dense2 = Dense(1, activation='sigmoid')
-        
+class ANNForSentimentAnalysis(tf.keras.Model):
+    def __init__(self, embedding = "https://tfhub.dev/google/nnlm-en-dim128/1", name="ANNForSentimentAnalysis", **kwargs):
+        super(ANNForSentimentAnalysis, self).__init__(name=name, **kwargs)
+        self._layers = [
+            hub.KerasLayer(embedding, trainable=True, dtype=tf.string),
+            Dense(16, activation='relu'),
+            Dense(1, activation='sigmoid')
+        ]
+        # self._model = Sequential(self._layers)
+
     @tf.function
     def call(self, inputs):
-        # Forward pass: embed text inputs -> dense relu -> dense sigmoid
-        x = self.embedding_layer(inputs)
-        x = self.dense1(x)
-        x = self.dense2(x)
-        return x
+        # return self._model(inputs)
+        for layer in self._layers:
+            inputs = layer(inputs)
+        return inputs
 
-def my_model_function():
-    # Return an instance of the model with default parameters
-    return MyModel()
+def train_step(train_data, model, optimizer, loss_func, metric):
+    for i, batch in enumerate(train_data):
+        x_train, y_train = batch
+        with tf.GradientTape() as tape:
+            preds = model(x_train)
+            loss = loss_func(y_train, preds)
+        grads = tape.gradient(loss, model.trainable_variables)
+        optimizer.apply_gradients(zip(grads, model.trainable_variables))
+        metric_eval = metric(y_train, preds)
+        sys.stdout.write(f"\rStep {i}: [" + i*"*" + f"]\tloss: {loss:.4f}\taccuracy: {metric_eval:.4f}")
+    print("")
 
-def GetInput():
-    # Create a sample batch of sentences as tf.string tensor input
-    sample_sentences = [
-        "I loved this movie, it was fantastic!",
-        "The film was terrible and boring.",
-        "Absolutely wonderful experience.",
-        "Not good, I would not recommend.",
-        "An okay movie, nothing special."
-    ]
-    # Convert to tf.Tensor of dtype string
-    return tf.constant(sample_sentences)
-
+def accuracy(y_train, y_pred):
+    return tf.reduce_mean(tf.cast(tf.cast(y_train, tf.float32) == tf.cast(y_pred > 0.5, tf.float32), tf.float32))

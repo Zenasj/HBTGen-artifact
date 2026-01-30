@@ -1,33 +1,19 @@
-# torch.rand(B, C, D, H, W, dtype=...)  # Inferred input shape: (batch_size, channels, depth, height, width)
-
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.adaptive_avg_pool3d = nn.AdaptiveAvgPool3d(2)
-    
-    def forward(self, x):
-        return self.adaptive_avg_pool3d(x)
+import torch
+import torch._lazy
+import torch_mlir._mlir_libs._REFERENCE_LAZY_BACKEND as lazy_backend
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+# on CPU device
+img_cpu = torch.zeros([2,3,10,10,10])
+out_cpu = torch.nn.AdaptiveAvgPool3d(2)(img_cpu)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # Inferred input shape: (batch_size, channels, depth, height, width)
-    batch_size = 2
-    channels = 3
-    depth = 10
-    height = 10
-    width = 10
-    return torch.rand(batch_size, channels, depth, height, width, dtype=torch.float32)
+# on LTC device
+lazy_backend._initialize()
+device = 'lazy'
+img_lazy = img_cpu.to(device)
+out_lazy = torch.nn.AdaptiveAvgPool3d(2).to(device)(img_lazy)
+torch._lazy.mark_step()
 
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
-
-# This code defines a `MyModel` class that uses `nn.AdaptiveAvgPool3d` with an output size of 2. The `GetInput` function generates a random tensor with the inferred input shape `(batch_size, channels, depth, height, width)`. This setup should be ready to use with `torch.compile(MyModel())(GetInput())`.
+# This check should be True, but it is False
+assert out_lazy.numel() == out_cpu.numel(), f"Got {out_lazy.shape} shape on LTC, but {out_cpu.shape} on CPU device"

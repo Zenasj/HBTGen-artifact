@@ -1,46 +1,38 @@
-# tf.random.uniform((B, 1, look_back), dtype=tf.float32) ← Assumed input shape (batch_size, timesteps=1, features=look_back)
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
-import tensorflow as tf
+from tensorflow.keras.layers import Dense, LSTM
+from tensorflow.keras.models import Sequential
+from tensorflow.keras import optimizers
 
-class MyModel(tf.keras.Model):
-    def __init__(self, look_back=1):
-        super().__init__()
-        # LSTM layer with 100 units, return sequences True, input shape (1, look_back)
-        self.lstm = tf.keras.layers.LSTM(
-            100, return_sequences=True, input_shape=(1, look_back)
-        )
-        # Dense layers as per the original model
-        self.dense1 = tf.keras.layers.Dense(30, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(20, activation='relu')
-        self.dense3 = tf.keras.layers.Dense(10, activation='relu')
-        self.dense4 = tf.keras.layers.Dense(1)
-    
-    def call(self, inputs, training=False):
-        x = self.lstm(inputs)
-        x = self.dense1(x)
-        x = self.dense2(x)
-        x = self.dense3(x)
-        x = self.dense4(x)
-        # Output shape: (batch_size, timesteps=1, 1)
-        return x
+def createModel(look_back=1):
+    model = Sequential()
+    model.add(LSTM(100, return_sequences=True, input_shape=(1, look_back)))
+    # model.add(LSTM(100, activation='relu', return_sequences=True))
+    # model.add(LSTM(50, activation='relu', return_sequences=True))
+    model.add(Dense(30, activation='relu'))
+    model.add(Dense(20, activation='relu'))
+    model.add(Dense(10, activation='relu'))
+    model.add(Dense(1))
 
-def my_model_function():
-    # Return an instance of the model with default look_back=1
-    model = MyModel(look_back=1)
-    # Compilation according to original code with ExponentialDecay learning rate and Adam optimizer
-    lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
-        initial_learning_rate=1e-5,
-        decay_steps=10000,
-        decay_rate=0.99
-    )
-    optimizer = tf.keras.optimizers.Adam(learning_rate=lr_schedule)
-    model.compile(optimizer=optimizer, loss='mse')
+    # fixed learning rate
+    # lr = 1e-2
+
+    # learning rate schedule
+    lr = optimizers.schedules.ExponentialDecay(initial_learning_rate=1e-5,
+                                               decay_steps=10000,
+                                               decay_rate=0.99)
+
+    # opt = optimizers.SGD(learning_rate=lr)
+    # opt = optimizers.SGD(learning_rate=lr, momentum=0.8, nesterov=False)
+    # opt = optimizers.RMSprop(learning_rate=lr, rho=0.9, epsilon=1e-08)
+    opt = optimizers.Adam(learning_rate=lr)
+    # opt = optimizers.Adadelta(learning_rate=lr)
+    # opt = optimizers.Adagrad(learning_rate=lr)
+    # opt = optimizers.Adamax(learning_rate=lr)
+    # opt = optimizers.Nadam(learning_rate=lr)
+    # opt = optimizers.Ftrl(learning_rate=lr)
+
+    model.compile(optimizer=opt, loss='mse')
+    # model.summary()
     return model
-
-def GetInput():
-    # Return a random input tensor with shape (batch_size, timesteps=1, features=look_back=1)
-    # Using batch_size=4 for example; dtype float32 as typical for TF models
-    batch_size = 4
-    look_back = 1  # matches the model's expected input feature dimension
-    return tf.random.uniform((batch_size, 1, look_back), dtype=tf.float32)
-

@@ -1,27 +1,37 @@
-# torch.rand(B, 2, 1, 1, dtype=torch.float32)
 import torch
 import torch.nn as nn
+# import caffe2.python.onnx.backend as backend
+import onnx
 
-class ScaleTwo(nn.Module):
-    def forward(self, x):
-        return 2 * x
 
-class MyModel(nn.Module):
+class Model(nn.Module):
+  def __init__(self):
+    super(Model, self).__init__()
+  
+  def forward(self, x):
+    return 2 * x
+
+
+device = 'cuda'
+
+model = Model().eval().to(device)
+
+input_data = torch.tensor([[0.0, 0.0]], device=device)
+torch.onnx.export(model, input_data, 'model.onnx', verbose=True)
+
+onnx_model = onnx.load('model.onnx')
+onnx.checker.check_model(onnx_model)
+
+# rep = backend.prepare(onnx_model, device)
+# onnx_model_out = rep.run(input_data.numpy())
+
+class ConvNet(nn.Module):
     def __init__(self):
-        super().__init__()
-        self.scale_two = ScaleTwo()  # Simple model (2*x)
-        # ConvNet submodule with inferred parameters (input channels=2, kernel_size=1)
-        self.conv = nn.Conv2d(2, 4, kernel_size=1, stride=1, padding=0)
+        super(ConvNet, self).__init__()
+        self.layer1 = nn.Conv2d(in_c, num_filters, kernel_size=kdim,
+                      stride=stride, padding=padding, groups=1,
+                      bias=False)
 
     def forward(self, x):
-        scaled = self.scale_two(x)  # Run simple model
-        conv_out = self.conv(x)     # Run convolutional model
-        return scaled, conv_out     # Return outputs of both submodules
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    B = 1  # Batch size
-    return torch.rand(B, 2, 1, 1, dtype=torch.float32)  # Matches input requirements for both submodels
-
+        out = self.layer1(x)
+        return out

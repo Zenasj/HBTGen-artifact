@@ -1,17 +1,15 @@
-# torch.rand(N, dtype=torch.float16, device='cpu')  # Input is a 1D tensor of shape (N,)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        N = x.size(0)
-        A = torch.rand(N, N, dtype=x.dtype, device=x.device)
-        return torch.matmul(A, x)
+def matrix_vector_operations(N_values):
+    for N in N_values:
+            A = torch.rand(N, N, dtype=torch.float16, device="cpu")
+            X = torch.rand(N, dtype=torch.float16, device="cpu")
 
-def my_model_function():
-    return MyModel()
+            print(" Allocated tensors for N = ", N)
+            B = torch.matmul(A, X)
+            print(" Completed matmul for N = ", N)
 
-def GetInput():
-    # Reproduces the problematic case with N=50000 as in the original issue
-    return torch.rand(50000, dtype=torch.float16, device='cpu')
+if __name__ == "__main__":
+    N_values = [1, 10, 50000]  # Define different N values
 
+    matrix_vector_operations(N_values)

@@ -1,29 +1,22 @@
-# tf.random.uniform((B, 784), dtype=tf.float32)  ← input shape inferred from keras.Input(shape=(784,))
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
+
+import os
+
+os.environ["TF_USE_LEGACY_KERAS"] = "1"
 
 import tensorflow as tf
+from tensorflow import keras
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Setup mixed precision policy to match the example in the issue (mixed_float16)
-        # Note: Normally this would be done externally, but included here for completeness.
-        tf.keras.mixed_precision.set_global_policy('mixed_float16')
-        
-        self.dense = tf.keras.layers.Dense(10)
-        # Activation layer with output dtype float32 (as in example)
-        self.activation = tf.keras.layers.Activation('softmax', dtype='float32')
-        
-    def call(self, inputs, training=False):
-        x = self.dense(inputs)
-        outputs = self.activation(x)
-        return outputs
+keras.mixed_precision.set_global_policy('mixed_float16')
+inputs = keras.Input(shape=(784,))
+x = keras.layers.Dense(10)(inputs)
+outputs = keras.layers.Activation('softmax', dtype='float32')(x)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+model = keras.Model(inputs=inputs, outputs=outputs)
+model.compile(loss='sparse_categorical_crossentropy', optimizer=keras.optimizers.RMSprop())
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # Batch size chosen as 32 for example; could be any batch size.
-    return tf.random.uniform((32, 784), dtype=tf.float32)
+(x_train, y_train), _ = keras.datasets.mnist.load_data()
+x_train = x_train.reshape(60000, 784).astype('float32') / 255
 
+_ = model.fit(x_train, y_train, batch_size=128, epochs=1, steps_per_epoch=1, verbose=0)

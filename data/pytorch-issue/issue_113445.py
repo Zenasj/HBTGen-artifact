@@ -1,25 +1,24 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        return F.interpolate(
-            x,
-            scale_factor=0.5,
-            mode='bilinear',
-            align_corners=False,
-            antialias=True
-        )
+import torch
 
-def my_model_function():
-    return MyModel()
+def _interpolate_wrapper(input_tensor: torch.Tensor) -> torch.Tensor:
+    print(f'run interpolation with input shape {input_tensor.shape}')
+    return torch.nn.functional.interpolate(
+        input_tensor,
+        scale_factor=.5,
+        antialias=True,
+        mode='bilinear',
+        align_corners=False
+    )
 
-def GetInput():
-    # Matches 4D input shape expected by interpolate (B, C, H, W)
-    return torch.rand(1, 3, 800, 600)
+# create test data
+input_tensor_3D = torch.rand([3, 800, 600])
+input_tensor_4D = input_tensor_3D.unsqueeze(0)
 
+# interpolate a 4D tensor
+_interpolate_wrapper(input_tensor_4D)  # this runs fine
+print('====interpolation of a 4D tensor run successfully')
+
+# interpolate a 3D tensor
+_interpolate_wrapper(input_tensor_3D)  # this triggers the error

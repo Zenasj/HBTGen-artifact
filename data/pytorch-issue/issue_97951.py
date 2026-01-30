@@ -1,9 +1,8 @@
-# torch.rand(1024, 3, 32, 32, dtype=torch.float32)
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class MyModel(nn.Module):
+class Net(nn.Module):
     def __init__(self):
         super().__init__()
         self.conv1 = nn.Conv2d(3, 6, 5)
@@ -16,15 +15,23 @@ class MyModel(nn.Module):
     def forward(self, x):
         x = self.pool(F.relu(self.conv1(x)))
         x = self.pool(F.relu(self.conv2(x)))
-        x = torch.flatten(x, 1)  # flatten all dimensions except batch
+        x = torch.flatten(x, 1) # flatten all dimensions except batch
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
         return x
 
-def my_model_function():
-    return MyModel()
+def fw_hook(module, input, output):
+    print(f"Shape of output to {module} is {output.shape}.")
 
-def GetInput():
-    return torch.randn((1024, 3, 32, 32), dtype=torch.float32)
 
+# Any tensor created within this torch.device context manager will be
+# on the meta device.
+with torch.device("meta"):
+    net = Net()
+    inp = torch.randn((1024, 3, 32, 32))
+
+for name, layer in net.named_modules():
+    layer.register_forward_hook(fw_hook)
+
+out = net(inp)

@@ -1,23 +1,38 @@
-# torch.rand(B, C, dtype=torch.float32)  # Inferred input shape (B, C) where B is batch size and C is number of features
-
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self, num_features=256):
-        super(MyModel, self).__init__()
-        self.bn = nn.BatchNorm1d(num_features, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+# test_bn.py
+import torch
+import time
+import sys
 
-    def forward(self, x):
-        return self.bn(x)
+bs = int(sys.argv[1])
+num_features = 256
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+shape = torch.Size((bs * 20000, num_features))
+input = torch.cuda.FloatTensor(shape)
+torch.randn(shape, out=input)
+input.requires_grad = True
 
-def GetInput(batch_size=5 * 20000, num_features=256):
-    # Return a random tensor input that matches the input expected by MyModel
-    input_tensor = torch.randn((batch_size, num_features), dtype=torch.float32, device='cuda')
-    input_tensor.requires_grad = True
-    return input_tensor
+bn = torch.nn.BatchNorm1d(num_features, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+bn.cuda()
 
+N = 30
+forward_time = 0
+backward_time = 0
+for i in range(N):
+    torch.cuda.synchronize()
+    start = time.time()
+    output = bn(input)
+    output = output.mean()
+    torch.cuda.synchronize()
+    forward_time += time.time() - start
+
+    torch.cuda.synchronize()
+    start = time.time()
+    output.backward()
+    torch.cuda.synchronize()
+    backward_time += time.time() - start
+
+print('forward: %f', forward_time / N)
+print('backward: %f', backward_time / N)
+print('total: %f', (forward_time + backward_time) / N)

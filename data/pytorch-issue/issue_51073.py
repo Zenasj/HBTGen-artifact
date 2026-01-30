@@ -1,11 +1,17 @@
-# torch.rand(B, 784, dtype=torch.float32)
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class MyModel(nn.Module):
+my_tensor = torch.rand(3,3)
+print("Counting non-zeros of a random tensor")
+print(torch.count_nonzero(my_tensor))
+
+class MyMLP(nn.Module):
+    """
+    A simple MLP
+    """
     def __init__(self):
-        super(MyModel, self).__init__()
+        super(MyMLP, self).__init__()
         self.hidden1 = 512
         self.hidden2 = 512
         self.fc1 = nn.Linear(28 * 28, self.hidden1)
@@ -19,9 +25,6 @@ class MyModel(nn.Module):
         x = self.fc3(x)
         return x
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(1, 28 * 28, dtype=torch.float32)
-
+my_net = MyMLP()
+print("Counting non-zeros of a weight tensor")
+print(torch.count_nonzero(my_net.fc1.weight))

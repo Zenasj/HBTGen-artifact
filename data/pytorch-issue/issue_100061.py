@@ -1,40 +1,36 @@
-# torch.rand(B, C, H, W, dtype=...)  # Add a comment line at the top with the inferred input shape
-import torch
 import torch.nn as nn
 
-class MinstSteerableCNN_simple(nn.Module):
-    def __init__(self, num_classes, tranNum):
-        super(MinstSteerableCNN_simple, self).__init__()
-        self.conv1 = nn.Conv2d(1, 32, kernel_size=3, stride=1, padding=1)
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
-        self.fc1 = nn.Linear(64 * 7 * 7, 128)
-        self.fc2 = nn.Linear(128, num_classes)
-        self.tranNum = tranNum
-        self.filter = None
-        self.bias = None
+import torch
+from torch import nn
 
-    def forward(self, x):
-        x = nn.functional.relu(self.conv1(x))
-        x = nn.functional.max_pool2d(x, 2)
-        x = nn.functional.relu(self.conv2(x))
-        x = nn.functional.max_pool2d(x, 2)
-        x = x.view(x.size(0), -1)
-        x = nn.functional.relu(self.fc1(x))
-        x = self.fc2(x)
-        return x
+class Model(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.switch = True
 
-    def train(self, mode=True):
-        super().train(mode)
-        if mode:
-            self.filter = torch.randn(64, 32, 3, 3).to(self.conv2.weight.device)
-            self.bias = torch.randn(64).to(self.conv2.bias.device)
+    def forward(self, X):
+        if self.switch:
+            return torch.zeros_like(X)
+        return torch.ones_like(X)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MinstSteerableCNN_simple(num_classes=10, tranNum=4)
+def test_it(do_compile=False):
+    X = torch.arange(5).float()
+    model = Model()
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    B, C, H, W = 64, 1, 28, 28  # Example batch size, channels, height, width
-    return torch.rand(B, C, H, W, dtype=torch.float32)
+    if do_compile:
+        model = torch.compile(model)
+        print("compiled the model")
 
+    outputs0 = model(X)
+    model.switch = False
+    outputs1 = model(X)
+
+    torch.testing.assert_close(outputs0, torch.zeros(5))
+    torch.testing.assert_close(outputs1, torch.ones(5))
+
+if __name__ == '__main__':
+    print(torch.__version__)
+    test_it(do_compile=False)  # passes
+    print("tests without compile passed")
+    test_it(do_compile=True)  # fails
+    print("tests with compilie passed")

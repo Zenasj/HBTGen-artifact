@@ -1,55 +1,54 @@
-# tf.random.uniform(()) ← The example input is a scalar (e.g., 1.5), so input shape is () (a scalar tensor)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
+import numpy as np
+import numba
 import tensorflow as tf
 
-# We cannot use numba or numpy functions with .numpy() calls inside a TensorFlow graph
-# because those break tf.function and XLA compilation.
-# So we need to reimplement func and gradfunc purely with TensorFlow ops.
+@numba.jit(nopython = True)
+def func(param, input):
+    return param*input**2
+
+@numba.jit(nopython = True)
+def gradfunc(param, input):
+    return input**2
 
 @tf.custom_gradient
 def func_tf(param, input):
-    # Forward computation: param * input^2
-    output = param * tf.square(input)
-    
     def grad(dy):
-        # Gradient w.r.t param is input^2 * dy, gradient w.r.t input is 2 * param * input * dy
-        grad_param = tf.reduce_sum(dy * tf.square(input))  # Sum over batch if needed
-        grad_input = dy * 2.0 * param * input
-        return grad_param, grad_input
-    
-    return output, grad
-
+        return tf.numpy_function(gradfunc, (param.numpy(), input.numpy()), tf.float32), 2*param*input
+    return tf.numpy_function(func, (param.numpy(), input.numpy()), tf.float32), grad
 
 class myLayer(tf.keras.layers.Layer):
     def __init__(self):
         super().__init__()
         
     def build(self, input_shape):
-        # Initialize the scalar weight param
-        self.param = self.add_weight(name="param", shape=(), initializer="random_normal")
+        self.param = self.add_weight("param")
         
     def call(self, input):
         return func_tf(self.param, input)
     
-
-class MyModel(tf.keras.Model):
+class myModel(tf.keras.Model):
     def __init__(self, num_layers):
         super().__init__(name='')
         self._layers = [myLayer() for _ in range(num_layers)]
         
     def call(self, input_tensor):
-        x = input_tensor
         for layer in self._layers:
-            x = layer(x)
-        return x
+            input_tensor = layer(input_tensor)
+        return input_tensor
+    
+model = myModel(3)
+print(model(1.5)) # <-- this works
 
+def loss(target, output):
+    tf.abs(tf.reduce_sum(target - output))**2
 
-def my_model_function():
-    # Return an instance of MyModel with 3 layers as in the original example
-    return MyModel(3)
+model.compile(
+    optimizer=tf.keras.optimizers.Adam(),
+    loss=loss,
+    metrics=[loss])
 
-
-def GetInput():
-    # Input is a scalar tensor, so produce a single random float scalar tensor
-    return tf.random.uniform(shape=(), dtype=tf.float32)
-
+model.fit([0.1], [0.4], batch_size=None)

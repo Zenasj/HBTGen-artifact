@@ -1,32 +1,59 @@
-# torch.rand(B, 10, dtype=torch.float32)  # Inferred input shape: (batch_size, 10)
-
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+import os
+import hashlib
+import torch
+
+class Model(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.relu = nn.ReLU()
-        self.sigmoid = nn.Sigmoid()
-        self.use_sigmoid = False  # Flag to switch between Model and Model2 behavior
+        self.relu = torch.nn.ReLU()
 
     def forward(self, x):
         x = self.relu(x)
-        if self.use_sigmoid:
-            x = self.sigmoid(x)
         return x
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+class Model2(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.relu = torch.nn.ReLU()
+        self.sigmoid = torch.nn.Sigmoid()
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
+    def forward(self, x):
+        x = self.relu(x)
+        x = self.sigmoid(x)
+        return x
+
+with torch.no_grad():
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    return torch.randn(8, 10, device=device)
+    example_inputs=(torch.randn(8, 10, device=device),)
+    batch_dim = torch.export.Dim("batch", min=1, max=1024)
 
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
+    # Model 1 ##
+    model = Model().to(device=device)
+    so_path = torch._export.aot_compile(
+        model,
+        example_inputs,
+        # Specify the first dimension of the input x as dynamic
+        dynamic_shapes={"x": {0: batch_dim}},
+        # Specify the generated shared library path
+        options={"aot_inductor.output_path": "/tmp/exported/model.so"},
+    )
+    res1 = model(*example_inputs)
+    hashval1 = hashlib.md5(open(so_path, 'rb').read()).hexdigest()
 
+    ## Model 2 ## 
+    model2 = Model2().to(device=device)
+    so_path = torch._export.aot_compile(
+        model2,
+        example_inputs,
+        # Specify the first dimension of the input x as dynamic
+        dynamic_shapes={"x": {0: batch_dim}},
+        # Specify the generated shared library path
+        options={"aot_inductor.output_path": "/tmp/exported/model.so"},
+    )
+    res2 = model2(*example_inputs)
+    hashval2 = hashlib.md5(open(so_path, 'rb').read()).hexdigest()
+
+    assert res1.sum() != res2.sum(), "results are different"
+    assert hashval1 != hashval2, "hash musht be different"

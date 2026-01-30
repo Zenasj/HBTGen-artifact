@@ -1,5 +1,9 @@
+#!/usr/bin/env python
+
 import torch
-from torch import nn
+from torch._dynamo import optimize, config
+config.cache_size_limit = 4
+torch.manual_seed(0)
 
 class Exp(torch.autograd.Function):
     @staticmethod
@@ -13,14 +17,18 @@ class Exp(torch.autograd.Function):
         result, = ctx.saved_tensors
         return grad_output * result
 
-# torch.rand(10, dtype=torch.float32, requires_grad=True)
-class MyModel(nn.Module):
-    def forward(self, x):
-        return Exp.apply(x)
+@optimize("inductor")
+def toy_example(x, dy):
+    y = Exp.apply(x)
+    y.backward(dy)
+    return y
 
-def my_model_function():
-    return MyModel()
+def test():
+    for i in range(5):
+        x = torch.randn(10, requires_grad=True)
+        dy = torch.randn(10)
+        toy_example(x, dy)
+        print(x.grad.norm())
 
-def GetInput():
-    return torch.randn(10, requires_grad=True)
-
+if __name__ == "__main__":
+    test()

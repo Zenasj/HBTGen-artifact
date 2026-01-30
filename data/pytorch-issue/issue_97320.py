@@ -1,21 +1,41 @@
-# torch.rand(B, C, H, W, dtype=...)  # Inferred input shape: (20, 5, 10, dtype=torch.int32)
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.layer_norm = nn.LayerNorm(10)
+import logging
+
+import torch
+from torch._dynamo import config, explain
+
+config.verbose = True
+config.log_level = logging.DEBUG
+
+config.repro_after = "dynamo"
+config.repro_level = 3
+
+config.output_code = True
+config.output_graph_code = True
+config.print_graph_breaks = True
+
+
+class CastToFloat(torch.nn.Module):
+
+    def __init__(self, mod):
+        super(CastToFloat, self).__init__()
+        self.mod = mod
 
     def forward(self, x):
         with torch.cuda.amp.autocast(enabled=False):
-            ret = self.layer_norm(x.to(torch.float32)).to(x.dtype)
+            ret = self.mod.forward(x.to(torch.float32)).to(x.dtype)
         return ret
 
-def my_model_function():
-    return MyModel()
+embedding = torch.randn(20, 5, 10).int().cuda()
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(20, 5, 10).int().cuda()
+layer_norm = torch.nn.LayerNorm(10).cuda()
+model = CastToFloat(layer_norm)
 
+##### fails
+explain(model, embedding)
+
+
+##### Also fails
+compiled = torch.compile(model)
+compiled(embedding)

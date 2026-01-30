@@ -1,18 +1,18 @@
-# torch.rand(1, 2)  # Input shape is (1, 2)
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+class CustomModel(nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
-        self.layer = nn.Dropout(p=1.0, inplace=False)
-    
+        super(CustomModel, self).__init__()
+        self.layer = nn.Dropout(p=1, inplace=False)
     def forward(self, inputs):
+
         return self.layer(inputs)
+    
+input_tensor = torch.randn([1,2]) 
+# Create the model
+mymodel = CustomModel()
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.randn(1, 2)
-
+# Forward pass
+output = mymodel(input_tensor) ## No error
+mymodel.to('cuda')
+op_output = torch.compile(mymodel)(input_tensor)

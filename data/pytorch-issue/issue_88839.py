@@ -1,46 +1,53 @@
-# torch.rand(B, C, H, W, dtype=...) ← Add a comment line at the top with the inferred input shape
+import time
 import torch
-import torch.nn as nn
+import torch.multiprocessing as mp
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, padding=1)
-        self.relu = nn.ReLU()
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.fc = nn.Linear(64 * 16 * 16, 10)  # Assuming input size is 3x32x32
+def set_device():
+    # Note: the code can run if the following two lines are commented out
+    if torch.cuda.is_available():
+        torch.set_default_tensor_type(torch.cuda.FloatTensor)
+    return
 
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.relu(x)
-        x = self.pool(x)
-        x = x.view(-1, 64 * 16 * 16)
-        x = self.fc(x)
-        return x
+def worker(job_queue: mp.Queue, done_queue: mp.Queue, result_queue: mp.Queue):
+    set_device()
+    para = torch.zeros((100, 100))
+    try:
+        while True:
+            result = para + torch.randn_like(para)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+            if not job_queue.empty():
+                job_queue.get()
+                break
+            if result_queue.full():
+                time.sleep(0.1)
+                continue
+            result_queue.put(result)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    B, C, H, W = 1, 3, 32, 32  # Batch size, channels, height, width
-    return torch.rand(B, C, H, W, dtype=torch.float32)
+        done_queue.put(None)
+        result_queue.cancel_join_thread()
 
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
+    except Exception as e:
+        print(f'{mp.current_process().name} - {e}')
 
-# The provided issue describes a bug related to the `torch.cuda` module and multiprocessing in PyTorch. The code provided is not a PyTorch model but rather a script that uses multiprocessing to perform some operations on tensors. Since the goal is to extract and generate a single complete Python code file with a PyTorch model, we need to infer and create a simple model based on the context.
-# Given that the issue does not provide a specific model, we will create a simple model and ensure it can be used with `torch.compile`. We will also include the necessary input generation function.
-# Here is the generated code:
-# ### Explanation:
-# 1. **MyModel Class**:
-#    - A simple convolutional neural network (CNN) with one convolutional layer, ReLU activation, max pooling, and a fully connected layer.
-#    - The input shape is assumed to be `B, C, H, W` where `B` is the batch size, `C` is the number of channels, and `H` and `W` are the height and width of the input image.
-# 2. **my_model_function**:
-#    - Returns an instance of `MyModel`.
-# 3. **GetInput Function**:
-#    - Generates a random tensor with the shape `1, 3, 32, 32` (batch size 1, 3 channels, 32x32 image).
-# This code can be used with `torch.compile` and should work without errors. If you have any specific requirements or additional details, please let me know!
+def test_queue():
+    set_device()
+    ctx = mp.get_context('spawn')
+    job_queue = ctx.Queue()
+    result_queue = ctx.Queue(100)
+    done_queue = ctx.Queue()
+    proc = ctx.Process(target=worker, args=(job_queue, done_queue, result_queue))
+    proc.start()
+    for i in range(10):
+        result = result_queue.get()
+        for j in range(100):
+            if not result_queue.empty():
+                result = result_queue.get()
+            else:
+                break
+        print("result: ", result.sum().item())
+        time.sleep(0.1)
+    job_queue.put(None)
+    proc.join()
+
+if __name__ == '__main__':
+    test_queue()

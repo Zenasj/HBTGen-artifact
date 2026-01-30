@@ -1,71 +1,141 @@
-# tf.random.uniform((1, 320, 320, 3), dtype=tf.float32) ← Inferred input shape from TF Lite model input details (typical for SSD MobileNet)
+import random
 
-import tensorflow as tf
+converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS, tf.lite.OpsSet.SELECT_TF_OPS]
+
+import tensorflow as tf 
+import matplotlib
+import matplotlib.pyplot as plt
+
+import cv2
+import time
 import numpy as np
 
-class MyModel(tf.keras.Model):
-    """
-    A placeholder/fused model class for SSD MobileNet V2 FPNLite 320x320 TF2 detection model,
-    reflecting the context of the issue where TF Lite conversion fails on tf.Size op.
-    This class simulates a preprocessing + model inference + postprocessing pipeline as a single Keras model.
+from PIL import Image
 
-    Since the problem is about model conversion and TFLite inputs/outputs shape mismatch,
-    this class illustrates:
-    - Expected input shape: [1, 320, 320, 3]
-    - Outputs four tensors similar to TFLite SSD detection models: boxes, classes, scores, count
+IMAGE_PATH = "C:/Users/Reno/Documents/TensorFlow/workspace/training_walnoot/evaluate/27.jpg"
+MODEL_PATH = "C:/Users/Reno/Documents/TensorFlow/workspace/training_walnoot/exported-models/walnoot_model/saved_model/saved_model.tflite"
 
-    The forward pass returns a tuple of these outputs, as numpy-like tensors.
-    """
-
-    def __init__(self):
-        super().__init__()
-        # We simulate a backbone + detection head with simple layers to yield expected output shapes.
-        # This is a dummy structure to satisfy input/output shapes and signatures for conversion.
-
-        self.backbone = tf.keras.applications.MobileNetV2(
-            input_shape=(320,320,3),
-            include_top=False,
-            weights=None,
-            pooling='avg'  # Global average pooling for simplicity
-        )
-        # Detection head layers:
-        self.dense_boxes = tf.keras.layers.Dense(4 * 10)    # 10 boxes output, 4 coords each
-        self.dense_scores = tf.keras.layers.Dense(10)       # 10 scores
-        self.dense_classes = tf.keras.layers.Dense(10)      # 10 classes (float output indices)
-        self.count = tf.Variable(10, trainable=False, dtype=tf.int32)  # Always 10 detections
-
-    def call(self, inputs, training=False):
-        x = self.backbone(inputs, training=training)  # shape [B, feature_dim]
-        # Predict boxes
-        boxes = self.dense_boxes(x)  # [B, 40]
-        # Reshape to [B, 10, 4]
-        boxes = tf.reshape(boxes, (-1, 10, 4))
-
-        # Normalize boxes to be between 0 and 1 (sigmoid)
-        boxes = tf.sigmoid(boxes)
-
-        # Predict classes - softmax for 1 class + background (simulate)
-        classes = self.dense_classes(x)  # [B,10]
-        classes = tf.sigmoid(classes)
-
-        # Predict scores 
-        scores = self.dense_scores(x)
-        scores = tf.sigmoid(scores)
-
-        # Count tensor as constant tensor broadcasted per batch
-        count_tensor = tf.fill([tf.shape(inputs)[0]], self.count)  # [B]
-
-        return boxes, classes, scores, count_tensor
+def set_input_tensor(interpreter, image):
+  """Sets the input tensor."""
+  tensor_index = interpreter.get_input_details()[0]['index']
+  input_tensor = interpreter.tensor(tensor_index)()[0]
+  input_tensor[:, :] = image
 
 
-def my_model_function():
-    # Return instance of MyModel.
-    # In a real scenario, weights should be loaded here.
-    return MyModel()
+def get_output_tensor(interpreter, index):
+  """Returns the output tensor at the given index."""
+  output_details = interpreter.get_output_details()[index]
+  tensor = np.squeeze(interpreter.get_tensor(output_details['index']))
+  return tensor
 
 
-def GetInput():
-    # Create a random input tensor shaped to what model expects.
-    # Here batch size 1, height 320, width 320, 3 channels, dtype float32.
-    return tf.random.uniform((1, 320, 320, 3), dtype=tf.float32)
+def detect_objects(interpreter, image, threshold):
+  """Returns a list of detection results, each a dictionary of object info."""
+  set_input_tensor(interpreter, image)
+  interpreter.invoke()
+  
+  print(interpreter.get_tensor(interpreter.get_output_details()[0]['index']))
 
+  # Get all output details
+  boxes = get_output_tensor(interpreter, 0)
+  classes = get_output_tensor(interpreter, 1)
+  scores = get_output_tensor(interpreter, 2)
+  count = int(get_output_tensor(interpreter, 3))
+
+  results = []
+  for i in range(count):
+    if scores[i] >= threshold:
+      result = {
+          'bounding_box': boxes[i],
+          'class_id': classes[i],
+          'score': scores[i]
+      }
+      results.append(result)
+  return results
+  
+interpreter = tf.lite.Interpreter(model_path=MODEL_PATH)
+interpreter.allocate_tensors()
+_, IMG_HEIGHT, IMG_WIDTH, _ = interpreter.get_input_details()[0]['shape']
+
+def preprocess_image(image_path):
+    img = tf.io.read_file(image_path)
+    img = tf.io.decode_image(img, channels=3)
+    img = tf.image.convert_image_dtype(img, tf.float32)
+    original_image = img
+    resized_img = tf.image.resize(img, (IMG_HEIGHT, IMG_WIDTH))
+    resized_img = resized_img[tf.newaxis, :]
+    return resized_img, original_image
+    
+LABEL_DICT = {0: 'Walnoot'
+}
+
+COLORS = np.random.randint(0, 255, size=(len(LABEL_DICT), 3), dtype="uint8")
+
+def display_results(image_path, threshold=0.3):
+    # Load the input image and preprocess it
+    preprocessed_image, original_image = preprocess_image(image_path)
+    # print(preprocessed_image.shape, original_image.shape)
+
+    # =============Perform inference=====================
+    start_time = time.monotonic()
+    results = detect_objects(interpreter, preprocessed_image, threshold=threshold)
+    print(f"Elapsed time: {(time.monotonic() - start_time)*1000} miliseconds")
+
+    # =============Display the results====================
+    original_numpy = original_image.numpy()
+    for obj in results:
+        # Convert the bounding box figures from relative coordinates
+        # to absolute coordinates based on the original resolution
+        ymin, xmin, ymax, xmax = obj['bounding_box']
+        xmin = int(xmin * original_numpy.shape[1])
+        xmax = int(xmax * original_numpy.shape[1])
+        ymin = int(ymin * original_numpy.shape[0])
+        ymax = int(ymax * original_numpy.shape[0])
+
+        # Grab the class index for the current iteration
+        idx = int(obj['class_id'])
+        # Skip the background
+        if idx >= len(LABEL_DICT):
+            continue
+        
+        # draw the bounding box and label on the image
+        color = [int(c) for c in COLORS[idx]]
+        cv2.rectangle(original_numpy, (xmin, ymin), (xmax, ymax), 
+                    color, 2)
+        y = ymin - 15 if ymin - 15 > 15 else ymin + 15
+        label = "{}: {:.2f}%".format(LABEL_DICT[obj['class_id']],
+            obj['score'] * 100)
+        cv2.putText(original_numpy, label, (xmin, y),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+
+    # return the final ima
+    original_int = (original_numpy * 255).astype(np.uint8)
+    return original_int
+    
+resultant_image = display_results(IMAGE_PATH)
+img = Image.fromarray(resultant_image)
+
+plt.figure()
+plt.imshow(img)
+
+mng = plt.get_current_fig_manager()
+mng.window.state('zoomed')
+
+plt.show()
+
+print(interpreter.get_tensor(interpreter.get_output_details()[0]['index']))
+
+[100.]
+
+import tensorflow as tf
+
+saved_model_dir = "C:/Users/xxxxx/Documents/TensorFlow/workspace/training/exported-models/model_lite/saved_model/"
+
+# Convert the model to TF lite
+converter = tf.lite.TFLiteConverter.from_saved_model(saved_model_dir)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+#converter.experimental_new_converter=True
+tflite_model = converter.convert()
+
+# Serialize the model
+open(saved_model_dir + 'saved_model.tflite', 'wb').write(tflite_model)

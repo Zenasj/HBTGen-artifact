@@ -1,17 +1,19 @@
-# torch.rand(3, 300, 300, dtype=torch.int32)
+import torch.nn as nn
+
 import torch
 from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Reproduces the original issue's torch.all operation with dim=1
-        return torch.all(x, dim=1)
+class TorchAll(nn.Module):
+    def forward(self, tensor):
+        tensor = torch.all(tensor, dim=1)
+        return tensor
 
-def my_model_function():
-    # Returns the model instance with the problematic torch.all operation
-    return MyModel()
+X = torch.ones((3, 300, 300), dtype=torch.int32)
 
-def GetInput():
-    # Generates a random integer tensor matching the original input shape and dtype
-    return torch.randint(0, 2, (3, 300, 300), dtype=torch.int32)
-
+torch.onnx.export(
+    TorchAll(),
+    (X), # Dummy input for shape
+    "torch_all_model.onnx",
+    opset_version=12,
+    do_constant_folding=True,
+)

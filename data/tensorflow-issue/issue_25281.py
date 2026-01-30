@@ -1,20 +1,34 @@
-# tf.random.normal((B, 100)) for latent space input z, image input shape (B, 64, 64, 3)
-import tensorflow as tf
-from tensorflow import keras as k
+import random
+
+"""
+Implement DCGAN using the new TF 2.0 API.
+
+Also test tensorflow-datasets.
+
+Celeb-A dataset.
+"""
+
 from typing import Dict
 import tensorflow_datasets as tfds
+import tensorflow as tf
+from tensorflow import keras as k
+
 
 def bce(x: tf.Tensor, label: tf.Tensor, label_smoothing: float = 0.0) -> tf.Tensor:
     """Returns the discrete binary cross entropy between x and the discrete label
     Args:
         x: a 2D tensor
-        label: the discrete label, aka, the distribution to match
+        label: the discrite label, aka, the distribution to match
         label_smoothing: if greater than zero, smooth the labels
+
     Returns:
-        The binary cross entropy
+        The binary cros entropy
     """
-    # Using BinaryCrossentropy from Keras losses
+    # FIXME: Fix the warning
+    # assert len(x.shape) == 2 and len(label.shape) == 0
+
     return k.losses.BinaryCrossentropy()(tf.ones_like(x) * label, x)
+
 
 def min_max(
     positive: tf.Tensor, negative: tf.Tensor, label_smoothing: float = 0.0
@@ -23,14 +37,16 @@ def min_max(
     Args:
         positive: the discriminator output for the positive class: 2D tensor
         negative: the discriminator output for the negative class: 2D tensor
-        smooth: if greater than zero, applies one-sided label smoothing
+        smooth: if greater than zero, appiles one-sided label smoothing
     Returns:
         The sum of 2 BCE
     """
+
     one = tf.constant(1.0)
     zero = tf.constant(0.0)
     d_loss = bce(positive, one, label_smoothing) + bce(negative, zero)
     return d_loss
+
 
 class Generator(k.Model):
     def __init__(self) -> None:
@@ -78,8 +94,6 @@ class Generator(k.Model):
         x = self.fc1(x)
         x = self.batchnorm1(x, training=training)
         x = tf.nn.relu(x)
-
-        # Reshape dense output into spatial feature map (4x4x1024)
         x = tf.reshape(x, shape=(-1, 4, 4, 1024))
 
         x = self.conv2(x)
@@ -100,6 +114,7 @@ class Generator(k.Model):
         x = tf.nn.tanh(x)
         return x
 
+
 class Discriminator(k.Model):
     def __init__(self):
         super(Discriminator, self).__init__()
@@ -113,107 +128,164 @@ class Discriminator(k.Model):
         self.flatten = k.layers.Flatten()
         self.fc5 = k.layers.Dense(1)
 
-    def call(self, x: tf.Tensor, training: bool = True) -> tf.Tensor:
+    def call(self, x, training=True):
         x = self.conv1(x)
         x = tf.nn.leaky_relu(x)
 
         x = self.conv2(x)
-        x = self.batchnorm2(x, training=training)
+        x = self.batchnorm2(x)
         x = tf.nn.leaky_relu(x)
 
         x = self.conv3(x)
-        x = self.batchnorm3(x, training=training)
+        x = self.batchnorm3(x)
         x = tf.nn.leaky_relu(x)
 
         x = self.conv4(x)
-        x = self.batchnorm4(x, training=training)
+        x = self.batchnorm4(x)
         x = tf.nn.leaky_relu(x)
 
         x = self.flatten(x)
         x = self.fc5(x)
         return x
 
-class MyModel(tf.keras.Model):
-    """Combined model containing Generator and Discriminator
-    Provides a callable train_step method for training on real image batches.
-    """
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Instantiate submodules
-        self.G = Generator()
-        self.D = Discriminator()
+
+class GAN:
+    def __init__(self, generator, discriminator, encoder=None):
+        """
+        GAN initializer.
+
+        Args:
+            generator: A ``tensorflow.keras.Model`` to use as Generator.
+            discriminator: A ``tensorflow.keras.Model`` to use as Discriminator.
+            encoder: A ``tensorflow.keras.Model`` to use as Encoder.
+
+        Returns:
+            Trained GAN model (?).
+
+        """
+        self.G = generator()
+        self.D = discriminator()
+        self.E = encoder() if encoder is not None else None
         self.latent_vector_dims = 100
-        # Optimizers as per original code
+
         self.G_opt = k.optimizers.Adam(learning_rate=1e-5, beta_1=0.5)
         self.D_opt = k.optimizers.Adam(learning_rate=1e-5, beta_1=0.5)
 
-    @tf.function(jit_compile=True)
-    def call(self, inputs, training=True):
+    @tf.function()
+    def train(self, dataset: tf.data.Dataset):
         """
-        Forward pass returns a dict with generated images and discriminator logits on real and fake.
-        This is for demonstration or inference use.
-        
-        inputs: Either:
-            - tensor of latent vectors (noise) to generate images,
-            or
-            - dict with keys "real_images" and "z" for joint forward of GAN
-
-        returns: dict with keys:
-            - 'generated_images': generated images from z
-            - 'D_real': discriminator logits on real images
-            - 'D_fake': discriminator logits on generated images
+        Train.
         """
-        if isinstance(inputs, dict):
-            # Expect keys: "real_images", "z"
-            real_images = inputs.get("real_images")
-            z = inputs.get("z")
-            fake_images = self.G(z, training=training)
-            D_real = self.D(real_images, training=training)
-            D_fake = self.D(fake_images, training=training)
-            return {"generated_images": fake_images, "D_real": D_real, "D_fake": D_fake}
-        else:
-            # Just generate images from noise z input
-            generated_images = self.G(inputs, training=training)
-            return generated_images
+        for step, features in enumerate(dataset, start=1):
+            x = features["image"]
+            z = tf.random.normal((x.shape[0], self.latent_vector_dims))
 
-    @tf.function(jit_compile=True)
-    def train_step(self, x: tf.Tensor):
+            # We record all the operations in the tape
+            with tf.GradientTape() as gen_tape, tf.GradientTape() as disc_tape:
+                G_z = self.G(z, training=True)
+
+                D_x = self.D(x, training=True)
+                D_Gz = self.D(G_z, training=True)
+
+                g_loss = bce(D_Gz, tf.constant(1.0))
+                d_loss = min_max(D_x, D_Gz, label_smoothing=0.0)
+
+            # We retrieve the gradients from our records
+            G_grads = gen_tape.gradient(g_loss, self.G.trainable_variables)
+            D_grads = disc_tape.gradient(d_loss, self.D.trainable_variables)
+
+            # Optimize and apply the gradients
+            self.G_opt.apply_gradients(zip(G_grads, self.G.trainable_variables))
+            self.D_opt.apply_gradients(zip(D_grads, self.D.trainable_variables))
+
+            if step % 10 == 0:
+                print(f"--------------------------")
+                print(f"STEP: {step}")
+                print(f"D_LOSS: {d_loss}")
+                print(f"G_LOSS: {g_loss}")
+
+
+class InputPipeline:
+    def __init__(
+        self, dataset, batch_size, epochs, shuffle_buffer, prefetched_items, size
+    ):
+        self.batch_size = batch_size
+        self.dataset_name = dataset
+        self.epochs = epochs
+        self.prefetched_items = prefetched_items
+        self.shuffle_buffer = shuffle_buffer
+        self.size = size
+
+    def get_input_fn(self) -> tf.data.Dataset:
+        """Input fn."""
+        return self.input_fn
+
+    def load_public_dataset(self):
         """
-        Perform a single GAN train step given a batch of real images x.
+        Load one of the publicly available datasets, will merge together all the splits.
+
+        Args:
+            chosen_dataset: dataset to use.
+
+        Return:
+            The chosen dataset as a ``tf.data.Dataset``
+
         """
-        z = tf.random.normal((tf.shape(x)[0], self.latent_vector_dims))
+        # Construct a tf.data.Dataset
+        datasets = tfds.load(name=self.dataset_name, split=tfds.Split.ALL)
+        return datasets
 
-        with tf.GradientTape() as gen_tape, tf.GradientTape() as disc_tape:
-            G_z = self.G(z, training=True)
+    def resize_images(self, features: Dict) -> Dict:
+        """
+        Overwrite the \"image\" feature in order to resize them.
 
-            D_x = self.D(x, training=True)
-            D_Gz = self.D(G_z, training=True)
+        Args:
+            features: features dictionary.
+            size: desired target size.
 
-            g_loss = bce(D_Gz, tf.constant(1.0))
-            d_loss = min_max(D_x, D_Gz, label_smoothing=0.0)
+        Returns:
+            Features with \"image\" resized to the correct shape.
 
-        G_grads = gen_tape.gradient(g_loss, self.G.trainable_variables)
-        D_grads = disc_tape.gradient(d_loss, self.D.trainable_variables)
+        """
+        features["image"] = tf.image.resize(features["image"], self.size)
+        return features
 
-        self.G_opt.apply_gradients(zip(G_grads, self.G.trainable_variables))
-        self.D_opt.apply_gradients(zip(D_grads, self.D.trainable_variables))
+    def input_fn(self):
+        dataset = self.load_public_dataset()
+        dataset = (
+            dataset.map(self.resize_images)
+            .shuffle(self.shuffle_buffer)
+            .batch(self.batch_size)
+            .prefetch(self.prefetched_items)
+            .repeat(self.epochs)
+        )
+        return dataset
 
-        # Return losses for monitoring
-        return d_loss, g_loss
+
+def main():
+
+    # TODO: replace with CLI
+    CHOICE = "celeb_a"
+    EPOCHS = 10
+    BATCH_SIZE = 64
+    PREFETCH = 10
+    SHUFFLE_BUFFER = 10000
+
+    # See available datasets
+    public_datasets = tfds.list_builders()
+
+    gan = GAN(Generator, Discriminator)
+    input_pipeline = InputPipeline(
+        dataset=CHOICE,
+        batch_size=BATCH_SIZE,
+        epochs=EPOCHS,
+        prefetched_items=PREFETCH,
+        shuffle_buffer=SHUFFLE_BUFFER,
+        size=(64, 64),
+    )
+    dataset = input_pipeline.input_fn()
+    gan.train(dataset=dataset)
 
 
-def my_model_function():
-    # Return a new instance of MyModel
-    return MyModel()
-
-def GetInput():
-    """
-    Return a random batch input corresponding to real image inputs expected by MyModel.train_step
-    The images are 64 x 64 RGB color, values roughly in [0, 1].
-    We'll generate a random tensor of shape (B, 64, 64, 3).
-    """
-    batch_size = 4  # Small batch size for this purpose
-    # Random uniform images in [0,1]
-    x = tf.random.uniform((batch_size, 64, 64, 3), minval=0.0, maxval=1.0, dtype=tf.float32)
-    return x
-
+if __name__ == "__main__":
+    main()

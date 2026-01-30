@@ -1,75 +1,74 @@
-# tf.random.uniform((B, 3)), tf.random.uniform((B, 4)), tf.random.uniform((B, 5)), tf.random.uniform((B, 5)), tf.random.uniform((B, 4)), tf.random.uniform((B, 1)), dtype=tf.float32
+import random
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
-import tensorflow as tf
+import numpy as np
 from tensorflow.keras.constraints import non_neg
-from tensorflow.keras.layers import Dense, concatenate, Input
+from tensorflow.keras.layers import Input, Dense, concatenate
+from tensorflow.keras.models import Model
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define one Dense layer with sigmoid and non-negative kernel constraint per input branch
-        self.dense_1 = Dense(1, activation='sigmoid', kernel_constraint=non_neg())
-        self.dense_2 = Dense(1, activation='sigmoid', kernel_constraint=non_neg())
-        self.dense_3 = Dense(1, activation='sigmoid', kernel_constraint=non_neg())
-        self.dense_4 = Dense(1, activation='sigmoid', kernel_constraint=non_neg())
-        self.dense_5 = Dense(1, activation='sigmoid', kernel_constraint=non_neg())
-        # Final output Dense with softmax and non-negative constraint
-        self.output_dense = Dense(2, activation='softmax', kernel_constraint=non_neg())
-    
-    def call(self, inputs, training=False):
-        # inputs is expected to be a dict of named inputs, matching keys:
-        # 'green_fin_const', 'green_fin_inst', 'gov_sup', 'com_act', 'eco_city', 'type'
-        # Extract inputs from dict
-        x1 = inputs['green_fin_const']  # shape (B, 3)
-        x2 = inputs['green_fin_inst']   # shape (B, 4)
-        x3 = inputs['gov_sup']          # shape (B, 5)
-        x4 = inputs['com_act']          # shape (B, 5)
-        x5 = inputs['eco_city']         # shape (B, 4)
-        x6 = inputs['type']             # shape (B, 1)
-        
-        # Pass each through corresponding Dense + sigmoid
-        score_1 = self.dense_1(x1)  # (B,1)
-        score_2 = self.dense_2(x2)  # (B,1)
-        score_3 = self.dense_3(x3)  # (B,1)
-        score_4 = self.dense_4(x4)  # (B,1)
-        score_5 = self.dense_5(x5)  # (B,1)
-        
-        # Concatenate scores and type input tensor along last axis
-        concatenated = concatenate([score_1, score_2, score_3, score_4, score_5, x6], axis=-1)  # (B, 6)
-        
-        # Final output layer producing 2-class softmax probabilities
-        outputs = self.output_dense(concatenated)  # (B, 2)
-        
-        return outputs
+# Example input data
+X_train_dict = {
+    'green_fin_const': np.random.rand(558, 3),
+    'green_fin_inst': np.random.rand(558, 4),
+    'gov_sup': np.random.rand(558, 5),
+    'com_act': np.random.rand(558, 5),
+    'eco_city': np.random.rand(558, 4),
+    'type': np.random.rand(558, 1)
+}
+Y_train = np.random.rand(558, 2)
 
-def my_model_function():
-    # Return an instance of MyModel, initialized
-    model = MyModel()
-    
-    # Build the model by calling with sample inputs to create weights (optional but recommended)
-    # shape info: batch size arbitrary; here used 1
-    sample_input = {
-        'green_fin_const': tf.zeros((1, 3), dtype=tf.float32),
-        'green_fin_inst': tf.zeros((1, 4), dtype=tf.float32),
-        'gov_sup': tf.zeros((1, 5), dtype=tf.float32),
-        'com_act': tf.zeros((1, 5), dtype=tf.float32),
-        'eco_city': tf.zeros((1, 4), dtype=tf.float32),
-        'type': tf.zeros((1, 1), dtype=tf.float32),
-    }
-    model(sample_input)
-    return model
+X_test_dict = {
+    'green_fin_const': np.random.rand(140, 3),
+    'green_fin_inst': np.random.rand(140, 4),
+    'gov_sup': np.random.rand(140, 5),
+    'com_act': np.random.rand(140, 5),
+    'eco_city': np.random.rand(140, 4),
+    'type': np.random.rand(140, 1)
+}
+Y_test = np.random.rand(140, 2)
 
-def GetInput():
-    # Return a dictionary of inputs matching those expected by MyModel call
-    # Here batch size=4 arbitrarily chosen for example
-    B = 4
-    inputs = {
-        'green_fin_const': tf.random.uniform((B, 3), dtype=tf.float32),
-        'green_fin_inst': tf.random.uniform((B, 4), dtype=tf.float32),
-        'gov_sup': tf.random.uniform((B, 5), dtype=tf.float32),
-        'com_act': tf.random.uniform((B, 5), dtype=tf.float32),
-        'eco_city': tf.random.uniform((B, 4), dtype=tf.float32),
-        'type': tf.random.uniform((B, 1), dtype=tf.float32),
-    }
-    return inputs
+# Define input layers
+inputs_1 = Input(shape=(3,), name='green_fin_const')
+inputs_2 = Input(shape=(4,), name='green_fin_inst')
+inputs_3 = Input(shape=(5,), name='gov_sup')
+inputs_4 = Input(shape=(5,), name='com_act')
+inputs_5 = Input(shape=(4,), name='eco_city')
+inputs_6 = Input(shape=(1,), name='type')
 
+# Define dense layers
+score_1 = Dense(1, activation='sigmoid', kernel_constraint=non_neg())(inputs_1)
+score_2 = Dense(1, activation='sigmoid', kernel_constraint=non_neg())(inputs_2)
+score_3 = Dense(1, activation='sigmoid', kernel_constraint=non_neg())(inputs_3)
+score_4 = Dense(1, activation='sigmoid', kernel_constraint=non_neg())(inputs_4)
+score_5 = Dense(1, activation='sigmoid', kernel_constraint=non_neg())(inputs_5)
+
+# Concatenate scores and type input
+concatenated_scores = concatenate([score_1, score_2, score_3, score_4, score_5, inputs_6])
+
+# Define output layer
+outputs = Dense(2, activation='softmax', kernel_constraint=non_neg())(concatenated_scores)
+
+# Create the model
+model = Model(inputs=[inputs_1, inputs_2, inputs_3, inputs_4, inputs_5, inputs_6], outputs=outputs)
+
+# Plot model architecture
+from tensorflow.keras.utils import plot_model
+plot_model(model, to_file='model.png', show_shapes=True)
+
+# Compile model
+model.compile(optimizer='nadam', loss='mse', metrics=['KLDivergence'])
+
+# Print input shapes to verify
+for key, value in X_train_dict.items():
+    print(f'{key}: {value.shape}')
+
+# Fit the model
+model.fit(
+    x=X_train_dict,
+    y=Y_train,
+    validation_data=(X_test_dict, Y_test),
+    epochs=100,
+    batch_size=32,
+    verbose=0
+)

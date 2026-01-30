@@ -1,25 +1,14 @@
-# torch.rand(1, 3, 224, 224, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
-
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv2d = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3)
-        self.batch_norm = nn.BatchNorm2d(64)
+import torch.nn.functional as f
+import torch
 
-    def forward(self, x):
-        x = self.conv2d(x)
-        x = self.batch_norm(x)
-        return x
+# Precision error is calculated based on the Chebyshev distance.
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+args = torch.load('conv2d.pt')
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
+output = f.conv2d(args['parameter:0'], args['parameter:1'], args['parameter:2'], args['parameter:3'], args['parameter:4'], args['parameter:5'], args['parameter:6'])
 
+args = torch.load('batch_norm.pt')
+
+output = f.batch_norm(output, args['parameter:1'], args['parameter:2'], args['parameter:3'], args['parameter:4'], args['parameter:5'], args['parameter:6'], args['parameter:7'])

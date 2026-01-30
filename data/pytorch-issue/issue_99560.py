@@ -1,17 +1,13 @@
-# torch.rand(B, C, dtype=torch.float32)  # Input is 2D tensor for transpose operation
 import torch
-import torch.nn as nn
+import numpy as np
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Simulate the transposed operation (equivalent to NumPy's .T)
-        return x.transpose(0, 1)  # Transpose dimensions for 2D input
+def f(x: torch.Tensor) -> np.ndarray:
+	a = x.numpy()
+	return a.T
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Generate 2D input tensor matching the example's use of .T
-    B, C = 2, 3  # Example batch and channel dimensions
-    return torch.rand(B, C, dtype=torch.float32)
-
+def f(x):
+    ___tmp_0 = __compiled_fn_0(x)
+    if isinstance(___tmp_0, torch_np.ndarray):
+        return ___tmp_0.tensor.numpy()
+    else:
+        return ___tmp_0

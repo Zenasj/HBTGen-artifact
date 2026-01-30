@@ -1,48 +1,54 @@
-# tf.random.uniform((2, 3, 1), dtype=tf.float32)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        self.lstm = tf.keras.layers.LSTM(
-            units=8,
-            return_sequences=True,
-            return_state=False)
-        self.dense = tf.keras.layers.Dense(1, activation='linear')
 
-    def call(self, inputs, training=False):
-        # inputs is a tuple: (x, mask)
-        x, mask = inputs
-        # Pass inputs through LSTM with mask, then dense
-        lstm_out = self.lstm(x, mask=mask, training=training)
-        out = self.dense(lstm_out)
-        return out
+batch_size, sequence_length = 2, 3
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+x_input = tf.keras.layers.Input(
+    shape=(sequence_length, 1),
+    name='input',
+    dtype=tf.float32)
 
-def GetInput():
-    # Return a tuple of (x, mask) matching MyModel's expected input
-    
-    batch_size = 2
-    sequence_length = 3
-    feature_dim = 1  # inferred from the issue input shape
-    
-    # Input tensor with shape (batch_size, sequence_length, feature_dim)
-    x = tf.random.uniform((batch_size, sequence_length, feature_dim), dtype=tf.float32)
-    
-    # Create a mask tensor: boolean mask of shape (batch_size, sequence_length)
-    # Use tf.sequence_mask with random sequence lengths per batch element
-    seq_lens = tf.random.uniform(
-        shape=(batch_size,), minval=0, maxval=sequence_length + 1, dtype=tf.int32)
-    
-    mask = tf.sequence_mask(seq_lens, maxlen=sequence_length)
-    
-    # Match the reversal in the original code [..., ::-1]?
-    # The original code reversed mask sequence dimension; it's not semantically necessary, but to be faithful:
-    mask = mask[:, ::-1]
-    
-    return (x, mask)
+mask_input = tf.keras.layers.Input(
+    shape=(sequence_length, ),
+    name='mask',
+    dtype=tf.bool)
 
+
+out = tf.keras.layers.LSTM(
+    units=8,
+    return_sequences=True,
+    return_state=False,
+)(x_input, mask=mask_input)
+out = tf.keras.layers.Dense(1, activation='linear')(out)
+model = tf.keras.Model((x_input, mask_input), out)
+
+x = tf.random.uniform(
+    (batch_size, sequence_length, x_input.shape[-1]),
+    dtype=x_input.dtype)
+
+mask = tf.sequence_mask(
+    tf.random.uniform(
+        (batch_size, ), minval=0, maxval=sequence_length, dtype=tf.int32),
+    maxlen=sequence_length,
+)[..., ::-1]
+
+
+@tf.function(experimental_relax_shapes=True)
+def compute_jacobian():
+    y_true = tf.zeros(batch_size)
+    with tf.GradientTape() as tape:
+        y = model((x, mask))
+        y = tf.reduce_sum(y, axis=1)
+        loss = tf.losses.MSE(y_pred=y, y_true=y_true)
+
+    jacobian = tape.jacobian(
+        loss, model.trainable_variables, experimental_use_pfor=True)
+
+    return jacobian
+
+
+jacobian = compute_jacobian()

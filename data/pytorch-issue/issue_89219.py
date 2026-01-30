@@ -1,16 +1,11 @@
-# torch.rand(1), torch.rand(1)  # two tensors of shape (1,)
 import torch
-from torch import nn
+import torch._dynamo
 
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        x, y = inputs
-        x += y  # In-place addition causing discrepancy in Dynamo/NNC
-        return x
+def fn(x, y):
+    x += y
+    return x
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    return (torch.rand(1), torch.rand(1))
-
+fn2 = torch._dynamo.optimize("nnc")(fn)
+print(fn(torch.ones(1), torch.ones(1)))
+print(fn2(torch.ones(1), torch.ones(1)))

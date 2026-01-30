@@ -1,7 +1,10 @@
-# torch.rand(64, 1, 28, 28, dtype=torch.float32)
-import torch
 import torch.nn as nn
-from torch import Tensor
+
+py
+import torch._dynamo.config
+import torch
+from torch import Tensor, nn
+
 
 class SimpleResidualBlock(nn.Module):
     def __init__(self, kernel_size: int, hidden_channels: int) -> None:
@@ -24,7 +27,8 @@ class SimpleResidualBlock(nn.Module):
         data = data + hidden
         return data
 
-class MyModel(nn.Module):
+
+class SimpleClassifier(nn.Module):
     def __init__(
         self,
         kernel_size: int,
@@ -69,7 +73,7 @@ class MyModel(nn.Module):
     def forward(self, data: Tensor) -> Tensor:
         hidden = self.pre_conv(data)
         hidden = self.relu(hidden)
-        data = data + hidden  # residual connection
+        data = data + hidden
 
         data = self.resblocks(data)
 
@@ -77,19 +81,17 @@ class MyModel(nn.Module):
         data = self.linear(data)
         return data
 
-def my_model_function():
-    # Initialize with parameters from the original issue's example
-    return MyModel(
-        kernel_size=3,
-        input_channels=1,
-        hidden_channels=16,
-        num_layers=8,
-        h=28,
-        w=28,
-        num_classes=10,
-    )
 
-def GetInput():
-    # Returns a random tensor with the expected input shape
-    return torch.rand(64, 1, 28, 28, dtype=torch.float32)
+torch._dynamo.config.verbose = True
+classifier = SimpleClassifier(
+    kernel_size=3, input_channels=1, hidden_channels=16, num_layers=8, h=28, w=28, num_classes=10
+)
 
+
+compiled_model = torch.compile(classifier)
+
+detect_anomaly = True  # set to False and it will work
+
+with torch.autograd.set_detect_anomaly(detect_anomaly):
+    inp = torch.rand(64, 1, 28, 28)
+    compiled_model(inp).sum().backward()

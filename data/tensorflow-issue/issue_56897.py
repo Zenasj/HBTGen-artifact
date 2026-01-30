@@ -1,36 +1,70 @@
-# tf.random.uniform((B, 11), dtype=tf.float32)
-
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
 
-class MyModel(tf.keras.Model):
+class PredictedDestination(tf.Module):
     def __init__(self):
-        super().__init__()
-        # Build the same model architecture as the original PredictedDestination.model
-        self.dense_0 = tf.keras.layers.Dense(32, name='input')
-        self.dense_1 = tf.keras.layers.Dense(16, activation=tf.nn.relu, name='dense_1')
-        self.dense_2 = tf.keras.layers.Dense(8, activation=tf.nn.relu, name='dense_2')
-        self.dense_3 = tf.keras.layers.Dense(4, activation=tf.nn.relu, name='dense_3')
-        self.dense_out = tf.keras.layers.Dense(2, name='output')
+        self.model = tf.keras.Sequential([
+            tf.keras.layers.Dense(32, input_shape=(11, ), name='input'),
+             tf.keras.layers.Dense(16, activation=tf.nn.relu, name='dense_1'),
+             tf.keras.layers.Dense(8, activation=tf.nn.relu, name='dense_2'),
+             tf.keras.layers.Dense(4, activation=tf.nn.relu, name='dense_3'),
+            tf.keras.layers.Dense(2),
+        ])
+    
+        self.model.compile(
+            optimizer='sgd',
+            loss=tf.keras.losses.CategoricalCrossentropy(from_logits=True))
 
-    def call(self, x):
-        x = self.dense_0(x)
-        x = self.dense_1(x)
-        x = self.dense_2(x)
-        x = self.dense_3(x)
-        logits = self.dense_out(x)
+    # The `train` function takes a batch of input images and labels.
+    @tf.function(input_signature=[
+      tf.TensorSpec([None, 11], tf.float32),
+      tf.TensorSpec([None, 2], tf.float32),
+    ])
+    def train(self, x, y):
+        epochs = 100
+        for i in range(epochs):
+            with tf.GradientTape() as tape:
+              prediction = self.model(x)
+              loss = self.model.loss(y, prediction)
+            gradients = tape.gradient(loss, self.model.trainable_variables)
+            self.model.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
+            result = {"loss": loss}
+        return result
+
+    @tf.function(input_signature=[
+      tf.TensorSpec([None, 11], tf.float32),
+    ])
+    def predict(self, x): 
+        logits = self.model(x)
         probabilities = tf.nn.softmax(logits, axis=-1)
-        # Return both probabilities and logits as dictionary, matching the saved signature
+        print(probabilities)
+        print(logits)
         return {
             "output": probabilities,
             "logits": logits
         }
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+model = PredictedDestination()
 
-def GetInput():
-    # Return a random tensor input with shape [batch_size, 11]
-    # Batch size is chosen as 4 arbitrarily, matching None dimension of input signature
-    return tf.random.uniform((4, 11), dtype=tf.float32)
+SAVED_MODEL_DIR = "predicted_destination_model"
 
+tf.saved_model.save(
+    model,
+    SAVED_MODEL_DIR,
+    signatures={
+        'train':
+            model.train.get_concrete_function(),
+        'predict':
+            model.predict.get_concrete_function(),
+    })
+
+converter = tf.lite.TFLiteConverter.from_saved_model(SAVED_MODEL_DIR)
+converter.target_spec.supported_ops = [
+    tf.lite.OpsSet.TFLITE_BUILTINS,  # enable TensorFlow Lite ops.
+    tf.lite.OpsSet.SELECT_TF_OPS  # enable TensorFlow ops.
+]
+converter.experimental_enable_resource_variables = True
+tflite_model = converter.convert()
+
+open('predicted_destination.tflite', 'wb').write(tflite_model)

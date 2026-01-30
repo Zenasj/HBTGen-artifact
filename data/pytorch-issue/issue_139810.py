@@ -1,20 +1,11 @@
-# torch.rand(B, 10, dtype=torch.float32)  # Assumed input shape based on common linear layer use cases
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.linear = nn.Linear(10, 2)  # Matches input size in GetInput()
-    
-    def forward(self, x):
-        return self.linear(x)
+add_one = torch.jit.load('/tmp/callgrind__1730858981__c5f7acde-f870-42ed-bbe2-8e7dd1ba51d7/data/add_one.pt')
+with open('/tmp/callgrind__1730858981__c5f7acde-f870-42ed-bbe2-8e7dd1ba51d7/data/k.pkl', 'rb') as f:
+    k = pickle.load(f)
+import sys
+sys.path.append('/data/users/huydo/github/pytorch/test/benchmark_utils')
+from test_benchmark_utils import MyModule
 
-def my_model_function():
-    # Returns initialized model instance
-    return MyModel()
-
-def GetInput():
-    B = 1  # Batch size inferred from benchmark context
-    return torch.rand(B, 10, dtype=torch.float32)
-
+with torch.serialization.safe_globals([MyModule]):
+    model = torch.load('/tmp/callgrind__1730858981__c5f7acde-f870-42ed-bbe2-8e7dd1ba51d7/data/model.pt')

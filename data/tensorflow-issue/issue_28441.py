@@ -1,37 +1,47 @@
-# tf.random.uniform((B, 28, 28, 1), dtype=tf.float32) ← Input shape matches MNIST grayscale images
+from tensorflow import keras
+from tensorflow.keras import layers
+
+from tensorflow.python.keras.datasets import mnist
+from tensorflow.python.keras.utils import to_categorical
 
 import tensorflow as tf
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define layers as per the example MNIST ConvNet from the issue
-        self.conv1 = tf.keras.layers.Conv2D(16, 8, strides=2, padding='same', activation='relu')
-        self.pool1 = tf.keras.layers.MaxPool2D(2, 1)
-        self.conv2 = tf.keras.layers.Conv2D(32, 4, strides=2, padding='valid', activation='relu')
-        self.pool2 = tf.keras.layers.MaxPool2D(2, 1)
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(32, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(10, activation='softmax')  # Output layer with softmax
-    
-    def call(self, inputs, training=False):
-        x = self.conv1(inputs)
-        x = self.pool1(x)
-        x = self.conv2(x)
-        x = self.pool2(x)
-        x = self.flatten(x)
-        x = self.dense1(x)
-        return self.dense2(x)
+(X_train, y_train), (X_test, y_test) = mnist.load_data()
 
-def my_model_function():
-    # Return an instance of MyModel
-    # Note: weights are not pre-loaded, user may train after instantiation
-    return MyModel()
+X_train, X_test = X_train.astype(float)/255, X_test.astype(float)/255
+X_train, X_test = X_train.reshape(len(X_train),28,28,1), X_test.reshape(len(X_test),28,28,1)
+y_train, y_test = to_categorical(y_train), to_categorical(y_test)
 
-def GetInput():
-    # Return a random input tensor matching the expected input shape (batch 1000 as in the example)
-    # Using float32 to match typical image input dtype
-    BATCH_SIZE = 1000  # Mimicking batch size used in example training
-    input_tensor = tf.random.uniform((BATCH_SIZE, 28, 28, 1), dtype=tf.float32)
-    return input_tensor
+# model definition
+model = tf.keras.Sequential([
+      tf.keras.layers.Conv2D(16, 8,
+                             strides=2,
+                             padding='same',
+                             activation='relu',
+                             input_shape=(28, 28, 1)),
+      tf.keras.layers.MaxPool2D(2, 1),
+      tf.keras.layers.Conv2D(32, 4,
+                             strides=2,
+                             padding='valid',
+                             activation='relu'),
+      tf.keras.layers.MaxPool2D(2, 1),
+      tf.keras.layers.Flatten(),
+      tf.keras.layers.Dense(32, activation='relu'),
+      tf.keras.layers.Dense(10, activation="softmax")
+  ])
 
+optimizer = tf.train.GradientDescentOptimizer(learning_rate=0.1)
+
+# this causes errors
+loss = tf.keras.losses.CategoricalCrossentropy(from_logits=False)
+
+# using the keyword, everything works
+# loss = "categorical_crossentropy" 
+
+# Compile model with Keras
+model.compile(optimizer=optimizer, loss=loss, metrics=['categorical_accuracy'])
+
+# Train model with Keras
+model.fit(X_train, y_train, epochs=5, batch_size=1000,
+          validation_data=(X_test, y_test), verbose=2)

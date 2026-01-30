@@ -1,25 +1,40 @@
-# torch.rand(B, 1, L, dtype=torch.float32)
+import torch.nn as nn
+
 import math
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.kernel = nn.Parameter(torch.randn(1, 1, 4))  # Initialize kernel as a learnable parameter
+kernel = torch.randn(1, 1, 4)
 
-    def forward(self, x):
-        input_length = x.shape[-1]
-        # Force parity to integer using explicit if/else to avoid symbolic types
-        parity = 0 if input_length % 2 == 0 else 1
-        padding = math.ceil((self.kernel.shape[-1] + parity) / 2) - 1
-        return F.conv1d(x, self.kernel, padding=padding, stride=2)
+def func(x):
+    padding = math.ceil((kernel.shape[-1] + x.shape[-1] % 2) / 2) - 1
+    out = F.conv1d(x, kernel, padding=padding, stride=2)
+    return out
 
-def my_model_function():
-    return MyModel()
+opt_func = torch.compile(func, dynamic=True)
 
-def GetInput():
-    # Returns a tensor with shape (1, 1, 249) that triggers dynamic shape behavior
-    return torch.randn(1, 1, 249)
+x = torch.randn(1, 1, 175)
+opt_func(x)  # passes
+x = torch.randn(1, 1, 249)
+opt_func(x)  # crashes
 
+import math
+import torch
+import torch.nn.functional as F
+
+kernel = torch.randn(1, 1, 4)
+
+
+def func(x):
+    parity = 0 if x.shape[-1] % 2 == 0 else 1  # new line
+    padding = math.ceil((kernel.shape[-1] + parity) / 2) - 1
+    out = F.conv1d(x, kernel, padding=padding, stride=2)
+    return out
+
+
+opt_func = torch.compile(func, dynamic=True)
+
+x = torch.randn(1, 1, 175)
+opt_func(x)  # passes
+x = torch.randn(1, 1, 249)
+opt_func(x)  # does not crash anymore

@@ -1,17 +1,11 @@
-# torch.rand((), dtype=torch.float32)  # Scalar input
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def forward(self, x=None):
-        if x is None:
-            return torch.atleast_1d()  # Triggers the bug when called without input
-        else:
-            return torch.atleast_1d(x)
+torch.atleast_1d() # ()
 
-def my_model_function():
-    return MyModel()
+import torch
 
-def GetInput():
-    return torch.rand(())
+torch.atleast_1d(7) # Error
 
+import torch
+
+torch.__version__ # 2.3.0+cu121

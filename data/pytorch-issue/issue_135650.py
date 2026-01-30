@@ -1,23 +1,33 @@
-# torch.rand(1, 1, 3, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
+import torch.nn as nn
+
 import torch
 from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Initialize the Conv1d layer with in_channels and kernel_size as bool values
-        self.conv1d = nn.Conv1d(in_channels=True, out_channels=3, kernel_size=True)
+my_tensor = torch.tensor([[0., 1., 2.]])
 
-    def forward(self, x):
-        return self.conv1d(x)
+torch.manual_seed(42)        # ↓↓↓↓                            # ↓↓↓↓ 
+conv1d = nn.Conv1d(in_channels=True, out_channels=3, kernel_size=True)
+conv1d(input=my_tensor)
+# tensor([[-0.7336, -1.2205, -1.7073],
+#         [0.8692, 1.4565, 2.0438],
+#         [0.1872, 1.0687, 1.9502]], grad_fn=<SqueezeBackward1>)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+torch.manual_seed(42)        # ↓↓↓↓                             # ↓↓↓↓ 
+conv1d = nn.Conv1d(in_channels=True, out_channels=3, kernel_size=(True,))
+conv1d(input=my_tensor)
+# tensor([[-0.7336, -1.2205, -1.7073],
+#         [0.8692, 1.4565, 2.0438],
+#         [0.1872, 1.0687, 1.9502]], grad_fn=<SqueezeBackward1>)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # The input shape is (batch_size, in_channels, sequence_length)
-    # Here, we use batch_size=1, in_channels=1, sequence_length=3
-    return torch.rand(1, 1, 3, dtype=torch.float32)
+import torch
+from torch import nn
 
+my_tensor = torch.tensor([[0., 1., 2.]])
+
+torch.manual_seed(42)                        # ↓↓↓↓                      
+conv1d = nn.Conv1d(in_channels=1, out_channels=True, kernel_size=1)
+conv1d(input=my_tensor)
+
+import torch
+
+torch.__version__ # 2.4.0+cu121

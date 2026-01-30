@@ -1,37 +1,170 @@
-# tf.random.uniform((B, 1), dtype=tf.int32) ← input shape for Embedding layer is (batch_size, sequence_length=1)
+from tensorflow import keras
+from tensorflow.keras import layers
+
+from typing import Any
+
+import os
+import tempfile
+
+import tensorflow as tf
+from tensorflow.python.distribute.sharded_variable import ShardedVariable
+
+
+# More realistic example this would be done by Parameter Server Strategy.
+def shard_variables_creator(partitioner) -> Any:
+    def _creator(next_creator, **kwargs):
+        var = next_creator(**kwargs)
+        if var.shape.rank == 0:
+            return var
+
+        num_shards = partitioner(var.shape, var.dtype, axis=0)
+        if num_shards[0] == 1:
+            return var
+
+        shard_count = num_shards[0]
+        shards = []
+        start = 0
+        for index in range(shard_count):
+            shard_name = var.name.removesuffix(":0") + f"/part_{index}"
+            size = var.shape[0] // shard_count + (1 if var.shape[0] % shard_count > index else 0)
+            shards.append(tf.Variable(var[start : start + size], name=shard_name))
+            start += size
+
+        return ShardedVariable(shards)
+
+    return _creator
+
+
+partitioner = tf.distribute.experimental.partitioners.MaxSizePartitioner(max_shard_bytes=100 * 16 * 4)
+
+with tf.variable_creator_scope(shard_variables_creator(partitioner)):
+    toy_model = tf.keras.Sequential(
+        [tf.keras.layers.Embedding(100, 32), tf.keras.layers.Dense(1, activation="sigmoid")]
+    )
+    toy_model.compile(loss="binary_crossentropy", optimizer=tf.optimizers.experimental.Adam())
+    toy_model.build(input_shape=(None, 1))
+    toy_model.optimizer.build(toy_model.trainable_variables)  # type: ignore
+
+temp_dir = tempfile.gettempdir()
+weights_path = os.path.join(temp_dir, "model_weights")
+toy_model.save_weights(weights_path)
+
+toy_model2 = tf.keras.Sequential([tf.keras.layers.Embedding(100, 32), tf.keras.layers.Dense(1, activation="sigmoid")])
+toy_model2.compile(loss="binary_crossentropy", optimizer=tf.optimizers.experimental.Adam())
+toy_model2.build(input_shape=(None, 1))
+toy_model2.optimizer.build(toy_model2.trainable_variables)  # type: ignore
+toy_model2.load_weights(weights_path)
+
+with strategy.scope():
+  toy_model2 = tf.keras.Sequential([tf.keras.layers.Embedding(100, 32), tf.keras.layers.Dense(1, activation="sigmoid")])
+  toy_model2.compile(loss="binary_crossentropy", optimizer=tf.optimizers.experimental.Adam())
+  toy_model2.build(input_shape=(None, 1))
+  toy_model2.optimizer.build(toy_model2.trainable_variables)  # type: ignore
+  toy_model2.load_weights(weights_path)
+
+from typing import Any, Mapping
+
+import json
+import os
+import tempfile
+from multiprocessing import Process
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Simple model like the example: Embedding + Dense 1 unit sigmoid activation
-        self.embedding = tf.keras.layers.Embedding(input_dim=100, output_dim=32)
-        self.dense = tf.keras.layers.Dense(1, activation="sigmoid")
+from portpicker import pick_unused_port
 
-    def call(self, inputs):
-        x = self.embedding(inputs)
-        # Embedding output shape: (B, 1, 32)
-        # Flatten the last two dims or reduce sequence dimension (just take the embedding at position 0)
-        # Because input shape is (B, 1), squeeze or remove middle dim before dense
-        x = tf.squeeze(x, axis=1)  # shape (B, 32)
-        x = self.dense(x)
-        return x
+__spec__ = None
 
-def my_model_function():
-    # Return an instance of MyModel with standard initialization
-    model = MyModel()
-    # Build the model by calling it on sample inputs (so variables are created)
-    _ = model(tf.zeros((1, 1), dtype=tf.int32))
-    # Compile with Adam experimental optimizer as used in the examples
-    # Note: optimizer build will happen when using model.compile 
-    model.compile(loss="binary_crossentropy", optimizer=tf.optimizers.experimental.Adam())
-    return model
 
-def GetInput():
-    # Return random input tensor with shape (B, 1) matching the input shape expected by MyModel
-    # Here batch size = 8 for demonstration purpose
-    # dtype int32 because Embedding expects integer indices
-    B = 8
-    return tf.random.uniform((B, 1), minval=0, maxval=100, dtype=tf.int32)
+def create_tf_configs(worker_count: int, ps_count: int):
+    """Create TF_CONFIGs for a cluster."""
+    cluster_dict: dict[str, list[str]] = {}
+    if worker_count:
+        cluster_dict["worker"] = [f"localhost:{pick_unused_port()}" for _ in range(worker_count)]
+    if ps_count:
+        cluster_dict["ps"] = [f"localhost:{pick_unused_port()}" for _ in range(ps_count)]
 
+    cluster_dict["chief"] = [f"localhost:{pick_unused_port()}"]
+
+    tf_configs = []
+    for i in range(worker_count):
+        tf_configs.append({"cluster": cluster_dict, "task": {"type": "worker", "index": i}})
+
+    for i in range(ps_count):
+        tf_configs.append({"cluster": cluster_dict, "task": {"type": "ps", "index": i}})
+
+    tf_configs.append({"cluster": cluster_dict, "task": {"type": "chief", "index": 0}})
+
+    return tf_configs
+
+
+def _create_process(tf_config: Mapping[str, Any]):
+    name = tf_config["task"]["type"] + "_" + str(tf_config["task"]["index"])
+
+    print(f"Starting {name} process...")
+    os.environ["TF_CONFIG"] = json.dumps(tf_config)
+    p = Process(target=run)
+    p.start()
+
+
+def run():
+    resolver = tf.distribute.cluster_resolver.TFConfigClusterResolver()
+
+    task_type = resolver.task_type
+    if task_type in ("worker", "ps"):
+        print("Starting server...")
+        server = tf.distribute.Server(
+            resolver.cluster_spec(),
+            job_name=resolver.task_type,
+            task_index=resolver.task_id,
+            protocol=resolver.rpc_layer,
+            start=True,
+        )
+        server.join()
+
+    partitioner = tf.distribute.experimental.partitioners.MaxSizePartitioner(max_shard_bytes=100 * 16 * 4)
+    strategy = tf.distribute.experimental.ParameterServerStrategy(
+        cluster_resolver=resolver, variable_partitioner=partitioner
+    )
+
+    print("Building model...")
+    with strategy.scope():
+        toy_model = tf.keras.Sequential(
+            [tf.keras.layers.Embedding(100, 32), tf.keras.layers.Dense(1, activation="sigmoid")]
+        )
+        toy_model.compile(loss="binary_crossentropy", optimizer=tf.optimizers.experimental.Adam())
+        toy_model.build(input_shape=(None, 1))
+        toy_model.optimizer.build(toy_model.trainable_variables)  # type: ignore
+
+    print("Saving weights...")
+    temp_dir = tempfile.gettempdir()
+    weights_path = os.path.join(temp_dir, "model_weights")
+    toy_model.save_weights(weights_path)
+
+    # No partitioner used for second ps strategy.
+    strategy2 = tf.distribute.experimental.ParameterServerStrategy(cluster_resolver=resolver)
+    with strategy2.scope():
+        toy_model2 = tf.keras.Sequential(
+            [tf.keras.layers.Embedding(100, 32), tf.keras.layers.Dense(1, activation="sigmoid")]
+        )
+        toy_model2.compile(loss="binary_crossentropy", optimizer=tf.optimizers.experimental.Adam())
+        toy_model2.build(input_shape=(None, 1))
+        toy_model2.optimizer.build(toy_model2.trainable_variables)  # type: ignore
+        print("Loading weights...")
+        toy_model2.load_weights(weights_path).assert_consumed()
+
+    print("Done!")
+
+
+def main():
+    tf_configs = create_tf_configs(2, 1)
+    chief_config = tf_configs[-1]
+    for tf_config in tf_configs[:-1]:
+        _create_process(tf_config)
+
+    os.environ["TF_CONFIG"] = json.dumps(chief_config)
+    run()
+
+
+if __name__ == "__main__":
+    main()

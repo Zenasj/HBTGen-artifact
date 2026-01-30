@@ -1,26 +1,15 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Inferred input shape: (batch_size, channels, height, width)
-import torch
-import torch.nn as nn
+import fastbook
+fastbook.setup_book()
+from fastbook import *
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
+from fastai.vision.all import *
+path = untar_data(URLs.PETS)/'images'
 
-    def forward(self, x):
-        x = self.conv1(x)
-        return x
+def is_cat(x): return x[0].isupper()
+dls = ImageDataLoaders.from_name_func(
+    path, get_image_files(path), valid_pct=0.2, seed=42,
+    label_func=is_cat, item_tfms=Resize(224))
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+learn = cnn_learner(dls, resnet34, metrics=error_rate)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    batch_size = 1
-    channels = 3
-    height = 224
-    width = 224
-    input_tensor = torch.rand(batch_size, channels, height, width, dtype=torch.float32)
-    return input_tensor
-
+learn.fine_tune(1)

@@ -1,61 +1,95 @@
-# tf.random.uniform((None, 28, 28), dtype=tf.float32) ← Input shape inferred from model input signature with batch dimension None and image size 28x28
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
 
 IMG_SIZE = 28
-NUM_CLASSES = 10
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Using a simple feedforward sequential model matching the original example
-        # Flatten input 28x28 to vector
-        self.flatten = tf.keras.layers.Flatten(input_shape=(IMG_SIZE, IMG_SIZE))
-        self.dense1 = tf.keras.layers.Dense(128, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(NUM_CLASSES, activation='softmax')
-        # Loss and optimizer are used in training function and stored here to reuse
-        self._loss_fn = tf.keras.losses.CategoricalCrossentropy(from_logits=False)  # from_logits=False because activation='softmax'
-        self._optimizer = tf.keras.optimizers.SGD()
+class Model(tf.Module):
 
-    def call(self, inputs, training=False):
-        x = self.flatten(inputs)
-        x = self.dense1(x)
-        x = self.dense2(x)
-        return x
-
-    @tf.function(input_signature=[
-        tf.TensorSpec([None, IMG_SIZE, IMG_SIZE], tf.float32),
-        tf.TensorSpec([None, NUM_CLASSES], tf.float32),
+  def __init__(self):
+    self.model = tf.keras.Sequential([
+        tf.keras.layers.Flatten(input_shape=(IMG_SIZE, IMG_SIZE)),
+        tf.keras.layers.Dense(128, activation='relu'),
+        tf.keras.layers.Dense(10, activation='softmax')
     ])
-    def train(self, x, y):
-        # Custom training step for on-device training simulation
-        with tf.GradientTape() as tape:
-            logits = self(x, training=True)
-            loss = self._loss_fn(y, logits)
-        gradients = tape.gradient(loss, self.trainable_variables)
-        self._optimizer.apply_gradients(zip(gradients, self.trainable_variables))
-        # Return dictionary storing loss and gradients keyed by variable names
-        result = {"loss": loss}
-        for var, grad in zip(self.trainable_variables, gradients):
-            result[var.name] = grad
-        return result
+    self.model.compile(
+        optimizer='sgd',
+        loss=tf.keras.losses.CategoricalCrossentropy(from_logits=True),
+        metrics=['accuracy'])
+    self._LOSS_FN = tf.keras.losses.CategoricalCrossentropy()
+    self._OPTIM = tf.optimizers.SGD()
 
-    @tf.function(input_signature=[tf.TensorSpec([None, IMG_SIZE, IMG_SIZE], tf.float32)])
-    def predict(self, x):
-        # Return output probabilities
-        output = self(x, training=False)
-        return {"output": output}
+  @tf.function(input_signature=[
+      tf.TensorSpec([None, IMG_SIZE, IMG_SIZE], tf.float32),
+      tf.TensorSpec([None, 10], tf.float32),
+  ])
+  def train(self, x, y):
+    with tf.GradientTape() as tape:
+      prediction = self.model(x)
+      loss = self._LOSS_FN(prediction, y)
+    gradients = tape.gradient(loss, self.model.trainable_variables)
+    self._OPTIM.apply_gradients(
+        zip(gradients, self.model.trainable_variables))
+    result = {"loss": loss}
+    for grad in gradients:
+      result[grad.name] = grad
+    return result
 
-def my_model_function():
-    # Returns a fresh instance of MyModel
-    return MyModel()
+  @tf.function(input_signature=[tf.TensorSpec([None, IMG_SIZE, IMG_SIZE], tf.float32)])
+  def predict(self, x):
+    return {
+        "output": self.model(x)
+    }
 
-def GetInput():
-    # Generates a batch of random float inputs with shape (batch_size, 28, 28)
-    # Here batch size is set to 4 for demonstration; it can be any positive integer.
-    batch_size = 4
-    return tf.random.uniform(
-        shape=(batch_size, IMG_SIZE, IMG_SIZE),
-        minval=0.0, maxval=1.0, dtype=tf.float32
-    )
+  @tf.function(input_signature=[tf.TensorSpec(shape=[], dtype=tf.string)])
+  def save(self, checkpoint_path):
+    tensor_names = [weight.name for weight in self.model.weights]
+    tensors_to_save = [weight.read_value() for weight in self.model.weights]
+    tf.raw_ops.Save(
+        filename=checkpoint_path, tensor_names=tensor_names,
+        data=tensors_to_save, name='save')
+    return {
+        "checkpoint_path": checkpoint_path
+    }
 
+  @tf.function(input_signature=[tf.TensorSpec(shape=[], dtype=tf.string)])
+  def restore(self, checkpoint_path):
+    restored_tensors = {}
+    for var in self.model.weights:
+      restored = tf.raw_ops.Restore(
+          file_pattern=checkpoint_path, tensor_name=var.name, dt=var.dtype,
+          name='restore')
+      var.assign(restored)
+      restored_tensors[var.name] = restored
+    return restored_tensors
+
+SAVED_MODEL_DIR = "saved_model"
+m= Model()
+tf.saved_model.save(
+    m,
+    SAVED_MODEL_DIR,
+    signatures={
+        'train':
+            m.train.get_concrete_function(),
+        'infer':
+            m.predict.get_concrete_function(),
+        'save':
+            m.save.get_concrete_function(),
+        'restore':
+            m.restore.get_concrete_function(),
+    })
+
+# Convert the model
+converter = tf.lite.TFLiteConverter.from_saved_model(SAVED_MODEL_DIR)
+converter.target_spec.supported_ops = [
+    tf.lite.OpsSet.TFLITE_BUILTINS,  # enable TensorFlow Lite ops.
+    tf.lite.OpsSet.SELECT_TF_OPS  # enable TensorFlow ops.
+]
+converter.experimental_enable_resource_variables = True
+tflite_model = converter.convert()
+with open('model.tflite','wb') as f:
+    f.write(tflite_model)
+# Press the green button in the gutter to run the script.
+if __name__ == '__main__':
+    print("main")

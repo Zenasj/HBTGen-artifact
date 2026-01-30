@@ -1,22 +1,22 @@
-# torch.rand(2, dtype=torch.float32)  # Input shape is (2,)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Non-view case: initialized with correct shape (2,1,1)
-        self.x_non_view = nn.Parameter(torch.tensor([[[0.25]], [[0.75]]], requires_grad=True))
-    
-    def forward(self, input):
-        # Create the view from the input (shape (2,) -> (2,1,1))
-        x_view = input.view(2, 1, 1)
-        return self.x_non_view, x_view  # Return both tensors for gradient comparison
+# test without view
+X = torch.tensor([[[0.25]],[[ 0.75]]],requires_grad=True,)
+print(f"X.shape: {X.shape}")
+X.sum().backward()
+print(f"X.grad: {X.grad}")
 
-def my_model_function():
-    return MyModel()
+# test with view
+X_view = torch.tensor([0.25, 0.75], requires_grad=True,).view(2, 1, 1)
+print(f"X_view.shape: {X_view.shape}")
+X_view.sum().backward()
+print(f"X_view.grad: {X_view.grad}")
+print(f"X_view.grad is None: {X_view.grad is None}")
 
-def GetInput():
-    # Return a random tensor of shape (2,)
-    return torch.rand(2, requires_grad=True)
-
+X0 = torch.tensor([0.25, 0.75], requires_grad=True,)
+X_view = X0.view(2, 1, 1)
+print(f"X_view.shape: {X_view.shape}")
+X_view.sum().backward()
+print(f"X_view.grad: {X_view.grad}")
+print(f"X_view.grad is None: {X_view.grad is None}")
+print(f"X0.grad: {X0.grad}")

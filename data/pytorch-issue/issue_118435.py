@@ -1,27 +1,22 @@
-# torch.rand((), dtype=torch.float32)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.x = nn.Parameter(torch.ones(10))  # Matches original x=torch.ones(10)
-        self.x.register_post_accumulate_grad_hook(self.grad_hook)
-    
-    def grad_hook(self, param):
-        # Replicates param.grad *= 2 from original hook
-        param.grad *= 2
-    
-    def forward(self, input):
-        # Forward pass: x * input (scalar multiplication)
-        return self.x * input
+def compiler_fn(gm):
+    def inner(gm_, example_inputs_):
+        return inductor.compile(gm_, example_inputs_)
+    return torch.compile(gm, fullgraph=True, backend=inner)
 
-def my_model_function():
-    # Initialize model with correct parameter setup
-    model = MyModel()
-    return model
+def hook(param):
+    param.grad *= 2
 
-def GetInput():
-    # Returns scalar tensor as input (matches original code's integer input)
-    return torch.rand((), dtype=torch.float32)
+x = torch.ones(10)
+x.requires_grad = True
+def run(input):
+    return x * input
 
+x.register_post_accumulate_grad_hook(hook)
+with compiled_autograd.enable(compiler_fn):
+    for i in range(5):
+        run(input).sum().backward()
+        # Mimic optimizer.zero_grad() to clear the gradient
+        print(x.grad)
+        x.grad = None

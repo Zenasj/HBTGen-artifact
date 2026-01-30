@@ -1,21 +1,14 @@
-# torch.rand(1, 1, 1410, 1280, dtype=torch.float32)
+import torch.nn as nn
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Fixed filter as in original code (all ones)
-        self.filters = nn.Parameter(torch.ones(1, 1, 67, 67), requires_grad=False)
-    
-    def forward(self, x):
-        return F.conv2d(x, self.filters, padding=1)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.randn(1, 1, 1410, 1280, dtype=torch.float32)
-
+import time
+filters = torch.ones(1, 1, 67, 67)
+inputs = torch.randn(1, 1, 1410, 1280)
+start_time_total = time.time()
+for i in range(100):
+    start_time = time.time()
+    res = F.conv2d(inputs, filters, padding=1)
+    print(f"conv2d: {time.time() - start_time} s")
+print(f"----------conv2d: {(time.time() - start_time_total)/100} s")

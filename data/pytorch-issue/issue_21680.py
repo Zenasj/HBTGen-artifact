@@ -1,30 +1,48 @@
-import torch
 import torch.nn as nn
-import torchvision.models as models
+import numpy as np
 
-# torch.rand(B, 3, 32, W, dtype=torch.float32)  # Input shape: batch, channels=3, height=32, variable width
-class MyModel(nn.Module):
-    def __init__(self, num_classes=5991):
-        super(MyModel, self).__init__()
-        self.cnn = models.mobilenet_v2(pretrained=False).features  # Extract features
-        self.pool = nn.AdaptiveAvgPool2d((1, None))  # Maintain spatial width as sequence length
-        self.fc = nn.Linear(1280, num_classes)
-        self.log_softmax = nn.LogSoftmax(dim=2)  # Apply over class dimension (dim=2)
+import sys
 
-    def forward(self, x):
-        x = self.cnn(x)  # Output shape (N, 1280, H', W')
-        x = self.pool(x)  # Output shape (N, 1280, 1, W')
-        x = x.squeeze(2)  # Shape (N, 1280, W')
-        x = x.permute(2, 0, 1)  # Shape (W', N, 1280)
-        x = self.fc(x)  # (W', N, num_classes)
-        return self.log_softmax(x)
+import torch
+import torch.nn
 
-def my_model_function():
-    # Disable CuDNN to avoid non-deterministic CTC implementation causing NaN gradients
-    torch.backends.cudnn.enabled = False
-    return MyModel()
 
-def GetInput():
-    # Generate input with batch_size=2, 3 channels, height=32, variable width (e.g., 100)
-    return torch.rand(2, 3, 32, 100, dtype=torch.float32)
+def run_test(use_cuda):
+    test_data = torch.load('ctc_test_data.pt')
+    inp = test_data['inp']
+    inp_len = test_data['inp_len']
+    tar = test_data['tar']
+    tar_len = test_data['tar_len']
 
+    if use_cuda:
+        inp = inp.cuda().detach()
+        inp_len = inp_len.cuda()
+
+    print('use_cuda:', use_cuda)
+    print('inp:', inp.shape, inp.dtype, inp.device)
+    print('tar:', tar.shape, tar.dtype, tar.device)
+    print('inp_len:', inp_len)
+    print('tar_len:', tar_len)
+    print('verify that sum(exp(inp)) == 1:', bool(torch.all((inp.exp().sum(dim=-1) - 1).abs() < 1e-5).item()))
+
+    inp.requires_grad = True
+
+    loss_fn = torch.nn.CTCLoss()
+
+    loss = loss_fn(inp, tar, inp_len, tar_len)
+
+    loss.backward()
+
+    grad_sum = inp.grad.sum()
+
+    print('grad_sum:', grad_sum)
+
+
+if __name__ == '__main__':
+    print('python version:', sys.version)
+    print('torch version:', torch.__version__)
+    print('GPU:', torch.cuda.get_device_name())
+    print()
+    run_test(False)
+    print()
+    run_test(True)

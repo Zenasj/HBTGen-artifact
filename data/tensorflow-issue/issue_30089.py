@@ -1,54 +1,90 @@
-# tf.random.uniform((B, 512), dtype=tf.float32) ← B is batch size, input vectors are 512-dim embeddings
+import random
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
-import tensorflow as tf
+from tensorflow.python.keras.utils.data_utils import Sequence
+class mygenerator(Sequence):
+    def __init__(self, x_set_1, x_set_2, y_set, batch_size = 16):
+        self.x1, self.x2, self.y = x_set_1, x_set_2, y_set
+        self.batch_size = batch_size
+        self.len_data = 0
+
+    def __len__(self):
+        return int(np.ceil(len(self.y) / float(self.batch_size)))
+
+    def __getitem__(self, idx):
+        batch_x1 = self.x1[idx * self.batch_size:(idx + 1) * self.batch_size]
+        batch_x2 = self.x2[idx * self.batch_size:(idx + 1) * self.batch_size]
+        batch_y = self.y[idx * self.batch_size:(idx + 1) * self.batch_size]
+
+        # read your data here using the batch lists, batch_x and batch_y
+        xi = [item for item in batch_x1] 
+        xj = [item for item in batch_x2] 
+        yi = [item for item in batch_y]
+        return np.asarray([xi, xj], yi)
+
+model.fit_generator(mygenerator(neural_network_x_1, neural_network_x_2, neural_network_y), steps_per_epoch= 25,epochs=100)
+
 import numpy as np
+no_element = 10
+x1 = np.random.rand(no_element ,512)
+x2 = np.random.rand(no_element ,512)
+x3 = np.random.randint(2, size=no_element)
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define Dense layer branches for two 512-dim inputs
-        self.branch1_dense1 = tf.keras.layers.Dense(128, activation="relu")
-        self.branch2_dense1 = tf.keras.layers.Dense(128, activation="relu")
-        
-        # Combined layers: note original code had an error where 'z' layer was incorrectly applied on combined twice,
-        # We'll replicate that faithfully and comment accordingly:
-        self.combined_dense1 = tf.keras.layers.Dense(16, activation="relu")
-        self.combined_dense2 = tf.keras.layers.Dense(4, activation="relu")
-        self.output_layer = tf.keras.layers.Dense(2, activation="linear")
+from tensorflow.python.keras.utils.data_utils import Sequence
 
-        self.concat = tf.keras.layers.Concatenate()
+class mygenerator(Sequence):
+    def __init__(self, x_set_1, x_set_2, y_set, batch_size = 16):
+        self.x1, self.x2, self.y = x_set_1, x_set_2, y_set
+        self.batch_size = batch_size
+        self.len_data = 0
 
-    def call(self, inputs):
-        # inputs is a list or tuple of two tensors: (x1, x2)
-        x1, x2 = inputs
-        
-        x = self.branch1_dense1(x1)  # shape (B,128)
-        y = self.branch2_dense1(x2)  # shape (B,128)
+    def __len__(self):
+        return int(np.ceil(len(self.y) / float(self.batch_size)))
 
-        combined = self.concat([x, y])  # shape (B,256)
+    def __getitem__(self, idx):
+        batch_x1 = self.x1[idx * self.batch_size:(idx + 1) * self.batch_size]
+        batch_x2 = self.x2[idx * self.batch_size:(idx + 1) * self.batch_size]
+        batch_y = self.y[idx * self.batch_size:(idx + 1) * self.batch_size]
 
-        # According to supplied snippet, the second dense is applied on combined instead of the output of first dense:
-        # That is a mistake but to replicate exactly:
-        z = self.combined_dense1(combined)
-        z = self.combined_dense2(combined)  # overwrites previous z
-        out = self.output_layer(z)
-        return out
+        # read your data here using the batch lists, batch_x and batch_y
+        xi = [item for item in batch_x1] 
+        xj = [item for item in batch_x2] 
+        yi = [item for item in batch_y]
+        return np.asarray([xi, xj], yi)
 
 
-def my_model_function():
-    # Create and compile the model similarly to original sample code:
-    model = MyModel()
-    # Compile with Adam optimizer and mean_absolute_percentage_error loss as used in the snippet:
-    opt = tf.keras.optimizers.Adam(learning_rate=1e-3, decay=1e-3 / 200)
-    model.compile(optimizer=opt, loss="mean_absolute_percentage_error")
-    return model
+from keras import Sequential
+from keras import Input
+from keras.layers import Dense, Concatenate
+from keras import Model
+# from keras import optimizers
+from keras.optimizers import Adam
 
-def GetInput():
-    # Return a batch of random input tensors matching expected input shape,
-    # assume batch size = 16 to match batch_size in generator in original code.
-    batch_size = 16
-    # Generate random float tensor inputs shaped (batch_size, 512)
-    x1 = tf.random.uniform((batch_size, 512), dtype=tf.float32)
-    x2 = tf.random.uniform((batch_size, 512), dtype=tf.float32)
-    return [x1, x2]
+# define two sets of inputs
+inputA = Input(shape=(512,))
+inputB = Input(shape= (512,))
 
+# the first branch operates on the first input
+x = Dense(128, activation="relu")(inputA)
+x = Model(inputs=inputA, outputs=x)
+
+# the second branch opreates on the second input
+y = Dense(128, activation="relu")(inputB)
+y = Model(inputs=inputB, outputs=y)
+
+# combine the output of the two branches
+combined = Concatenate()([x.output, y.output])
+
+# apply a FC layer and then a regression prediction on the
+# combined outputs
+z = Dense(16, activation="relu")(combined)
+z = Dense(4, activation="relu")(combined)
+z = Dense(2, activation="linear")(z)
+
+model = Model(inputs=[x.input, y.input], outputs=z)
+opt = Adam(lr=1e-3, decay=1e-3 / 200)
+model.compile(loss="mean_absolute_percentage_error", optimizer=opt)
+
+
+model.fit_generator(mygenerator(x1, x2, x3), steps_per_epoch= 25,epochs=100)

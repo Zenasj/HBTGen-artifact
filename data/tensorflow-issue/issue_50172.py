@@ -1,33 +1,41 @@
-# tf.random.uniform((1, 244, 244, 3), dtype=tf.float32) ← fixed batch size 1, input shape 244x244 with 3 channels
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self, dilation_rate=(2, 2)):
-        super().__init__()
-        self.conv = tf.keras.layers.Conv2D(
-            filters=16,
-            kernel_size=3,
-            padding='same',
-            dilation_rate=dilation_rate,
-            use_bias=False
-        )
-        self.bn = tf.keras.layers.BatchNormalization()
-        self.relu = tf.keras.layers.ReLU()
-        
-    def call(self, inputs, training=False):
-        # Conv2d -> BatchNorm -> ReLU pattern as described
-        x = self.conv(inputs)
-        x = self.bn(x, training=training)
-        x = self.relu(x)
-        return x
 
-def my_model_function():
-    # Return an instance of MyModel with fixed dilation as per issue (dilation=2)
-    return MyModel(dilation_rate=(2, 2))
+def representative_dataset():
+    for _ in range(10):
+        data = np.random.rand(1, 244, 244, 3)
+        yield [data.astype(np.float32)]
 
-def GetInput():
-    # Generate a fixed batch size input tensor compatible with the model input.
-    # Batch size =1, 244x244 spatial dims, 3 channels, float32 as per the example code.
-    return tf.random.uniform((1, 244, 244, 3), dtype=tf.float32)
 
+dil = 2
+for ptq in [False, True]:
+    _in = tf.keras.Input((244, 244, 3))
+    if ptq:
+        x = _in
+    else:
+        x = tf.quantization.fake_quant_with_min_max_args(_in)
+
+    x = tf.keras.layers.Conv2D(16, 3, padding='same', dilation_rate=(dil, dil), use_bias=False)(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.ReLU()(x)
+    if not ptq:
+        x = tf.quantization.fake_quant_with_min_max_args(x)
+    model = tf.keras.Model(_in, x)
+
+    converter = tf.lite.TFLiteConverter.from_keras_model(model)
+    converter.optimizations = [tf.lite.Optimize.DEFAULT]
+    if ptq:
+        converter.representative_dataset = representative_dataset
+    tflite_quant_model = converter.convert()
+
+    s = '_ptq' if ptq else ''
+    tflite_file = f'/tmp/dilated_conv2d/dil{dil}{s}{c}.tflite'
+    with open(tflite_file, 'wb') as f:
+        f.write(tflite_quant_model)
+
+    print(f'Generated {tflite_file} with TF {tf.__version__}')

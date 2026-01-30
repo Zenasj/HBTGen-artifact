@@ -1,30 +1,26 @@
-# torch.rand(3, 224, 224, dtype=torch.float32)  # Inferred input shape from original np.random.rand(3,224,224)
+import random
+
 import torch
-import functorch.experimental.control_flow as fc
+import numpy as np
 
-class MyModel(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.cond = fc.cond  # Functorch cond for controlled control flow
+def test_controlflow():
+    def is_scaled(val: np.ndarray) -> bool:
+        return np.min(val) >= 0 and np.max(val) <= 1
 
-    def forward(self, x):
-        min_val = x.min()
-        max_val = x.max()
-        condition = (min_val >= 0) & (max_val <= 1)
-        
-        def true_path(x):
-            scaled = x * 255  # Apply scaling if condition met
-            return scaled - scaled.mean()  # Subtract mean of scaled tensor
-        
-        def false_path(x):
-            return x - x.mean()  # Subtract mean without scaling
-        
-        # Use functorch.cond to capture control flow
-        return self.cond(condition, true_path, false_path, [x])[0]
+    def process(val):
+        # np.min(val) >= 0 and np.max(val) <= 1
+        if is_scaled(val):
+            val = val * 255
+        val = val - np.mean(val, keepdims=True)
+        return val
 
-def my_model_function():
-    return MyModel()  # Return the fused model with controlled control flow
+    val = np.random.rand(3, 224, 224)
+    output = process(val)
 
-def GetInput():
-    return torch.rand(3, 224, 224, dtype=torch.float32)  # Match input shape from original code
+    process_opt = torch.compile(process, dynamic=True)
+    output_opt = process_opt(val)
 
+    assert np.allclose(output, output_opt)
+
+if __name__ == "__main__":
+    test_controlflow()

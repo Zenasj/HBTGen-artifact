@@ -1,39 +1,72 @@
-# tf.random.uniform((B, H, W, C), dtype=tf.uint8) ← Assuming input is batch of RGB images of unknown batch size and size
-
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Since the original issue discusses decoding images in dataset code rather than a neural model,
-        # here we implement a minimal pass-through or identity model that expects images decoded as uint8
-        # with 3 channels, and outputs the same tensor.
-        # This serves as a placeholder for integration with decoding pipeline.
-        # No trainable layers implied by issue, so we just define a simple identity-like model.
-        self.identity = tf.keras.layers.Lambda(lambda x: x)
+tf.io.decode_image
 
-    def call(self, inputs, training=False):
-        # inputs: tf.Tensor with shape (B, H, W, 3), dtype uint8 assumed as typical image
-        # Just return inputs as is to represent the flow after decoding.
-        return self.identity(inputs)
+def get_item(type, index):
+    if type == 'trainval':
+        item = images_trainval[index]
+    else:
+        item = images_val[index]
 
-def my_model_function():
-    # Return an instance of MyModel. 
-    return MyModel()
+    image = item['image/encoded']
+    image = tf.io.decode_image(image, 3)
+    image = image.numpy()
 
-def GetInput():
-    # According to the issue, images are decoded as uint8 tensors with 3 channels (RGB).
-    # The images come from datasets, cropped to 512x512 in example, but exact size is variable.
-    # Assuming batch size 1 for simplicity; height and width assumed 512, 3 channels (RGB).
-    batch_size = 1
-    height = 512
-    width = 512
-    channels = 3
-    # Generate a random uint8 tensor resembling decoded image batch input.
-    inp = tf.random.uniform(
-        shape=(batch_size, height, width, channels),
-        minval=0,
-        maxval=256,
-        dtype=tf.dtypes.uint8)
-    return inp
+    mask = item['image/segmentation/class/encoded']
+    mask = tf.io.decode_image(mask, 1)
+    mask = mask.numpy()
+    mask = mask.reshape(mask.shape[:2])
 
+    return image, mask
+
+class DLDataset(Dataset):
+    def __init__(self, split, dataset_dir):
+        self.split = split
+        
+        self.transformer = data_transforms[split]
+
+    def __getitem__(self, i):
+        image, mask = get_item(self.split, i)
+
+        image, mask = safe_crop(image, mask, size=512)
+        image = transforms.ToPILImage()(image.copy().astype(np.uint8))
+        image = self.transformer(image)
+
+        mask = torch.from_numpy(mask)
+
+        return image, mask
+
+    def __len__(self):
+        return get_len(self.split)
+
+tf.io.decode_jpeg
+
+tf.io.decode_png
+
+tf.io.decode_image
+
+def get_item(type, index):
+    if type == 'trainval':
+        item = images_trainval[index]
+    else:
+        item = images_val[index]
+
+    image = item['image/encoded']
+    image = tf.io.decode_jpeg(image, 3)
+    image = image.numpy()
+
+    mask = item['image/segmentation/class/encoded']
+    mask = tf.io.decode_png(mask, 1)
+    mask = mask.numpy()
+    mask = mask.reshape(mask.shape[:2])
+
+    return image, mask
+
+workers > 1
+
+use_multiprocessing = True
+
+tf.io.decode_image
+
+torch.utils.data.Dataset

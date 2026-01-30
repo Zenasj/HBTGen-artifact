@@ -1,17 +1,16 @@
-# torch.rand(2, 3, dtype=torch.float32), torch.rand(3, dtype=torch.float32)
+py
+from lazy_tensor_core import debug
 import torch
-from torch import nn
+import lazy_tensor_core
+import lazy_tensor_core.debug.metrics as metrics
 
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        mat, vec = inputs
-        return torch.mv(mat, vec)
+lazy_tensor_core._LAZYC._ltc_init_ts_backend()
 
-def my_model_function():
-    return MyModel()
+device = 'lazy'
+dtype = torch.float32
 
-def GetInput():
-    mat = torch.rand(2, 3, dtype=torch.float32)
-    vec = torch.rand(3, dtype=torch.float32)
-    return (mat, vec)
+mat = torch.randn(2, 3, device=device, dtype=dtype)
+vec = torch.randn(3, device=device, dtype=dtype)
+print(torch.mv(mat, vec))
 
+print(metrics.metrics_report())

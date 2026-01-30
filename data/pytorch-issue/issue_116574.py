@@ -1,21 +1,15 @@
-# torch.rand(1, 10, dtype=torch.float32)  # Inferred input shape from the issue
-
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+import torch
+from torch import nn
+class ONNXBug(nn.Module):
     def __init__(self):
         super().__init__()
-        self.ln = nn.LayerNorm(10, bias=False)  # LayerNorm with bias set to False
-
+        self.ln = nn.LayerNorm(10, bias=False) # <------ HERE
     def forward(self, x):
         return self.ln(x)
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(1, 10, dtype=torch.float32)
-
+model = ONNXBug()
+dummy = torch.zeros(10).unsqueeze(0)
+torch.onnx.export(model, dummy, "test.onnx", export_params=True, input_names = ['input'], output_names = ['output'])
+import onnxruntime as rt
+sess = rt.InferenceSession("./test.onnx")

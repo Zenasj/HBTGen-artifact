@@ -1,25 +1,18 @@
-# torch.rand(2, 1, dtype=torch.float32)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, t):
-        # Simulate functionalization of a custom op on views of a base tensor
-        # Assume the base is t itself (as per example's all_bases=[arg0_1])
-        # Apply mutation to base (e.g., custom op's effect)
-        updated_base = t.clone()  # Base copy to allow mutation
-        updated_base += 1.0  # Example mutation (placeholder for actual op logic)
+ViewInfo=(x.base(), x.size(), x.stride, x,storage_offset())
+
+auto_functionalized = torch.ops.higher_order.auto_functionalized(torch.ops.mylib.foo.default,
+     _x_base_index = 0, _x_size = (), _x_stride = (), _x_storage_offset = 0 ,
+     _y_base_index = 0,_y_size = (), _y_stride = (), _y_storage_offset = 1   ,
+     _all_bases = [arg0_1])
+
+def forward(self, arg0_1: "f32[2][1]cpu"):
+        auto_functionalized = torch.ops.higher_order.auto_functionalized(torch.ops.mylib.foo.default, _x_base_index = 0, _x_size = (), _x_stride = (), _x_storage_offset = 0, _y_base_index = 0, _y_size = (), _y_stride = (), _y_storage_offset = 1, _all_bases = [arg0_1])
+        getitem_1: "f32[2][1]cpu" = auto_functionalized[1];  auto_functionalized = None
+        copy_: "f32[2][1]cpu" = torch.ops.aten.copy_.default(arg0_1, getitem_1);  arg0_1 = copy_ = None
         
-        # Regenerate views from updated base
-        x = updated_base[0]
-        y = updated_base[1]
-        
-        # Return views as per example's output structure (select_2, select_3)
-        return (x, y)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(2, 1, dtype=torch.float32)
-
+        # No stacktrace found for following nodes
+        select_2: "f32[][]cpu" = torch.ops.aten.select.int(getitem_1, 0, 0)
+        select_3: "f32[][]cpu" = torch.ops.aten.select.int(getitem_1, 0, 1);  getitem_1 = None
+        return (select_2, select_3)

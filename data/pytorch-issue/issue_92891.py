@@ -1,14 +1,6 @@
-# torch.rand(2, 3, 4, 5, dtype=torch.float32)
 import torch
-from torch import nn
+dtypes = [torch.uint8, torch.int8, torch.int16, torch.int32, torch.int64]
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return torch.empty_like(x).exponential_()
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(2, 3, 4, 5, dtype=torch.float32)
-
+for dtype in dtypes:
+    x = torch.empty(10000, dtype=dtype).exponential_() # should fail !
+    print("dtype: ", x.dtype, "sum: ", x.sum())

@@ -1,21 +1,28 @@
-# torch.rand(2, 4, requires_grad=True) * 4 as a tuple
 import torch
-from torch import nn
+from torch.fx.experimental.proxy_tensor import make_fx
 
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        a, b, c, d = inputs
-        x = a + b
-        y = c + d
-        y.copy_(x)  # Preserve in-place copy for FX graph reproduction
-        x = torch.relu(x)
-        x = x.cos()
-        x = x.cos()
-        return x
 
-def my_model_function():
-    return MyModel()
+def fn(a, b, c, d):
+    x = a + b
+    y = c + d
+    y.copy_(x)
+    x = torch.relu(x)
+    x = x.cos().cos()
+    return x
 
-def GetInput():
-    return tuple(torch.randn(2, 4, requires_grad=True) for _ in range(4))
 
+a, b, c, d = [torch.randn(2, 4, requires_grad=True) for _ in range(4)]
+
+fx_fn = make_fx(fn)(a, b, c, d)
+fx_fn.graph.eliminate_dead_code()
+fx_fn.recompile()
+print(fx_fn)
+
+def forward(self, a_1, b_1, c_1, d_1):
+    add = torch.ops.aten.add.Tensor(a_1, b_1);  a_1 = b_1 = None
+    add_1 = torch.ops.aten.add.Tensor(c_1, d_1);  c_1 = d_1 = None
+    copy_ = torch.ops.aten.copy_.default(add_1, add);  add_1 = None
+    relu = torch.ops.aten.relu.default(add);  add = None
+    cos = torch.ops.aten.cos.default(relu);  relu = None
+    cos_1 = torch.ops.aten.cos.default(cos);  cos = None
+    return cos_1

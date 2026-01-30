@@ -1,22 +1,32 @@
-# torch.rand(32, 2, 177, dtype=torch.float32).cuda()  # Inferred input shape and dtype
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.ctc_loss = torch.nn.CTCLoss(zero_infinity=True).cuda()
-        # Dummy tensors matching shapes reported in issue comments
-        self.targets = torch.randint(0, 177, (19,), dtype=torch.int32).cuda()  # Targets must be on same device as log_probs
-        self.input_lengths = torch.full((2,), 32, dtype=torch.int32).cuda()   # T=32 for all samples
-        self.target_lengths = torch.tensor([10, 9], dtype=torch.int32).cuda() # Sum to 19 (matches targets.shape[0])
+python
+import torch
+import pickle
 
-    def forward(self, log_probs):
-        return self.ctc_loss(log_probs, self.targets, self.input_lengths, self.target_lengths)
 
-def my_model_function():
-    return MyModel()
+assert torch.cuda.is_available() and torch.backends.cudnn.enabled
 
-def GetInput():
-    return torch.rand(32, 2, 177, dtype=torch.float32).cuda()
+# https://drive.google.com/file/d/1eltV2WjDVTuRBXO0n6E5t5dkQ3GEW6Qj/view?usp=sharing
+with open('ctc_bug.pkl', 'rb') as f:
+    variables = pickle.load(f)
 
+log_probs = variables['log_probs'].cuda()
+targets = variables['targets'].cpu()
+target_lengths = variables['target_lengths'].cuda()
+
+# with `zero_infinity=False` it works well
+ctc_loss = torch.nn.CTCLoss(zero_infinity=True).cuda()
+
+assert torch.isfinite(log_probs.max()) and torch.isfinite(log_probs.min())
+
+# with `torch.backends.cudnn.enabled = False` it works well
+T, N, C = log_probs.shape
+loss = ctc_loss(
+    log_probs=log_probs,
+    targets=targets,
+    input_lengths=torch.full(size=(N,), fill_value=T, dtype=torch.int32).cuda(),
+    target_lengths=target_lengths
+)
+assert torch.isfinite(loss)
+loss.backward()

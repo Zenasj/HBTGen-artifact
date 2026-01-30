@@ -1,32 +1,56 @@
-# tf.raw_ops.UpperBound(sorted_inputs=x, values=int16_tensor) with 
-# input shapes: sorted_inputs=(10, 8), values=(10, 8) (inferred from usage in code)
-import tensorflow as tf
+import math
+import random
 
-class MyModel(tf.keras.Model):
+import tensorflow as tf
+import traceback
+
+def replace_special_values(tensor):
+    # Convert tensor to tf.float32 if it's not a supported dtype
+    supported_dtypes = [tf.float16, tf.float32, tf.float64, tf.bfloat16]
+    if tensor.dtype not in supported_dtypes:
+        original_dtype = tensor.dtype
+        tensor = tf.cast(tensor, tf.float32)
+    else :
+        original_dtype = None
+    
+    # Replace NaNs with zeros
+    tensor = tf.where(tf.math.is_nan(tensor), tf.zeros_like(tensor), tensor)
+    
+    # Replace positive infinities with a large number (e.g., 1e30)
+    tensor = tf.where(tf.math.is_inf(tensor), 100, tensor)
+    
+    # Replace negative infinities with a small number (e.g., -1e30)
+    tensor = tf.where(tf.math.is_inf(tensor) & tf.math.less(tensor, 0), -100, tensor)
+    
+    # Convert tensor back to its original dtype
+    if original_dtype is not None :
+        tensor = tf.cast(tensor, original_dtype)
+    return tensor
+
+class Network(tf.Module):
     def __init__(self):
         super().__init__()
 
     @tf.function(jit_compile=True)
-    def call(self, x):
-        # Generate a random int16 tensor matching expected shape for values input
-        random_tensor = tf.random.uniform([10, 8], minval=-32768, maxval=32767, dtype=tf.int32)
-        int16_tensor = tf.cast(random_tensor, tf.int16)
+    def __call__(self, x):
+      random_tensor = tf.random.uniform([10, 8],minval=-32768,maxval=32767,dtype=tf.int32)
+      int16_tensor = tf.dtypes.cast(random_tensor, tf.int16)
+      x = tf.raw_ops.UpperBound(sorted_inputs=x, values=int16_tensor)      
+      return x
 
-        # Perform UpperBound operation (expects sorted_inputs and values)
-        # x is assumed to be a sorted int16 tensor of shape (10, 8)
-        upper_bound_result = tf.raw_ops.UpperBound(sorted_inputs=x, values=int16_tensor)
+m = Network()
+random_tensor = tf.random.uniform([10, 9],minval=-32768,maxval=32767,dtype=tf.int32)
+int16_tensor = tf.dtypes.cast(random_tensor, tf.int16)
+inp = {
+    "x": int16_tensor,
+    }
 
-        return upper_bound_result
-
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Generate a random int16 tensor simulating the "sorted_inputs" input of shape (10, 8)
-    # Since UpperBound expects sorted inputs, we sort it along axis=-1 to approximate
-    random_tensor = tf.random.uniform([10, 8], minval=-32768, maxval=32767, dtype=tf.int32)
-    int16_tensor = tf.cast(random_tensor, tf.int16)
-    sorted_int16 = tf.sort(int16_tensor, axis=-1)
-    return sorted_int16
-
+with tf.device('/GPU:0'):
+    tf.config.run_functions_eagerly(True)
+    no_op_res = m(**inp)
+    tf.config.run_functions_eagerly(False)
+    with tf.device('/GPU:0'):
+        op_res = m(**inp)
+    no_op_res = replace_special_values(no_op_res)
+    op_res = replace_special_values(op_res)
+    tf.debugging.assert_near(tf.cast(no_op_res, tf.float64), tf.cast(op_res, tf.float64), atol=0.001, rtol=0.001)

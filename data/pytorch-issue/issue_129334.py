@@ -1,18 +1,45 @@
-# torch.rand(3, dtype=torch.float32)  # Input shape: (start, end, step) as 0D tensors
 import torch
-from torch import nn
+                            # ↓↓↓↓↓↓↓↓↓
+torch.arange(end=torch.tensor([0, 1, 2])) # Error
 
-class MyModel(nn.Module):
-    def forward(self, params):
-        start = params[0]   # 0D tensor (scalar)
-        end = params[1]     # 0D tensor (scalar)
-        step = params[2]    # 0D tensor (scalar)
-        return torch.arange(start=start, end=end, step=step)
+import torch
+                              # ↓↓↓↓↓↓↓↓↓
+torch.arange(start=torch.tensor([0, 1, 2]), end=5) # Error
 
-def my_model_function():
-    return MyModel()
+import torch
+                                             # ↓↓↓↓↓↓↓↓↓
+torch.arange(start=0, end=5, step=torch.tensor([0, 1, 2])) # Error
 
-def GetInput():
-    # Generate random start, end, step as 0D tensors (shape (3,))
-    return torch.rand(3, dtype=torch.float32)
+import torch
+                            # ↓
+torch.arange(end=torch.tensor(2)) # tensor([0, 1])
+                              # ↓
+torch.arange(start=torch.tensor(2), end=5) # tensor([2, 3, 4])
+                                             # ↓
+torch.arange(start=0, end=5, step=torch.tensor(2)) # tensor([0, 2, 4])
 
+import torch
+                            # ↓↓
+torch.arange(end=torch.tensor(2.)) # tensor([0., 1.])
+                            # ↓↓↓↓↓↓
+torch.arange(end=torch.tensor(2.+0.j)) # tensor([0., 1.])
+                            # ↓↓↓↓
+torch.arange(end=torch.tensor(True)) # tensor([0])
+
+                              # ↓↓
+torch.arange(start=torch.tensor(2.), end=5.) # tensor([2., 3., 4.])
+                              # ↓↓↓↓↓↓
+torch.arange(start=torch.tensor(2.+0.j), end=5.+0.j) # tensor([2., 3., 4.])
+                              # ↓↓↓↓↓
+torch.arange(start=torch.tensor(False), end=True) # tensor([0])
+
+                                               # ↓↓
+torch.arange(start=0., end=5., step=torch.tensor(2.)) # tensor([0., 2., 4.])
+                                                       # ↓↓↓↓↓↓
+torch.arange(start=0.+0.j, end=5.+0.j, step=torch.tensor(2.+0.j)) # tensor([0., 2., 4.])
+                                                    # ↓↓↓↓
+torch.arange(start=False, end=True, step=torch.tensor(True)) # tensor([0])
+
+import torch
+
+torch.__version__ # 2.3.0+cu121

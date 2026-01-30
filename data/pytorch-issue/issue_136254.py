@@ -1,27 +1,34 @@
-# torch.rand(B, S, dtype=torch.long)  # B=batch_size, S=sequence_length
+from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModelForSeq2SeqLM
 import torch
-from torch import nn
+import time
+from torch._inductor import config
+import os
+os.environ["TOKENIZERS_PARALLELISM"] = "false"  # To prevent long warnings :)
+os.environ["TORCHINDUCTOR_FREEZING"] = "1"
 
-class MyModel(nn.Module):
-    def __init__(self, vocab_size=30000, hidden_size=4096):
-        super().__init__()
-        self.embedding = nn.Embedding(vocab_size, hidden_size)
-        self.linear = nn.Linear(hidden_size, vocab_size)
+tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-chat-hf")
+model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-2-7b-chat-hf", torch_dtype=torch.bfloat16)
+ 
+torch._inductor.config.cpp_wrapper = True
+model.forward = torch.compile(model.forward, dynamic=True)
+ 
+batch_size = 1
+input_text = ["The theory of special relativity states "] * batch_size
+print(input_text)
+print(f"batch size is {len(input_text)}")
+tokenizer.pad_token = tokenizer.eos_token
+input_ids = tokenizer(input_text, return_tensors="pt", padding=True)
+input_shape = input_ids["input_ids"].shape
+print(F"input ids shape is {input_shape}")
+ 
+generation_kwargs = {"do_sample": False, "num_beams": 1, "max_new_tokens": 32, "min_new_tokens": 32}
+ 
+outputs = model.generate(**input_ids, **generation_kwargs)
+outputs = model.generate(**input_ids, **generation_kwargs)
+outputs = model.generate(**input_ids, **generation_kwargs)
 
-    def forward(self, input_ids):
-        # Forward pass mimicking a causal LM's token prediction
-        embeddings = self.embedding(input_ids)
-        return self.linear(embeddings)
-
-def my_model_function():
-    # Initialize with bfloat16 as per the original model's dtype
-    model = MyModel()
-    model.to(dtype=torch.bfloat16)
-    return model
-
-def GetInput():
-    # Generate random input_ids with typical Llama-2 vocab size and moderate sequence length
-    B = 1  # Batch size from original script
-    S = 20  # Example sequence length (inferred from context)
-    return torch.randint(0, 30000, (B, S), dtype=torch.long)
-
+start = time.time()
+outputs = model.generate(**input_ids, **generation_kwargs)
+end = time.time()
+print(f"generation latency is {(end-start)*1000} ms")
+print(tokenizer.batch_decode(outputs, skip_special_tokens=True))

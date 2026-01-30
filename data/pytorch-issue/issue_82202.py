@@ -1,26 +1,77 @@
-# torch.rand(1, 2, 28, 28, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
+import torch.nn as nn
+
+# Static quantization of a model consists of the following steps:
+
+#     Fuse modules
+#     Insert Quant/DeQuant Stubs
+#     Prepare the fused module (insert observers before and after layers)
+#     Calibrate the prepared module (pass it representative data)
+#     Convert the calibrated module (replace with quantized version)
 
 import torch
 from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.model = nn.Sequential(
-            nn.Conv2d(2, 64, 3),
-            nn.ReLU(),
-            nn.Conv2d(64, 128, 3),
-            nn.ReLU()
-        )
+backend = "fbgemm"  # running on a x86 CPU. Use "qnnpack" if running on ARM.
 
-    def forward(self, x):
-        return self.model(x)
+m = nn.Sequential(
+     nn.Conv2d(2,64,3),
+     nn.ReLU(),
+     nn.Conv2d(64, 128, 3),
+     nn.ReLU()
+)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+## EAGER MODE
+"""Fuse
+- Inplace fusion replaces the first module in the sequence with the fused module, and the rest with identity modules
+"""
+torch.quantization.fuse_modules(m, ['0','1'], inplace=True) # fuse first Conv-ReLU pair
+torch.quantization.fuse_modules(m, ['2','3'], inplace=True) # fuse second Conv-ReLU pair
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(1, 2, 28, 28, dtype=torch.float32)
+"""Insert stubs"""
+m = nn.Sequential(torch.quantization.QuantStub(), 
+                  *m, 
+                  torch.quantization.DeQuantStub())
 
+"""Prepare"""
+m.qconfig = torch.quantization.get_default_qconfig(backend)
+torch.quantization.prepare(m, inplace=True)
+
+"""Calibrate
+- This example uses random data for convenience. Use representative (validation) data instead.
+"""
+with torch.inference_mode():
+  for _ in range(10):
+    x = torch.rand(1,2, 28, 28)
+    m(x)
+    
+"""Convert"""
+torch.quantization.convert(m, inplace=True)
+
+#print("M=",m)
+#print("M[1]=",m[1])
+"""Check"""
+print(m[1].weight().element_size()) # 1 byte instead of 4 bytes for FP32
+
+
+## FX GRAPH
+from torch.quantization import quantize_fx
+m.eval()
+qconfig_dict = {"": torch.quantization.get_default_qconfig(backend)}
+import copy
+model_to_quantize=copy.deepcopy(m)
+# Prepare
+model_prepared = quantize_fx.prepare_fx(model_to_quantize, qconfig_dict)
+# Calibrate - Use representative (validation) data.
+with torch.inference_mode():
+  for _ in range(10):
+    x = torch.rand(1,2,28, 28)
+    model_prepared(x)
+# quantize
+model_quantized = quantize_fx.convert_fx(model_prepared)
+
+m = nn.Sequential(
+     nn.Conv2d(2,64,3),
+     nn.ReLU(),
+     nn.Conv2d(64, 128, 3),
+     nn.ReLU()
+)

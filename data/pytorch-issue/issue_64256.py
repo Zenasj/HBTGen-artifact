@@ -1,29 +1,35 @@
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-# torch.rand(1, 2, dtype=torch.float64)  # Input shape (B=1, C=2)
-class MyModel(nn.Module):
-    def __init__(self, target, weight):
-        super().__init__()
-        self.register_buffer('target', target)
-        self.register_buffer('weight', weight)
+import torch
+from torch.autograd import gradgradcheck
+from torch.nn.functional import cross_entropy
 
-    def forward(self, input):
-        # Compute cross_entropy loss (internally uses log_softmax + nll_loss)
-        ce_loss = F.cross_entropy(input, self.target, weight=self.weight)
-        # Directly compute nll_loss for explicit comparison
-        log_probs = F.log_softmax(input, dim=1)
-        nll_loss = F.nll_loss(log_probs, self.target, weight=self.weight)
-        return ce_loss, nll_loss  # Return both losses for gradient comparison
+device = "cpu"
 
-def my_model_function():
-    # Initialize with parameters that trigger the bug
-    target = torch.randint(0, 2, (1,), dtype=torch.int64)
-    weight = torch.tensor([1.0, -1.0], dtype=torch.float64)
-    return MyModel(target=target, weight=weight)
+torch.manual_seed(0)
+input = torch.randn((1, 2), device=device, dtype=torch.float64).requires_grad_(True)
+target = torch.randint(0, 2, (1,), device=device, dtype=torch.int64)
+weight = torch.tensor([1.0, -1.0], device=device, dtype=torch.float64)
 
-def GetInput():
-    # Generate input matching the shape required by MyModel
-    return torch.randn((1, 2), dtype=torch.float64)
+gradgradcheck(
+    lambda input, target: cross_entropy(input, target, weight=weight),
+    (input, target),
+)
 
+import torch
+from torch.autograd import gradgradcheck
+from torch.nn.functional import nll_loss, log_softmax
+
+device = "cpu"
+
+torch.manual_seed(0)
+input = log_softmax(
+    torch.randn((1, 2), device=device, dtype=torch.float64), dim=1
+).requires_grad_(True)
+target = torch.randint(0, 2, (1,), device=device, dtype=torch.int64)
+weight = torch.tensor([1.0, -1.0], device=device, dtype=torch.float64)
+
+gradgradcheck(
+    lambda input, target, weight: nll_loss(input, target, weight=weight),
+    (input, target, weight),
+)

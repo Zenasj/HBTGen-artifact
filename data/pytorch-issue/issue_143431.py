@@ -1,19 +1,30 @@
-# torch.rand(2, 12, 16, 32, 32, dtype=torch.float32, device='cuda')
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, image_latent):
-        B = image_latent.size(0)
-        x = torch.rand(B, 12)
-        rand_values = torch.rand(*x.shape)
-        indices = torch.argsort(rand_values, dim=-1)[:, :3 + 3]
-        selected = image_latent[torch.arange(B).unsqueeze(-1), indices]
-        return selected[:, :3]
+def f(image_latent):
+    B = 2
+    num_ref = 3
+    num_tar = 3
+    x = torch.rand(B, 12)
+    indices = torch.argsort(torch.rand(*x.shape), dim=-1)[:, :num_ref + num_tar]
+    return image_latent[torch.arange(B).unsqueeze(-1), indices][:, :num_ref]
 
-def my_model_function():
-    return MyModel()
+torch.manual_seed(54321)
+torch.cuda.manual_seed_all(54321)
+print(torch.compile(backend="aot_eager", fullgraph=True)(f)(torch.randn((2, 12, 16, 32, 32), device='cuda')).sum())
 
-def GetInput():
-    return torch.randn(2, 12, 16, 32, 32, dtype=torch.float32, device='cuda')
+torch.manual_seed(54321)
+torch.cuda.manual_seed_all(54321)
+print(torch.compile(backend="aot_eager", fullgraph=True)(f)(torch.randn((2, 12, 16, 32, 32), device='cuda')).sum())
 
+torch.manual_seed(54321)
+torch.cuda.manual_seed_all(54321)
+print(torch.compile(backend="eager", fullgraph=True)(f)(torch.randn((2, 12, 16, 32, 32), device='cuda')).sum())
+
+torch.manual_seed(54321)
+torch.cuda.manual_seed_all(54321)
+print(torch.compile(backend="eager", fullgraph=True)(f)(torch.randn((2, 12, 16, 32, 32), device='cuda')).sum())
+
+tensor(209.5920, device='cuda:0')
+tensor(209.5920, device='cuda:0')
+tensor(300.4904, device='cuda:0')
+tensor(300.4904, device='cuda:0')

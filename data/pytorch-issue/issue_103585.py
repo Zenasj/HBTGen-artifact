@@ -1,32 +1,38 @@
-# torch.rand(B, S, dtype=torch.long)  # Input shape (batch, sequence_length) with token IDs
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Simplified model structure mimicking GPT-J's problematic component
-        self.embedding = nn.Embedding(100, 768)  # Mock token embeddings
-        self.linear = nn.Linear(768, 768)
-        
-        # Inject a problematic torch.bool parameter to reproduce the error
-        self.bias_bool = nn.Parameter(torch.zeros(768, dtype=torch.bool), requires_grad=False)
-        
-        # Add a stub for the causal LM head (matches original model structure)
-        self.lm_head = nn.Linear(768, 100, bias=False)
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel
+import transformers
+import multiprocessing as mp
+import torch.multiprocessing as mp
+import os
 
-    def forward(self, input_ids):
-        x = self.embedding(input_ids)
-        x = self.linear(x)
-        # Artificially incorporate the problematic bool parameter into computation
-        x = x + self.bias_bool.unsqueeze(0).unsqueeze(1)  # Broadcast to batch/seq dims
-        return self.lm_head(x)
+def setup(rank, world_size):
+    os.environ['MASTER_ADDR'] = 'localhost'
+    os.environ['MASTER_PORT'] = '12355'
 
-def my_model_function():
-    # Returns the model with the problematic bool parameter
-    return MyModel()
+    # initialize the process group
+    dist.init_process_group("gloo", rank=rank, world_size=world_size)
 
-def GetInput():
-    # Generate random token IDs (batch=2, sequence_length=10)
-    return torch.randint(0, 100, (2, 10), dtype=torch.long)
+def cleanup():
+    dist.destroy_process_group()
 
+def demo_basic(rank, world_size):
+    print(f"Running basic DDP example on rank {rank}.")
+    setup(rank, world_size)
+
+    # create model and move it to GPU with id rank
+    gptj = transformers.AutoModelForCausalLM.from_pretrained("EleutherAI/gpt-j-6B")
+    module = DistributedDataParallel(gptj)
+
+    cleanup()
+
+def run_demo(demo_fn, world_size):
+    mp.spawn(demo_fn,
+             args=(world_size,),
+             nprocs=world_size,
+             join=True)
+
+if __name__ == '__main__':
+    world_size = 2
+    run_demo(demo_basic, world_size)

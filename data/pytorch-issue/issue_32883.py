@@ -1,25 +1,32 @@
-# torch.rand(1, dtype=torch.float32)  # Inferred input shape based on scalar operations in test cases
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Submodules encapsulating the two operations from the test cases
-        self.add_op = nn.Identity()  # Placeholder for add operation logic
-        self.mul_op = nn.Identity()  # Placeholder for mul operation logic
-    
-    def forward(self, x):
-        # Simulate the operations under profiling (add and mul on input)
-        add_result = torch.add(x, x)
-        mul_result = torch.mul(x, x)
-        return add_result, mul_result
+def test_two_threads_crash(self):
+        import threading
+        def torch_adds():
+            with torch.autograd.profiler.profile() as prof:
+                return torch.add(1,1)
+            print(prof.key_averages().table(sort_by="self_cpu_time_total"))
+        def torch_mul():
+            with torch.autograd.profiler.profile() as p1:
+                torch.mul(1,1)
 
-def my_model_function():
-    # Returns the fused model containing both operations
-    return MyModel()
+        t1 = threading.Thread(target=torch_adds, args=())
+        t2 = threading.Thread(target=torch_mul, args=())
+        t1.start() ; t2.start()
+        t1.join() ; t2.join()
 
-def GetInput():
-    # Returns a scalar tensor to match the test case's minimal operations
-    return torch.rand(1, dtype=torch.float32)
+def test_multithread_profiler(self):
+        import threading
+        def torch_mul():
+            # yield
+            import time ; time.sleep(0)
+            return torch.mul(1,1)
 
+        t2 = threading.Thread(target=torch_mul, args=())
+        t2.start()
+        with torch.autograd.profiler.profile() as prof:
+            import time ; time.sleep(0) # yield
+            torch.add(1,1)
+
+        t2.join()
+        print(prof.key_averages().table(sort_by="self_cpu_time_total"))

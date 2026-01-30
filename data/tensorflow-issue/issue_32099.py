@@ -1,32 +1,35 @@
-# tf.random.normal((B, 112, 112, 3), dtype=tf.float32) ← Input shape inferred from data tensor in issue example
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
+mirrored_strategy = tf.distribute.MirroredStrategy()
+def get_net():
+    net = tf.keras.Sequential()
+    net.add(tf.keras.layers.Conv2D(filters=10,
+                                   kernel_size=(3, 3)))
+    net.add(tf.keras.layers.Dense(1))
+    return net
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Following the issue's get_net Sequential model but reconstructing correctly
-        self.conv = tf.keras.layers.Conv2D(filters=10, kernel_size=(3, 3))
-        # The Dense layer after Conv2D needs flattening or global pooling - assumed flattening here
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense = tf.keras.layers.Dense(1)
+data = tf.random.normal(shape=(1280, 112, 112, 3))
+label = tf.random.normal(shape=(1280, ))
+multi_db = tf.data.Dataset.from_tensor_slices((data, label)).batch(80)
+dist_dataset = mirrored_strategy.experimental_distribute_dataset(multi_db)
 
-    def call(self, inputs, training=False):
-        x = self.conv(inputs)
-        x = self.flatten(x)
-        output = self.dense(x)
-        return output
+with mirrored_strategy.scope():
+    net = get_net()
+    @tf.function
+    def replica_fn(input):
+        d, l = input
+        return net(d)
 
+    @tf.function
+    def distribute_train_epoch(dataset):
+        total_result = 0
+        for x in dataset:
+            per_replica_result = mirrored_strategy.experimental_run_v2(replica_fn, args=(x,))
+            total_result = mirrored_strategy.reduce(tf.distribute.ReduceOp.SUM, per_replica_result, axis=None)
+        return total_result
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-
-def GetInput():
-    # Return a random tensor input matching the input expected by MyModel:
-    # Shape: [batch_size, 112, 112, 3] as per issue data example
-    # Using batch size similar to example (e.g., 80 or 128)
-    batch_size = 80
-    return tf.random.normal(shape=(batch_size, 112, 112, 3), dtype=tf.float32)
-
+    for _ in range(100):
+        f = distribute_train_epoch(dist_dataset)

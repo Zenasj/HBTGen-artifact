@@ -1,14 +1,18 @@
-# torch.rand(B, 3, 1, 1, dtype=torch.float32)
-import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
+import onnx
+import onnx.numpy_helper
+import torch
+
+class Model(torch.nn.Module):
     def forward(self, x):
         return x.expand((-1, 3, 3, 1))
 
-def my_model_function():
-    return MyModel()
+model = Model()
+torch.onnx.export(model, torch.rand(3, 3, 1, 1), 'expand.onnx')
 
-def GetInput():
-    return torch.rand(3, 3, 1, 1)  # Matches original test input dimensions (B=3, C=3, H=1, W=1)
-
+m = onnx.load('expand.onnx')
+n = m.graph.node[0]
+assert n.op_type == 'Constant'
+# [-1  3  3  1]
+print(onnx.numpy_helper.to_array(n.attribute[0].t))

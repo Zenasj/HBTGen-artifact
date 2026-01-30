@@ -1,31 +1,25 @@
-# torch.randint(0, 128, (128,), dtype=torch.int, device='cuda'), torch.randint(0, 128, (128, 128), dtype=torch.int, device='cuda')
 import torch
-from torch import nn
+torch.set_default_device('cuda')
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.num_rows = 128
-        self.num_cols = 128
-        self.device = 'cuda'
+num_rows = 128
+num_cols = 128
+device='cuda'
+def create_dense_one(kv_num_blocks, kv_indices):
+    dense_mask = kv_indices.new_zeros(num_rows, num_cols + 1, dtype=torch.int32)
 
-    def forward(self, inputs):
-        kv_num_blocks, kv_indices = inputs
-        dense_mask = kv_indices.new_zeros(self.num_rows, self.num_cols + 1, dtype=torch.int32)
-        row_indices = torch.arange(self.num_rows, dtype=torch.int, device=self.device).unsqueeze(-1)
-        col_indices = torch.arange(self.num_cols, dtype=torch.int, device=self.device)
-        index_mask = col_indices < kv_num_blocks.unsqueeze(-1)
+    row_indices = torch.arange(
+        num_rows, dtype=torch.int, device=device
+    ).unsqueeze(-1)
+    col_indices = torch.arange(num_cols, dtype=torch.int, device=device)
+    index_mask = col_indices < kv_num_blocks.unsqueeze(-1)
 
-        valid_indices = torch.where(index_mask, kv_indices, self.num_cols)
+    # We write to one spot "out of bounds"
+    valid_indices = torch.where(index_mask, kv_indices, num_cols)
 
-        dense_mask[row_indices, valid_indices] = 1
-        return dense_mask[:, :self.num_cols]
+    # set the values in 'a' to 1 where the indices are valid
+    dense_mask[row_indices, valid_indices] = 1
+    return dense_mask[:, :num_cols]
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    kv_num_blocks = torch.randint(0, 128, (128,), dtype=torch.int, device='cuda')
-    kv_indices = torch.randint(0, 128, (128, 128), dtype=torch.int, device='cuda')
-    return (kv_num_blocks, kv_indices)
-
+kv_num_blocks = torch.zeros(3, 128, device='cuda', dtype=torch.int)
+kv_indices = torch.zeros(3, 128, 128, device='cuda', dtype=torch.int)
+out = torch.vmap(create_dense_one, in_dims=(0, 0))(kv_num_blocks, kv_indices)

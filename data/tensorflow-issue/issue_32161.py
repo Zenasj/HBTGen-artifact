@@ -1,46 +1,58 @@
-# tf.random.uniform((B, 2), dtype=tf.float32)  # B = batch size dynamic, input shape (None, 2)
+import numpy as np
+import pandas as pd
 
-import tensorflow as tf
+libmodel = np.ctypeslib.load_library('libmodel', '/folder/org_tensorflow/')
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Recreate the model architecture from the issue:
-        # Dense(5) with kernel_initializer='uniform', input shape (2,), batch size fixed to 1 during compilation,
-        # BatchNormalization, PReLU, Dropout(0.5), Dense(1) with kernel_initializer='normal'
-        # To support dynamic batch size, we omit fixed batch_size here; rely on dynamic batching at runtime.
+libmodel.run.argtypes = [np.ctypeslib.ndpointer(np.float32, ndim=2, shape=(1,5), flags=('c', 'a')),
+np.ctypeslib.ndpointer(np.float32, ndim=2, shape=(1,5), flags=('c', 'a', 'w')),
+np.ctypeslib.ctypes.c_float,
+np.ctypeslib.ctypes.c_float]
 
-        self.dense_1 = tf.keras.layers.Dense(
-            5, kernel_initializer='uniform', input_shape=(2,), name='dense_1')
-        self.batch_norm = tf.keras.layers.BatchNormalization(name='batch_normalization_1')
-        self.prelu = tf.keras.layers.PReLU(name='p_re_lu_1')
-        self.dropout = tf.keras.layers.Dropout(0.5, name='dropout_1')
-        self.dense_2 = tf.keras.layers.Dense(
-            1, kernel_initializer='normal', name='dense_2')
+df = pd.read_csv('/folder/trial.csv', header = 0, index_col = None)
+feats = pd.read_table('/folder/feature_list.txt', header=None, index_col = None)
+feats = feats.iloc[:,0].tolist()
+df = df.reindex(columns=feats, fill_value=0)
 
-    def call(self, inputs, training=False):
-        x = self.dense_1(inputs)
-        x = self.batch_norm(x, training=training)
-        x = self.prelu(x)
-        x = self.dropout(x, training=training)
-        x = self.dense_2(x)
-        return x
+x = np.require(df.iloc[0,:], np.float32, ('c', 'a'))
+y = np.require(np.zeros((1,1)), np.float32, ('c', 'a', 'w'))
 
-def my_model_function():
-    # Create and return an instance of MyModel.
-    # We do not load weights here since original weights aren't provided in the issue,
-    # but in practice weights could be loaded from a saved h5 or checkpoint.
-    return MyModel()
+x = x.reshape((1,5))
+libmodel.run(x, y, x.size, y.size)
 
-def GetInput():
-    # Return a random input tensor matching model input shape: (batch_size, 2)
-    #
-    # Due to the discussion around batch fixed to 1 during compilation,
-    # but want to allow dynamic batch for normal TF usage,
-    # we choose batch size = 1 as the simplest working example.
-    #
-    # The input dtype should be float32 as indicated by usage in numpy arrays.
+load('@org_tensorflow//tensorflow/compiler/aot:tfcompile.bzl', 'tf_library')
 
-    # Generate a batch of one 2-element vector with uniform random float32 values:
-    return tf.random.uniform((1, 2), dtype=tf.float32)
+tf_library(
+    name = 'graph',
+    config = 'graph.config.pbtxt',
+    cpp_class = 'Graph',
+    graph = 'graph.pb',
+)
 
+cc_binary(
+    name = "libmodel.so",
+    srcs = ["graph.cc"],
+    deps = [":graph", "//third_party/eigen3"],
+    linkopts = ["-lpthread"],
+    linkshared = 1,
+    copts = ["-fPIC"],
+)
+
+import numpy as np
+
+print('Starting script')
+libmodel = np.ctypeslib.load_library('libmodel', '/tensorflow/bazel-bin/external/org_tensorflow/')
+
+libmodel.run.argtypes = [np.ctypeslib.ndpointer(np.float32, ndim=2, shape=(1,2), flags=('c', 'a')),
+np.ctypeslib.ndpointer(np.float32, ndim=2, shape=(1,1), flags=('c', 'a', 'w')),
+np.ctypeslib.ctypes.c_float,
+np.ctypeslib.ctypes.c_float]
+
+x = np.require(np.zeros((1,2)), np.float32, ('c', 'a'))
+y = np.require(np.zeros((1,1)), np.float32, ('c', 'a', 'w'))
+
+res = libmodel.run(x, y, x.size, y.size)
+print(res)
+
+x = np.require(np.zeros((1,2)), np.float32, ('c', 'a'))
+y = np.require(np.zeros((1,1)), np.float32, ('c', 'a', 'w'))
+res = libmodel.run(x, y, x.size, y.size)

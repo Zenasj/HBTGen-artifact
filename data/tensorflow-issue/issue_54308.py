@@ -1,54 +1,53 @@
-# tf.random.uniform((B,), dtype=tf.string) ← Input is a batch of strings (tweets)
+from tensorflow import keras
+from tensorflow.keras import layers
 
+tensorflow-metal
+
+import pandas as pd
 import tensorflow as tf
 import tensorflow_hub as hub
+import tensorflow_text as text
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+import os
+import sys
+import inspect
+currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
+parentdir = os.path.dirname(currentdir)
+sys.path.insert(0, parentdir) 
+from MLUtils import MLUtils
+utils = MLUtils()
 
-class MyModel(tf.keras.Model):
-    def __init__(self, num_labels):
-        super().__init__()
-        # Load BERT preprocessing and encoder layers from TF Hub
-        self.bert_preprocess = hub.KerasLayer(
-            "https://tfhub.dev/tensorflow/bert_en_uncased_preprocess/3",
-            name="bert_preprocess"
-        )
-        self.bert_encoder = hub.KerasLayer(
-            "https://tfhub.dev/tensorflow/bert_en_uncased_L-12_H-768_A-12/4",
-            trainable=True,  # Typically BERT encoder is fine-tuned
-            name="bert_encoder"
-        )
-        # Dropout and classification head layers
-        self.dropout = tf.keras.layers.Dropout(0.1, name="dropout")
-        self.classifier = tf.keras.layers.Dense(num_labels, activation="softmax", name="output")
+ds = pd.read_csv('resources/tweets.csv')
+ds.drop('Unnamed: 0', axis=1, inplace=True)
+label_encoder = LabelEncoder()
+ds['label'] = label_encoder.fit_transform(ds['label'])
+le_name_mapping = dict(zip(label_encoder.transform(label_encoder.classes_), label_encoder.classes_))
+num_labels = len(le_name_mapping)
+X_train, X_test, Y_train, Y_test = train_test_split(ds['tweet'], ds['label'], test_size = 0.2, stratify=ds['label'], random_state=42)
 
-    def call(self, inputs, training=False):
-        # inputs: batch of strings of shape (batch_size,)
-        x = self.bert_preprocess(inputs)  # Preprocess input string tensor for BERT
-        bert_outputs = self.bert_encoder(x)
-        pooled_output = bert_outputs["pooled_output"]  # [batch_size, 768]
-        x = self.dropout(pooled_output, training=training)
-        logits = self.classifier(x)
-        return logits
+bert_preprocess = hub.KerasLayer('https://tfhub.dev/tensorflow/bert_en_uncased_preprocess/3')
+bert_encoder = hub.KerasLayer('https://tfhub.dev/tensorflow/bert_en_uncased_L-12_H-768_A-12/4')
 
+# Bert layers
+text_input = tf.keras.layers.Input(shape=(), dtype=tf.string, name="text")
+preprocessed_text = bert_preprocess(text_input)
+outputs = bert_encoder(preprocessed_text)
 
-def my_model_function():
-    # Assumption: number of labels is 2 for binary classification by default.
-    # In practice, this should match the dataset.
-    num_labels = 2
-    return MyModel(num_labels)
+# Neural Network Layers
+l = tf.keras.layers.Dropout(0.1, name='dropout')(outputs['pooled_output'])
+l = tf.keras.layers.Dense(num_labels, name='output', activation='softmax')(l)
+model = tf.keras.Model(inputs=[text_input], outputs=[l])
 
+epochs = 15
+batch_size = 32
+steps_per_epoch = X_train.shape[0] // batch_size
+metrics = [tf.keras.metrics.SparseCategoricalAccuracy('accuracy', dtype=tf.float32)]
+loss = tf.keras.losses.SparseCategoricalCrossentropy()
 
-def GetInput():
-    # Return a batch of string tensors as input, shape (batch_size,).
-    # We'll generate 4 dummy samples of arbitrary strings.
-    batch_size = 4
-    sample_texts = [
-        "This is a sample tweet for testing.",
-        "TensorFlow models are great for NLP tasks.",
-        "Apple M1 GPU with tensorflow-metal is fast!",
-        "How to fix Check failed: IsAligned() ptr error?"
-    ]
-    # Pad or truncate to batch_size
-    sample_texts = sample_texts[:batch_size]
-    # Convert list of strings to Tensor of dtype tf.string
-    return tf.constant(sample_texts, dtype=tf.string)
-
+# Model training
+model.compile(optimizer='adam', loss=loss, metrics=metrics)
+model.fit(X_train, Y_train, epochs=epochs, batch_size=batch_size)
+model.evaluate(X_test, Y_test)
+model.save('text_classifier')

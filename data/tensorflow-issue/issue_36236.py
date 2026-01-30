@@ -1,28 +1,51 @@
-# tf.random.uniform((B, T, 1), dtype=tf.float32)
+from tensorflow import keras
+from tensorflow.keras import layers
+
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # GRU layer with 10 units
-        self.gru = tf.keras.layers.GRU(10)
-        # Dense output layer with 1 unit
-        self.dense = tf.keras.layers.Dense(1)
+inputs = tf.keras.layers.Input(shape=[None, 1], dtype=tf.float32)
+hidden = tf.keras.layers.GRU(10)(inputs)
+hidden = tf.gather(hidden, [0])
+output = tf.keras.layers.Dense(1)(hidden)
+model = tf.keras.Model(inputs=inputs, outputs=output)
 
-    def call(self, inputs, training=False):
-        # Run the GRU on inputs: shape (batch, time, 1) -> (batch, units)
-        hidden = self.gru(inputs)
-        # Workaround for gradient issue: multiply by 1 to force conversion of IndexedSlices to Tensor
-        hidden = tf.gather(hidden * 1, [0])
-        output = self.dense(hidden)
-        return output
+@tf.function
+def train(x, y):
+    with tf.GradientTape() as tape:
+        predictions = model(x, training=True)
+        loss = tf.losses.mean_squared_error(y, predictions)
+    gradients = tape.gradient(loss, model.trainable_variables)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+train(tf.constant([[[1], [2], [3]]], dtype=tf.float32), tf.constant([[1]], dtype=tf.float32))
 
-def GetInput():
-    # Return a random input tensor matching shape (batch=1, time_steps=3, features=1)
-    # Matches example input from the original issue
-    return tf.random.uniform((1, 3, 1), dtype=tf.float32)
+inputs = tf.keras.layers.Input(shape=[None, 1], dtype=tf.float32)
+hidden = tf.keras.layers.GRU(10)(inputs)
+hidden = tf.gather(hidden * 1, [0])
+output = tf.keras.layers.Dense(1)(hidden)
+model = tf.keras.Model(inputs=inputs, outputs=output)
 
+@tf.function
+def train(x, y):
+    with tf.GradientTape() as tape:
+        predictions = model(x, training=True)
+        loss = tf.losses.mean_squared_error(y, predictions)
+    gradients = tape.gradient(loss, model.trainable_variables)
+
+train(tf.constant([[[1], [2], [3]]], dtype=tf.float32), tf.constant([[1]], dtype=tf.float32))
+
+tensor_inputs.append(ops.convert_to_tensor(arg))
+
+@tf.function
+def summing_rnn(inputs):
+  return tf.reduce_sum(inputs, axis=1)
+
+@tf.function
+def gradients(inputs):
+  with tf.GradientTape() as tape:
+    tape.watch(inputs)
+    hidden = summing_rnn(inputs)
+    hidden = tf.gather(hidden, tf.constant([0]))
+    loss = tf.reduce_mean(hidden)
+  return tape.gradient(loss, inputs)
+
+gradients(tf.constant([[[1.0], [2.0]]])) # No error is raised

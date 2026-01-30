@@ -1,6 +1,4 @@
-# torch.rand(B=1, C=2, H=1, W=1, dtype=torch.float32, requires_grad=True)
 import torch
-from torch import nn
 from torch.autograd import Function
 import torch._dynamo
 
@@ -15,13 +13,9 @@ class Foo(Function):
     def backward(ctx, grad_out):
         return grad_out * ctx.x0
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return Foo.apply(x)
 
-def my_model_function():
-    return MyModel()
+@torch.compile(backend="eager", fullgraph=True, dynamic=True)
+def foo(x):
+    return Foo.apply(x)
 
-def GetInput():
-    return torch.rand(1, 2, 1, 1, dtype=torch.float32, requires_grad=True)
-
+foo(torch.randn(2, requires_grad=True))

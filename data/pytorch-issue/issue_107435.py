@@ -1,55 +1,121 @@
-# torch.rand(B, C, H, W, dtype=...)  # Add a comment line at the top with the inferred input shape
-import torch
 import torch.nn as nn
-import argparse
 
-# Define the arguments for the model
-parser = argparse.ArgumentParser()
+class MyLayer(torch.nn.Module):
+    def __init__(self):
+        super(MyLayer, self).__init__()
+        self.mlp_up_proj = nn.Linear(args.hs, 4 * args.hs)
+        self.mlp_act = nn.GELU(approximate='none')
+        self.mlp_down_proj = nn.Linear(4*args.hs, args.hs)
+        
+    def forward(self, x):
+        y1 = self.mlp_up_proj(x)
+        y2 = self.mlp_act(y1)
+        y3 = self.mlp_down_proj(y2)
+        return y3
+
+# it does not work
+class MyLayerImpl(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, x, mlp_up_proj, mlp_act, mlp_down_proj):
+        with torch.enable_grad():
+            y1 = mlp_up_proj(x)
+            y2 = mlp_act(y1)
+            y3 = mlp_down_proj(y2)
+        y4 = y3.detach()
+        ctx.save_for_backward(x, y1, y2, y3)
+        return y4
+
+    @staticmethod
+    def backward(ctx, dout, *args):
+        x, y1, y2, y3 = ctx.saved_tensors
+        din = y3.backward(dout)
+        return din, None, None, None
+    
+
+class MyLayer(torch.nn.Module):
+    def __init__(self):
+        super(MyLayer, self).__init__()
+        self.mlp_up_proj = nn.Linear(args.hs, 4 * args.hs)
+        self.mlp_act = nn.GELU(approximate='none')
+        self.mlp_down_proj = nn.Linear(4*args.hs, args.hs)
+        
+    def forward(self, x):
+        return MyLayerImpl.apply(x, self.mlp_up_proj, self.mlp_act, self.mlp_down_proj)
+
+import torch
+import argparse
+from torch import nn
+import torch.nn.functional as F
+from torch.profiler import profile, record_function, ProfilerActivity
+
+torch.manual_seed(0)
+
+parser = argparse.ArgumentParser(
+                    prog='ProgramName',
+                    description='What the program does',
+                    epilog='Text at the bottom of help')
 parser.add_argument('--mbs', type=int, default=2)
 parser.add_argument('--seq', type=int, default=8)
 parser.add_argument('--hs', type=int, default=4)
-args = parser.parse_args([])  # Use an empty list to avoid using command-line arguments
+parser.add_argument('--device', type=str, default='cuda')
+args = parser.parse_args()
 
-class MyModel(nn.Module):
+
+for k, v in vars(args).items():
+    print(k, '=', v)
+
+    
+class MyLayer(torch.nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
+        super(MyLayer, self).__init__()
         self.mlp_up_proj = nn.Linear(args.hs, 4 * args.hs)
-        self.mlp_act = nn.GELU(approximate='none')
-        self.mlp_down_proj = nn.Linear(4 * args.hs, args.hs)
-
+        self.mlp_down_proj = nn.Linear(4*args.hs, args.hs)
+        
     def forward(self, x):
-        with torch.autograd.profiler.record_function("xxxxmylayer:forward"):
-            y1 = self.mlp_up_proj(x)
-            y2 = self.mlp_act(y1)
-            y3 = self.mlp_down_proj(y2)
-            return y3
+        with record_function("xxxxmylayer:forward"):
+            y = self.mlp_up_proj(x)
+            y = self.mlp_down_proj(y)
+            return y
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    B, C, H, W = args.mbs, 1, args.seq, args.hs
-    return torch.randn(B, C, H, W, dtype=torch.float32, requires_grad=True)
+class TestNet(torch.nn.Module):
+    def __init__(self):
+        super(TestNet, self).__init__()
+        self.Wqkv = nn.Linear(args.hs, 3 * args.hs)
+        self.out_proj = nn.Linear(args.hs, args.hs)
+        self.my_layer1 = MyLayer()
+        self.my_layer2 = MyLayer()
+        
+    def forward(self, x):
+        qkv = self.Wqkv(x)
+        query, key, value = qkv.chunk(3, dim=2)
+        new_v = query + key + value
+        proj = self.out_proj(new_v)
+        proj = self.my_layer1(proj)
+        proj = self.my_layer2(proj)
+        return proj
 
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
-# loss = output.sum()
-# loss.backward()
 
-# ### Explanation:
-# 1. **MyModel Class**:
-#    - The `MyModel` class is defined to encapsulate the `MyLayer` logic.
-#    - The `forward` method includes the `record_function` to label the forward pass for profiling.
-# 2 . **my_model_function**:
-#    - This function returns an instance of `MyModel`.
-# 3. **GetInput Function**:
-#    - This function generates a random tensor that matches the input shape expected by `MyModel`.
-#    - The input shape is inferred from the provided arguments (`mbs`, `seq`, `hs`).
-# 4. **Profiler Usage**:
-#    - The `record_function` is used in the `forward` method to label the forward pass for profiling.
-#    - The backward pass is handled by PyTorch's autograd, and the profiler can be used to trace the backward pass as well.
-# This code is ready to use with `torch.compile(MyModel())(GetInput())` and can be profiled to get detailed performance information.
+def main():
+    model = TestNet()
+    model.bfloat16().to(args.device)
+
+    x = torch.randn([args.mbs, args.seq, args.hs]).bfloat16().to(args.device)
+    x.requires_grad_()
+    
+    # warm up
+    for i in range(3):
+        y = model(x)
+        loss = y.sum()
+        loss.backward()
+    
+    with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], 
+                 with_stack=True,
+                 on_trace_ready=torch.profiler.tensorboard_trace_handler('./timeline', worker_name='worker0')) as prof:
+        y = model(x)
+        loss = y.sum()
+        loss.backward()
+
+    
+if __name__ == "__main__":
+    main()

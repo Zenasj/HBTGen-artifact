@@ -1,18 +1,18 @@
-# torch.rand(10, 1, dtype=torch.float)
 import torch
-from torch import nn
+from torch.multiprocessing import Queue, Process
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        
-    def forward(self, x):
-        return x  # Identity model to demonstrate tensor generation
+def simple_agent(queue):
+    for i in range(10):
+        c = torch.Tensor([i]) # passing tensor will lead to error
+        #c = i                # constant is OK
+        queue.put(c)
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Returns a tensor of shape (10,1) to simulate input for MyModel
-    return torch.arange(10).unsqueeze(1).float()
-
+def proc():
+    queue = Queue(20)
+    subp = Process(target=simple_agent, args=(queue,))
+    subp.start()
+    time.sleep(1) # make sure subprocess has exited
+    # if do not sleep, result will be OK
+    for i in range(10):
+        v = queue.get()
+        print(i, v)

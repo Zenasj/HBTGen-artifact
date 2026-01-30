@@ -1,85 +1,66 @@
-# tf.random.uniform((100, 8), dtype=tf.float32) ← Inferred input shape from example usage in the issue (100 samples, 8 features)
+import numpy as np
+import random
 
-import tensorflow as tf
+#Scenario 1: Lower case accuracy (accuracy displayed is proper)
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Simple feedforward model as per the example in issue:
-        self.dense1 = tf.keras.layers.Dense(10, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(10, activation='relu')
-        self.dense3 = tf.keras.layers.Dense(1, activation='sigmoid')
+from tensorflow import keras
+from tensorflow.keras import layers
 
-        # Metrics as per discussed issue:
-        # - The bug arises when using capitalized "Accuracy" string metric vs. lowercase 'accuracy'.
-        # - Here, we instantiate both metrics explicitly to show the difference.
-        self.accuracy_metric_correct = tf.keras.metrics.MeanMetricWrapper(
-            tf.keras.metrics.BinaryAccuracy(), name='accuracy_wrapped'
-        )
-        self.accuracy_metric_incorrect = tf.keras.metrics.Accuracy(name='accuracy_raw')
+X_train = np.random.random((100,8))
+y_train = np.random.randint(0,2,(100,))
 
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        output = self.dense3(x)
+model = keras.Sequential(
+    [
+     layers.Dense(10,activation="relu",input_shape=(8,)),
+     layers.Dense(10,activation="relu"),
+     layers.Dense(1,activation="sigmoid")
+    ]
+)
 
-        # Update both metrics
-        # `accuracy_metric_correct` expects y_true and y_pred, so assume y_true is passed externally.
-        # But since call normally only processes inputs, returning just predictions here.
-        return output
+model.compile(optimizer='adam',loss='binary_crossentropy',metrics=['accuracy'])
+model.fit(X_train,y_train,batch_size=64,epochs=2,verbose=2)
+print(model.metrics)
 
-    def train_step(self, data):
-        # Unpack data: inputs and labels
-        x, y = data
+# Epoch 1/2
+# 2/2 - 0s - loss: 0.6900 - accuracy: 0.4900
+# Epoch 2/2
+# 2/2 - 0s - loss: 0.6892 - accuracy: 0.5000   #<------
+        
+# [<tensorflow.python.keras.metrics.Mean object at 0x7f90e6626d90>, 
+#  <tensorflow.python.keras.metrics.MeanMetricWrapper object at 0x7f90e5ac73a0>]  #<------
 
-        with tf.GradientTape() as tape:
-            y_pred = self(x, training=True)
-            loss = self.compiled_loss(y, y_pred, regularization_losses=self.losses)
+#Scenario 2: Uppercase case Accuracy (accuracy displayed / epoch always 0)
 
-        # Compute gradients and optimize
-        gradients = tape.gradient(loss, self.trainable_variables)
-        self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
+from tensorflow import keras
+from tensorflow.keras import layers
 
-        # Update metrics:
-        # The MeanMetricWrapper wraps a BinaryAccuracy metric and gives correct accuracy
-        self.accuracy_metric_correct.update_state(y, y_pred)
-        # The raw Accuracy metric just compares argmax or exact values - often inappropriate here, will give zero
-        # For binary outputs, threshold predictions at 0.5 for update_state of Accuracy
-        y_pred_labels = tf.cast(y_pred > 0.5, tf.int32)
-        y_int = tf.cast(y, tf.int32)
-        self.accuracy_metric_incorrect.update_state(y_int, y_pred_labels)
+X_train = np.random.random((100,8))
+y_train = np.random.randint(0,2,(100,))
 
-        # Update compiled loss and other metrics
-        self.compiled_metrics.update_state(y, y_pred)
+model = keras.Sequential(
+    [
+     layers.Dense(10,activation="relu",input_shape=(8,)),
+     layers.Dense(10,activation="relu"),
+     layers.Dense(1,activation="sigmoid")
+    ]
+)
 
-        # Prepare a dictionary of metrics for logs including both "correct" and "incorrect" accuracy to expose the issue
-        logs = {m.name: m.result() for m in self.metrics}
-        logs[self.accuracy_metric_correct.name] = self.accuracy_metric_correct.result()
-        logs[self.accuracy_metric_incorrect.name] = self.accuracy_metric_incorrect.result()
+model.compile(optimizer='adam',loss='binary_crossentropy',metrics=['Accuracy'])
+model.fit(X_train,y_train,batch_size=64,epochs=2,verbose=2)
+print(model.metrics)
 
-        return logs
+# Epoch 1/2
+# 2/2 - 0s - loss: 0.7021 - accuracy: 0.0000e+00
+# Epoch 2/2
+# 2/2 - 0s - loss: 0.6999 - accuracy: 0.0000e+00   #<------
+        
+# [<tensorflow.python.keras.metrics.Mean object at 0x7f90c80e4bb0>, 
+#  <tensorflow.python.keras.metrics.Accuracy object at 0x7f90ca039a30>]  #<------
 
-    def reset_metrics(self):
-        super().reset_metrics()
-        self.accuracy_metric_correct.reset_states()
-        self.accuracy_metric_incorrect.reset_states()
+#With lower case accuracy
+model.compile(optimizer='adam',loss='binary_crossentropy',metrics=['accuracy'])
+print(model.metrics)
 
-def my_model_function():
-    # Return an instance of MyModel with standard compile config similar to example:
-    model = MyModel()
-    model.compile(
-        optimizer='adam',
-        loss='binary_crossentropy',
-        # Metrics as blank because we handle metrics explicitly in train_step
-        metrics=[]
-    )
-    return model
-
-def GetInput():
-    # Return a random input tensor matching shape (batch_size=100, features=8)
-    # Also return matching labels as required for training and metrics calculation
-    # Labels are binary targets (0 or 1)
-    inputs = tf.random.uniform((100, 8), dtype=tf.float32)
-    labels = tf.random.uniform((100,), maxval=2, dtype=tf.int32)  # binary labels 0 or 1
-    return inputs, tf.cast(labels, tf.float32)
-
+#With upper case Accuracy
+model.compile(optimizer='adam',loss='binary_crossentropy',metrics=['Accuracy'])
+print(model.metrics)

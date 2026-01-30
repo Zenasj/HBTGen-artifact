@@ -1,25 +1,28 @@
-# tf.constant(scalar, dtype=tf.complex128) ← Input is a complex128 scalar tensor
-
 import tensorflow as tf
+import traceback
 
-class MyModel(tf.keras.Model):
+class Network(tf.Module):
     def __init__(self):
         super().__init__()
 
-    @tf.function(jit_compile=True)  # mimic the JIT compilation context of the issue
-    def call(self, x):
-        # Apply Acos then Exp raw ops, as per issue repro code
-        x = tf.raw_ops.Acos(x=x)
-        x = tf.raw_ops.Exp(x=x)
-        return x
+    @tf.function(jit_compile=True)
+    def __call__(self, x):
+      
+      x = tf.raw_ops.Acos(x=x, )        
+      x = tf.raw_ops.Exp(x=x, )        
+      return x
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+m = Network()
+dic = {'ele': (-731778.6211090556-59304.1731637927j), 'size': [], 'dtype': tf.complex128}
+inp = {
+    "x": tf.constant(dic['ele'], dtype=tf.as_dtype(dic['dtype'])),
+}
 
-def GetInput():
-    # Return a complex128 scalar tensor to match the input the model expects
-    # Using the exact complex number from the original issue repro code
-    ele = -731778.6211090556 - 59304.1731637927j
-    return tf.constant(ele, dtype=tf.complex128)
+with tf.device('/CPU:0'):
+    tf.config.run_functions_eagerly(True)
+    no_op_res = m(**inp)
+    tf.config.run_functions_eagerly(False)
+    with tf.device('/CPU:0'):
+        op_res = m(**inp)
 
+    tf.debugging.assert_near(tf.cast(no_op_res, tf.float64), tf.cast(op_res, tf.float64), atol=0.001, rtol=0.001)

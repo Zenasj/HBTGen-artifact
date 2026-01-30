@@ -1,31 +1,18 @@
-# torch.rand(100, 3, 1, 10, 10, dtype=torch.float32)
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.norm_cpu = nn.InstanceNorm3d(3).to('cpu')
-        self.norm_cuda = nn.InstanceNorm3d(3).to('cuda')
+py
+import torch
+torch.manual_seed(0)
 
-    def forward(self, x):
-        # Process on CPU
-        x_cpu = x.to('cpu', non_blocking=True)
-        out_cpu = self.norm_cpu(x_cpu)
-        
-        # Process on CUDA
-        x_cuda = x.to('cuda', non_blocking=True)
-        out_cuda = self.norm_cuda(x_cuda)
-        
-        # Compute maximum difference between outputs
-        max_diff = torch.max(torch.abs(out_cpu - out_cuda.to('cpu')))  # Move CUDA result to CPU for comparison
-        
-        # Return True if difference is within expected floating-point tolerance (1e-7)
-        return max_diff <= 1e-7
+def f(input_data, device='cpu'):
+    model = torch.nn.InstanceNorm3d(3, device=device)
+    out = model(input_data)
+    return out.sum()
 
-def my_model_function():
-    return MyModel()
+input_data = torch.rand(100, 3, 1, 10, 10)
 
-def GetInput():
-    return torch.rand(100, 3, 1, 10, 10, dtype=torch.float32)
+inp_cpu = input_data.clone().cpu()
+inp_cuda = input_data.clone().cuda()
 
+print(f(inp_cpu)) # tensor(0.0001)
+print(f(inp_cuda, 'cuda')) # tensor(0.0014, device='cuda:0')

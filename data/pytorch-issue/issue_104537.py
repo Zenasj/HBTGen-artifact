@@ -1,27 +1,14 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Assumed input shape for a typical image-like model
-import torch
-import torch.nn as nn
+TestEnvironment.def_flag("TEST_WITH_TORCHINDUCTOR", env_var="PYTORCH_TEST_WITH_INDUCTOR")
+# can track implication relationships to avoid adding unnecessary flags to the repro
+TestEnvironment.def_flag(
+    "TEST_WITH_TORCHDYNAMO",
+    env_var="PYTORCH_TEST_WITH_DYNAMO",
+    implied_by_fn=lambda: TEST_WITH_TORCHINDUCTOR or TEST_WITH_AOT_EAGER)
+# can use include_in_repro=False to keep the flag from appearing in the repro command
+TestEnvironment.def_flag(
+    "DISABLE_RUNNING_SCRIPT_CHK", env_var="PYTORCH_DISABLE_RUNNING_SCRIPT_CHK", include_in_repro=False)
+# the default default value is False, but this can be changed
+TestEnvironment.def_flag(
+    "PRINT_REPRO_ON_FAILURE", env_var="PYTORCH_PRINT_REPRO_ON_FAILURE", default=(not IS_FBCODE), include_in_repro=False)
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Simple CNN structure as a placeholder, inferred from CUDA test context
-        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1)
-        self.relu = nn.ReLU()
-        self.fc = nn.Linear(16 * 224 * 224, 10)  # Example output layer
-
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.relu(x)
-        x = x.view(x.size(0), -1)
-        x = self.fc(x)
-        return x
-
-def my_model_function():
-    # Returns an instance of MyModel with default initialization
-    return MyModel()
-
-def GetInput():
-    # Returns a random tensor matching the assumed input shape
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
-
+IS_CI = bool(os.getenv('CI'))

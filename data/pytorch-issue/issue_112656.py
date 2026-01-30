@@ -1,27 +1,53 @@
-# torch.rand(3, 3, dtype=torch.float32), repeated three times in a tuple
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        # Replicate reduction operations causing compilation errors
-        sub_init = 1
-        for val in inputs:
-            sub_init -= val  # Triggers error with torch.compile
-        mul_init = 1
-        for val in inputs:
-            mul_init *= val  # Triggers error with torch.compile
-        div_init = 1
-        for val in inputs:
-            div_init /= val  # Triggers error with torch.compile
-        return sub_init, mul_init, div_init
+a = torch.randn(3, 3)
+b = torch.randn(3, 3)
+c = torch.randn(3, 3)
+flat_inp = (a, b, c)
 
-def my_model_function():
-    return MyModel()
+def reduce_sub(flattened):
+    init = 1
+    for val in flattened:
+        init -= val
+    return init
 
-def GetInput():
-    a = torch.rand(3, 3, dtype=torch.float32)
-    b = torch.rand(3, 3, dtype=torch.float32)
-    c = torch.rand(3, 3, dtype=torch.float32)
-    return (a, b, c)
+def reduce_mul(flattened):
+    init = 1
+    for val in flattened:
+        init *= val
+    return init
 
+def reduce_div(flattened):
+    init = 1
+    for val in flattened:
+        init /= val
+    return init
+
+def test_func(reduce_func, inp):
+    torch._dynamo.reset()
+    return torch.compile(reduce_func, backend="eager")(inp)
+
+# Ok
+reduce_div(flat_inp)
+# Ok
+reduce_mul(flat_inp)
+# Ok
+reduce_sub(flat_inp)
+# Error
+test_func(reduce_sub, flat_inp)
+# Error
+test_func(reduce_mul, flat_inp)
+# Error
+test_func(reduce_div, flat_inp)
+
+import torch
+
+def fn(x):
+    y = 1
+    y -= x
+    return y
+
+x = torch.rand((4, 4))
+
+fn(x)
+torch.compile(fn, backend="eager")(x)

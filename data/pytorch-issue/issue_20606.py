@@ -1,27 +1,16 @@
-# torch.rand(10, 10, dtype=torch.float32)  # Input shape inferred from original test script
+# test.py
+import os
 import torch
-import torch.nn as nn
+import time
+import sys
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Dummy layer to trigger GPU computation
-        self.linear = nn.Linear(10, 10)
-    
-    def forward(self, x):
-        # Force computation on GPU to test device selection
-        return self.linear(x.to('cuda'))
+print(os.environ)
+print(torch.cuda.device_count())
+print(torch.cuda.current_device())
+print(os.getpid())
+sys.stdout.flush()
 
-def my_model_function():
-    # Initialize model with random weights
-    model = MyModel()
-    # Initialize weights for reproducibility (matching original test conditions)
-    for param in model.parameters():
-        if param.dim() > 1:
-            torch.nn.init.xavier_uniform_(param)
-    return model
+device = torch.device('cuda')
+a = torch.randn(10, 10, device=device)
 
-def GetInput():
-    # Generate input matching forward() expectations
-    return torch.randn(10, 10, dtype=torch.float32)
-
+os.system('nvidia-smi')

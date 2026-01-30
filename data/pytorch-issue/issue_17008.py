@@ -1,26 +1,29 @@
-# torch.rand(4, dtype=torch.float32)
+import random
+
+x[i], x[j] = x[j], x[i]
+
 import torch
-from torch import nn
+x = torch.randn(4)  # tensor([-0.7905, -0.3574, -0.0493, -0.3152])
+x[0], x[1] = x[1], x[0]
+print(x)  # tensor([-0.3574, -0.3574, -0.0493, -0.3152])
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        incorrect = x.clone()
-        correct = x.clone()
-        
-        # Incorrect swap using Pythonic syntax (fails to swap properly)
-        incorrect[0], incorrect[1] = incorrect[1], incorrect[0]
-        
-        # Correct swap using temporary variable
-        temp = correct[0].clone()
-        correct[0] = correct[1]
-        correct[1] = temp
-        
-        # Return boolean indicating if swaps differ
-        return torch.tensor([not torch.allclose(incorrect, correct)], dtype=torch.bool)
+x = torch.randn(4, 4)
+assert not (x[0] == x[1]).all()
+x[0], x[1] = x[1], x[0]
+assert not (x[0] == x[1]).all()
 
-def my_model_function():
-    return MyModel()
+import numpy as np
+x = np.random.randn(4)  # array([ 0.11462874, -1.3748384 ,  0.24256925,  1.01256207])
+x[0], x[1] = x[1], x[0]
+print(x)  # array([-1.3748384 ,  0.11462874,  0.24256925,  1.01256207])
 
-def GetInput():
-    return torch.rand(4, dtype=torch.float32)
-
+import numpy as np
+x = np.random.randn(4)
+print(x)
+# array([ 1.78025159,  0.24798579,  0.29656804, -1.06337399])
+y = x[0]
+y += 1
+print(x)
+# array([ 1.78025159,  0.24798579,  0.29656804, -1.06337399])
+print(y)
+# 2.7802515871964264

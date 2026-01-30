@@ -1,21 +1,9 @@
-# torch.rand(B, 3, 32, 32, dtype=torch.float32)
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.conv = nn.Conv2d(3, 16, kernel_size=3)
-        
-    def forward(self, x):
-        x = self.conv(x)
-        x += 1  # In-place addition to trigger functionalization handling
-        return x
+global_a = torch.ones(...)
 
-def my_model_function():
-    return MyModel()
+def foo():
+    global_a.add_(1)
 
-def GetInput():
-    B = 2  # Batch size
-    return torch.rand(B, 3, 32, 32, dtype=torch.float32)
-
+# this won't remove the inplace call, even though we're "functionalizing"
+functionalize(foo)()

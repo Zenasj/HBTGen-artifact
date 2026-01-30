@@ -1,30 +1,34 @@
-# tf.random.uniform((32, 28, 28), dtype=tf.float32)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
+
 import tensorflow as tf
-from tensorflow.keras.layers import Flatten, Dense
+import numpy as np
+
+from tensorflow.keras.layers import Input, Flatten, Dense
 from tensorflow.keras import Model
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        self.flatten = Flatten()
-        self.dense1 = Dense(64, activation='relu')
-        self.dense2 = Dense(10)
+x_data = np.zeros((32, 28, 28))
+x_mask = np.zeros((32, 10))
+y = np.zeros((32, 10))
 
-    def call(self, inputs, training=False):
-        # inputs is expected as a single tensor: data (batch_size, 28, 28)
-        x = self.flatten(inputs)
-        x = self.dense1(x)
-        x = self.dense2(x)
-        return x
+input_data = Input(shape=(28, 28))
+output= Flatten()(input_data)
+output = Dense(64, activation='relu')(output)
+output = Dense(10)(output)
+model = Model(inputs=input_data, outputs=output)
 
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+class MyLoss(tf.keras.losses.Loss):
+  def call(self, y_true, y_pred):
+      return (y_true - y_pred) ** 2  
 
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel:
-    # Shape inferred from example code: (batch_size=32, 28, 28), dtype float32
-    return tf.random.uniform((32, 28, 28), dtype=tf.float32)
+model.compile(
+    optimizer=tf.keras.optimizers.SGD(),
+    loss=MyLoss(name='loss'),
+    metrics=['accuracy'])
 
+for i in range (2):
+    print(i)
+    loss = model.train_on_batch(x_data, y, sample_weight=x_mask)

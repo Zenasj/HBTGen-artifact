@@ -1,51 +1,88 @@
-# tf.random.uniform((B, 4), dtype=tf.float32) ← input shape inference: batch size arbitrary with 4 features matching Iris dataset features
+# Softmax example in TF using the classical Iris dataset
+# Download iris.data from https://archive.ics.uci.edu/ml/datasets/Iris
 
 import tensorflow as tf
+print(tf.__version__)
+import os
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define weights and biases as trainable variables
-        # 4 features input, 3 classes output
-        self.W = tf.Variable(tf.zeros([4, 3]), name="weights")
-        self.b = tf.Variable(tf.zeros([3]), name="bias")
-    
-    def combine_inputs(self, X):
-        # Linear layer: X @ W + b
-        # Return logits without softmax activation for numerical stability during training
-        logits = tf.matmul(X, self.W) + self.b
-        return tf.identity(logits, name="linear_out")
-    
-    def call(self, X):
-        # Return probabilities via softmax for inference
-        logits = self.combine_inputs(X)
-        return tf.nn.softmax(logits, name="softmax_out")
-    
-    def loss(self, X, Y):
-        # Expect Y as one-hot encoded labels
-        logits = self.combine_inputs(X)
-        # Use built-in loss with explicit named args for safety
-        loss_val = tf.reduce_mean(
-            tf.nn.softmax_cross_entropy_with_logits(labels=Y, logits=logits), name="loss")
-        return loss_val
+def combine_inputs(X):
+    res =  tf.matmul(X, W) + b
+    res = tf.identity(res, name="linear_out")
 
-def my_model_function():
-    # Create model instance with randomized weights initialized to zero here
-    return MyModel()
 
-def GetInput():
-    # Return a random float32 tensor with shape (batch_size=100, features=4)
-    # Simulating 100 iris samples with 4 features each
-    return tf.random.uniform((100, 4), dtype=tf.float32)
+def inference(X):
+    return tf.nn.softmax(combine_inputs(X), "softmax_out")
 
-# ---
-# ### Explanation and assumptions:
-# - The original issue raised a `ValueError: Both labels and logits must be provided` because the `combine_inputs` function did not return anything (missing `return` statement). That has been fixed here by returning logits.
-# - The provided code snippet was for TF 1.x graph style; this rewrite defines a `MyModel` subclass of `tf.keras.Model` suitable for TF 2.x API and XLA compilation.
-# - The model expects input shape `(B, 4)` where batch size `B` is flexible; 4 features correspond to sepal length, sepal width, petal length, and petal width.
-# - The loss method expects labels as **one-hot encoded** tensors with shape `(B, 3)` for the 3 Iris classes. The original input `label_number` was an integer class index, but this conversion would be done outside or at data pipeline level.
-# - For simplification, `my_model_function()` returns a new instance of the model with weights initialized to zeros, matching the original behavior.
-# - `GetInput()` generates dummy random floats consistent with a batch of 100 iris samples.
-# - The forward pass returns softmax probabilities for inference use.
-# - This implementation supports eager execution, is compatible with TensorFlow 2.20.0, and is ready for XLA JIT compilation.
-# If you want me to add label conversion or a training loop, just let me know!
+
+def loss(X, Y):
+    return tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=Y, logits=combine_inputs(X), name="softmax_entropy"), name="loss")
+
+
+def read_csv(batch_size, file_name, record_defaults):
+    filename_queue = tf.train.string_input_producer([os.path.dirname(__file__) + "/" + file_name])
+    reader = tf.TextLineReader(skip_header_lines=1)
+    key, value = reader.read(filename_queue)
+    # decode_csv will convert a Tensor from type string (the text line) in
+    # a tuple of tensor columns with the specified defaults, which also
+    # sets the data type for each column
+    decoded = tf.decode_csv(value, record_defaults=record_defaults)
+    # batch actually reads the file and loads "batch_size" rows in a single tensor
+    return tf.train.shuffle_batch(decoded,
+                                  batch_size=batch_size,
+                                  capacity=batch_size * 50,
+                                  min_after_dequeue=batch_size)
+
+
+def inputs():
+    sepal_length, sepal_width, petal_length, petal_width, label =\
+        read_csv(100, "iris.csv", [[0.0], [0.0], [0.0], [0.0], [""]])
+    # convert class names to a 0 based class index.
+    label_number = tf.to_int32(tf.argmax(tf.to_int32(tf.stack([
+        tf.equal(label, ["Iris-setosa"]),
+        tf.equal(label, ["Iris-versicolor"]),
+        tf.equal(label, ["Iris-virginica"])
+    ])), 0))
+    # Pack all the features that we care about in a single matrix;
+    # We then transpose to have a matrix with one example per row and one feature per column.
+    features = tf.transpose(tf.stack([sepal_length, sepal_width, petal_length, petal_width]))
+    return features, label_number
+
+
+def train(total_loss):
+    learning_rate = 0.01
+    return tf.train.GradientDescentOptimizer(learning_rate).minimize(total_loss)
+
+
+def evaluate(sess, X, Y):
+    predicted = tf.cast(tf.arg_max(inference(X), 1), tf.int32)
+    print(sess.run(tf.reduce_mean(tf.cast(tf.equal(predicted, Y), tf.float32))))
+
+
+# Launch the graph in a session, setup boilerplate
+with tf.Graph().as_default():
+    with tf.Session() as sess:
+        # this time weights form a matrix, not a column vector, one "weight vector" per class.
+        W = tf.Variable(tf.zeros([4, 3]), name="weights")
+        # so do the biases, one per class.
+        b = tf.Variable(tf.zeros([3], name="bias"))
+        tf.global_variables_initializer().run()
+        X, Y = inputs()
+        total_loss = loss(X, Y)
+        train_op = train(total_loss)
+        summary_out = os.path.join(os.path.dirname(__file__), "tf_summary")
+        import shutil
+        shutil.rmtree(summary_out)
+        writer = tf.summary.FileWriter(summary_out, graph=sess.graph)
+        coord = tf.train.Coordinator()
+        threads = tf.train.start_queue_runners(sess=sess, coord=coord)
+        # actual training loop
+        training_steps = 1000
+        for step in range(training_steps):
+            sess.run([train_op])
+            # for debugging and learning purposes, see how the loss gets decremented thru training steps
+            if step % 10 == 0:
+                print("loss: ", sess.run([total_loss]))
+        evaluate(sess, X, Y)
+        coord.request_stop()
+        coord.join(threads)
+        writer.close()

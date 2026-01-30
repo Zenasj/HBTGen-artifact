@@ -1,17 +1,13 @@
-# tf.random.uniform((B, 5), dtype=tf.float32)
+import random
+from tensorflow import keras
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Initialize 'a' as a non-trainable tf.Variable with shape [5].
-        # Important: Assign with zeros initially to allow restoring weights from .h5 properly.
-        # Later it can be set externally.
-        self.a = tf.Variable(initial_value=tf.zeros([5]), trainable=False, name='a')
 
-        # Compile methods with input_signature to avoid retracing.
-        # Using input signature with shape [None, 5] to represent batch size unknown but last dim = 5
+class Model(tf.keras.Model):
+    def __init__(self):
+        super(Model, self).__init__()
+        self.a = tf.Variable(initial_value=tf.random.normal([5]), trainable=False, name='a')
         self.call = tf.function(func=self.call, input_signature=[
             tf.TensorSpec(shape=[None, 5], dtype=tf.float32)
         ])
@@ -21,48 +17,32 @@ class MyModel(tf.keras.Model):
         self.set = tf.function(func=self.set, input_signature=[
             tf.TensorSpec(shape=[5], dtype=tf.float32)
         ])
+        self.build(input_shape=tf.TensorShape(dims=[None, 5]))
 
-        # Build the model to set up weights & track variables properly
-        self.build(input_shape=tf.TensorShape([None, 5]))
-
-    @tf.function
     def call(self, inputs):
-        # Return element-wise addition of self.a and inputs
+        print(f'Tracing call with inputs={inputs}')
         return self.a + inputs
 
-    @tf.function
     def prod(self, inputs):
-        # Return element-wise product of self.a and inputs
+        print(f'Tracing prod with inputs={inputs}')
         return self.a * inputs
 
-    @tf.function
     def set(self, value):
-        # Assign a new value to self.a variable
+        print(f'Tracing set with inputs={value}')
         self.a.assign(value)
 
-    def get_config(self):
-        # Required for saving/loading in 'h5' format when subclassing keras.Model.
-        # Note: tf.Variable 'a' is converted to a tensor for config serialization.
-        config = super(MyModel, self).get_config()
-        config.update({"a": self.a.numpy()})
-        return config
 
-    @classmethod
-    def from_config(cls, config):
-        # Provide from_config so model can be reconstructed from config
-        a_value = config.pop("a")
-        model = cls()
-        model.a.assign(a_value)
-        return model
-
-
-def my_model_function():
-    # Return an instance of MyModel with default initialization
-    return MyModel()
-
-
-def GetInput():
-    # Return a random tensor input matching [batch_size, 5] shape expected by MyModel
-    # Using batch size = 2 here consistent with the example usage in the issue
-    return tf.random.uniform((2, 5), dtype=tf.float32)
-
+if __name__ == '__main__':
+    model = Model()
+    print(model(tf.zeros(shape=[2, 5])))
+    print(model.prod(tf.ones(shape=[2, 5])))
+    model.set(tf.ones(shape=[5]))
+    print(model(tf.zeros(shape=[2, 5])))
+    print(model.prod(tf.ones(shape=[2, 5])))
+    print(model.weights)
+    model.save_weights('/tmp/a.h5')
+    del model
+    model = Model()
+    model.load_weights('/tmp/a.h5')
+    print(model(tf.zeros(shape=[2, 5])))
+    print(model.prod(tf.ones(shape=[2, 5])))

@@ -1,28 +1,33 @@
-# tf.random.uniform((B, 8), dtype=tf.float32)  # Input shape inferred from Dense layer input shape (8,)
-
+import os
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Following the example model in the issue: 
-        # Input 8 features → Dense(2) → Dense(2)
-        self.dense1 = tf.keras.layers.Dense(2)
-        self.dense2 = tf.keras.layers.Dense(2)
 
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        return x
+def main():
+    nb_checkpoints = 3
 
-def my_model_function():
-    # Return an instance of MyModel with default initialization
-    return MyModel()
+    inputs = layers.Input(shape=(8,))
+    x = layers.Dense(2)(inputs)
+    outputs = layers.Dense(2)(x)
+    model = keras.Model(inputs=[inputs], outputs=[outputs])
 
-def GetInput():
-    # Return a random tensor input compatible with MyModel's expected input shape (batch_size, 8)
-    # Batch size assumed 4 as a reasonable default
-    batch_size = 4
-    input_tensor = tf.random.uniform((batch_size, 8), dtype=tf.float32)
-    return input_tensor
+    model_dir = '/tmp/save-weights'
+    for i in range(nb_checkpoints):
+        model.save_weights(os.path.join(model_dir, 'ckpt-%04d' % (i + 1)))
 
+    state = tf.train.get_checkpoint_state(model_dir)
+    print('')
+    print(state.all_model_checkpoint_paths)
+
+    checkpoint_fp = os.path.join(model_dir, 'checkpoint')
+    print('\nContent of %s' % checkpoint_fp)
+    with open(checkpoint_fp) as f:
+        print(f.read())
+
+    assert state.all_model_checkpoint_paths == nb_checkpoints, \
+        'Expected %d checkpoints got %d' % (nb_checkpoints, len(state.all_model_checkpoint_paths))
+
+
+if __name__ == '__main__':
+    main()

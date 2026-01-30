@@ -1,9 +1,11 @@
-# torch.randint(0, 500000, (300, L), dtype=torch.long)
-import torch
-import random
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
+import random
+import torch
+from torch import nn
+from memory_profiler import profile
+
+class DummyModel(nn.Module):
     def __init__(self):
         super().__init__()
         self.embed = nn.Embedding(500000, 100)
@@ -15,11 +17,13 @@ class MyModel(nn.Module):
         x = self.conv(x)
         return torch.mean(x)
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    B = 300  # Batch size fixed at 300 as per original example
-    L = random.randint(100, 3000)  # Variable sequence length
-    return torch.randint(0, 500000, (B, L), dtype=torch.long)
+model = DummyModel()
 
+@profile
+def run():
+    x = torch.randint(0, 500000, (300, random.randint(100, 3000)))
+    model(x)
+
+for i in range(20):
+    run()

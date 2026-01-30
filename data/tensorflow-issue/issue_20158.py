@@ -1,35 +1,32 @@
-# tf.random.uniform((B, 5, 3), dtype=tf.float32) ← Input shape inferred from batching 5-length sequences one-hot encoded over 3 classes
+import random
+from tensorflow.keras import layers
 
 import tensorflow as tf
+import numpy as np
+from tensorflow.python.ops import lookup_ops
+from tensorflow import keras
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Model architecture as per example in the issue:
-        # Input shape (5, 3) flattened to vector 15, then Dense(4) output
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense = tf.keras.layers.Dense(4)
+alphabet = ['A', 'B', 'C']
+table = lookup_ops.index_table_from_tensor(tf.constant(alphabet))
+# generate samples of strings of different lengths
+inputs = [''.join([np.random.choice(alphabet) for _ in range(5)]) for _ in range(10)]
+targets = np.zeros((10, 4))
 
-    def call(self, inputs, training=None):
-        x = self.flatten(inputs)
-        y = self.dense(x)
-        return y
+dataset = tf.data.Dataset.from_tensor_slices((inputs, targets))
+def map_fn(x, y):
+    x = tf.string_split([x], delimiter="").values
+    x = table.lookup(x)
+    x = tf.nn.embedding_lookup(tf.eye(3), x)
+    return x, y
+dataset = dataset.map(lambda x, y: map_fn(x, y))
+dataset = dataset.repeat(100)
+dataset = dataset.batch(5)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+x = keras.layers.Input(shape=(5, 3), name='input')
+flat = keras.layers.Flatten()(x)
+y = keras.layers.Dense(4, name='dense')(flat)
 
-def GetInput():
-    # Generate a batch of 5 samples,
-    # each is a sequence length 5 with one-hot dimension 3 (like one-hot encoding of letters)
-    # Value range is [0,1) floats - compatible since the actual input is one-hot vectors.
-    batch_size = 5  # matching the batch size used in the example dataset batching
-    seq_length = 5
-    one_hot_dim = 3
-    # The input expected is (batch_size, 5, 3) float tensor
-    # Since the original example maps strings to one-hot encoded (5,3) sequences,
-    # we generate random one-hot like inputs by sampling random indices and convert them to one-hot.
-    indices = tf.random.uniform(shape=(batch_size, seq_length), maxval=one_hot_dim, dtype=tf.int32)
-    one_hot_input = tf.one_hot(indices, depth=one_hot_dim, dtype=tf.float32)
-    return one_hot_input
+model = keras.Model(x, y)
+model.compile(loss='mse', optimizer='rmsprop')
 
+model.fit(dataset, epochs=1, steps_per_epoch=2, verbose=1)

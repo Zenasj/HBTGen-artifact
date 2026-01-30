@@ -1,27 +1,17 @@
-# torch.rand(2, requires_grad=True)  # Add a comment line at the top with the inferred input shape
+import torch.nn as nn
 
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        y = x + 1
-        z = torch.nn.Parameter(y)
-        with torch.no_grad():
-            z.mul_(2)
-        return y + z
+def f(x):
+    y = x + 1
+    z = torch.nn.Parameter(y)
+    with torch.no_grad():
+        z.mul_(2)
+    return y + z
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(2, requires_grad=True)
-
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
-# print(output)
-
+x = torch.ones(2, requires_grad=True)
+out_ref = f(x)
+out_test = torch.compile(f, backend='aot_eager')(x)
+print(out_ref)
+print(out_test)
+print(torch.allclose(out_ref, out_test))

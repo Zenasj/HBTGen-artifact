@@ -1,31 +1,20 @@
-# tf.random.uniform((B, 1), dtype=tf.float32)  # Input shape inferred from Input(shape=(1,))
-
 import tensorflow as tf
-from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
-# This model replicates the described minimal example:
-# A simple Keras Model with a single Dense layer on input shape (1,)
-# Demonstrates the model structure involved in the original issue:
-# model = Model(input, Dense(250)(input))
-# The issue context involved compiling & saving with Adam optimizer in TF v1 (graph) mode.
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior()
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Single Dense layer with output units 250, matching the original example
-        self.dense_layer = keras.layers.Dense(250, name="dense_layer")
-    
-    def call(self, inputs):
-        # Forward pass through the dense layer
-        return self.dense_layer(inputs)
+import keras
+from keras import layers
 
-def my_model_function():
-    # Build and return an instance of MyModel
-    return MyModel()
+inp = keras.layers.Input(shape=(1,), name="input")
+result = keras.layers.Dense(250, name="dense_layer")(inp)
 
-def GetInput():
-    # Return a random input tensor with shape (?, 1), dtype float32 as expected by the model
-    # Batch size chosen arbitrarily as 8 for demonstration
-    batch_size = 8
-    return tf.random.uniform((batch_size, 1), dtype=tf.float32)
+model = keras.models.Model(inp, result, name="mdl")
+loss = "categorical_crossentropy"
+used_optimizer = keras.optimizers.Adam(learning_rate=0.01)
+model.compile(loss=loss, optimizer=used_optimizer)
 
+model.save("test-model.keras")

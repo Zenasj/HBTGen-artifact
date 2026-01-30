@@ -1,64 +1,110 @@
-# tf.random.uniform((B, 784), dtype=tf.float32) ← Input shape inferred from MNIST flattened images of shape (batch, 784)
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
-import tensorflow as tf
-from tensorflow.keras import layers, Sequential, utils, callbacks
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense
-from tensorflow.keras.optimizers import RMSprop
+...
 from tensorflow.keras.callbacks import Callback, ModelCheckpoint
-from sklearn import metrics
-import numpy as np
+...
 
 class CustomMetric(Callback):
-    def __init__(self, x_valid, y_valid, batch_size=128):
+    def __init__(self, x_valid, y_valid):
         super().__init__()
         self.x_valid = x_valid
         self.y_valid = y_valid
-        self.batch_size = batch_size
-        # By default, _supports_tf_logs is False
-        # Setting to False means 'logs' is a tf.TensorDict, and 'numpy_logs' contains actual numpy values.
-        # This is the source of desync in logs.
-        self._supports_tf_logs = False
 
     def on_epoch_end(self, epoch, logs=None):
-        # logs here might be a tensor dict (tf logs), but we set _supports_tf_logs False,
-        # so logs passed in is actually numpy logs we can safely modify.
-        y_pred = self.model.predict(self.x_valid, batch_size=self.batch_size)
-        # Compute log loss between true labels and predicted probs
-        val_log_loss = metrics.log_loss(self.y_valid, y_pred)
-        logs['val_log_loss'] = val_log_loss
+        y_pred = self.model.predict(self.x_valid, batch_size=BATCHSIZE)
 
+        logs['val_log_loss'] = metrics.log_loss(self.y_valid, y_pred)
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define a simple MNIST classifier model matching Seq:
-        # Input shape: (784,)
-        self.dense1 = Dense(64, activation='relu', input_shape=(784,))
-        self.dense2 = Dense(32, activation='relu')
-        self.dense3 = Dense(10, activation='softmax')
+...
 
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        return self.dense3(x)
-
-
-def my_model_function():
-    model = MyModel()
-    # Compile model with same config as reported in issue:
-    model.compile(
-        loss='categorical_crossentropy',
-        optimizer=RMSprop(),
-        metrics=['accuracy']
+model.fit(
+        x_train,
+        y_train,
+        validation_data=(x_valid, y_valid),
+        shuffle=True,
+        batch_size=BATCHSIZE,
+        epochs=EPOCHS,
+        verbose=1,
+        callbacks=[CustomMetric(x_valid, y_valid), ModelCheckpoint('test.h5', 'val_log_loss', verbose=1, save_best_only=True, mode='min')]
     )
-    return model
+
+...
+
+from __future__ import print_function
+
+from tensorflow.keras.datasets import mnist
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense
+from tensorflow.keras.optimizers import RMSprop
+from tensorflow.keras.callbacks import Callback, ModelCheckpoint, History
+from tensorflow.keras import utils
+from sklearn import metrics
+
+batch_size = 128
+num_classes = 10
+epochs = 2
+
+# Custom callback, where the logs are actually the numpy_logs object 
+# if the flag self._supports_tf_logs is not set to True
+class CustomMetric(Callback):
+    def __init__(self, x_valid, y_valid):
+        super().__init__()
+        self.x_valid = x_valid
+        self.y_valid = y_valid
+
+    def on_epoch_end(self, epoch, logs=None):
+        y_pred = self.model.predict(self.x_valid, batch_size=batch_size)
+
+        logs['val_log_loss'] = metrics.log_loss(self.y_valid, y_pred)
 
 
-def GetInput():
-    # MNIST inputs flattened and normalized: shape (batch_size, 784)
-    # Use batch size 128 as per original code
-    batch_size = 128
-    input_tensor = tf.random.uniform((batch_size, 784), dtype=tf.float32)
-    return input_tensor
+# the data, split between train and test sets
+(x_train, y_train), (x_test, y_test) = mnist.load_data()
 
+x_train = x_train.reshape(60000, 784).astype('float32') / 255.
+x_test = x_test.reshape(10000, 784).astype('float32') / 255.
+
+# convert class vectors to binary class matrices
+y_train = utils.to_categorical(y_train, num_classes)
+y_test = utils.to_categorical(y_test, num_classes)
+
+model = Sequential()
+model.add(Dense(64, activation='relu', input_shape=(784,)))
+model.add(Dense(32, activation='relu'))
+model.add(Dense(num_classes, activation='softmax'))
+
+model.summary()
+
+model.compile(loss='categorical_crossentropy',
+              optimizer=RMSprop(),
+              metrics=['accuracy'])
+
+# The following part works partly as intended.
+# history.history contains the key 'val_log_loss' even though it is not printed by the ProgbarLogger
+# (since ProgbarLogger uses logs and CustomMetric numpy_logs)
+history = model.fit(x_train, y_train,
+                    batch_size=batch_size,
+                    epochs=epochs,
+                    verbose=1,
+                    validation_data=(x_test, y_test),
+                    callbacks=[
+                        CustomMetric(x_test, y_test)
+                    ])
+
+print(history.history)
+
+# This following part does not work as intented.
+# ModelCheckpoint outputs the warning
+# "WARNING:tensorflow:Can save best model only with val_log_loss available, skipping."
+# because 'val_log_loss' is in the numpy_logs object and ModelCheckpoint uses the logs object
+model.fit(x_train, y_train,
+          batch_size=batch_size,
+          epochs=epochs,
+          verbose=1,
+          validation_data=(x_test, y_test),
+          callbacks=[
+              CustomMetric(x_test, y_test),
+              ModelCheckpoint('test.h5', monitor='val_log_loss', verbose=1, save_best_only=True, mode='min')
+          ])

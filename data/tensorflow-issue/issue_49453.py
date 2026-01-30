@@ -1,111 +1,178 @@
-# tf.random.uniform((B, H, W, C), dtype=tf.float32) ← Input shape inferred as typical image tensor batch
+from tensorflow.keras import layers
 
-import tensorflow as tf
+training = model.fit(
+        generator=train_data_generator,
+        epochs=EPOCHS_NUMBER,
+        validation_data=valid_data_generator,
+        callbacks=callbacks,
+    )
 
-class MyModel(tf.keras.Model):
-    def __init__(self, base_model_name="mobilenetv2", num_classes=1):
-        super().__init__()
-        # Based on the issue, the model uses a base pretrained CNN for feature extraction,
-        # followed by a final Dense layer with sigmoid activation for binary classification.
-        # The issue context referenced MobileNetV2, InceptionV3, and VGG16.
-        # Here, we'll fuse these base models as submodules for comparison.
-        # The forward will return the differences between outputs to reflect benchmark scenario.
+training = model.fit_generator(
+        generator=train_data_generator,
+        epochs=EPOCHS_NUMBER,
+        validation_data=valid_data_generator,
+        callbacks=callbacks,
+    )
 
-        # Load three base models with ImageNet weights, without top classification layers
-        self.base_models = {}
+from pathlib import Path
 
-        # MobileNetV2
-        mobilenetv2 = tf.keras.applications.MobileNetV2(
-            include_top=False,
-            weights='imagenet',
-            pooling='avg',  # Global average pooling output vector
-            input_shape=(224, 224, 3),
+import mlflow.tensorflow
+from sklearn.model_selection import GroupKFold, StratifiedKFold
+from tensorflow.keras.callbacks import Callback, EarlyStopping
+from tensorflow.keras.layers import Dense
+from tensorflow.keras.metrics import Precision, Recall
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+
+from classes.Evaluator import Evaluator
+from utils.args import get_args_train
+from utils.inputs import get_inputs_paths_and_targets
+from utils.model import build_model, get_preprocess_function
+from utils.seed import set_seeds
+
+# Setting the random_state to get reproducible results
+seed = set_seeds()
+
+# Constants
+ROOT_FOLDER = Path(__file__).resolve().parent.parent
+FOLDS_NUMBER = 5
+EPOCHS_NUMBER = 100
+EPOCHS_WAITING_FOR_IMPROVEMENT = 5
+
+# Gets which input we're going to use
+args = get_args_train()
+IMAGE_FOLDER_PATH = ROOT_FOLDER / f"crop_result_prop_{args.proportion}"
+
+
+class TrainingAndValidationMetrics(Callback):
+    def on_epoch_end(self, epoch, logs=None):
+        mlflow.log_metrics(logs, step=epoch)
+
+
+# Instantiates GroupKFold class to split into train and test
+group_k_fold = GroupKFold(n_splits=FOLDS_NUMBER)
+
+# Configuration dictionary that is going to be used to compile the model
+config = {
+    "optimizer": "adam",
+    "loss": "binary_crossentropy",
+    "metrics": ["accuracy", Precision(), Recall()],
+}
+
+# Gets the dataframe that are going to be used in the flow_from_dataframe
+# method from the ImageDataGenerator class
+input_df = get_inputs_paths_and_targets(args.proportion)
+
+idg = ImageDataGenerator(
+    fill_mode="nearest",
+    preprocessing_function=get_preprocess_function(args.model.lower()),
+)
+
+# Using GroupKFold only to guarantee that a group (in this case, the slide)
+# will contain data only in the train or the test group
+for train_idx, test_idx in group_k_fold.split(
+    input_df.input, input_df.target, input_df.slide
+):
+    train_data = input_df.iloc[train_idx]
+    test_data = input_df.iloc[test_idx]
+
+    # Break here is being used to get only the first fold
+    break
+
+print("### Testing data distribution ###")
+print(f"{test_data.groupby('slide').count()}")
+
+generator_kwargs = {
+    "directory": IMAGE_FOLDER_PATH,
+    "x_col": "input",
+    "y_col": "target",
+    "seed": seed,
+    "classes": ["0", "1"],
+}
+
+# Generator that will be used to evaluate the model
+test_data_generator = idg.flow_from_dataframe(
+    test_data, class_mode="binary", shuffle=False, **generator_kwargs
+)
+
+# Instantiates the Early Stopping that is going to be used
+# in the fit method
+early_stopping = EarlyStopping(
+    monitor="val_loss", patience=EPOCHS_WAITING_FOR_IMPROVEMENT
+)
+
+# Defines the list of callbacks that is an argument of the fit
+# method
+callbacks = [early_stopping, TrainingAndValidationMetrics()]
+
+# K-fold Cross Validation model evaluation
+kfold = StratifiedKFold(n_splits=FOLDS_NUMBER, shuffle=True, random_state=seed)
+
+current_fold = 1
+# Starts run on mlflow to register metrics (experiment)
+mlflow.start_run(
+    run_name=f"{args.model.lower()}",
+    tags={"data_proportion": args.proportion, "environment": "main"},
+)
+
+
+# Folds iteration
+for train_idx, val_idx in kfold.split(train_data.input, train_data.target):
+
+    # Builds the model
+    model = build_model(args.model.lower(), [Dense(1, activation="sigmoid")], config)
+
+    # Starts run on mlflow to register metrics (runs)
+    with mlflow.start_run(run_name=f"fold_{current_fold}", nested=True):
+
+        fitting_data = train_data.iloc[train_idx]
+        val_data = train_data.iloc[val_idx]
+
+        mlflow.log_text(
+            f"Training data: \n{fitting_data.groupby('target').count()} \n"
+            f"Validation data: \n{val_data.groupby('target').count()} \n"
+            f"Data proportion: {args.proportion} \n"
+            f" ----- Using Stratified KFold with seed 1 ----- ",
+            artifact_file="data_description.txt",
         )
-        self.base_models['mobilenetv2'] = mobilenetv2
 
-        # InceptionV3
-        inceptionv3 = tf.keras.applications.InceptionV3(
-            include_top=False,
-            weights='imagenet',
-            pooling='avg',
-            input_shape=(299, 299, 3),
+        train_data_generator = idg.flow_from_dataframe(
+            fitting_data, class_mode="binary", **generator_kwargs
         )
-        self.base_models['inceptionv3'] = inceptionv3
-
-        # VGG16
-        vgg16 = tf.keras.applications.VGG16(
-            include_top=False,
-            weights='imagenet',
-            pooling='avg',
-            input_shape=(224, 224, 3),
+        valid_data_generator = idg.flow_from_dataframe(
+            val_data, class_mode="binary", **generator_kwargs
         )
-        self.base_models['vgg16'] = vgg16
 
-        # A dictionary of Dense layers for each base model to produce final output
-        self.dense_layers = {
-            'mobilenetv2': tf.keras.layers.Dense(num_classes, activation='sigmoid'),
-            'inceptionv3': tf.keras.layers.Dense(num_classes, activation='sigmoid'),
-            'vgg16': tf.keras.layers.Dense(num_classes, activation='sigmoid'),
-        }
+        training = model.fit(
+            train_data_generator,
+            epochs=EPOCHS_NUMBER,
+            validation_data=valid_data_generator,
+            callbacks=callbacks,
+        )
 
-        # Note:
-        # Inputs to InceptionV3 are 299x299, MobileNetV2 and VGG16 are 224x224 as typical.
-        # To unify inputs, we'll assume input shape is (299,299,3),
-        # resize inputs for MobileNetV2 and VGG16 inside the call method.
+        # Logging model
+        mlflow.keras.log_model(keras_model=model, artifact_path="model")
 
-        # Image resizing layers for base models (except Inception)
-        self.resize_mobilenetv2 = tf.keras.layers.Resizing(224, 224)
-        self.resize_vgg16 = tf.keras.layers.Resizing(224, 224)
+        evaluator = Evaluator(model, training, test_data_generator, test_data.target)
 
-    def call(self, inputs, training=False):
-        # inputs shape: (B, 299, 299, 3) - assume this to support largest base input
+        # Classification report
+        test_metrics = evaluator.evaluate_model()
+        mlflow.log_metrics(test_metrics)
 
-        # Preprocess inputs for each base model according to their expected preprocess
-        # Using tf.keras.applications preprocessing functions:
-        mobilenet_input = self.resize_mobilenetv2(inputs)
-        mobilenet_input = tf.keras.applications.mobilenet_v2.preprocess_input(mobilenet_input)
+        # Saves the classification report generated from the predict method
+        mlflow.log_text(
+            evaluator.generate_classification_report(),
+            artifact_file="classification_report.txt",
+        )
 
-        inception_input = tf.keras.applications.inception_v3.preprocess_input(inputs)  # 299x299 no resize needed
+        # Saves the accuracy and the loss per epoch
+        mlflow.log_figure(
+            evaluator.generate_training_history_image(),
+            artifact_file="accuracy_loss_epochs.png",
+        )
 
-        vgg_input = self.resize_vgg16(inputs)
-        vgg_input = tf.keras.applications.vgg16.preprocess_input(vgg_input)
+        # Saves ROC figure
+        mlflow.log_figure(evaluator.generate_roc_figure(), artifact_file="roc.png")
 
-        # Extract features
-        mobilenet_features = self.base_models['mobilenetv2'](mobilenet_input, training=training)
-        inception_features = self.base_models['inceptionv3'](inception_input, training=training)
-        vgg_features = self.base_models['vgg16'](vgg_input, training=training)
+    current_fold += 1
 
-        # Final output predictions through respective dense layers
-        mobilenet_pred = self.dense_layers['mobilenetv2'](mobilenet_features)
-        inception_pred = self.dense_layers['inceptionv3'](inception_features)
-        vgg_pred = self.dense_layers['vgg16'](vgg_features)
-
-        # Fuse the three outputs into a single tensor
-        # For demonstration, output a concatenation (3,1) tensor of predictions per sample
-        preds = tf.concat([mobilenet_pred, inception_pred, vgg_pred], axis=1)
-
-        # In a benchmarking scenario, one might want differences or comparisons:
-        # For example, return the absolute difference between MobileNetV2 and others
-        diff_inception = tf.abs(mobilenet_pred - inception_pred)
-        diff_vgg = tf.abs(mobilenet_pred - vgg_pred)
-
-        # Final output returns a dict-like structure (using a tf.Tensor dictionary not supported,
-        # so we return concatenated tensor: [mobilenet_pred, inception_pred, vgg_pred, diff_inception, diff_vgg])
-        # Shape: (batch_size, 5)
-        output = tf.concat([mobilenet_pred, inception_pred, vgg_pred, diff_inception, diff_vgg], axis=1)
-
-        return output
-
-def my_model_function():
-    # Returns an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Return a batch of random input images shaped for InceptionV3 input (299,299,3)
-    # Use dtype float32 since model preprocessing expects float
-    batch_size = 4  # arbitrary batch size
-    input_shape = (batch_size, 299, 299, 3)
-    # Random values in [0, 255), since keras preprocess_input expects images in RGB 0-255 range
-    input_tensor = tf.random.uniform(input_shape, minval=0, maxval=255, dtype=tf.float32)
-    return input_tensor
-
+mlflow.end_run()

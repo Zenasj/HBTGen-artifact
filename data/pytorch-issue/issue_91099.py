@@ -1,14 +1,19 @@
-# torch.rand(10, dtype=torch.float)
+#!/usr/bin/env python
+
 import torch
-from torch import nn
+from torch._dynamo import optimize, config
+config.cache_size_limit = 4
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return x.norm()
+@optimize("inductor")
+def toy_example(adict):
+    # adict["text"] not used here
+    return adict["data"].norm()
 
-def my_model_function():
-    return MyModel()
+def test():
+    adict = {"data": torch.ones(10), "text": ""}
+    for i in range(5):
+        adict["text"] = f"text-{i}"
+        toy_example(adict)
 
-def GetInput():
-    return torch.rand(10)
-
+if __name__ == "__main__":
+    test()

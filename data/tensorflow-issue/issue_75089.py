@@ -1,74 +1,141 @@
-# tf.random.uniform((1, 128, 32, 1), dtype=tf.float32) ← Inferred input shape from issue: batch=1, height=128, width=32, channels=1
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
+
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Following the architecture exactly as described in the issue
-        # Input shape: (128, 32, 1)
-        self.conv1 = tf.keras.layers.Conv2D(512, kernel_size=3, padding='valid', activation='relu')
-        self.conv2 = tf.keras.layers.Conv2D(256, kernel_size=3, padding='valid', activation='relu')
-        self.maxpool1 = tf.keras.layers.MaxPool2D((2, 2))
-        self.conv3 = tf.keras.layers.Conv2D(128, kernel_size=3, padding='valid', activation='relu')
-        self.dropout1 = tf.keras.layers.Dropout(0.5)
-        self.conv4 = tf.keras.layers.Conv2D(128, kernel_size=3, padding='valid', activation='relu')
-        self.maxpool2 = tf.keras.layers.MaxPool2D((2, 2))
-        self.conv5 = tf.keras.layers.Conv2D(64, kernel_size=3, padding='valid', activation='relu')
-        self.maxpool3 = tf.keras.layers.MaxPool2D((2, 2))
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(1024, activation='relu')
-        self.dropout2 = tf.keras.layers.Dropout(0.3)
-        self.dense2 = tf.keras.layers.Dense(1024, activation='relu')
-        self.dropout3 = tf.keras.layers.Dropout(0.5)
-        self.dense3 = tf.keras.layers.Dense(1024, activation='relu')
-        self.dropout4 = tf.keras.layers.Dropout(0.7)
-        self.dense4 = tf.keras.layers.Dense(1024, activation='relu')
-        self.dense5 = tf.keras.layers.Dense(10, activation='relu')
-        self.output_layer = tf.keras.layers.Dense(1, activation='sigmoid',
-                                                  kernel_regularizer=tf.keras.regularizers.L2(l2=0.01))
+def get_model(
+        input_shape,
+        output_neurons=1,
+        output_activation='sigmoid',
+        loss=tf.keras.losses.binary_crossentropy,
+        lr=0.0001
+):
+    _input = tf.keras.layers.Input(shape=input_shape)
+    x = tf.keras.layers.Conv2D(512,kernel_size=3,padding='valid',activation='relu')(_input)
+    x = tf.keras.layers.Conv2D(256,kernel_size=3,padding='valid',activation='relu')(x)
+    x = tf.keras.layers.MaxPool2D((2,2))(x)
+    x = tf.keras.layers.Conv2D(128,kernel_size=3,padding='valid',activation='relu')(x)
+    x = tf.keras.layers.Dropout(0.5)(x)
+    x = tf.keras.layers.Conv2D(128,kernel_size=3,padding='valid',activation='relu')(x)
+    x = tf.keras.layers.MaxPool2D((2,2))(x)
+    x = tf.keras.layers.Conv2D(64,kernel_size=3,padding='valid',activation='relu')(x)
+    x = tf.keras.layers.MaxPool2D((2,2))(x)
+    x = tf.keras.layers.Flatten()(x)
+    x = tf.keras.layers.Dense(1024,activation='relu')(x)
+    x = tf.keras.layers.Dropout(0.3)(x)
+    x = tf.keras.layers.Dense(1024,activation='relu')(x)
+    x = tf.keras.layers.Dropout(0.5)(x)
+    x = tf.keras.layers.Dense(1024,activation='relu')(x)
+    x = tf.keras.layers.Dropout(0.7)(x)
+    x = tf.keras.layers.Dense(1024,activation='relu')(x)
+    x = tf.keras.layers.Dense(10,activation='relu')(x)
+    outputs = tf.keras.layers.Dense(output_neurons,activation=output_activation,kernel_regularizer=tf.keras.regularizers.L2(l2=0.01))(x)
+    model = tf.keras.Model(inputs=_input,outputs=outputs)
 
-    def call(self, inputs, training=False):
-        x = self.conv1(inputs)
-        x = self.conv2(x)
-        x = self.maxpool1(x)
-        x = self.conv3(x)
-        x = self.dropout1(x, training=training)
-        x = self.conv4(x)
-        x = self.maxpool2(x)
-        x = self.conv5(x)
-        x = self.maxpool3(x)
-        x = self.flatten(x)
-        x = self.dense1(x)
-        x = self.dropout2(x, training=training)
-        x = self.dense2(x)
-        x = self.dropout3(x, training=training)
-        x = self.dense3(x)
-        x = self.dropout4(x, training=training)
-        x = self.dense4(x)
-        x = self.dense5(x)
-        outputs = self.output_layer(x)
-        return outputs
-
-
-def my_model_function():
-    """
-    Returns an instance of MyModel.
-    Mirrors the architecture and config from the issue's get_model function.
-    """
-    model = MyModel()
-    # Compile with parameters from issue
     model.compile(
-        loss=tf.keras.losses.BinaryCrossentropy(),
-        optimizer=tf.keras.optimizers.Adam(learning_rate=0.0001),
-        metrics=['accuracy']
+        loss=loss,
+        optimizer=tf.keras.optimizers.Adam(learning_rate=lr),
+        metrics=['accuracy'],
     )
+
     return model
 
+model = get_model(
+        input_shape=input_shape,
+        lr=0.001
+)
 
-def GetInput():
-    """
-    Returns a random input tensor that matches the expected shape for the model.
-    Assumption: batch size 1, float32 values.
-    """
-    return tf.random.uniform(shape=(1, 128, 32, 1), dtype=tf.float32)
+reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_accuracy',factor=0.1,patience=5,mode='max')
+early_stopping = tf.keras.callbacks.EarlyStopping(monitor='val_accuracy',patience=1,mode='max',restore_best_weights=True,start_from_epoch=10)
+with tf.device('/gpu'):
+    history = model.fit(train,epochs=3,validation_data=val,verbose=1,callbacks=[reduce_lr,early_stopping])
 
+model.save('model.keras')
+
+import tensorflow as tf
+
+model_path = 'model.keras'
+lite_model_path = model_path.replace('keras','tflite')
+
+model = tf.keras.models.load_model(model_path)
+
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+tflite_model = converter.convert()
+
+with open(lite_model_path, 'wb') as f:
+    f.write(tflite_model)
+
+actual_model = "model.keras"
+model_file = "model.tflite"
+export_model_file = "model_meta.tflite"
+
+from tflite_support import metadata_schema_py_generated as _metadata_fb
+from tflite_support import metadata as _metadata
+from tflite_support.metadata_writers import writer_utils
+import flatbuffers
+
+model_meta = _metadata_fb.ModelMetadataT()
+model_meta.name = "Binary Classification Model"
+model_meta.description = "A CNN-based binary classification model for audio data."
+model_meta.version = "v1"
+
+input_meta = _metadata_fb.TensorMetadataT()
+input_meta.name = "Input Tensor"
+input_meta.description = (
+    "Input to the model is a Mel spectrogram of audio, represented as an array of shape [1,128,32,1]."
+)
+input_meta.content = _metadata_fb.ContentT()
+input_meta.content.contentProperties = _metadata_fb.AudioPropertiesT()
+input_meta.content.contentProperties.sampleRate = 16000  # Update based on your actual sample rate
+input_meta.content.contentPropertiesType = _metadata_fb.ContentProperties.AudioProperties
+input_meta.shape = [1, 128, 32, 1]
+input_meta.dtype = 'float32'
+
+output_meta = _metadata_fb.TensorMetadataT()
+output_meta.name = "Output Tensor"
+output_meta.description = "Output is a float value between 0 and 1 representing the probability of the positive class."
+output_meta.content = _metadata_fb.ContentT()
+output_meta.content.contentPropertiesType = _metadata_fb.ContentProperties.FeatureProperties
+output_meta.content.range = _metadata_fb.ValueRangeT()
+output_meta.content.range.min = 0.0
+output_meta.content.range.max = 1.0
+output_meta.shape = [1]
+output_meta.dtype = 'float32'
+
+subgraph = _metadata_fb.SubGraphMetadataT()
+subgraph.inputTensorMetadata = [input_meta]
+subgraph.outputTensorMetadata = [output_meta]
+
+model_meta.subgraphMetadata = [subgraph]
+
+builder = flatbuffers.Builder(0)
+meta_offset = model_meta.Pack(builder)
+builder.Finish(
+    meta_offset,
+    _metadata.MetadataPopulator.METADATA_FILE_IDENTIFIER
+)
+metadata_buf = builder.Output()
+
+populator = _metadata.MetadataPopulator.with_model_file(model_file)
+populator.load_metadata_buffer(metadata_buf)
+populator.load_associated_files(["labels.txt"])
+populator.populate()
+
+displayer = _metadata.MetadataDisplayer.with_model_file(export_model_file)
+export_json_file = os.path.join(os.path.dirname(export_model_file), "metadata.json")
+json_file = displayer.get_metadata_json()
+with open(export_json_file, "w") as f:
+    f.write(json_file)
+
+builder = flatbuffers.Builder(0)
+meta_offset = model_meta.Pack(builder)
+builder.Finish(
+    meta_offset,
+    _metadata.MetadataPopulator.METADATA_FILE_IDENTIFIER
+)
+metadata_buf = builder.Output()
+
+meta_offset = model_meta.Pack(builder)

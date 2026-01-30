@@ -1,45 +1,101 @@
-# tf.random.uniform((B, 3), dtype=tf.float32) ← input is a batch of 3-feature vectors with shape (batch_size, 3)
+from tensorflow import keras
+from tensorflow.keras import layers
+
+#code & sample data
 
 import tensorflow as tf
+import pandas as pd
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Simple logistic regression: one Dense layer with sigmoid activation
-        self.dense = tf.keras.layers.Dense(1, activation='sigmoid')
-    
-    def call(self, inputs, training=False):
-        # Inputs expected shape: (batch_size, 3)
-        return self.dense(inputs)
+# test.csv 
+# x,y,z,target
+# 0.7042368571200515,0.7007563770917052,0.9923080382725273,0
+# 0.11426662913904129,0.8766193882299516,0.7525734407311002,0
+# 0.3990706480213546,0.7509927893745748,0.08310617899165762,0
+# 0.6541820169804226,0.8728205248135915,0.009735857788017,0
+# 0.9824663638939366,0.8929642732916638,0.42717481372577704,0
+# 0.05016847688897663,0.8640977215284672,0.00015648051633876392,1
+# 0.9746878269143237,0.4675049082702597,0.8701887846733452,0
+# 0.6351460617236527,0.41715847867753963,0.7187310540710531,0
+# 0.48783818394438205,0.7666787407271458,0.27013849266804313,0
+# 0.32031329934121744,0.17932919492349586,0.6898206330541312,0
+# 0.9543041190067443,0.591335844278636,0.6588428533365475,0
+# 0.19313525739712412,0.9852300738375201,0.6948888181361819,0
+# 0.19820267930950564,0.933211841142697,0.903656352513663,0
+# 0.8150172410867663,0.8880582276213321,0.5061326797194212,0
+# 0.596347151996661,0.7352080480185654,0.7880475513257801,0
+# 0.6134560868023209,0.3485123047276638,0.22781550361885472,0
+# 0.8044922456384954,0.45120831616370516,0.5767554455960054,0
+# 0.6715578431234355,0.7646054358158448,0.9451860531031546,0
+# 0.7686609033200247,0.6114036496260894,0.7650105537257866,0
+# 0.05197577933003528,0.28496109714833917,0.41306518543162885,0
+# 0.344460901937348,0.766332305545744,0.5144459764257473,0
+# 0.6599678166641048,0.5292402310805339,0.5094529642981013,0
+# 0.10673926773965803,0.5238891179909103,0.9817150442751443,0
+# 0.7036732515429891,0.23654285159967436,0.8762269476492692,0
+# 0.8781094838240854,0.506176060331502,0.9067167580705571,0
+# 0.3374843921398276,0.8600866154828248,0.2973216448787409,0
+# 0.943770089167269,0.0686808858245227,0.48951596198556235,1
+# 0.6765152574791524,0.1375712100211337,0.1737266892058592,0
+# 0.7273752026856982,0.9533380344200385,0.4924386036510685,1
+# 0.4658204645836098,0.2500965060050161,0.48105252784504837,0
+# 0.2880634095162119,0.6276728155035326,0.19165303472399087,0
+# 0.11083669998863499,0.21704265767720732,0.6676057357044906,0
+# 0.12851954218455197,0.20802495693235157,0.667663085267044,0
+# 0.8727789507757944,0.3265873016685742,0.1886650498978053,0
+# 0.8461403050364225,0.43490654451648725,0.31975559963755273,0
+# 0.5077604100733044,0.4655673281242404,0.2802123251669665,0
+# 0.2233222755592028,0.04915222505078809,0.8972617683363415,0
+# 0.2770966381433091,0.6911062101812422,0.35029445120157965,0
+# 0.06505403740430493,0.5549924736882712,0.1512830697345361,0
+# 0.633287065526996,0.6726877553668914,0.7480470622224006,0
+# 0.15276758287427195,0.09551409131836819,0.7330651843012955,0
+# 0.8177575478572151,0.3118379196659643,0.7115535780280724,0
+# 0.4034709361948867,0.5915301572051304,0.8315961740558816,0
+# 0.2521911664746448,0.48834451689396763,0.7968736310010842,0
+# 0.17204367637440232,0.9044065209258801,0.46848650028550876,1
+# 0.2730952384015819,0.6654793002791546,0.6148138694973475,0
+# 0.8689420382367301,0.8348391041594503,0.05993433393586789,0
+# 0.5976464192216739,0.4190036279235926,0.07710971075225881,0
+# 0.9703383518752555,0.7117974134043004,0.984298292889044,0
 
-def my_model_function():
-    # Return an instance of MyModel
-    model = MyModel()
-    # Compile with typical binary classification settings
-    model.compile(optimizer='adam', 
-                  loss='binary_crossentropy', 
-                  metrics=['accuracy'])
-    return model
 
-def GetInput():
-    # Return a random tensor matching the expected input shape (batch_size, 3)
-    # Use batch size of 32 as in example
-    batch_size = 32
-    return tf.random.uniform((batch_size, 3), dtype=tf.float32)
+# Define a generator function to read the CSV file in chunks
+def csv_generator(file_path, chunksize=1000):
+    for chunk in pd.read_csv(file_path, chunksize=chunksize):
+        for row in chunk.itertuples(index=False):
+            yield row
 
-# ---
-# ### Explanation and reasoning about the fix:
-# The original issue's core problem was that the Dataset generated from `from_generator` was batching a shape `(1, 3)` per item (effectively `(None, 1, 3)` after batching), but the `Sequential` model expected `(None, 3)` directly.
-# This happens because `from_generator` yields individual tuples that are 1D feature vectors (length 3), but the Dataset and batch operations can expand dims unexpectedly, e.g., by adding an extra axis.
-# By inspecting the problem, it is clear the model expects a 2D input `(batch_size, 3)` - a batch of vectors with 3 features each.
-# Therefore, the proper input tensor shape for `MyModel` is `(batch_size, 3)`.
-# This minimal example reflects the same logistic regression model from the issue’s code but wrapped in the requested `MyModel` class format with `tf.keras.Model` subclassing rather than `Sequential`. This is also forward-compatible with XLA (`tf.function(jit_compile=True)`).
-# The `GetInput()` generates a random float32 tensor of the appropriate shape `(32, 3)` to simulate a batch of inputs.
-# ---
-# This should enable direct usage like:
-# ```python
-# model = my_model_function()
-# x = GetInput()
-# logits = model(x)  # No shape mismatch errors
-# ```
-# Then, `model.fit(dataset, epochs=10)` would work, assuming dataset batches also yield `(batch_size, 3)` inputs correctly (adjusting generator or batch/shapes as needed).
+# Define the feature and label extraction function
+def parse_csv_row(*row):
+    features = row[:-1]  # Assuming the last column is the label
+    label = row[-1]
+    return tf.convert_to_tensor(features, dtype=tf.float32), tf.convert_to_tensor(label, dtype=tf.float32)
+
+# Create a TensorFlow Dataset from the generator
+file_path = 'test.csv'
+dataset = tf.data.Dataset.from_generator(
+    lambda: csv_generator(file_path),
+    output_signature=(
+        tf.TensorSpec(shape=(3,), dtype=tf.float32),  # Adjust shape to match the number of features
+        tf.TensorSpec(shape=(), dtype=tf.float32)     # Adjust shape to match the label
+    )
+)
+
+# Map the parsing function to the dataset
+dataset = dataset.map(parse_csv_row)
+
+# Batch the dataset
+batch_size = 32
+dataset = dataset.batch(batch_size)
+
+# Define a simple logistic regression model
+model = tf.keras.Sequential([
+    tf.keras.layers.Input(shape=(3,)),  # Adjust shape to match the number of features
+    tf.keras.layers.Dense(1, activation='sigmoid')
+])
+
+# Compile the model
+model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+
+# Train the model
+model.fit(dataset, epochs=10)

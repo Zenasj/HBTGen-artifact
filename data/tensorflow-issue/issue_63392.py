@@ -1,159 +1,245 @@
-# tf.random.uniform((10, 28, 28, 1), dtype=tf.float32)  # Assumed input shape based on typical LeNet5 for Fashion-MNIST
-
-import tensorflow as tf
+import random
 from tensorflow.keras import layers
+from tensorflow.keras import models
 
-class CustomCastLayer(tf.keras.layers.Layer):
+import keras
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras.models import Model
+
+
+def _init_input(input_shape):
+    input_shape = list(input_shape)
+    input_shape[0] = 10
+    input_shape = tuple(input_shape)
+    input = np.random.rand(*input_shape)
+    return input
+
+
+class CustomCastLayer(keras.layers.Layer):
     def __init__(self, target_dtype, **kwargs):
-        super().__init__(**kwargs)
         self.target_dtype = target_dtype
+        super().__init__(**kwargs)
 
-    def call(self, inputs):
-        return tf.cast(inputs, self.target_dtype)
+    def build(self, input_shape):
+        """
+        Do Nothing
+        """
+        super().build(input_shape)
+
+    def call(self, inputs, **kwargs):
+        output = tf.cast(inputs, self.target_dtype)
+        return output
 
     def get_config(self):
         config = super().get_config()
         config.update({"target_dtype": self.target_dtype})
         return config
 
-class CustomPadLayer(tf.keras.layers.Layer):
-    def __init__(self, padding=[[0, 0]], constant_values=0, **kwargs):
-        super().__init__(**kwargs)
-        self.padding = padding
-        self.constant_values = constant_values
+    def compute_output_shape(self, input_shape):
+        """
+        Do Nothing
+        """
+        return input_shape
 
-    def call(self, inputs):
-        paddings = tf.constant([[0, 0]] + self.padding)
-        return tf.pad(inputs, paddings=paddings, mode="CONSTANT", constant_values=self.constant_values)
+
+class CustomPadLayer(keras.layers.Layer):
+    def __init__(self, padding=[[0, 0]], constant_values=0, **kwargs):
+        self.padding = padding  # add [0,0] to padding so we will not change the shape of batch dimension
+        self.constant_values = constant_values
+        super().__init__(**kwargs)
+
+    def build(self, input_shape):
+        super().build(input_shape)
+
+    def call(self, inputs, **kwargs):
+        output = tf.pad(inputs, paddings=tf.constant([[0, 0]] + self.padding), mode="CONSTANT",
+                        constant_values=self.constant_values)
+        return output
 
     def get_config(self):
         config = super().get_config()
         config.update({"padding": self.padding, "constant_values": self.constant_values})
         return config
 
-class CustomCropLayer(tf.keras.layers.Layer):
-    def __init__(self, cropping, **kwargs):
-        super().__init__(**kwargs)
-        self.cropping = cropping
+    def compute_output_shape(self, input_shape):
+        """
+        Formula to calculate the output shape
+        Suppose the input_shape is (None, N, W, C), the `paddings` is [[a, b], [c, d]].
+        The output_shape is (None, N+a+b, W+c+d, C).
+        """
+        input_shape_list = list(input_shape)
+        padding = [[0, 0]] + self.padding
+        assert len(input_shape_list) == len(padding)  # Two dimensions should match.
+        output_shape = [None]
+        for i, pad in zip(input_shape_list[1:], padding[1:]):
+            output_shape.append(i + pad[0] + pad[1])
+        return tuple(output_shape)
 
-    def call(self, inputs):
-        input_shape = tf.shape(inputs)
-        slicing = [slice(None)]
-        # cropping is [[top_crop, bottom_crop], [left_crop, right_crop]]
-        cropping_full = [[0, 0]] + self.cropping  # keep batch dim unchanged
-        for i, crop in enumerate(cropping_full[1:], start=1):
-            slicing.append(slice(crop[0], input_shape[i] - crop[1]))
-        return inputs[slicing]
+
+class CustomCropLayer(keras.layers.Layer):
+    def __init__(self, cropping, **kwargs):
+        self.cropping = cropping
+        super().__init__(**kwargs)
+
+    def build(self, input_shape):
+        super().build(input_shape)
+
+    def call(self, inputs, **kwargs):
+        input_shape = inputs.shape.as_list()
+        indices = [slice(None)]
+        cropping = [[0, 0]] + self.cropping  # add [0,0] to padding so we will not change the shape of batch dimension
+        for shape, crop in zip(input_shape[1:], cropping[1:]):
+            indices.append(slice(0 + crop[0], shape - crop[1]))
+        return inputs[indices]
 
     def get_config(self):
         config = super().get_config()
         config.update({"cropping": self.cropping})
         return config
 
-class CustomExpandLayer(tf.keras.layers.Layer):
-    def __init__(self, axis=1, **kwargs):
-        super().__init__(**kwargs)
-        self.axis = axis
+    def compute_output_shape(self, input_shape):
+        """
+        Formula to calculate the output shape
+        Suppose the input_shape is (None, N, W, C), the `cropping` is [[a, b], [c, d]].
+        The output_shape is (None, N-a-b, W-c-d, C).
+        """
+        input_shape_list = list(input_shape)
+        cropping = [[0, 0]] + self.cropping
+        assert len(input_shape_list) == len(cropping)  # Two dimensions should match.
+        output_shape = [None]
+        for i, crop in zip(input_shape[1:], cropping[1:]):
+            output_shape.append(i - crop[0] - crop[1])
+        return tuple(output_shape)
 
-    def call(self, inputs):
-        return tf.expand_dims(inputs, axis=self.axis)
+
+class CustomExpandLayer(keras.layers.Layer):
+    def __init__(self, axis=1, **kwargs):
+        self.axis = axis
+        super().__init__(**kwargs)
+
+    def build(self, input_shape):
+        super().build(input_shape)
+
+    def call(self, inputs, **kwargs):
+        return tf.expand_dims(inputs, self.axis)
 
     def get_config(self):
         config = super().get_config()
         config.update({"axis": self.axis})
         return config
 
-class CustomDropDimLayer(tf.keras.layers.Layer):
-    def __init__(self, axis=1, **kwargs):
-        super().__init__(**kwargs)
-        self.axis = axis
+    def compute_output_shape(self, input_shape):
+        """
+        Formula to calculate the output shape
+        Suppose the input_shape is [None, N, W, C]:
+        axis=0:
+            output_shape: [1, None, N, W, C]
+        axis=1 (default):
+            output_shape: [None, 1, N, W, C]
+        axis=2:
+            output_shape: [None, N, 1, W, C]
+        axis=3:
+            output_shape: [None, N, W, 1, C]
+        axis=4:
+            output_shape: [None, N, W, C, 1]
+        axis=5:
+            raise Exception
+        """
+        input_shape_list = list(input_shape)
+        if self.axis > len(input_shape_list):
+            raise ValueError(f"axis {self.axis} should be smaller than input_shape + 1: {len(input_shape_list) + 1}")
+        output_shape = input_shape_list[0:self.axis] + [1] + input_shape_list[self.axis:]
+        return tuple(output_shape)  # we should use tuple!!! not list !!!
 
-    def call(self, inputs):
-        # Slice out the dimension at axis by selecting index 0 along that axis
-        indices = [slice(None)] * len(inputs.shape)
+
+class CustomDropDimLayer(keras.layers.Layer):
+    def __init__(self, axis=1, **kwargs):
+        self.axis = axis
+        super().__init__(**kwargs)
+
+    def build(self, input_shape):
+        super().build(input_shape)
+
+    def call(self, inputs, **kwargs):
+        """
+        Something magic to automatically generate indices for array slicing.
+        To determine a specific axis, we can use slice(None) to replace `:`
+        """
+        dim = len(inputs.shape)
+        if self.axis > dim - 1 or self.axis < 1:
+            raise ValueError(f"axis: {self.axis} should be within the range: [1, {dim - 1}] for {dim}D tensor")
+        indices = [slice(None) for i in range(dim)]
         indices[self.axis] = 0
-        return inputs[tuple(indices)]
+        return inputs[indices]
 
     def get_config(self):
         config = super().get_config()
         config.update({"axis": self.axis})
         return config
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # This model reproduces the core Lenet5 + custom ops logic hinted in the issue,
-        # focusing on the conv2d layer that unexpectedly outputs no NaNs given NaN inputs.
+    def compute_output_shape(self, input_shape):
+        """
+        Formula to calculate the output shape
+        Suppose the input_shape is [None, N, W, C]:
+        axis=0:  # Although it is feasible, we don't allow this to happen
+            Raise Exception
+        axis=1 (default):
+            output_shape: [None, W, C]
+        axis=2:
+            output_shape: [None, N, C]
+        axis=3:
+            output_shape: [None, N, W]
+        axis=4:
+            Raise Exception
+        """
+        input_shape_list = list(input_shape)
+        output_shape = input_shape_list[0:self.axis] + input_shape_list[self.axis + 1:]
+        return tuple(output_shape)
 
-        # Assumptions: Input shape is (None, 28, 28, 1) typical for Fashion-MNIST grayscale
 
-        # Basic Layers roughly reflecting Lenet5 architecture
-        self.conv1 = layers.Conv2D(filters=6, kernel_size=5, activation='relu', padding='valid')
-        self.pool1 = layers.MaxPooling2D(pool_size=2, strides=2)
-        self.conv2 = layers.Conv2D(filters=16, kernel_size=5, activation='relu', padding='valid')
-        self.pool2 = layers.MaxPooling2D(pool_size=2, strides=2)
+def custom_objects(mode="custom"):
+    def no_activation(x):
+        return x
 
-        self.flatten = layers.Flatten()
-        self.dense1 = layers.Dense(120, activation='relu')
-        self.dense2 = layers.Dense(84, activation='relu')
-        self.dense3 = layers.Dense(10)  # 10 classes for Fashion-MNIST
+    def leakyrelu(x):
+        import keras.backend as K
+        return K.relu(x, alpha=0.01)
 
-        # Custom layers from the issue, used around dropout and cast operations
-        self.custom_cast = CustomCastLayer(target_dtype=tf.float32)
-        self.custom_pad = CustomPadLayer(padding=[[2, 2], [2, 2]], constant_values=0)
-        self.custom_crop = CustomCropLayer(cropping=[[2, 2], [2, 2]])
-        self.custom_expand = CustomExpandLayer(axis=1)
-        self.custom_dropdim = CustomDropDimLayer(axis=1)
+    # objects = {}
+    objects = {'no_activation': no_activation, 'leakyrelu': leakyrelu}
+    if mode == "custom":
+        objects['CustomPadLayer'] = CustomPadLayer
+        objects['CustomCropLayer'] = CustomCropLayer
+        objects['CustomDropDimLayer'] = CustomDropDimLayer
+        objects['CustomExpandLayer'] = CustomExpandLayer
+        objects['CustomCastLayer'] = CustomCastLayer
 
-        # To simulate the logic where NaN input is expected to propagate through conv2d:
-        # We add a lambda layer that can produce NaNs (like a dropout or similar)
-        # However, dropout won't create NaNs, so we simulate a "nan induction" using tf.where-like.
-        # But here we just handle as is.
+    return objects
 
-    @tf.function(jit_compile=True)
-    def call(self, inputs):
-        # The model forward path with NaN input test:
-        x = inputs
 
-        # First conv block
-        x = self.conv1(x)
-        x = self.pool1(x)
+# 加载预训练模型
+model = keras.models.load_model(
+    "lenet5-fashion-mnist_origin-SpecialI5-LMerg34-MDtype57.h5",
+    custom_objects=custom_objects())
 
-        # Introduce NaN manually if not present (for demonstration),
-        # but as input can have NaNs, we trust input to have NaNs if testing is done.
-        # Note: the reported issue is that conv2d outputs no NaNs despite NaN input.
+input_layer = model.input
+layer_outputs = [layer.output for layer in model.layers]
+print(layer_outputs)
+print("===================================")
 
-        # Second conv block
-        x = self.conv2(x)
-        x = self.pool2(x)
-
-        # Flatten and dense layers
-        x = self.flatten(x)
-        x = self.dense1(x)
-        x = self.dense2(x)
-        out = self.dense3(x)
-
-        # Output: return the final output + a boolean mask indicating if any NaNs exist in output
-        nan_mask = tf.math.reduce_any(tf.math.is_nan(out))
-        # Return both for inspection purposes (nan_mask is scalar bool)
-        return out, nan_mask
-
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input matching expected input shape (batch=10, 28x28 grayscale image)
-    # We also include NaNs to test the issue from the original problem.
-    shape = (10, 28, 28, 1)
-    inp = tf.random.uniform(shape, minval=0, maxval=1, dtype=tf.float32)
-
-    # Introduce NaNs at random positions intentionally
-    import numpy as np
-    np_inp = inp.numpy()
-    # Set about 5% of elements to NaN to simulate NaN inputs
-    nan_mask = np.random.rand(*shape) < 0.05
-    np_inp[nan_mask] = np.nan
-    inp_with_nan = tf.convert_to_tensor(np_inp, dtype=tf.float32)
-    return inp_with_nan
-
+new_model = Model(inputs=input_layer, outputs=layer_outputs)
+# 创建一个具有特定形状的随机tensor，例如形状为(1, 3, 32, 32)
+with tf.device('cpu'):
+    input_tensor = _init_input(model.input_shape)
+    # Use this model to predict
+    all_layer_outputs = new_model.predict(input_tensor)
+    # print(all_layer_outputs)
+    # print(type(all_layer_outputs))
+    # print(all_layer_outputs[0])
+    print("===================================")
+    for i, layer_output in enumerate(all_layer_outputs):
+        # print(f"Output shape of layer {i}: {layer_output.shape}")
+        print(f"Name of layer {i}: {model.layers[i].name}")
+        print(f"Output if nan of layer {i}: {np.isnan(layer_output).any()}")
+        print()

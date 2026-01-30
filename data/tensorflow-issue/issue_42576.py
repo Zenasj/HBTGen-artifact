@@ -1,38 +1,29 @@
-# tf.random.uniform((None, 4), dtype=tf.float32) ← Input shape inferred: iris dataset has 4 features per sample
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
-import tensorflow as tf
+3
+from sklearn.datasets import load_iris
+iris = load_iris()
+X = iris.data
+y = iris.target
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.utils import to_categorical
+from tensorflow.keras.layers import Dense
+y = to_categorical(y)
+from sklearn.model_selection import train_test_split
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Construct a model similar to the one described in the issue (Sequential with Dense layers)
-        # Input shape is (4,) as per iris data features
-        self.dense1 = tf.keras.layers.Dense(512, activation='tanh')
-        self.dense2 = tf.keras.layers.Dense(512 // 2, activation='tanh')
-        self.dense3 = tf.keras.layers.Dense(512 // 4, activation='tanh')
-        self.dense4 = tf.keras.layers.Dense(512 // 8, activation='tanh')
-        self.dense5 = tf.keras.layers.Dense(32, activation='relu')
-        self.dense6 = tf.keras.layers.Dense(3, activation='softmax')
-        
-    def call(self, inputs):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        x = self.dense3(x)
-        x = self.dense4(x)
-        x = self.dense5(x)
-        x = self.dense6(x)
-        return x
+X_train, X_test, y_train, y_test = train_test_split(X,y)
+model1 = Sequential([
+    Dense(512, activation='tanh', input_shape = X_train[0].shape),
+    Dense(512//2, activation='tanh'),
+    Dense(512//4, activation='tanh'),
+    Dense(512//8, activation='tanh'),
+    Dense(32, activation='relu'),
+    Dense(3, activation='softmax')
+])
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Returns a random tensor simulating a batch of iris data input samples
-    # Iris dataset has 4 features per sample
-    # Batch size is set arbitrarily (e.g., 8 samples)
-    batch_size = 8
-    input_shape = (batch_size, 4)
-    # Using float32 as typical dtype for deep learning inputs
-    return tf.random.uniform(input_shape, dtype=tf.float32)
-
+3
+model = Sequential([
+Dense(10, input_shape=(19,)),
+Dense(1)
+])

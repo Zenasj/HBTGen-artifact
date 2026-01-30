@@ -1,12 +1,16 @@
-# torch.rand(1, 3, 224, 224, dtype=torch.float32)  # Inferred input shape
-
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.weight = nn.Parameter(torch.randn(1, 3, 224, 224))
+# it seems that minifier failed to generate a minified code with `TORCHDYNAMO_REPRO_AFTER="aot"`
+# so I will just put my MRE here.
+import torch
+import torch._dynamo
+import torch._inductor.config
+import logging
+
+class ModuleTest2(torch.nn.Module):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.weight = torch.nn.Parameter(torch.randn(1, 3, 224, 224))
     
     def forward(self, x):
         x = x + torch.ones_like(x)
@@ -14,11 +18,14 @@ class MyModel(nn.Module):
         res = res + torch.ones_like(res)
         return res
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+torch._dynamo.config.log_level = logging.DEBUG
+torch._dynamo.config.output_code = True
+torch._dynamo.config.verbose = True
+torch._inductor.config.triton.convolution = "triton"
+torch._inductor.config.debug = True
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(1, 3, 224, 224).cuda()
+model = ModuleTest2().cuda()
 
+model = torch.compile(model)
+print(model)
+print(model(torch.randn(1, 3, 224, 224).cuda()))

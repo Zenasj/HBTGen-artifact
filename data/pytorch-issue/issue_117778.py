@@ -1,16 +1,19 @@
-# torch.rand(1024, 2, dtype=torch.float32, device='cuda')
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        x = torch.roll(x, -1, 0)
-        x[0].fill_(0.0)
-        return x
+#torch.set_printoptions(threshold=10000)
 
-def my_model_function():
-    return MyModel()
+def roll_and_zero_first_row(x):
+    x = torch.roll(x, -1, 0)
+    x[0].fill_(0.0)
+    return x
 
-def GetInput():
-    return torch.rand(1024, 2, device="cuda")
+size = (1024, 2)
 
+inp = torch.ones(size, device="cuda")
+compiled = torch.compile(roll_and_zero_first_row)
+out_eager = roll_and_zero_first_row(inp)
+out_compiled = compiled(inp)
+
+print((out_eager - out_compiled).abs())
+print(out_eager)
+print(torch.testing.assert_allclose(out_eager, out_compiled))

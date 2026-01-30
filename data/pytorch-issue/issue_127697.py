@@ -1,20 +1,23 @@
-# torch.rand(B, 3, dtype=torch.float32)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.mod = nn.Linear(3, 3, bias=False)  # Matches Linear(3,3,bias=False) in the original example
-        
-    def forward(self, x):
-        return self.mod(x)
+def test_ParameterList(self):
 
-def my_model_function():
-    # Returns the model instance with default initialization
-    return MyModel()
+        @torch.compile(backend="eager")
+        def func():
+            def make_param():
+                return Parameter(torch.randn(2, 2))
 
-def GetInput():
-    # Returns input tensor of shape (3, 3) matching Linear layer's expected input
-    return torch.rand(3, 3)
+            parameters = []
+            # without the following print line we generate:
+#             [Parameter containing:
+#              tensor([[ 0.0461,  0.4024],
+#              [-1.0115,  0.2167]], requires_grad=True)]
+                    #
+            # with it we geenrate 
+# [tensor([[ 0.0461,  0.4024],
+#         [-1.0115,  0.2167]], grad_fn=<TracableCreateParameterBackward>)]
+            print(parameters)
 
+
+            parameters.append(make_param())
+            print(parameters)

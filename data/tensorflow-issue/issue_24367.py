@@ -1,74 +1,138 @@
-# tf.random.uniform((B, 4), dtype=tf.float32)  # Input shape corresponds to state vector from AcrobotForever-v1 (4 state variables)
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
+from model_based import ModelBasedAgent
+import gym
+import numpy as np
+from types import MethodType
+import random
 import tensorflow as tf
-from tensorflow.keras import layers, Model
+from matplotlib import pyplot as plt
+import os
+import datetime
+import pickle
 
-class MyModel(tf.keras.Model):
-    def __init__(self, ob_dim=4, n_actions=3):
-        """
-        A TensorFlow 2.x reimplementation of the Keras Sequential model used in ModelBasedAgent,
-        adapted to subclass tf.keras.Model and use functional calls.
-        
-        ob_dim: dimensionality of state input (4 for AcrobotForever-v1)
-        n_actions: discrete action space size (3 for Acrobot)
-        
-        The model predicts delta state (state_next - state) from concatenated (state, action).
-        """
-        super().__init__()
-        
-        self.ob_dim = ob_dim
-        self.n_actions = n_actions
-        
-        # Model layers for (state + action) -> delta_state prediction
-        self.dense1 = layers.Dense(12, activation='relu', input_shape=(ob_dim + 1,))
-        self.dense2 = layers.Dense(12, activation='relu')
-        self.dense3 = layers.Dense(ob_dim, activation='linear')
-        
-    def call(self, inputs, training=False):
-        """
-        inputs: Tensor of shape (batch_size, ob_dim + 1)
-          concatenation of state (4 floats) and action (1 float)
-          
-        returns:
-          predicted delta state (batch_size, ob_dim)
-        """
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        delta_state = self.dense3(x)
-        return delta_state
-    
-    def predict_delta_state(self, state, action):
-        """
-        Convenience function to predict delta state from single state + action inputs.
-        state: Tensor of shape (ob_dim,)
-        action: scalar or tensor of shape ()
-        
-        Returns: Tensor of shape (ob_dim,)
-        """
-        sa = tf.concat([state, tf.cast(tf.reshape(action, (1,)), tf.float32)], axis=0)
-        sa = tf.expand_dims(sa, axis=0)  # add batch dimension: (1, ob_dim+1)
-        ds = self(sa, training=False)
-        return tf.squeeze(ds, axis=0)  # shape (ob_dim,)
+sample_period = 100 # How often to look at coverage for plotting
+def experiment(env, agent, timesteps, render=False):
+    global sample_period
+    ob_space_dim = env.observation_space.shape[0]
+    state = env.reset()
+    state = np.array([state])
+    scores =  []
+    for t in range(1, timesteps+1):
+        # Act
+        action, v_pred = agent.act(state)
+        # Step
+        state_next, _reward, _terminal, _info = env.step(action)
+        state_next = np.reshape(state_next, [1, ob_space_dim])
+        # Think
+        agent.think(state, action, state_next, v_pred)
+        # Render
+        if render:
+            env.render()
+        # Gather data
+        if t % sample_period == 0:
+            score = agent.covered_volume() * 100
+            scores.append(score)
+    return scores
 
-def my_model_function():
-    model = MyModel(ob_dim=4, n_actions=3)
-    # Compile model with optimizer and loss for convenient training
-    model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
-                  loss='mse')
-    return model
 
-def GetInput():
-    """
-    Return a random tensor input suitable for MyModel call.
-    Input shape must be (batch_size, 5), where 5 = 4 state dims + 1 action dim.
-    
-    We'll create batch_size = 1, with values in typical normalized range.
-    Assume state values roughly between -1.0 and 1.0 (angles and velocities),
-    and action as discrete integer cast to float (between 0 and n_actions-1).
-    """
-    import numpy as np
-    state = np.random.uniform(low=-1.0, high=1.0, size=(1, 4)).astype(np.float32)
-    action = np.random.randint(low=0, high=3, size=(1,1)).astype(np.float32)
-    input_tensor = tf.constant(np.concatenate([state, action], axis=-1))
-    return input_tensor
+#  def several_experiments(env, agent, n_experiments=18, timesteps=7000, color='blue'):
+def several_experiments(env, agent, n_experiments=3, timesteps=800, color='blue'):
+    global sample_period
+    scores = np.zeros((n_experiments, int(timesteps/sample_period)))
+    for i in range(n_experiments):
+        with tf.Session() as sess:
+            agent.reset()
+            sess.run(tf.global_variables_initializer())
+            # Scores
+            scores[i, :] = experiment(env, agent, timesteps)
+            print("Iter %s, timesteps=%s: coverage = %s" % (i, timesteps, scores[i, -1]))
+        tf.reset_default_graph()
 
+if __name__ == '__main__':
+    ENV_NAME = "AcrobotForever-v1"
+    env = gym.make(ENV_NAME)
+
+    EPSILON = 0.1
+
+    agent = ModelBasedAgent(env)
+    agent.exploration_rate = EPSILON
+    several_experiments(env, agent)
+
+import random
+import gym
+import acrobot_forever
+import numpy as np
+from collections import deque
+from keras.models import Sequential
+from keras.layers import Dense
+from keras.optimizers import Adam
+from matplotlib import pyplot as plt
+from scipy.spatial import ConvexHull
+import time
+import tensorflow as tf
+
+class ModelBasedAgent:
+    def __init__(self, env, act=None):
+        from types import MethodType
+        if not act is None:
+            self.act = MethodType(act, self)
+
+        # Custom initializer
+        from keras import backend as K
+        def network_init(shape, dtype=None):
+            return np.random.random(shape) * 10 - 5
+
+        self.advantage_learning = None
+        self.env = env
+        self.states = []
+        self.exploration_rate = 0.0
+        self.n_actions = env.action_space.n
+        self.ob_dim = env.observation_space.shape[0]
+
+        # Model network n: (s, a) -> ds
+        self.model_net = Sequential()
+        self.model_net.add(Dense(12, input_shape=(self.ob_dim + 1,), activation="relu"))
+        self.model_net.add(Dense(12, activation="relu"))
+        self.model_net.add(Dense(self.ob_dim, activation="linear"))
+        self.model_net.compile(loss="mse", optimizer=Adam(lr=0.001))
+
+    def reset(self):
+        self.__init__(self.env)
+
+    def _predict_ds(self, state, action):
+        sa = np.array([np.concatenate((state[0], [action]))])
+        return self.model_net.predict(sa, 1)[0]
+
+    def act(self, state):
+        if np.random.rand() < self.exploration_rate:
+            return random.randrange(self.n_actions), None
+
+        # Sample a desired ds (delta state)
+        target_dstate = np.random.normal(0.0, 1.0, self.ob_dim)
+        # Make predictions for each possible action
+        dstate = [self._predict_ds(state, a) for a in range(self.n_actions)]
+        # Find best action by measuring how close ds are to target_ds (angle)
+        def dist(ds1, ds2):
+            dot = np.dot(ds1, ds2) / (np.linalg.norm(ds1) * np.linalg.norm(ds2))
+            return 1 - dot    # from 0 (perfect match) to 2 (anti-parallel)
+        ds_distance = [dist(target_dstate, ds) for ds in dstate]
+
+        # Finally, return the action which results in a state change in a direction most similar to desired direction
+        return np.argmin(ds_distance), None
+
+
+    def think(self, state, action, state_next, _):
+        self.states.append(state_next[0])
+
+        # Train the model
+        sa = np.array([np.concatenate((state[0], [action]))])
+        self.model_net.fit(sa, state_next - state, verbose=0)
+
+    # Approximate the covered area by convex hull
+    def covered_volume(self):
+        states = np.array(self.states)
+        states = (states + self.env.observation_space.low)/(self.env.observation_space.high - self.env.observation_space.low)
+        return ConvexHull(states).volume

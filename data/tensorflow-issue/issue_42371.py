@@ -1,36 +1,46 @@
-# tf.random.uniform((1, 100, 1, 512), dtype=tf.float32) ← Input shape inferred from example usage in issue
-
+import numpy as np
+import random
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
 
-class MyModel(tf.keras.Model):
-    def __init__(self, channels=256, ksize=16, stride=8, padding="same"):
-        super(MyModel, self).__init__()
-        # This class emulates a Conv1DTranspose using Conv2DTranspose by expanding dims
-        # In the original code, the input was 4D: (batch, length, 1, channels_in)
-        # This layer applies Conv2DTranspose with kernel size (ksize, 1) and stride (stride, 1)
+class TFConvTranspose1d(tf.keras.Model):
+
+    def __init__(self, channels, ksize, stride, padding):
+        super(TFConvTranspose1d, self).__init__()
         self.conv1d_transpose = tf.keras.layers.Conv2DTranspose(
-            filters=channels,
-            kernel_size=(ksize, 1),
-            strides=(stride, 1),
-            padding=padding,
+            filters = channels,
+            kernel_size = (ksize, 1),
+            strides = (stride, 1),
+            padding = "same",
         )
 
     def call(self, x):
-        # Expecting input shape: (batch, length, 1, channels_in)
-        # The original code did not use explicit expand_dims or squeeze here,
-        # so input must already be 4D with 2nd dim = length, 3rd dim = 1
+#         x = tf.expand_dims(x, axis=2)
+        
+#         print(" CONV TRANSPOSE 1D ", x.shape)
         x = self.conv1d_transpose(x)
+#         print(" CONV TRANSPOSE 1D ", x.shape)
+#         x = tf.squeeze(x, axis=2)
         return x
 
+checkModel = TFConvTranspose1d(256, 16, 8, "same")
+input_shape = (1, 100,1,  512)
+checkModel.build(input_shape)
 
-def my_model_function():
-    # Return an instance of MyModel with default parameters used in the issue example
-    return MyModel(channels=256, ksize=16, stride=8, padding="same")
+x = np.random.rand(1, 100,1,  512)
+x = x.astype('float32')
 
+out = checkModel.predict(x)
+print( "KERAS OUTPUT : ", out.shape)
 
-def GetInput():
-    # Return a random tensor matching the input expected by MyModel
-    # From the issue example:
-    # shape = (1, 100, 1, 512), dtype = float32
-    return tf.random.uniform((1, 100, 1, 512), dtype=tf.float32)
+print(" Number of Params : ", checkModel.count_params())
 
+tflite_converter = tf.lite.TFLiteConverter.from_keras_model(checkModel)
+tflite_converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS, tf.lite.OpsSet.SELECT_TF_OPS]
+tflite_converter.allow_custom_ops = True
+tflite_converter.optimizations = [tf.lite.Optimize.DEFAULT]
+tflite_converter.post_training_quantize = True
+tfmodel = tflite_converter.convert()
+
+open("convTranspose.tflite", "wb").write(tfmodel)

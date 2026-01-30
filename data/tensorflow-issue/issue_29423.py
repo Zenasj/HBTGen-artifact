@@ -1,29 +1,32 @@
-# tf.random.uniform((32, 28, 28, 1), dtype=tf.float32) ← inferred input shape from MNIST dataset batching and model input shape
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
+import tensorflow_datasets as tfds
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense = tf.keras.layers.Dense(10, activation=tf.nn.softmax)
+# Disable eager execution, otherwise TPUStrategy won't work at all
+tf.compat.v1.disable_eager_execution()
 
-    def call(self, inputs, training=False):
-        x = self.flatten(inputs)
-        return self.dense(x)
+# Load dataset
+ds = tfds.load('mnist', split=tfds.Split.TRAIN, as_supervised=True)
+ds = ds.map(lambda x,y : (tf.cast(x, tf.float32), y))
+ds = ds.shuffle(100).batch(32).prefetch(tf.data.experimental.AUTOTUNE)
 
-def my_model_function():
-    # Create and compile the model similarly to the reported code
-    model = MyModel()
-    model.compile(
-        loss='categorical_crossentropy',
-        optimizer=tf.keras.optimizers.SGD(0.01)
-    )
-    return model
+# Prepare strategy
+import os
+TPU_ADDRESS = 'grpc://' + os.environ['COLAB_TPU_ADDR']
+tf.config.experimental_connect_to_host(TPU_ADDRESS)
+resolver = tf.distribute.cluster_resolver.TPUClusterResolver(tpu=TPU_ADDRESS)
+tf.tpu.experimental.initialize_tpu_system(resolver)
+strategy = tf.distribute.experimental.TPUStrategy(resolver)
 
-def GetInput():
-    # Return a random tensor mimicking a batch of MNIST images (batch_size=32)
-    # Note: MNIST images are grayscale 28x28 with 1 channel
-    # Use float32 as model input dtype
-    return tf.random.uniform(shape=(32, 28, 28, 1), dtype=tf.float32)
+with strategy.scope():
+    net = tf.keras.Sequential([tf.keras.layers.Input([28,28,1]),
+                                tf.keras.layers.Flatten(),
+                                tf.keras.layers.Dense(10, activation=tf.nn.softmax)])
+    net.compile(loss='categorical_crossentropy',
+                optimizer=tf.keras.optimizers.SGD(0.01))
 
+# training will raise an exception
+net.fit(ds)

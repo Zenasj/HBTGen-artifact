@@ -1,47 +1,38 @@
-# tf.random.uniform((B, 3), dtype=tf.float32)  # Inferred input shape from model input shape=(3,)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
 
-# Because original issue is from TF 1.13 era where eager execution was enabled via tf.enable_eager_execution()
-# In TF 2.x eager is enabled by default; however, to keep compatibility with TF 2.20.0 we just write a model class.
+tf.enable_eager_execution()
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define layers matching the original example:
-        self.dense1 = tf.keras.layers.Dense(5, 
-                                            kernel_regularizer=tf.keras.regularizers.l2(0.01))
-        self.act1 = tf.keras.layers.LeakyReLU(alpha=0.1)
-        self.dense2 = tf.keras.layers.Dense(5, 
-                                            kernel_regularizer=tf.keras.regularizers.l2(0.01))
-        self.act2 = tf.keras.layers.LeakyReLU(alpha=0.1)
-        self.out = tf.keras.layers.Dense(1, 
-                                         kernel_regularizer=tf.keras.regularizers.l2(0.01),
-                                         activation='sigmoid')
+sgd = tf.keras.optimizers.SGD()
 
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.act1(x)
-        x = self.dense2(x)
-        x = self.act2(x)
-        return self.out(x)
+inputs = tf.keras.Input(shape=(3,))
 
-def my_model_function():
-    # Instantiate the model and compile it with SGD optimizer and MSE loss,
-    # setting run_eagerly=True to allow custom loss stepping (as per original user's intent).
-    model = MyModel()
-    sgd = tf.keras.optimizers.SGD()
-    # Compile model as per original code snippet
-    model.compile(optimizer=sgd, loss='mean_squared_error')
-    # Model.run_eagerly attribute exists in TF 2.x; setting True enables eager mode training.
-    model.run_eagerly = True
-    return model
+# First layer
+x = tf.keras.layers.Dense(5, kernel_regularizer=tf.keras.regularizers.l2(0.01))(inputs)
+x = tf.keras.layers.LeakyReLU(alpha=0.1)(x)
 
-def GetInput():
-    # Generate dummy batch input tensor matching input shape=(3,)
-    # Batch size is 4 (arbitrarily chosen) for demonstration
-    # Values random uniform between 0 and 1 to simulate general input
-    batch_size = 4
-    input_shape = (batch_size, 3)
-    return tf.random.uniform(input_shape, dtype=tf.float32)
+# Second layer
+x = tf.keras.layers.Dense(5, kernel_regularizer=tf.keras.regularizers.l2(0.01))(x)
+x = tf.keras.layers.LeakyReLU(alpha=0.1)(x)
 
+# Output
+outputs = tf.keras.layers.Dense(
+	1,
+	kernel_regularizer=tf.keras.regularizers.l2(0.01),
+	activation='sigmoid'
+)(x)
+
+model = tf.keras.Model(inputs=inputs, outputs=outputs)
+
+model.compile(optimizer=sgd, loss='mean_squared_error')
+
+model.run_eagerly = True
+
+# Define some dummy dataset
+x = [[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]]]
+y = [0, 1, 0]
+
+model.fit(x, y)

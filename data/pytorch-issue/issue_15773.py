@@ -1,23 +1,21 @@
-# torch.rand(1, device='cuda')  # dummy input (sample_shape is fixed to 10)
 import torch
-from torch import nn
-from torch.distributions import Gamma
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.a = nn.Parameter(torch.ones(3, 4, 1, 5, device='cuda'))  # Matches original shape (3,4,1,5)
-        self.b = nn.Parameter(torch.ones(3, 4, 1, 5, device='cuda'))
-    
-    def forward(self, dummy_input):
-        # Gamma-based workaround for missing CUDA Beta distribution gradient
-        s1 = Gamma(self.a, 1.0).rsample(torch.Size([10]))
-        s2 = Gamma(self.b, 1.0).rsample(torch.Size([10]))
-        return s1 / (s1 + s2)
+a,b = torch.ones(3,4,1,5,requires_grad=True),torch.ones(3,4,1,5,requires_grad=True)
+s = torch.distributions.beta.Beta(a,b).rsample(torch.Size((10,)))
+torch.sum(s).backward()
+a.grad
 
-def my_model_function():
-    return MyModel()
+a,b = torch.ones(3,4,1,5,requires_grad=True,device='cuda'),torch.ones(3,4,1,5,requires_grad=True,device='cuda')
+s = torch.distributions.beta.Beta(a,b).rsample(torch.Size((10,)))
+torch.sum(s).backward()
+a.grad
 
-def GetInput():
-    return torch.rand(1, device='cuda')  # Dummy input matching forward() requirement
+a,b = torch.ones(3,4,1,5,requires_grad=True,device='cuda'),torch.ones(3,4,1,5,requires_grad=True,device='cuda')
 
+a_cpu = a.cpu()
+b_cpu = b.cpu()
+
+s_cpu = torch.distributions.beta.Beta(a_cpu,b_cpu).rsample(torch.Size((10,)))
+s = s_cpu.cuda()
+torch.sum(s).backward()
+a.grad

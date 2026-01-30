@@ -1,35 +1,87 @@
-# tf.random.uniform((B, 2)) ← Input shape inferred from issue examples: input features with shape (None, 2)
+import random
+from tensorflow import keras
 
 import tensorflow as tf
+from tensorflow.keras import Sequential
+from tensorflow.layers import Dense
+from tensorflow.python.training.adam import AdamOptimizer
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Simple feedforward model consistent with examples given:
-        # Input shape (batch_size, 2), two Dense layers as in original code snippets
-        self.dense1 = tf.keras.layers.Dense(8, activation='relu', input_shape=(2,))
-        self.dense2 = tf.keras.layers.Dense(1, activation='softmax')
+model = Sequential()
+model.add(Dense(8, input_shape=(2, )))
+model.add(Dense(1, activation='softmax'))
+model.compile(optimizer=AdamOptimizer(), loss='mse')
 
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        return x
+lr_schedule = tf.keras.callbacks.ReduceLROnPlateau()
 
+x = np.random.uniform(0, 1, (100, 2))
+y = np.random.uniform(0, 1, (100, 1))
+model.fit(x=x, y=y, callbacks=[lr_schedule], validation_split=0.2)
 
-def my_model_function():
-    """
-    Returns an instance of MyModel.
-    This model is compatible with tf.keras optimizers (recommended over TF native optimizers)
-    to work properly with ReduceLROnPlateau callbacks as explained in the issue discussion.
-    """
-    return MyModel()
+def on_epoch_begin(self, epoch, logs=None):
+    # if not hasattr(self.model.optimizer, 'lr'):   <=== Original  self.model.optimizer.optimizer._learning_rate
+    if not hasattr(self.model.optimizer.optimizer, '_learning_rate'):
+      raise ValueError('Optimizer must have a "lr" attribute.')
+    try:  # new API
+      # lr = float(K.get_value(self.model.optimizer.lr))
+      lr = float(self.model.optimizer.optimizer._learning_rate)
+      lr = self.schedule(epoch, lr)
+    except TypeError:  # Support for old API for backward compatibility
+      lr = self.schedule(epoch)
+    if not isinstance(lr, (float, np.float32, np.float64)):
+      raise ValueError('The output of the "schedule" function '
+                       'should be float.')
+    # K.set_value(self.model.optimizer.lr, lr)
+    self.model.optimizer.optimizer._learning_rate = lr
+    if self.verbose > 0:
+      print('\nEpoch %05d: LearningRateScheduler reducing learning '
+            'rate to %s.' % (epoch + 1, lr))
 
+learning_rate = K.variable(0.001)
+adamW = tf.contrib.opt.AdamWOptimizer(weight_decay=1e-4,
+                                      learning_rate=learning_rate, 
+                                      beta1=0.9, beta2=0.999, 
+                                      epsilon=1e-08, name='AdamW')
+opt= TFOptimizer(adamW)
+opt.lr = learning_rate
+model.compile(optimizer=opt, loss=ssd_loss.compute_loss)
 
-def GetInput():
-    """
-    Returns a random tensor input matching the expected model input shape.
-    From the issue, the model input is shape (batch_size, 2).
-    We choose batch_size=32 as a common example.
-    """
-    return tf.random.uniform((32, 2), dtype=tf.float32)
+# Build callbacks
+from keras.callbacks import EarlyStopping, ReduceLROnPlateau
+reduce_lr = ReduceLROnPlateau(monitor='val_acc', patience=2, verbose=1, factor=0.5, min_lr=0.00001)
+earlystop = EarlyStopping(patience=5)
+callbacks = [reduce_lr, earlystop]
 
+# model
+from tensorflow.keras import models
+from tensorflow.keras import layers 
+from tensorflow.keras import optimizers
+
+model = models.Sequential()
+model.add(Dense(1024, activation='relu', input_dim=tr_x.shape[1]))
+model.add(Dense(512, activation='relu'))
+model.add(Dense(256, activation='relu'))
+model.add(Dropout(.5))
+model.add(Dense(num_classes, activation='sigmoid'))
+
+model.compile(loss=tf.keras.losses.binary_crossentropy,
+             optimizer=tf.train.AdamOptimizer(),
+             metrics=['accuracy'])
+
+history = model.fit(x=tr_x, y=tr_y, 
+                    batch_size=batch_size, 
+                    epochs=30, 
+                    callbacks=callbacks,
+                    validation_data=(val_x, val_y))
+
+model = models.Sequential()
+model.add(Dense(1024, activation='relu', input_dim=tr_x.shape[1]))
+model.add(Dense(512, activation='relu'))
+model.add(Dense(256, activation='relu'))
+model.add(Dropout(.5))
+model.add(Dense(num_classes, activation='sigmoid'))
+
+opt = tf.keras.optimizers.Adam(lr=0.001)
+model.compile(loss=tf.keras.losses.binary_crossentropy,
+             optimizer=opt,
+             metrics=['accuracy'])

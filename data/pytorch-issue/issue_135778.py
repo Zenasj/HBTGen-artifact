@@ -1,19 +1,19 @@
-# Input shape: three tensors of (8, 64, 1024, 1024), dtype=torch.float16
+import torch.nn as nn
+
 import torch
-from torch import nn
+import time
 
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        q, k, v = inputs
-        return torch.nn.functional.scaled_dot_product_attention(q, k, v)
+torch.set_default_device("cuda")
+torch.set_default_dtype(torch.float16)
 
-def my_model_function():
-    return MyModel()
+SHAPE = (8, 64, 1024, 1024)
 
-def GetInput():
-    shape = (8, 64, 1024, 1024)
-    q = torch.randn(shape, dtype=torch.float16, device="cuda")
-    k = torch.randn(shape, dtype=torch.float16, device="cuda")
-    v = torch.randn(shape, dtype=torch.float16, device="cuda")
-    return (q, k, v)
+@torch.inference_mode()
+def benchmark(n: int) -> float:
+    now = time.perf_counter()
+    for _ in range(n):
+        torch.nn.functional.scaled_dot_product_attention(torch.randn(SHAPE), torch.randn(SHAPE), torch.randn(SHAPE))
+    return time.perf_counter() - now
 
+benchmark(100)  # warmup
+print(f"100 steps of SDPA completed in {benchmark(100) * 1000}ms")

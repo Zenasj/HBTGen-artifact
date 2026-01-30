@@ -1,95 +1,59 @@
-# tf.random.uniform((B, imsize, imsize, color_channels), dtype=tf.float32)
-import tensorflow as tf
-import tensorflow_probability as tfp
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
+import numpy as np
+import os
+import tensorflow_probability as tfp
 tfd = tfp.distributions
 tfpl = tfp.layers.distribution_layer
+import tensorflow as tf
 
-# Assumptions based on the issue:
-# - Input shape is (batch_size, imsize, imsize, color_channels).
-# - latent_dim=8
-# - The encoder outputs a tfp.distributions.MultivariateNormalTriL distribution.
-# - The decoder outputs a reconstructed image tensor.
-# - The model uses a VAE structure.
-#
-# The problem reported was that calling encoder.predict() fails because the
-# output distribution instance is not a tensor and Keras expects tensor-like outputs.
-# A common workaround to get the latent code as a tensor is to explicitly call
-# `sample()` or `mean()` on the distribution before outputting it in the encoder.
-#
-# Here, to fix the issue, the encoder will output the latent *samples* (samples drawn
-# from the distribution) instead of the distribution object itself.
-#
-# This approach lets the encoder still represent uncertainty internally,
-# but exposes a tensor compatible with Keras predict().
-#
-# The class MyModel encapsulates both the encoder and decoder, with a forward pass
-# returning the decoded reconstructed image for input images.
-#
-# GetInput() returns a random input tensor consistent with the input shape.
+
+load_model = 1
 
 latent_dim = 8
+learning_rate = 1e-4
+
+BATCH_SIZE = 100
+TEST_BATCH_SIZE = 10
+
+
 color_channels = 1
-imsize = 28  # MNIST images 28x28
+(train_images, _), (test_images, _) = tf.keras.datasets.mnist.load_data()
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
+train_images = train_images[:5000,::]
+n_trainsamples = np.shape(train_images)[0]
+imsize = np.shape(train_images)[1]
+train_images = train_images.reshape(-1, imsize, imsize, 1).astype('float32')
+train_images /= 255.
+train_dataset = tf.data.Dataset.from_tensor_slices((train_images, train_images)).shuffle(n_trainsamples).repeat().batch(BATCH_SIZE)
 
-        # Encoder
-        self.flatten = tf.keras.layers.Flatten(name="encoder_flatten")
-        self.dense1 = tf.keras.layers.Dense(500, activation='softplus', name="Inference-l1_Dense")
-        self.dense_params = tf.keras.layers.Dense(tfpl.MultivariateNormalTriL.params_size(latent_dim),
-                                                  name="Inference-l2_Dense_params")
-        self.distribution_layer = tfpl.MultivariateNormalTriL(latent_dim, name="encoder_distribution")
-        
-        # Prior distribution for KLD loss
-        self.prior = tfd.Independent(tfd.Normal(loc=tf.zeros(latent_dim), scale=1.0),
-                                     reinterpreted_batch_ndims=1)
-        self.kl_loss_layer = tfpl.KLDivergenceAddLoss(self.prior, weight=1.0)
+image_input = tf.keras.Input(shape=(imsize, imsize, color_channels), name='encoder_input')
+x = tf.keras.layers.Flatten()(image_input)
+x = tf.keras.layers.Dense(500, activation='softplus', name="Inference-l1_Dense")(x)
+x = tf.keras.layers.Dense(tfpl.MultivariateNormalTriL.params_size(latent_dim))(x)
+z = tfpl.MultivariateNormalTriL(latent_dim)(x)
+prior = tfd.Independent(tfd.Normal(loc=[0., 0], scale=1), reinterpreted_batch_ndims=1)
+tfpl.KLDivergenceAddLoss(prior, weight=1.0)
 
-        # Decoder
-        self.decoder_dense1 = tf.keras.layers.Dense(500, activation='softplus', name="Generative-l1_Dense")
-        self.decoder_dense2 = tf.keras.layers.Dense(imsize * imsize * color_channels, activation='sigmoid',
-                                                    name="Generative-l2_Dense_out")
-        self.reshape_layer = tf.keras.layers.Reshape(target_shape=(imsize, imsize, color_channels),
-                                                     name="Generative-output_probs")
+encoder = tf.keras.Model(inputs=image_input, outputs=z, name='encoder')
 
-    def encode(self, x):
-        x = self.flatten(x)
-        x = self.dense1(x)
-        params = self.dense_params(x)
-        q_z = self.distribution_layer(params)
-        # Add KL divergence loss
-        _ = self.kl_loss_layer(q_z)
-        return q_z
+latent_inputs = tf.keras.Input(shape=(latent_dim,), name='z_sampling')
+x = tf.keras.layers.Dense(500, activation='softplus', name="Generative-l1_Dense")(latent_inputs)
+x = tf.keras.layers.Dense(imsize ** 2 * color_channels, activation='sigmoid', name="Generative-l3_Dense_out")(x)  
 
-    def decode(self, z):
-        x = self.decoder_dense1(z)
-        x = self.decoder_dense2(x)
-        x = self.reshape_layer(x)
-        return x
+output_probs = tf.keras.layers.Reshape(target_shape=(imsize, imsize, color_channels), name="Generative-output_probs")(x)
 
-    def call(self, inputs, training=False):
-        # Forward pass through encoder then decoder
-        q_z = self.encode(inputs)
-        # For training and evaluation, use z sampled from q_z to keep stochasticity
-        z = q_z.sample()
-        reconstructed = self.decode(z)
-        return reconstructed
+decoder = tf.keras.Model(inputs=latent_inputs, outputs=output_probs, name='decoder')
+output_probs = decoder(z)
 
-    def encode_latent(self, inputs):
-        # Returns latent samples as tensor for external use (e.g. encoder.predict())
-        q_z = self.encode(inputs)
-        return q_z.sample()
+vae_model = tf.keras.Model(inputs=image_input, outputs=output_probs, name='vae')
 
-def my_model_function():
-    return MyModel()
+optimizer = tf.keras.optimizers.Adam(learning_rate=1e-3)
+vae_model.compile(optimizer, tf.keras.losses.BinaryCrossentropy())
 
-def GetInput():
-    # Return a random batch of images with shape [batch_size, imsize, imsize, color_channels]
-    # Batch size chosen arbitrarily as 4 for testing/predict compatibility.
-    batch_size = 4
-    return tf.random.uniform((batch_size, imsize, imsize, color_channels),
-                             minval=0., maxval=1., dtype=tf.float32)
+vae_model.fit(train_dataset, steps_per_epoch=n_trainsamples // BATCH_SIZE, epochs=4)
 
+latents = encoder.predict(train_images[:4,::])
+print('latent shape: ' + latents.shape())

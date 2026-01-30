@@ -1,195 +1,237 @@
-# tf.random.uniform((B, 48, 48, 1), dtype=tf.float32)
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
 
-# Assumptions & notes:
-# - Original code is TF 1.x with eager execution and tf.layers, but for modern TF 2.20.0 compatibility,
-#   tf.keras.layers is used instead of tf.layers (since tf.layers is deprecated).
-# - The input shape is inferred as (batch, 48, 48, 1) from dummy_input in restore_model().
-# - The model is a CNN for emotion recognition with 7 classes.
-# - Dropout layers use rate and training argument for conditional dropout.
-# - BatchNormalization layers instantiated using tf.keras.layers.BatchNormalization as in chunk 2/5.
-# - Predictor returns flattened logits (for loss and softmax cross entropy).
-# - For XLA compatibility, avoid eager-only constructs such as tfe.* (TensorFlow 1.x eager APIs),
-#   use native TF 2.x APIs.
-# - Save/load weights replaced by tf.train.Checkpoint to avoid .meta file issues.
-# - The device string like "gpu:0" is handled via tf.device context.
-# - Optimizer is passed externally to fit function.
-# - The metrics and iterators adapted to tf.data.Dataset usage.
-# - To keep the same interface, method names and signatures preserved where applicable.
-# - The loss function is sparse_softmax_cross_entropy with logits.
-# - For clarity and compatibility, predict renamed from predict() to call() special method.
-
-class MyModel(tf.keras.Model):
-    def __init__(self, num_classes):
-        super(MyModel, self).__init__()
-        # Define layers similarly to provided code, but use tf.keras.layers
-        self.conv1 = tf.keras.layers.Conv2D(16, 5, padding='same', activation=None)
-        self.batch1 = tf.keras.layers.BatchNormalization()
-        self.conv2 = tf.keras.layers.Conv2D(16, 5, strides=2, padding='same', activation=None)
-        self.batch2 = tf.keras.layers.BatchNormalization()
-        self.conv3 = tf.keras.layers.Conv2D(32, 5, padding='same', activation=None)
-        self.batch3 = tf.keras.layers.BatchNormalization()
-        self.conv4 = tf.keras.layers.Conv2D(32, 5, strides=2, padding='same', activation=None)
-        self.batch4 = tf.keras.layers.BatchNormalization()
-        self.conv5 = tf.keras.layers.Conv2D(64, 3, padding='same', activation=None)
-        self.batch5 = tf.keras.layers.BatchNormalization()
-        self.conv6 = tf.keras.layers.Conv2D(64, 3, strides=2, padding='same', activation=None)
-        self.batch6 = tf.keras.layers.BatchNormalization()
-        self.conv7 = tf.keras.layers.Conv2D(64, 1, padding='same', activation=None)
-        self.batch7 = tf.keras.layers.BatchNormalization()
-        self.conv8 = tf.keras.layers.Conv2D(128, 3, strides=2, padding='same', activation=None)
+class EmotionRecognitionCNN(tf.keras.Model):
+    
+    def __init__(self, num_classes, device='cpu:0', checkpoint_directory=None):
+        ''' Define the parameterized layers used during forward-pass, the device
+            where you would like to run the computation on and the checkpoint
+            directory.
+            
+            Args:
+                num_classes: the number of labels in the network.
+                device: string, 'cpu:n' or 'gpu:n' (n can vary). Default, 'cpu:0'.
+                checkpoint_directory: the directory where you would like to save or 
+                                      restore a model.
+        ''' 
+        super(EmotionRecognitionCNN, self).__init__()
+        
+        # Initialize layers
+        self.conv1 = tf.layers.Conv2D(16, 5, padding='same', activation=None)
+        self.batch1 = tf.layers.BatchNormalization()
+        self.conv2 = tf.layers.Conv2D(16, 5, 2, padding='same', activation=None)
+        self.batch2 = tf.layers.BatchNormalization()
+        self.conv3 = tf.layers.Conv2D(32, 5, padding='same', activation=None)
+        self.batch3 = tf.layers.BatchNormalization()
+        self.conv4 = tf.layers.Conv2D(32, 5, 2, padding='same', activation=None)
+        self.batch4 = tf.layers.BatchNormalization()
+        self.conv5 = tf.layers.Conv2D(64, 3, padding='same', activation=None)
+        self.batch5 = tf.layers.BatchNormalization()
+        self.conv6 = tf.layers.Conv2D(64, 3, 2, padding='same', activation=None)
+        self.batch6 = tf.layers.BatchNormalization()
+        self.conv7 = tf.layers.Conv2D(64, 1, padding='same', activation=None)
+        self.batch7 = tf.layers.BatchNormalization()
+        self.conv8 = tf.layers.Conv2D(128, 3, 2, padding='same', activation=None)
         self.batch8 = tf.keras.layers.BatchNormalization()
-        self.conv9 = tf.keras.layers.Conv2D(256, 1, padding='same', activation=None)
+        self.conv9 = tf.layers.Conv2D(256, 1, padding='same', activation=None)
         self.batch9 = tf.keras.layers.BatchNormalization()
-        self.conv10 = tf.keras.layers.Conv2D(128, 3, strides=2, padding='same', activation=None)
-        self.conv11 = tf.keras.layers.Conv2D(256, 1, padding='same', activation=None)
-        self.batch11 = tf.keras.layers.BatchNormalization()
-        self.conv12 = tf.keras.layers.Conv2D(num_classes, 3, strides=2, padding='same', activation=None)
-
-        # Dropout rates from original: 0.4, then 0.3 multiple times
-        self.dropout1 = tf.keras.layers.Dropout(0.4)
-        self.dropout2 = tf.keras.layers.Dropout(0.3)
-        self.dropout3 = tf.keras.layers.Dropout(0.3)
-        self.dropout4 = tf.keras.layers.Dropout(0.3)
-
-        self.flatten = tf.keras.layers.Flatten()
-
-    def call(self, images, training=False):
-        # Forward pass reflecting predict function from issue
+        self.conv10 = tf.layers.Conv2D(128, 3, 2, padding='same', activation=None)
+        self.conv11 = tf.layers.Conv2D(256, 1, padding='same', activation=None)
+        self.batch11 = tf.layers.BatchNormalization()
+        self.conv12 = tf.layers.Conv2D(num_classes, 3, 2, padding='same', activation=None)
+        
+        # Define the device 
+        self.device = device
+        
+        # Define the checkpoint directory
+        self.checkpoint_directory = checkpoint_directory
+       
+    def predict(self, images, training):
+        """ Predicts the probability of each class, based on the input sample.
+            
+            Args:
+                images: 4D tensor. Either an image or a batch of images.
+                training: Boolean. Either the network is predicting in
+                          training mode or not.
+        """
         x = self.conv1(images)
         x = self.batch1(x, training=training)
         x = self.conv2(x)
         x = self.batch2(x, training=training)
         x = tf.nn.relu(x)
-        x = self.dropout1(x, training=training)
+        x = tf.layers.dropout(x, rate=0.4, training=training)
         x = self.conv3(x)
         x = self.batch3(x, training=training)
         x = self.conv4(x)
         x = self.batch4(x, training=training)
         x = tf.nn.relu(x)
-        x = self.dropout2(x, training=training)
+        x = tf.layers.dropout(x, rate=0.3, training=training)
         x = self.conv5(x)
         x = self.batch5(x, training=training)
         x = self.conv6(x)
         x = self.batch6(x, training=training)
         x = tf.nn.relu(x)
-        x = self.dropout3(x, training=training)
+        x = tf.layers.dropout(x, rate=0.3, training=training)
         x = self.conv7(x)
         x = self.batch7(x, training=training)
         x = self.conv8(x)
         x = self.batch8(x, training=training)
         x = tf.nn.relu(x)
-        x = self.dropout4(x, training=training)
+        x = tf.layers.dropout(x, rate=0.3, training=training)
         x = self.conv9(x)
         x = self.batch9(x, training=training)
         x = self.conv10(x)
         x = self.conv11(x)
         x = self.batch11(x, training=training)
         x = self.conv12(x)
-        # Output flattened logits for classification (num_classes)
-        x = self.flatten(x)
-        return x
-
-    def loss_fn(self, images, targets, training=False):
-        logits = self.call(images, training=training)
-        loss = tf.reduce_mean(
-            tf.nn.sparse_softmax_cross_entropy_with_logits(labels=targets, logits=logits))
+        return tf.layers.flatten(x)
+    
+    def loss_fn(self, images, target, training):
+        """ Defines the loss function used during 
+            training.         
+        """
+        preds = self.predict(images, training)
+        loss = tf.losses.sparse_softmax_cross_entropy(labels=target, logits=preds)
         return loss
+    
+    def grads_fn(self, images, target, training):
+        """ Dynamically computes the gradients of the loss value
+            with respect to the parameters of the model, in each
+            forward pass.
+        """
+        with tfe.GradientTape() as tape:
+            loss = self.loss_fn(images, target, training)
+        return tape.gradient(loss, self.variables)
+    
+    def restore_model(self):
+        """ Function to restore trained model.
+        """
+        with tf.device(self.device):
+            # Run the model once to initialize variables
+            dummy_input = tf.constant(tf.zeros((1,48,48,1)))
+            dummy_pred = self.predict(dummy_input, training=False)
+            # Restore the variables of the model
+            saver = tfe.Saver(self.variables)
+            saver.restore(tf.train.latest_checkpoint
+                          (self.checkpoint_directory))
+    
+    def save_model(self, global_step=0):
+        """ Function to save trained model.
+        """
+        tfe.Saver(self.variables).save(self.checkpoint_directory, 
+                                       global_step=global_step)   
+    
+    def compute_accuracy(self, input_data):
+        """ Compute the accuracy on the input data.
+        """
+        with tf.device(self.device):
+            acc = tfe.metrics.Accuracy()
+            for images, targets in tfe.Iterator(input_data):
+                # Predict the probability of each class
+                logits = self.predict(images, training=False)
+                # Select the class with the highest probability
+                preds = tf.argmax(logits, axis=1)
+                # Compute the accuracy
+                acc(tf.reshape(targets, [-1,]), preds)
+        return acc
+        
+    def fit(self, training_data, eval_data, optimizer, num_epochs=500, 
+            early_stopping_rounds=10, verbose=10, train_from_scratch=False):
+        """ Function to train the model, using the selected optimizer and
+            for the desired number of epochs. You can either train from scratch
+            or load the latest model trained. Early stopping is used in order to
+            mitigate the risk of overfitting the network.
+            
+            Args:
+                training_data: the data you would like to train the model on.
+                                Must be in the tf.data.Dataset format.
+                eval_data: the data you would like to evaluate the model on.
+                            Must be in the tf.data.Dataset format.
+                optimizer: the optimizer used during training.
+                num_epochs: the maximum number of iterations you would like to 
+                            train the model.
+                early_stopping_rounds: stop training if the loss on the eval 
+                                       dataset does not decrease after n epochs.
+                verbose: int. Specify how often to print the loss value of the network.
+                train_from_scratch: boolean. Whether to initialize variables of the
+                                    the last trained model or initialize them
+                                    randomly.
+        """ 
+    
+        if train_from_scratch==False:
+            self.restore_model()
+        
+        # Initialize best loss. This variable will store the lowest loss on the
+        # eval dataset.
+        best_loss = 999
+        
+        # Initialize classes to update the mean loss of train and eval
+        train_loss = tfe.metrics.Mean('train_loss')
+        eval_loss = tfe.metrics.Mean('eval_loss')
+        
+        # Initialize dictionary to store the loss history
+        self.history = {}
+        self.history['train_loss'] = []
+        self.history['eval_loss'] = []
+        
+        # Begin training
+        with tf.device(self.device):
+            for i in range(num_epochs):
+                # Training with gradient descent
+                for images, target in tfe.Iterator(training_data):
+                    grads = self.grads_fn(images, target, True)
+                    optimizer.apply_gradients(zip(grads, self.variables))
+                    
+                # Compute the loss on the training data after one epoch
+                for images, target in tfe.Iterator(training_data):
+                    loss = self.loss_fn(images, target, False)
+                    train_loss(loss)
+                self.history['train_loss'].append(train_loss.result().numpy())
+                # Reset metrics
+                train_loss.init_variables()
+                
+                # Compute the loss on the eval data after one epoch
+                for images, target in tfe.Iterator(eval_data):
+                    loss = self.loss_fn(images, target, False)
+                    eval_loss(loss)
+                self.history['eval_loss'].append(eval_loss.result().numpy())
+                # Reset metrics
+                eval_loss.init_variables()
+                
+                # Print train and eval losses
+                if (i==0) | ((i+1)%verbose==0):
+                    print('Train loss at epoch %d: ' %(i+1), self.history['train_loss'][-1])
+                    print('Eval loss at epoch %d: ' %(i+1), self.history['eval_loss'][-1])
 
-    def grads_fn(self, images, targets, training=True):
-        with tf.GradientTape() as tape:
-            loss = self.loss_fn(images, targets, training)
-        return tape.gradient(loss, self.trainable_variables), loss
-
-    def compute_accuracy(self, dataset):
-        # dataset expected as tf.data.Dataset yielding (images, targets)
-        accuracy = tf.keras.metrics.SparseCategoricalAccuracy()
-        for images, targets in dataset:
-            logits = self.call(images, training=False)
-            accuracy.update_state(targets, logits)
-        return accuracy.result().numpy()
-
-    def fit(self, train_dataset, eval_dataset, optimizer,
-            num_epochs=500, early_stopping_rounds=10, verbose=10, train_from_scratch=False,
-            checkpoint_dir=None):
-        # Adapted fit method with tf.train.Checkpoint usage and early stopping
-
-        # Prepare checkpoint manager if checkpoint_dir provided
-        if checkpoint_dir:
-            checkpoint = tf.train.Checkpoint(optimizer=optimizer, model=self)
-            manager = tf.train.CheckpointManager(checkpoint, checkpoint_dir, max_to_keep=3)
-            if not train_from_scratch:
-                checkpoint.restore(manager.latest_checkpoint)
-                if manager.latest_checkpoint:
-                    print(f"Restored from {manager.latest_checkpoint}")
+                # Check for early stopping
+                if self.history['eval_loss'][-1]<best_loss:
+                    best_loss = self.history['eval_loss'][-1]
+                    count = early_stopping_rounds
                 else:
-                    print("No checkpoint found, training from scratch")
-        else:
-            checkpoint = None
-            manager = None
-
-        best_loss = float('inf')
-        count = early_stopping_rounds
-
-        train_loss_metric = tf.keras.metrics.Mean()
-        eval_loss_metric = tf.keras.metrics.Mean()
-
-        for epoch in range(num_epochs):
-            # Training loop
-            for images, targets in train_dataset:
-                grads, loss = self.grads_fn(images, targets, training=True)
-                optimizer.apply_gradients(zip(grads, self.trainable_variables))
-                train_loss_metric.update_state(loss)
-
-            # Reset metrics at end of epoch
-            train_loss = train_loss_metric.result().numpy()
-            train_loss_metric.reset_states()
-
-            # Evaluation loop
-            for images, targets in eval_dataset:
-                loss = self.loss_fn(images, targets, training=False)
-                eval_loss_metric.update_state(loss)
-            eval_loss = eval_loss_metric.result().numpy()
-            eval_loss_metric.reset_states()
-
-            if (epoch == 0) or ((epoch + 1) % verbose == 0):
-                print(f"Epoch {epoch + 1}: Train Loss={train_loss:.6f}, Eval Loss={eval_loss:.6f}")
-
-            # Early stopping logic
-            if eval_loss < best_loss:
-                best_loss = eval_loss
-                count = early_stopping_rounds
-                # Save checkpoint if requested
-                if manager:
-                    save_path = manager.save()
-                    print(f"Checkpoint saved at {save_path}")
-            else:
-                count -= 1
-                if count == 0:
-                    print(f"Early stopping at epoch {epoch + 1}")
+                    count -= 1
+                if count==0:
                     break
 
-    def save_model(self, checkpoint_dir):
-        # Save weights & optimizer state using tf.train.Checkpoint
-        checkpoint = tf.train.Checkpoint(model=self)
-        manager = tf.train.CheckpointManager(checkpoint, checkpoint_dir, max_to_keep=3)
-        save_path = manager.save()
-        print(f"Model checkpoint saved to {save_path}")
 
-    def restore_model(self, checkpoint_dir):
-        checkpoint = tf.train.Checkpoint(model=self)
-        manager = tf.train.CheckpointManager(checkpoint, checkpoint_dir, max_to_keep=3)
-        if manager.latest_checkpoint:
-            checkpoint.restore(manager.latest_checkpoint).expect_partial()
-            print(f"Model restored from {manager.latest_checkpoint}")
-        else:
-            print("No checkpoint found to restore.")
+checkpoint_directory = 'models_checkpoints/EmotionCNN/'
 
-def my_model_function():
-    # Instantiate the model with 7 classes (as per original)
-    return MyModel(num_classes=7)
+# Use the GPU if available.
+device = 'gpu:0' if tfe.num_gpus()>0 else 'cpu:0'
 
-def GetInput():
-    # Return a random tensor input matching (batch=1, height=48, width=48, channels=1)
-    return tf.random.uniform((1, 48, 48, 1), dtype=tf.float32)
+# Define optimizer.
+optimizer = tf.train.AdamOptimizer()
 
+# Instantiate model. This doesn't initialize the variables yet.
+model = EmotionRecognitionCNN(num_classes=7, device=device, 
+                              checkpoint_directory=checkpoint_directory)
+
+model.fit(training_data, eval_data, optimizer, num_epochs=500, 
+          early_stopping_rounds=5, verbose=10, train_from_scratch=False)
+model.save_model()
+
+model =EmotionRecognitionCNN(num_classes=7, device=device, 
+                              checkpoint_directory=checkpoint_directory)
+
+model.restore_model()
+model.predict(test_image)

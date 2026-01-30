@@ -1,40 +1,37 @@
-# torch.rand(B, C, H, W, dtype=...)  # Add a comment line at the top with the inferred input shape
 import torch
-import torch.nn as nn
+import pickle
+import itertools
+from functools import partial
+from torch.utils.benchmark import Timer, Compare
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
+benchmark_name = "linalg.lu_factor CUDA"
+name = "magma_looped"
+label = "lu_factor_{}".format(name)
+shapes = [1, 2, 8, 16, 32, 64, 128, 256, 512, 1024, 2048]
+batches = [(1,), (2,), (4,), (8,), (16,), (32,), (64,), (128,), (512,), (1024,)]
+results = []
+make_arg = partial(torch.randn, dtype=torch.float32, device="cuda")
 
-    def forward(self, x):
-        # Perform LU factorization
-        lu, pivots = torch.linalg.lu_factor(x)
-        return lu, pivots
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+for n, batch in itertools.product(shapes, batches):
+    if n == 1024 and batch[0] >= 128:
+        continue
+    if n == 2048 and batch[0] >= 64:
+        continue
+    A = make_arg(batch + (n, n))
+    print(A.shape)
+    stmt = "torch.linalg.lu_factor_ex(A)"
+    timer = Timer(stmt,
+                  globals=globals(),
+                  label=benchmark_name,
+                  description=label,
+                  sub_label=f"shape {A.shape}",
+                  num_threads=1)
+    results.append(timer.blocked_autorange())
 
-def GetInput():
-    # Generate a random input tensor of shape (B, N, N) where B is the batch size and N is the matrix size
-    B, N = 8, 128  # Example batch size and matrix size
-    x = torch.rand(B, N, N, dtype=torch.float32, device="cuda")
-    return x
+compare = Compare(results)
+compare.trim_significant_figures()
+compare.print()
 
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# lu, pivots = model(input_tensor)
-
-# The provided issue is related to the performance improvement and heuristics update for the `linalg.lu_factor` function in PyTorch, specifically focusing on the CUDA backend. The issue does not describe a PyTorch model but rather discusses the performance of different LU factorization algorithms (e.g., cuSOLVER, MAGMA) and their heuristics.
-# Since there is no specific PyTorch model described in the issue, I will create a simple example that demonstrates how to use the `linalg.lu_factor` function with a random input tensor. This example will include a class `MyModel` that encapsulates the LU factorization, a function to return an instance of `MyModel`, and a function to generate a random input tensor.
-# Here is the complete Python code:
-# ### Explanation:
-# 1. **Class `MyModel`**:
-#    - This class inherits from `nn.Module`.
-#    - The `forward` method performs LU factorization using `torch.linalg.lu_factor` and returns the LU factorization and pivot indices.
-# 2. **Function `my_model_function`**:
-#    - This function returns an instance of `MyModel`.
-# 3. **Function `GetInput`**:
-#    - This function generates a random input tensor of shape `(B, N, N)` where `B` is the batch size and `N` is the matrix size. The tensor is created on the CUDA device.
-# This code can be used to perform LU factorization on a batch of matrices and is ready to be compiled with `torch.compile`.
+with open(f"{label}.pickle", 'wb') as f:
+    pickle.dump(results, f)

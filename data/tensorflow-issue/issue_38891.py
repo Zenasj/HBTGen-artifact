@@ -1,51 +1,64 @@
-# tf.random.uniform((B, 100), dtype=tf.float32) ← Inferred input shape from the issue: batch size B and feature dimension 100
-
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define layers matching the original example
-        self.dense1 = tf.keras.layers.Dense(10)
-        self.dense2 = tf.keras.layers.Dense(15)
-        self.dense3 = tf.keras.layers.Dense(5)
-        self.dense4 = tf.keras.layers.Dense(5)
+inputs = tf.keras.Input(shape=[100])
+x = tf.keras.layers.Dense(10)(inputs)
+x = tf.keras.layers.Dense(15)(x)
+x = tf.keras.layers.Dense(5)(x)
+outputs = tf.keras.layers.Dense(5)(x)
+
+model = tf.keras.Model(inputs, outputs)
+
+assert model.losses == []
+
+l2_regularizer = tf.keras.regularizers.l2(1e-4)
+for i in range(len(model.layers)):
+    layer = model.layers[i]
+    if isinstance(layer, tf.keras.layers.Dense):
+        model.add_loss(lambda: l2_regularizer(layer.kernel))
         
-        # L2 regularizer instance
-        self.l2_regularizer = tf.keras.regularizers.l2(1e-4)
+print(model.losses)
+
+inputs = tf.keras.Input(shape=[100])
+x = tf.keras.layers.Dense(10)(inputs)
+x = tf.keras.layers.Dense(15)(x)
+x = tf.keras.layers.Dense(5)(x)
+outputs = tf.keras.layers.Dense(5)(x)
+
+model = tf.keras.Model(inputs, outputs)
+
+assert model.losses == []
+
+l2_regularizer = tf.keras.regularizers.l2(1e-4)
+model.add_loss(lambda: l2_regularizer(model.layers[1].kernel))
+model.add_loss(lambda: l2_regularizer(model.layers[2].kernel))
+model.add_loss(lambda: l2_regularizer(model.layers[3].kernel))
+model.add_loss(lambda: l2_regularizer(model.layers[4].kernel))
         
-        # After building the model, we add regularization losses correctly
-        # We will add these losses capturing the variable in closure properly,
-        # to avoid the common lambda-in-loop late binding problem
-        
-        # Collect the layers that should be regularized
-        self._layers_to_regularize = [self.dense1, self.dense2, self.dense3, self.dense4]
-        
-        # Add losses in a way that closures capture layers correctly
-        for layer in self._layers_to_regularize:
-            self.add_loss(self._make_l2_loss_fn(layer))
-    
-    def _make_l2_loss_fn(self, layer):
-        # We define a function returning the l2 loss on layer.kernel
-        # Capturing layer as a fixed argument in the closure avoids the
-        # common lambda-in-loop trap
-        def l2_loss():
-            return self.l2_regularizer(layer.kernel)
-        return l2_loss
+print(model.losses)
 
-    @tf.function(jit_compile=True)
-    def call(self, inputs):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        x = self.dense3(x)
-        return self.dense4(x)
+inputs = tf.keras.Input(shape=[100])
+x = tf.keras.layers.Dense(10)(inputs)
+x = tf.keras.layers.Dense(15)(x)
+x = tf.keras.layers.Dense(5)(x)
+outputs = tf.keras.layers.Dense(5)(x)
 
-def my_model_function():
-    # Instantiate and return the MyModel instance
-    return MyModel()
+model = tf.keras.Model(inputs, outputs)
 
-def GetInput():
-    # Return a random input tensor matching the expected input shape:
-    # batch size arbitrary (e.g., 4), feature size 100 as per example
-    return tf.random.uniform((4, 100), dtype=tf.float32)
+assert model.losses == []
 
+l2_regularizer = tf.keras.regularizers.l2(1e-4)
+
+def add_l2_regularization(layer):
+    def _add_l2_regularization():
+        l2 = tf.keras.regularizers.l2(1e-4)
+        return l2(layer.kernel)
+    return _add_l2_regularization
+
+for i in range(len(model.layers)):
+    layer = model.layers[i]
+    if isinstance(layer, tf.keras.layers.Dense):
+        model.add_loss(add_l2_regularization(layer))
+
+model.losses

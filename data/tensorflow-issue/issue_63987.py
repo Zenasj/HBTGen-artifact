@@ -1,82 +1,64 @@
-# tf.random.normal((1, 64, 64, 3), dtype=tf.float32) ← Inferred input shape from convolutional model example
+import random
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
+converter = tf.lite.TFLiteConverter.from_keras_model(best_model)
+
+tf.saved_model.save(best_model,save_path)
+
+converter = tf.lite.TFLiteConverter.from_saved_model(save_path)
+tflite_model = converter.convert()
+
+#!/usr/bin/env python3
 
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Input, DepthwiseConv2D, Conv2D, Flatten, Dense
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define the two sub-models discussed in the issue for fusion
+# Define a simple model with depthwise convolutions
+model = Sequential()
+model.add(Input(shape=(64, 64, 3)))
+model.add(DepthwiseConv2D(kernel_size=(3, 3), activation="relu"))
+model.add(Conv2D(64, (1, 1), activation="relu"))
+model.add(Flatten())
+model.add(Dense(100, activation="relu"))
+model.add(Dense(10, activation="softmax"))
 
-        # Model A: Fully connected deep model from chunk 2
-        self.model_fc = tf.keras.Sequential([
-            tf.keras.layers.Dense(1024, activation='relu'),
-            tf.keras.layers.Dense(2048, activation='relu'),
-            tf.keras.layers.Dense(2048, activation='relu'),
-            tf.keras.layers.Dense(1, activation='sigmoid')
-        ])
+# Compile the model
+model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
 
-        # Model B: Convolutional model from chunk 3 example (Conv2D + DepthwiseConv2D)
-        self.model_conv = tf.keras.Sequential([
-            tf.keras.layers.InputLayer(input_shape=(64, 64, 3)),
-            tf.keras.layers.DepthwiseConv2D(kernel_size=(3, 3), activation="relu"),
-            tf.keras.layers.Conv2D(64, (1, 1), activation="relu"),
-            tf.keras.layers.Flatten(),
-            tf.keras.layers.Dense(100, activation="relu"),
-            tf.keras.layers.Dense(10, activation="softmax")
-        ])
 
-    def call(self, inputs, training=False):
-        # The model expects a single input tensor compatible with conv model (checking shape)
-        # If input shape matches FC model input, reshape or adapt
-        # Here, we assume inputs shaped for conv model: [B,64,64,3]
+# Define the representative dataset generator
+def representative_dataset_gen():
+    for _ in range(100):
+        # Here you should provide a sample from your actual dataset
+        # For illustration, we'll use random data
+        # Yield a batch of input data (in this case, a single sample)
+        yield [tf.random.normal((1, 64, 64, 3))]
 
-        # Pass through convolutional model
-        conv_out = self.model_conv(inputs, training=training)  # Shape: (B,10)
 
-        # Prepare input for FC model: flatten spatial dims & channels as vector
-        # Using a simple reshape: flatten inputs per batch to vectors -> shape (B, 64*64*3)
-        flat_inputs = tf.reshape(inputs, [tf.shape(inputs)[0], -1])
+# Set the TensorFlow Lite converter
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
 
-        # Pass through FC model
-        fc_out = self.model_fc(flat_inputs, training=training)  # Shape: (B,1)
+# Set the optimization to default for int8 quantization
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
 
-        # Fuse outputs by comparison: Here just check shape compatibility first
-        # Implement a loose comparison logic:
-        # We can compare predictions after mapping to similar dimension or just output both results
+# Define the representative dataset for quantization
+converter.representative_dataset = representative_dataset_gen
 
-        # For demonstration, compute difference in mean predictions after reducing conv_out (last dim)
-        conv_pred = tf.reduce_mean(conv_out, axis=1, keepdims=True)  # (B,1)
+# Restrict the target spec to int8 for full integer quantization
+converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
 
-        # Compute absolute difference between conv_pred and fc_out
-        diff = tf.abs(conv_pred - fc_out)  # (B,1)
+# Instruct the converter to make the input and output layer as integer
+converter.inference_input_type = tf.int8
+converter.inference_output_type = tf.int8
 
-        # Return a dict with both outputs and their difference
-        return {
-            'fc_output': fc_out,
-            'conv_output': conv_out,
-            'mean_conv_pred': conv_pred,
-            'difference': diff
-        }
+# Convert the model
+tflite_model = converter.convert()
 
-def my_model_function():
-    # Initialize and compile the fused model (compilation optional, but included for completeness)
-    model = MyModel()
-    # We compile the FC model directly for losses if needed
-    # Compile only main model to avoid confusion (losses on fc_output typically)
-    model.model_fc.compile(
-        optimizer=tf.keras.optimizers.Adam(learning_rate=0.003),
-        loss=tf.keras.losses.BinaryCrossentropy(),
-        metrics=[tf.keras.metrics.BinaryAccuracy(),
-                 tf.keras.metrics.Precision(),
-                 tf.keras.metrics.Recall()]
-    )
-    # For conv model, typical categorical loss might be necessary but kept separate
-    # Here no training code is required; just return the model
-    return model
+# Save the model to a file
+with open("model.tflite", "wb") as f:
+    f.write(tflite_model)
 
-def GetInput():
-    # Return a valid input tensor matching conv model input shape (which is our assumed primary input):
-    # Batch size 1, image 64x64 with 3 channels
-    # Use tf.random.normal as per example from chunk 3
-    return tf.random.normal((1, 64, 64, 3), dtype=tf.float32)
-
+print("Model has been successfully converted to TFLite and saved as 'model.tflite'.")

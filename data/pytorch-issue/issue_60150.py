@@ -1,15 +1,14 @@
-# torch.rand(1, dtype=torch.float32)
+nvidia-smi
+
+torch.cuda.empty_cache()
+
 import torch
-from torch import nn
+import time
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        temp = torch.ones([4000, 4000], device='cuda')
-        return temp  # Tensor causing memory allocation
+temp = torch.ones([4000, 4000], device='cuda')
+time.sleep(5)
+del temp
+torch.cuda.empty_cache()
+time.sleep(1000)
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(1)  # Dummy input to trigger forward pass
-
+temp = torch.ones([4000, 4000], device='cuda')

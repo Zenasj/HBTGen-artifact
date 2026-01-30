@@ -1,10 +1,14 @@
-# torch.rand(B, C, H, W, dtype=...)  # Inferred input shape: (batch_size, seq_length, input_size)
 import torch
 import torch.nn as nn
+from torch.func import jacrev, functional_call
 
-class MyModel(nn.Module):
+device = "cpu"
+
+from torch.func import jacrev, functional_call
+
+class LSTMModel(nn.Module):
     def __init__(self, input_size, lstm_units, dense_units):
-        super(MyModel, self).__init__()
+        super(LSTMModel, self).__init__()
         self.lstm = nn.LSTM(input_size, lstm_units, batch_first=True)
         self.fc1 = nn.Linear(lstm_units, dense_units)
         self.fc2 = nn.Linear(dense_units, 1)
@@ -16,17 +20,17 @@ class MyModel(nn.Module):
         output = self.fc2(fc1_out)
         return output
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    input_size = 2
-    lstm_units = 32
-    dense_units = 16
-    return MyModel(input_size, lstm_units, dense_units)
+input_size = 2
+lstm_units = 32
+dense_units = 16
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    batch_size = 5
-    seq_length = 100
-    input_size = 2
-    return torch.randn(batch_size, seq_length, input_size)
+model = LSTMModel(input_size, lstm_units, dense_units)
 
+inputs = torch.randn(5, 100, 2)
+
+model.to(device); inputs = inputs.to(device)
+
+params = dict(model.named_parameters())
+# jacrev computes jacobians of argnums=0 by default.
+# We set it to 1 to compute jacobians of params
+jacobians = jacrev(functional_call, argnums=2)(model, params, (inputs,))

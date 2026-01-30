@@ -1,25 +1,12 @@
-# torch.rand(B, 1, H, W, dtype=torch.long) ← Add a comment line at the top with the inferred input shape
-
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Placeholder for any additional layers or modules
-        self.identity = nn.Identity()
-
-    def forward(self, input_ids: torch.LongTensor) -> torch.LongTensor:
-        # This is a placeholder model. In a real scenario, you would have more complex operations.
-        # For this example, we just return the input tensor.
-        return self.identity(input_ids)
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    B, H, W = 4, 8, 8  # Example batch size, height, and width
-    return torch.randint(0, 100, (B, 1, H, W), dtype=torch.long)
-
+@torch.jit.script
+def _prepare_decoder_input_ids_for_generation(
+    input_ids: torch.LongTensor, decoder_start_token_id: int = None, bos_token_id: int = None
+) -> torch.LongTensor:
+    decoder_start_token_id = 47  # for simplicity
+    decoder_input_ids = (
+        torch.ones((input_ids.shape[0], 1), dtype=input_ids.dtype, device=input_ids.device)
+        * decoder_start_token_id
+    )
+    return decoder_input_ids

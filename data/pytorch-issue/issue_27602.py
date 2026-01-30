@@ -1,30 +1,23 @@
-# torch.rand(1, 3, 416, 416, dtype=torch.float32)  # Input shape for the model
+import random
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+import numpy as np
+import onnx
+import caffe2.python.onnx.backend
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Define a simple convolutional layer with "SAME_UPPER" padding
-        self.conv = nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3, stride=1, padding=1)
+batch = 1
+channel = 3
+image_h = 416
+image_w = 416
+img = np.random.random_sample([batch, channel, image_h, image_w]).astype(np.float32)
 
-    def forward(self, x):
-        # Apply the convolutional layer
-        x = self.conv(x)
-        return x
+onnx_model = "tiny_yolov2/model.onnx"
+model = onnx.load(onnx_model)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+backend = caffe2.python.onnx.backend.prepare(model)
+outputs = backend.run([img])
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    batch = 1
-    channel = 3
-    image_h = 416
-    image_w = 416
-    img = torch.rand(batch, channel, image_h, image_w, dtype=torch.float32)
-    return img
+blobs = backend.workspace.Blobs()
+caffe2_data = {k: backend.workspace.FetchBlob(k) for k in blobs}
 
+layer_data = caffe2_data["convolution2d_1_output"]
+print(layer_data.shape)

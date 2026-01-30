@@ -1,18 +1,32 @@
-# torch.rand(32768, dtype=torch.int64)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Perform sort and check if sorted values match the expected (since input is arange(1,N))
-        sorted_vals, _ = torch.sort(x)
-        # Return 1.0 if correct (all elements match), 0.0 otherwise
-        return torch.all(sorted_vals == x).float()
+print("size = 9")
+x = torch.arange(1, 10)
+print(x)
+print(torch.sort(x)) # works as expected
 
-def my_model_function():
-    return MyModel()
+print("-"*10)
 
-def GetInput():
-    # Creates a tensor of size 32768 (exactly the threshold where the bug occurs)
-    return torch.arange(1, 32769, dtype=torch.int64)
+print("size = 2^15 - 1")
+x = torch.arange(1, 32768)
+print(x)
+print(torch.sort(x)) # works as expected
 
+print("-"*10)
+
+print("size = 2^15")
+x = torch.arange(1, 32769)
+print(x)
+print(torch.sort(x)) # give incorrect values
+
+print("-"*10)
+
+print("size = 100000")
+x = torch.arange(1, 100000)
+print(x)
+print(torch.sort(x)) # give incorrect values
+
+import torch
+x = torch.arange(1, 100000)
+print(x)
+print(torch.sort(x))

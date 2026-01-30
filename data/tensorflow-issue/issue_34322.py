@@ -1,85 +1,138 @@
-# tf.random.uniform((B, H, W, C), dtype=...) ← Input shape is not explicitly defined in the issue. 
-# This code involves running collective all_gather across multiple GPUs in a distributed cluster setup.
-# The input 'x' used in collective ops corresponds to tf.Variables on the shape (8,) as exemplified by VAR in the issue.
+import time
+from multiprocessing import Process
 
+from tensorflow.core.protobuf import config_pb2
+from tensorflow.python.training.server_lib import Server
+
+CLUSTER_SPEC = {
+    "worker": [
+        "localhost:14286",
+        "localhost:14287"
+    ]
+}
+
+GROUP_SIZE = 4
+
+
+def _configure(group_size):
+    gpu_options = config_pb2.GPUOptions(
+        visible_device_list='0,1',
+        per_process_gpu_memory_fraction=0.7 / group_size
+    )
+    experimental = config_pb2.ConfigProto.Experimental(collective_nccl=True)
+    experimental.collective_group_leader = '/job:worker/replica:0/task:0'
+    return config_pb2.ConfigProto(gpu_options=gpu_options, experimental=experimental)
+
+
+class TFCluster:
+    def __init__(self, cluster_spec):
+        self._cluster_spec = cluster_spec
+        self._num_worker = len(self._cluster_spec.get("worker", []))
+        self._tf_servers = []
+
+    def start(self):
+        def server(job_name: str, task_index: int):
+            s = Server(self._cluster_spec,
+                       job_name=job_name,
+                       task_index=task_index,
+                       config=_configure(GROUP_SIZE))
+            s.join()
+
+        assert self._num_worker >= 1
+        for i in range(self._num_worker):
+            self._tf_servers.append(Process(target=server,
+                                            args=("worker", i), daemon=True))
+            # break
+        for proc in self._tf_servers:
+            proc.start()
+
+    def stop(self):
+        for proc in self._tf_servers:
+            proc.terminate()
+
+
+if __name__ == '__main__':
+    cluster = TFCluster(CLUSTER_SPEC)
+    cluster.start()
+    time.sleep(5)
+    input('Press Enter to Stop.')
+    cluster.stop()
+
+import argparse
+
+import numpy as np
 import tensorflow as tf
+from tensorflow.core.protobuf import config_pb2
+from tensorflow.python import ops
+from tensorflow.python.client.session import Session
 from tensorflow.python.ops import collective_ops
 
-# The original code uses a variable of shape (8,), representing 8-element vectors.
-# The all_gather is performed on tensors shaped like var + offsets.
+from cluster import CLUSTER_SPEC, GROUP_SIZE
 
-class MyModel(tf.keras.Model):
-    def __init__(self, group_size=4, group_key=1, instance_key=1):
-        super().__init__()
-        # Using a fixed variable of shape (8,), as seen in the VAR array in the issue
-        self.var_init = tf.constant([0.1, 1.1, 2.1, 3.1, 4.1, 5.1, 6.1, 7.1], dtype=tf.float32)
-        self.group_size = group_size
-        self.group_key = group_key
-        self.instance_key = instance_key
+VAR = np.array([0.1, 1.1, 2.1, 3.1, 4.1, 5.1, 6.1, 7.1])
+VAR_TASK_INDEX = 0
 
-        # Create the tf.Variable used in all devices (simulate variable placement)
-        self.var = tf.Variable(self.var_init, name='W')
 
-    @tf.function(jit_compile=True)
-    def call(self, inputs):
-        # inputs: tuple (job_name str, task_index int, num_gpus int)
-        # The original code performs the collective all_gather across task/gpu devices,
-        # but here we simulate a single-device call. To maintain a similar logic,
-        # we simulate targets as var + 0.2 * task_index + 0.1 * gpu_index for gpu_index in [0,num_gpus)
+def test_collective(job_name, task_index, num_gpus):
+    worker_device = "/job:%s/task:%d" % (job_name, task_index)
+    master_target = "grpc://" + CLUSTER_SPEC[job_name][task_index]
+    print('> Session Target:', master_target)
 
-        job_name, task_index, num_gpus = inputs
+    with ops.Graph().as_default(), Session(target=master_target) as sess:
+        def run(x):
+            run_options = config_pb2.RunOptions()
+            run_options.experimental.collective_graph_key = task_index + 1
+            # Different positive graph key for different task to avoid racing conditions.
+            return sess.run(x, options=run_options)
 
-        # Since we can't simulate multi-task multi-device here, create target tensors as in the original logic:
+        with ops.device('/job:worker/task:%d/device:CPU:0' % VAR_TASK_INDEX):  # make sure all use the same variable
+            var = tf.Variable(VAR, name='W')
+
         targets = []
+        collectives = []
         for i in range(num_gpus):
-            # offset dependent on task_index and gpu index
-            t = self.var + 0.2 * tf.cast(task_index, tf.float32) + 0.1 * tf.cast(i, tf.float32)
-            targets.append(t)
+            with ops.device(worker_device + '/device:GPU:' + str(i)):
+                t = var + 0.2 * task_index + 0.1 * i
+                targets.append(t)
+                collectives.append(
+                    collective_ops.all_gather(
+                        t,
+                        group_size=GROUP_SIZE,
+                        group_key=1, instance_key=1
+                    )
+                    # collective_ops.all_reduce(
+                    #     t,
+                    #     group_size=GROUP_SIZE,
+                    #     group_key=1, instance_key=1, merge_op='Add', final_op='Div'
+                    # )
+                )
 
-        # Stack targets to shape (num_gpus, var.shape)
-        targets = tf.stack(targets)
+        run(tf.compat.v1.global_variables_initializer())
 
-        # perform collective all_gather on each tensor in targets
-        # Because this function will be run standalone, and without cluster devices,
-        # we simulate the collective op by just concatenating targets along axis=0
-        # In a real multi-task distributed setting, tf.raw_ops.CollectiveAllGather would gather across workers
-        # Here we just simulate the output to maintain the interface.
+        var_value = run(var)
+        print('> Variable Value:', var_value)
 
-        # Placeholder for collective_ops.all_gather:
-        # Normally: collective_ops.all_gather(t, group_size, group_key, instance_key) returns tensor shape [group_size, ...]
-        # We simulate by concatenation for demonstration
+        targets_value = run(targets)
+        print('> Targets Value:', targets_value)
 
-        # To comply with the spirit of code, create list of gathered tensors with simulated behavior.
-        collected = []
-        for t in tf.unstack(targets):  # each t shape (8,)
-            # Simulate gather by repeating t group_size times along new axis 0
-            gathered = tf.repeat(tf.expand_dims(t, 0), repeats=self.group_size, axis=0)
-            collected.append(gathered)
-
-        # collected is list of tensors shape (group_size, 8), stack to (num_gpus, group_size, 8)
-        collectives = tf.stack(collected)
-
-        # The model outputs a dictionary with all relevant tensors to encapsulate info:
-        # - the base variable
-        # - the individual targets
-        # - the simulated collective gather results
-        return {
-            'variable': self.var,
-            'targets': targets,
-            'collectives': collectives  # shape (num_gpus, group_size, 8)
-        }
+        collectives_value = run(collectives)
+        print('> Collectives Value:', collectives_value)
 
 
-def my_model_function():
-    # Return an instance of MyModel with default settings per the reported code (GROUP_SIZE=4)
-    return MyModel(group_size=4, group_key=1, instance_key=1)
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.register("type", "bool", lambda v: v.lower() == "true")
 
-
-def GetInput():
-    # Return a tuple (job_name, task_index, num_gpus) matching the expected call input
-    # Provide typical test values with 2 GPUs as in example; job_name string and task_index int
-    job_name = tf.constant("worker")
-    task_index = tf.constant(0)
-    num_gpus = tf.constant(2)
-    return (job_name, task_index, num_gpus)
-
+    parser.add_argument(
+        "--job_name",
+        type=str,
+        default="",
+    )
+    parser.add_argument(
+        "--task_index",
+        type=int,
+        default=0,
+    )
+    FLAGS, unparsed = parser.parse_known_args()
+    num_gpus_per_node = 2
+    test_collective(job_name=FLAGS.job_name, task_index=FLAGS.task_index, num_gpus=num_gpus_per_node)

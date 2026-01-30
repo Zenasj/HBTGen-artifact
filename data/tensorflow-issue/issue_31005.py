@@ -1,68 +1,96 @@
-# tf.random.uniform((1, 128, 128, 3), dtype=tf.float32)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
+
 import tensorflow as tf
+import numpy as np
+
+config = tf.ConfigProto()
+config.gpu_options.allow_growth = True
+
+def discriminative_loss(y_true, y_pred):
+    """Computes loss for a batch of images
+    Args:
+        y_true: (n, h, w) where each elements contains the ground truth instance id
+        y_pred: (n, h, w, d) d-dimensional vector for each pixel for each image in the batch
+    Returns:
+        loss
+    """
+    # Compute the loss for each image in the batch
+    def compute_loss(input):
+        prediction = input[1]
+        label = input[0]
+
+        # Number of clusters in ground truth
+        clusters,_ = tf.unique(tf.reshape(label, [-1]))
+
+        # Compute cluster means and variances for each cluster
+        def compute_mean(c):
+            mask = tf.equal(label[:,:,0], c)
+            masked_pixels = tf.boolean_mask(prediction, mask)
+            cluster_mean = tf.reduce_mean(masked_pixels, axis=0)
+
+            return cluster_mean
+
+        cluster_means = tf.map_fn(compute_mean, clusters, dtype=(tf.float32))
+        return tf.reduce_mean(cluster_means)
+
+    # We want to know the loss for each image in the batch
+    losses = tf.map_fn(compute_loss, (y_true,y_pred), dtype=(tf.float32))
+    return losses
+
+def discriminative_loss_working(y_true, y_pred):
+    # Compute the loss for only the first image in the batch
+
+    prediction = y_pred[0]
+    label = y_true[0]
+
+    # Number of clusters in ground truth
+    clusters,_ = tf.unique(tf.reshape(label, [-1]))
+
+    # Compute cluster means and variances for each cluster
+    def compute_mean(c):
+        mask = tf.equal(label[:,:,0], c)
+        masked_pixels = tf.boolean_mask(prediction, mask)
+        cluster_mean = tf.reduce_mean(masked_pixels, axis=0)
+
+        return cluster_mean
+
+    cluster_means = tf.map_fn(compute_mean, clusters, dtype=(tf.float32))
+    return tf.reduce_mean(cluster_means)
 
 class MyModel(tf.keras.Model):
     def __init__(self, input_shape):
         super(MyModel, self).__init__()
-        # A simple Conv2D layer as per the issue example
-        self.conv = tf.keras.layers.Conv2D(filters=4, kernel_size=(1,1), padding='same')
+        self.conv = tf.keras.layers.Conv2D(filters=4, kernel_size=(1,1))
 
-    def call(self, inputs):
-        # Forward pass through the convolution layer
-        return self.conv(inputs)
+    def call(self, input):
+        return self.conv(input)
 
-def discriminative_loss(y_true, y_pred):
-    """
-    Computes a discriminative loss for a batch of images.
-    Args:
-        y_true: tensor of shape (n, h, w, 1), where each element contains the ground truth instance id.
-        y_pred: tensor of shape (n, h, w, d), d-dimensional vector embeddings for each pixel per image.
-    Returns:
-        loss: tensor of shape (n,), representing the loss per image in batch.
-    
-    Notes:
-    - This implementation mimics the issue's original logic where the loss is computed
-      by first computing the mean embedding vector per cluster (instance) and then 
-      reducing these means to a loss value. Here, for demonstration, the reduced mean
-      of cluster means is returned as a scalar loss per image.
-    """
-    def compute_loss(inputs):
-        label = inputs[0]  # shape (h, w, 1)
-        prediction = inputs[1]  # shape (h, w, d)
+input_shape = (1,128,128,3)
+def my_gen():
+    while True:
+        x = np.random.rand(1,input_shape[1], input_shape[2],3)
+        y = np.random.randint(11000, 11015, (input_shape[1], input_shape[2],1))
+        yield x,y
 
-        # Flatten the label to find unique clusters (instance ids)
-        clusters, _ = tf.unique(tf.reshape(label, [-1]))
+train_dataset = tf.data.Dataset.from_generator(
+                    my_gen,
+                    (tf.float32, tf.float32),
+                    (tf.TensorShape([1,128,128,3]),
+                     tf.TensorShape([128,128,1])))
+train_dataset = train_dataset.batch(1)
+train_dataset = train_dataset.repeat()
 
-        def compute_mean(c):
-            # Create a mask for pixels belonging to cluster c; label shape (h,w,1)
-            # Squeeze last dim for mask comparison
-            mask = tf.equal(tf.squeeze(label, axis=-1), c)
+model = MyModel(input_shape=input_shape)
 
-            # Apply mask to prediction pixels, shape (h,w,d)
-            masked_pixels = tf.boolean_mask(prediction, mask)
+# This is a fix to make loading weights possible
+# x = tf.zeros((1,) + input_shape)
+x = tf.zeros(input_shape)
+y = model(x)
 
-            # Compute mean embedding vector of the cluster
-            cluster_mean = tf.reduce_mean(masked_pixels, axis=0)
-            return cluster_mean
-
-        # Compute the mean embedding vector for each cluster (instance)
-        cluster_means = tf.map_fn(compute_mean, clusters, fn_output_signature=tf.float32)
-
-        # For demonstration, return mean of cluster means as loss for this image
-        # (in practice, loss would be more complex)
-        return tf.reduce_mean(cluster_means)
-
-    # Use tf.map_fn to compute loss per image in the batch
-    losses = tf.map_fn(compute_loss, (y_true, y_pred), fn_output_signature=tf.float32)
-    return losses
-
-def my_model_function():
-    # Input shape fixed to (1, 128, 128, 3) based on the issue example
-    input_shape = (1, 128, 128, 3)
-    return MyModel(input_shape)
-
-def GetInput():
-    # Returns a random float tensor matching the model input shape: (1,128,128,3)
-    # Using tf.random.uniform for compatibility with tf.float32 input dtype
-    return tf.random.uniform(shape=(1, 128, 128, 3), dtype=tf.float32)
-
+with tf.Session(config=config):
+    optimizer = tf.keras.optimizers.SGD(lr=0.0001)
+    model.compile(loss=discriminative_loss,optimizer=optimizer)
+    model.fit(train_dataset, epochs=5, steps_per_epoch=2)

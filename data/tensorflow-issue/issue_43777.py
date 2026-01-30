@@ -1,33 +1,34 @@
-# tf.random.uniform((B, 28, 28), dtype=tf.float32) ← Inferred input shape from MNIST dataset
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Equivalent model to the original Sequential with Flatten + Dense layers
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(512, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(10, activation='softmax')
+(x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
+x_train = x_train.astype('float32') / 255
+x_test = x_test.astype('float32') / 255
 
-    def call(self, inputs, training=False):
-        x = self.flatten(inputs)
-        x = self.dense1(x)
-        return self.dense2(x)
+model = tf.keras.models.Sequential([
+    tf.keras.layers.Flatten(),
+    tf.keras.layers.Dense(512, activation='relu'),
+    tf.keras.layers.Dense(10, activation='softmax')])
+model.compile(optimizer='rmsprop',
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
 
-def my_model_function():
-    # Create an instance of MyModel, compiled with same optimizer, loss, metrics
-    model = MyModel()
-    model.compile(
-        optimizer='rmsprop',
-        loss='sparse_categorical_crossentropy',
-        metrics=['accuracy']
-    )
-    return model
+model.fit(
+    x_train,
+    y_train,
+    epochs=8,
+    batch_size=128,
+    validation_split=0.2)
 
-def GetInput():
-    # Return a batch of random inputs matching MNIST images shape (batch size 32 assumed)
-    # MNIST images are 28x28 grayscale
-    batch_size = 32
-    return tf.random.uniform((batch_size, 28, 28), minval=0, maxval=1, dtype=tf.float32)
+test_loss, test_acc = model.evaluate(x_test, y_test)
+print('model_test_acc:', test_acc)
 
+model.save("my_saved_path")
+
+saved_model = tf.keras.models.load_model("my_saved_path")
+
+test_loss, test_acc = saved_model.evaluate(x_test, y_test)
+print('saved_model_test_acc:', test_acc)

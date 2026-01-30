@@ -1,20 +1,19 @@
-# torch.rand(B, 3, dtype=torch.float32)
 import torch
-import torch.nn as nn
+is_xpu_available = torch.xpu.is_available()
+print(f"xpu available: {is_xpu_available}")
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.linear = nn.Linear(3, 3)  # Matches input dimension from GetInput()
-        
-    def forward(self, x):
-        return self.linear(x)
+if is_xpu_available:
+    # 创建一些在GPU上运行的数据
+    device = torch.device("xpu")
+    x = torch.tensor([1.0, 2.0, 3.0], device=device)
+    y = torch.tensor([4.0, 5.0, 6.0], device=device)
 
-def my_model_function():
-    # Initialize model with default parameters
-    return MyModel()
+    # 将数据移动到GPU上
+    x = x.to(device)
+    y = y.to(device)
 
-def GetInput():
-    # Generate a random input tensor matching the model's expected input shape
-    return torch.rand(1, 3, dtype=torch.float32)  # Batch size 1, 3 features
-
+    # 执行一些操作，比如加法，来测试GPU是否正常工作
+    z = x + y
+    print(z)
+else:
+    print("xpu is not available. Test on CPU.")

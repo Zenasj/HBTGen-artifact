@@ -1,77 +1,48 @@
-# torch.rand(B, T, F, dtype=torch.float32)  # B=16, T=10, F=16 (input_size + output_size)
+import torch.nn as nn
+
 import torch
-from torch import nn
+batch_size = 16
+lstm_hidden_size = 32
+input_size = 8
+output_size = 8
+device = torch.device('cpu')
+lstm_cell = torch.nn.LSTMCell(input_size + output_size, lstm_hidden_size).to(device)
+predict_halt = torch.nn.Sequential(torch.nn.Linear(lstm_hidden_size, 1),
+                                   torch.nn.Sigmoid()).to(device)
+kwargs = {'device': device}
+next_lstm_hidden_state = torch.zeros(batch_size, lstm_hidden_size, **kwargs)
+next_lstm_cell_state = torch.zeros(batch_size, lstm_hidden_size, **kwargs)
+lstm_hidden_state = torch.zeros(batch_size, lstm_hidden_size, **kwargs)
+lstm_cell_state = torch.zeros(batch_size, lstm_hidden_size, **kwargs)
+halt_cumulative = torch.zeros(batch_size, **kwargs)
+halted = torch.zeros(batch_size, **kwargs).byte()
+# Break on exceeding output or input
+for i in range(10):
+    input_ = torch.rand(batch_size, input_size, requires_grad=True, **kwargs)
+    output = torch.rand(batch_size, output_size, requires_grad=True, **kwargs)
+    # [batch_size, input_size + output_size]
+    # Embedding of the current output and input state
+    lstm_input = torch.cat((input_, output), dim=1)
+    # lstm_hidden_state [batch_size, lstm_hidden_size]
+    # lstm_cell_state [batch_size, lstm_hidden_size]
+    lstm_hidden_state, lstm_cell_state = lstm_cell(lstm_input, (lstm_hidden_state, lstm_cell_state))
+    #
+    halt_probability = predict_halt(lstm_hidden_state)
+    remainder = 1 - halt_cumulative
+    halt_cumulative += torch.min(halt_probability.squeeze(1), remainder)
+    halted = halt_cumulative.ge(1 - 0.01)
+    # Update hidden state with remainder for ``halted`` sequences
+    next_lstm_hidden_state[halted] = (lstm_hidden_state * remainder.unsqueeze(1))[halted]
+    next_lstm_cell_state[halted] = (lstm_cell_state * remainder.unsqueeze(1))[halted]
+    # Update hidden state with ``halt_probability`` for other sequences
+    next_lstm_hidden_state[~halted] = (lstm_hidden_state * halt_probability)[~halted]
+    next_lstm_cell_state[~halted] = (lstm_cell_state * halt_probability)[~halted]
+    # Reset state for ``halted`` sequences, next hidden state is an accumulation from the
+    # past states
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.lstm_cell = nn.LSTMCell(16, 32)  # input_size=8+8, hidden_size=32
-        self.predict_halt = nn.Sequential(
-            nn.Linear(32, 1),
-            nn.Sigmoid()
-        )
-
-    def forward(self, x):
-        T, B, _ = x.size()
-        device = x.device
-        hidden_size = 32
-
-        # Initialize states
-        lstm_hidden = torch.zeros(B, hidden_size, device=device)
-        lstm_cell = torch.zeros(B, hidden_size, device=device)
-        next_lstm_hidden = torch.zeros_like(lstm_hidden)
-        next_lstm_cell = torch.zeros_like(lstm_cell)
-        halt_cumulative = torch.zeros(B, device=device)
-        halted = torch.zeros(B, dtype=torch.bool, device=device)
-
-        for t in range(T):
-            current_input = x[t]
-
-            # Run LSTMCell
-            new_h, new_c = self.lstm_cell(current_input, (lstm_hidden, lstm_cell))
-
-            # Compute halt probability
-            halt_prob = self.predict_halt(new_h).squeeze(1)
-            remainder = 1 - halt_cumulative
-            halt_cumulative += torch.min(halt_prob, remainder)
-            halted = halt_cumulative.ge(1 - 0.01)
-
-            remainder_unsq = remainder.unsqueeze(1)
-
-            # Compute next states
-            term_halted_h = new_h * remainder_unsq
-            term_halted_c = new_c * remainder_unsq
-            term_nonhalted_h = new_h * halt_prob.unsqueeze(1)
-            term_nonhalted_c = new_c * halt_prob.unsqueeze(1)
-
-            next_lstm_hidden = torch.where(
-                halted.unsqueeze(1),
-                term_halted_h,
-                term_nonhalted_h
-            )
-            next_lstm_cell = torch.where(
-                halted.unsqueeze(1),
-                term_halted_c,
-                term_nonhalted_c
-            )
-
-            # Update current states with next states for halted
-            lstm_hidden = next_lstm_hidden
-            lstm_cell = next_lstm_cell
-
-            # Reset for halted sequences
-            halt_cumulative = halt_cumulative.masked_fill(halted, 0)
-            next_lstm_hidden = next_lstm_hidden.masked_fill(halted.unsqueeze(1), 0)
-            next_lstm_cell = next_lstm_cell.masked_fill(halted.unsqueeze(1), 0)
-
-        return lstm_hidden
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    B = 16
-    T = 10
-    F = 16  # 8 + 8
-    return torch.rand(T, B, F, requires_grad=True, dtype=torch.float32)
-
+    lstm_hidden_state[halted] = next_lstm_hidden_state[halted]
+    lstm_cell_state[halted] = next_lstm_cell_state[halted]
+    halt_cumulative = halt_cumulative.masked_fill(halted, 0)
+    next_lstm_hidden_state = next_lstm_hidden_state.masked_fill(halted.unsqueeze(1), 0)
+    next_lstm_cell_state = next_lstm_cell_state.masked_fill(halted.unsqueeze(1), 0)
+lstm_hidden_state.sum().backward()

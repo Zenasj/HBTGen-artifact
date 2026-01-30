@@ -1,14 +1,11 @@
-# torch.rand((), dtype=torch.float32)  # Scalar input as per nonzero() examples
 import torch
-from torch import nn
+torch.nonzero(torch.tensor(0))
+# output tensor([], size=(0, 0), dtype=torch.int64)
+torch.nonzero(torch.tensor(1))
+# output tensor([], size=(1, 0), dtype=torch.int64)
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return torch.nonzero(x)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(())  # Returns a scalar tensor (0-dim)
-
+import numpy as np
+np.array(np.nonzero(0))
+# array([], shape=(1, 0), dtype=int64)
+np.array(np.nonzero(1))
+# array([[0]]), shape (1, 1)

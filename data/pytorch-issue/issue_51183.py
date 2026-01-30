@@ -1,18 +1,14 @@
-# torch.rand(1, 300, dtype=torch.float32)  # Input shape inferred from minimal reproducible example
+import torch.nn as nn
+
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
+# create a simple module
+class MyModule(torch.nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
-    
+        super(MyModule, self).__init__()
+
     def forward(self, x):
-        # Replaced .T with explicit transpose to fix ONNX export compatibility
-        return x.transpose(0, 1)
+        return x.T
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(1, 300, dtype=torch.float32)
-
+dummy_input = torch.randn(1, 300)
+torch.onnx.export(MyModule(), dummy_input, "aten_transpose_issue.onnx", opset_version=13, verbose=True)

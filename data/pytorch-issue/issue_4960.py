@@ -1,19 +1,18 @@
-# torch.rand(B, 1, dtype=torch.float32)
-import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
+import torch
+import torchvision
+class Network(torch.nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
-        self.fc1 = nn.Linear(1, 10)
+        super(Network, self).__init__()
+        self.fc1 = torch.nn.Linear(1, 10)
         
     def forward(self, x):
         x = self.fc1(x)
         return x
 
-def my_model_function():
-    return MyModel()
+myNetwork = Network()
 
-def GetInput():
-    return torch.rand(1, 1, dtype=torch.float32)
-
+data = torch.Tensor([3]).long()
+data = torch.autograd.Variable(data)
+y_ = myNetwork(data)

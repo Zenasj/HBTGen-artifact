@@ -1,21 +1,17 @@
-# torch.rand(B, C, dtype=torch.float16)
-import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self, C=4):
+py
+import torch
+
+class Net(torch.nn.Module):
+    def __init__(self, C):
         super().__init__()
-        self.layer_norm = nn.LayerNorm(C, eps=1e-8)
-        
+        self.layer_norm = torch.nn.LayerNorm(C, eps=1e-8)
     def forward(self, x):
         return self.layer_norm(x)
 
-def my_model_function():
-    model = MyModel()
-    return model.half()  # Matches original issue's fp16 model initialization
+N, C = 8, 4
+model = Net(C).cuda().half()
+x = torch.randn(N, C).cuda().half()
 
-def GetInput():
-    B = 8  # Matches issue's minimal example batch size
-    C = 4   # Matches issue's channel dimension
-    return torch.rand(B, C, dtype=torch.float16)
-
+torch.onnx.export(model, x, "test_layernorm_export_fp16.onnx", opset_version=12)

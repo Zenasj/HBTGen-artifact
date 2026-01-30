@@ -1,23 +1,26 @@
-# torch.rand(B, 3, 5, 7, dtype=torch.float32)
+import torch.nn as nn
+
 import torch
 from torch.jit import Final
+print(torch.__version__)
 
-class MyModel(torch.nn.Module):
+class Model(torch.nn.Module):
     a: Final[int]
 
     def __init__(self):
         super().__init__()
-        self.a = 5  # Final field causing compatibility issue with libtorch
+        self.a = 5
 
     def forward(self, x):
-        return x  # Simple pass-through to demonstrate minimal problematic structure
+        return x
 
-def my_model_function():
-    # Returns model instance with problematic Final field initialization
-    return MyModel()
+m = torch.jit.script(Model())
+torch.jit.save(m, 'model.pt')
+torch.jit.load('model.pt')
 
-def GetInput():
-    # Generates 4D tensor matching expected input dimensions
-    B, C, H, W = 1, 3, 5, 7
-    return torch.rand(B, C, H, W, dtype=torch.float32)
+import torch
+print(torch.__version__)
 
+m = torch.jit.script(torch.nn.Linear(10, 10))
+torch.jit.save(m, 'model.pt')
+torch.jit.load('model.pt')

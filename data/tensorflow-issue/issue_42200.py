@@ -1,47 +1,149 @@
-# tf.random.uniform((B, 28, 28), dtype=tf.float32) ← The input shape is (batch_size, 28, 28) grayscale images from MNIST
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
+from datetime import datetime
+from packaging import version
+import os
 import tensorflow as tf
-
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Recreate the CNN model architecture described in the issue
-        self.reshape = tf.keras.layers.Reshape(target_shape=(28, 28, 1))
-        self.conv1 = tf.keras.layers.Conv2D(256, 2, activation='relu')
-        self.conv2 = tf.keras.layers.Conv2D(128, 2, activation='relu')
-        self.conv3 = tf.keras.layers.Conv2D(32, 1, activation='relu')
-        self.conv4 = tf.keras.layers.Conv2D(32, 2, activation='relu')
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(2048, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(1024, activation='relu')
-        self.dense3 = tf.keras.layers.Dense(128, activation='relu')
-        self.out = tf.keras.layers.Dense(10)  # logits for 10 classes
-
-    def call(self, inputs):
-        x = self.reshape(inputs)
-        x = self.conv1(x)
-        x = self.conv2(x)
-        x = self.conv3(x)
-        x = self.conv4(x)
-        x = self.flatten(x)
-        x = self.dense1(x)
-        x = self.dense2(x)
-        x = self.dense3(x)
-        logits = self.out(x)
-        return logits
+import numpy as np
+import json
+import tensorflow as  tf
 
 
-def my_model_function():
-    # Return an uncompiled instance of MyModel
-    # Compilation with loss and optimizer would normally happen in training script / strategy scope
-    return MyModel()
+os.environ['TF_CONFIG'] = json.dumps({
+    'cluster': {
+        'worker': ["node72:12345", "node67:23456"]
+    },
+    'task': {'type': 'worker', 'index': 0}
+})
+
+# Create a TensorBoard callback
+logs = "logs/" + datetime.now().strftime("%Y%m%d-%H%M%S")
+
+tboard_callback = tf.keras.callbacks.TensorBoard(log_dir = logs,
+                                                 histogram_freq = 1,
+                                                 profile_batch = '10,11')
+
+def mnist_dataset(batch_size):
+    (x_train, y_train), _ = tf.keras.datasets.mnist.load_data()
+    # The `x` arrays are in uint8 and have values in the range [0, 255].
+    # We need to convert them to float32 with values in the range [0, 1]
+    x_train = x_train / np.float32(255)
+    y_train = y_train.astype(np.int64)
+    train_dataset = tf.data.Dataset.from_tensor_slices(
+      (x_train, y_train)).shuffle(60000).cache().repeat().batch(batch_size)
+    return train_dataset
 
 
-def GetInput():
-    # Create a random tensor that mimics MNIST input batches with shape (batch_size, 28, 28),
-    # dtype float32 normalized [0,1]
-    # Use a reasonable batch size for demonstration, e.g., 64
-    batch_size = 64
-    input_tensor = tf.random.uniform((batch_size, 28, 28), minval=0, maxval=1, dtype=tf.float32)
-    return input_tensor
+def build_and_compile_cnn_model():
+    model = tf.keras.Sequential([
+      tf.keras.Input(shape=(28, 28)),
+      tf.keras.layers.Reshape(target_shape=(28, 28, 1)),
+      tf.keras.layers.Conv2D(256, 2, activation='relu'),
+      tf.keras.layers.Conv2D(128, 2, activation='relu'),
+      tf.keras.layers.Conv2D(32, 1, activation='relu'),  
+      tf.keras.layers.Conv2D(32, 2, activation='relu'),
+      tf.keras.layers.Flatten(),
+      tf.keras.layers.Dense(2048, activation='relu'),        
+      tf.keras.layers.Dense(1024, activation='relu'),        
+      tf.keras.layers.Dense(128, activation='relu'),
+      tf.keras.layers.Dense(10)
+    ])
+    model.compile(
+      loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+      optimizer=tf.keras.optimizers.SGD(learning_rate=0.001),
+      metrics=['accuracy'])
+    return model
 
+strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
+
+num_workers = 2
+per_worker_batch_size = 2048
+# Here the batch size scales up by number of workers since 
+# `tf.data.Dataset.batch` expects the global batch size. Previously we used 64, 
+# and now this becomes 128.
+global_batch_size = per_worker_batch_size * num_workers
+multi_worker_dataset = mnist_dataset(global_batch_size)
+
+with strategy.scope():
+  # Model building/compiling need to be within `strategy.scope()`.
+  multi_worker_model = build_and_compile_cnn_model()
+
+# Keras' `model.fit()` trains the model with specified number of epochs and
+# number of steps per epoch. Note that the numbers here are for demonstration
+# purposes only and may not sufficiently produce a model with good quality.
+multi_worker_model.fit(multi_worker_dataset, epochs=20, steps_per_epoch=20,callbacks = [tboard_callback])
+
+from datetime import datetime
+from packaging import version
+import os
+import tensorflow as tf
+import numpy as np
+import json
+import tensorflow as  tf
+
+
+os.environ['TF_CONFIG'] = json.dumps({
+    'cluster': {
+        'worker': ["node72:12345", "node67:23456"]
+    },
+    'task': {'type': 'worker', 'index': 1}
+})
+
+# Create a TensorBoard callback
+logs = "logs/" + datetime.now().strftime("%Y%m%d-%H%M%S")
+
+tboard_callback = tf.keras.callbacks.TensorBoard(log_dir = logs,
+                                                 histogram_freq = 1,
+                                                 profile_batch = '10,11')
+
+def mnist_dataset(batch_size):
+    (x_train, y_train), _ = tf.keras.datasets.mnist.load_data()
+    # The `x` arrays are in uint8 and have values in the range [0, 255].
+    # We need to convert them to float32 with values in the range [0, 1]
+    x_train = x_train / np.float32(255)
+    y_train = y_train.astype(np.int64)
+    train_dataset = tf.data.Dataset.from_tensor_slices(
+      (x_train, y_train)).shuffle(60000).cache().repeat().batch(batch_size)
+    return train_dataset
+
+
+def build_and_compile_cnn_model():
+    model = tf.keras.Sequential([
+      tf.keras.Input(shape=(28, 28)),
+      tf.keras.layers.Reshape(target_shape=(28, 28, 1)),
+      tf.keras.layers.Conv2D(256, 2, activation='relu'),
+      tf.keras.layers.Conv2D(128, 2, activation='relu'),
+      tf.keras.layers.Conv2D(32, 1, activation='relu'),  
+      tf.keras.layers.Conv2D(32, 2, activation='relu'),
+      tf.keras.layers.Flatten(),
+      tf.keras.layers.Dense(2048, activation='relu'),        
+      tf.keras.layers.Dense(1024, activation='relu'),        
+      tf.keras.layers.Dense(128, activation='relu'),
+      tf.keras.layers.Dense(10)
+    ])
+    model.compile(
+      loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+      optimizer=tf.keras.optimizers.SGD(learning_rate=0.001),
+      metrics=['accuracy'])
+    return model
+
+strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
+
+num_workers = 2
+per_worker_batch_size = 2048
+# Here the batch size scales up by number of workers since 
+# `tf.data.Dataset.batch` expects the global batch size. Previously we used 64, 
+# and now this becomes 128.
+global_batch_size = per_worker_batch_size * num_workers
+multi_worker_dataset = mnist_dataset(global_batch_size)
+
+with strategy.scope():
+  # Model building/compiling need to be within `strategy.scope()`.
+  multi_worker_model = build_and_compile_cnn_model()
+
+# Keras' `model.fit()` trains the model with specified number of epochs and
+# number of steps per epoch. Note that the numbers here are for demonstration
+# purposes only and may not sufficiently produce a model with good quality.
+multi_worker_model.fit(multi_worker_dataset, epochs=20, steps_per_epoch=20,callbacks = [tboard_callback])

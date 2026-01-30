@@ -1,32 +1,40 @@
-# tf.random.uniform((B, 784), dtype=tf.float32) ← input shape inferred from MNIST flattened dataset
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Defining the layers exactly as per the MNIST example
-        self.dense_1 = tf.keras.layers.Dense(64, activation='relu', name='dense_1')
-        self.dense_2 = tf.keras.layers.Dense(64, activation='relu', name='dense_2')
-        self.predictions = tf.keras.layers.Dense(10, activation='softmax', name='predictions')
+inputs = tf.keras.Input(shape=(784,), name='digits')
+x = tf.keras.layers.Dense(64, activation='relu', name='dense_1')(inputs)
+x = tf.keras.layers.Dense(64, activation='relu', name='dense_2')(x)
+outputs = tf.keras.layers.Dense(10, name='predictions', activation='softmax')(x)
+model = tf.keras.Model(inputs=inputs, outputs=outputs)
 
-    def call(self, inputs):
-        x = self.dense_1(inputs)
-        x_intermediate = self.dense_2(x)
-        out_pred = self.predictions(x_intermediate)
-        # The original bug is about multi-output models; here we output two tensors:
-        # One intermediate tensor (x_intermediate), and the softmax predictions.
-        # This mirrors the faulty model output=[x, outputs] from the issue.
-        return [x_intermediate, out_pred]
+model.compile(
+    optimizer=tf.keras.optimizers.SGD(),
+    loss={"predictions": tf.keras.losses.SparseCategoricalCrossentropy()},
+    metrics=[tf.keras.metrics.SparseCategoricalAccuracy(name="accuracy")],
+)
 
+(x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
+x_train = x_train.reshape(60000, 784).astype('float32') / 255
+x_test = x_test.reshape(10000, 784).astype('float32') / 255
+y_train = y_train.astype('float32')
+y_test = y_test.astype('float32')
 
-def my_model_function():
-    # Return an instance of the model defined above
-    return MyModel()
+x_val = x_train[-10000:]
+y_val = y_train[-10000:]
+x_train = x_train[:-10000]
+y_train = y_train[:-10000]
 
-def GetInput():
-    # Returns a random input tensor matching the expected input shape
-    # Batch size is set to 32 arbitrarily; this can be any number.
-    # Inputs are normalized floats in [0,1], shape (batch, 784)
-    return tf.random.uniform((32, 784), minval=0, maxval=1, dtype=tf.float32)
+train_dataset = tf.data.Dataset.from_tensor_slices((x_train, y_train))
+train_dataset = train_dataset.shuffle(buffer_size=1024).repeat().batch(64)
 
+val_dataset = tf.data.Dataset.from_tensor_slices((x_val, y_val))
+val_dataset = val_dataset.batch(64, drop_remainder=True)
+
+test_dataset = tf.data.Dataset.from_tensor_slices((x_test, y_test))
+test_dataset = test_dataset.batch(64)
+
+model.fit(train_dataset, epochs=3, steps_per_epoch=1000, validation_data=val_dataset)

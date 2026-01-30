@@ -1,14 +1,25 @@
-# torch.rand(1, dtype=torch.complex128)
+import numpy as np
 import torch
-from torch import nn
+print(np.__version__) #1.24.3
+print(torch.__version__) #2.0.0
+# print(torch.__config__.show())
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return torch.dot(x, x)
+x = torch.tensor([1], dtype=torch.complex128)
+print(torch.dot(x, x)) #tensor(0.+0.j, dtype=torch.complex128)
+# expected: tensor(1, dtype=torch.complex128)
 
-def my_model_function():
-    return MyModel()
+import torch
+print(torch.__version__)
+x = torch.tensor([1], dtype=torch.complex128)
+print(torch.dot(x, x))
 
-def GetInput():
-    return torch.randn(1, dtype=torch.complex128)
+# main-no-np.py
+import torch
+x = torch.tensor([1], dtype=torch.complex128)
+print(torch.dot(x, x))
 
+# main-with-np.py
+import numpy as np
+import torch
+x = torch.tensor([1], dtype=torch.complex128)
+print(torch.dot(x, x))

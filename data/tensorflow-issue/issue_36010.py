@@ -1,31 +1,81 @@
-# tf.random.uniform((B, T, F), dtype=tf.float32) ← typical RNN input shape (batch, timesteps, features)
+import numpy as np
+from tensorflow import keras
+from tensorflow.keras import layers
+
+class RecurrentConfig(BaseLayer):
+    '''Basic configurable recurrent layer'''
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.layers: List[layers.Layer] = stack_layers(self.params,
+                                                       self.num_layers,
+                                                       self.layer_name)
+
+    def call(self, inputs: np.ndarray) -> layers.Layer:
+        '''This function is a sequential/functional call to this layers logic
+        Args:
+            inputs: Array to be processed within this layer
+        Returns:
+            inputs processed through this layer'''
+        processed = inputs
+        for layer in self.layers:
+            processed = layer(processed)
+        return processed
+
+    @staticmethod
+    def default_params() -> Dict[Any, Any]:
+        return{
+            'units': 32,
+            'recurrent_initializer': 'glorot_uniform',
+            'dropout': 0,
+            'recurrent_dropout': 0,
+            'activation': None,
+            'return_sequences': True
+        }
+
+import tensorflow as tf
+class DummyLayer(tf.keras.layers.Layer):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.a = tf.keras.layers.LSTM(2)
+    
+    def call(inputs):
+        return self.a(inputs)
+    
+tf.keras.layers.Bidirectional(DummyLayer())
+
+import tensorflow as tf
+class DummyLayer(tf.keras.layers.Layer):
+    def __init__(self, *args, **kwargs):
+        super().__init__(go_backwards=True, *args, **kwargs)
+        #self.a = tf.keras.layers.LSTM(2, go_backwards=True)
+    
+    def call(inputs):
+        return None#self.a(inputs)
+    
+tf.keras.layers.Bidirectional(DummyLayer())
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self, go_backwards=False, units=32, **kwargs):
-        super().__init__(**kwargs)
-        # Store go_backwards flag to support Bidirectional wrapper
-        self.go_backwards = go_backwards
-        # Underlying LSTM layer with matching go_backwards parameter
-        self.lstm = tf.keras.layers.LSTM(units, return_sequences=True, go_backwards=self.go_backwards)
+class DummyLayer(tf.keras.layers.Layer):
+  def __init__(self, go_backwards=False, *args, **kwargs):
+    super(DummyLayer, self).__init__(*args, **kwargs)
+    self.go_backwards = go_backwards
+    self.a = tf.keras.layers.LSTM(2, go_backwards=self.go_backwards)
 
-    def call(self, inputs):
-        return self.lstm(inputs)
+  def call(self, inputs):
+    return self.a(inputs)
 
-    def get_config(self):
-        # Include go_backwards to support serialization in Bidirectional wrapper
-        config = super().get_config()
-        config.update({'go_backwards': self.go_backwards})
-        return config
+  @property
+  def return_sequences(self):
+    return self.a.return_sequences
 
-def my_model_function():
-    # Return a MyModel instance with default parameters.
-    # The go_backwards param is left False by default.
-    return MyModel()
+  @property
+  def return_state(self):
+    return self.a.return_state
 
-def GetInput():
-    # Return a random tensor input typical for RNNs: (batch, timesteps, features)
-    # Using a batch size of 4, 10 timesteps, and 8 features (arbitrary choice)
-    return tf.random.uniform((4, 10, 8), dtype=tf.float32)
+  def get_config(self):
+    config = {'go_backwards': self.go_backwards}
+    base_config = super(DummyLayer, self).get_config()
+    return dict(list(base_config.items()) + list(config.items()))
 
+tf.keras.layers.Bidirectional(DummyLayer())

@@ -1,41 +1,59 @@
-# tf.random.uniform((1, 5), dtype=tf.float32)
+import random
+from tensorflow import keras
+
+import gym
+import numpy as np
+import matplotlib.pylab as plt
+
 import tensorflow as tf
 from tensorflow.keras import layers
-import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Matching the original model structure: input shape (1,5)
-        # Sequential Equivalent:
-        # Dense(10, sigmoid) -> Dense(2, linear)
-        self.dense1 = layers.Dense(10, activation='sigmoid', name="dense_sigmoid")
-        self.dense2 = layers.Dense(2, activation='linear', name="dense_linear")
+import time
 
-    def call(self, inputs):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        return x
+env = gym.make('NChain-v0')
 
-def my_model_function():
-    # Returns a freshly initialized MyModel instance.
-    # Since the original code compiled with loss and optimizer, we add compile here to mimic training setup.
-    model = MyModel()
+
+def q_learning_keras(env, num_episodes=10):
+    # create the keras model
+    model = tf.keras.Sequential()
+    model.add(layers.InputLayer(batch_input_shape=(1, 5)))
+    model.add(layers.Dense(10, activation='sigmoid'))
+    model.add(layers.Dense(2, activation='linear'))
     model.compile(loss='mse', optimizer='adam', metrics=['mae'])
-    return model
+    # now execute the q learning
+    y = 0.95
+    eps = 0.5
+    decay_factor = 0.999
+    r_avg_list = []
+    for i in range(num_episodes):
+        s = env.reset()
+        eps *= decay_factor
+        #if i % 100 == 0:
+        print("Episode {} of {}".format(i + 1, num_episodes))
+        t_start = time.time()
+        done = False
+        r_sum = 0
+        while not done:
+            if np.random.random() < eps:
+                a = np.random.randint(0, 2)
+            else:
+                a = np.argmax(model.predict(np.identity(5)[s:s + 1]))
+            new_s, r, done, _ = env.step(a)
+            target = r + y * np.max(model.predict(np.identity(5)[new_s:new_s + 1]))
+            target_vec = model.predict(np.identity(5)[s:s + 1])[0]
+            target_vec[a] = target
+            model.fit(np.identity(5)[s:s + 1], target_vec.reshape(-1, 2), epochs=1, verbose=0)
+            s = new_s
+            r_sum += r
+        print("Elapsed time: {}".format(time.time()-t_start))
+        r_avg_list.append(r_sum / 1000)
+    plt.plot(r_avg_list)
+    plt.ylabel('Average reward per game')
+    plt.xlabel('Number of games')
+    plt.show()
+    for i in range(5):
+        print("State {} - action {}".format(i, model.predict(np.identity(5)[i:i + 1])))
 
-def GetInput():
-    # Input expected is a batch with shape (1, 5), dtype float32.
-    # The original code uses a one-hot identity vector of length 5 as input representing states.
-    # So create a random one-hot like vector batch with shape (1, 5)
-    # We create a random integer in [0..4] and convert to one-hot vector
-    batch_index = 1
-    num_states = 5
-    # Random choice of state index
-    state_idx = np.random.randint(0, num_states)
-    # Create one-hot input as float32 tensor
-    input_array = np.eye(num_states, dtype=np.float32)[state_idx:state_idx+1]
-    # Convert to tf.Tensor
-    input_tensor = tf.convert_to_tensor(input_array)
-    return input_tensor
 
+if __name__ == "__main__":
+    q_learning_keras(env)

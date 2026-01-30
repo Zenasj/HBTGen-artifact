@@ -1,41 +1,56 @@
-# torch.rand(1, S, dtype=torch.long)  # S is sequence length (e.g., 1, 2, 3...)
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self, max_output_patches=100, output_dim=512):
-        super().__init__()
-        self.embedding = nn.Embedding(1000, output_dim).to(torch.bfloat16).cuda()
-        self.cross_attn = nn.MultiheadAttention(
-            output_dim, 8, batch_first=True, device="cuda", dtype=torch.bfloat16
-        )
-        # Predefined encoder outputs (part of model state from setup_cache)
-        self.encoder_outputs = torch.randn(
-            1, max_output_patches, output_dim, 
-            device="cuda", dtype=torch.bfloat16
-        )
-        self.encoder_cache_pos = torch.arange(max_output_patches).cuda()
+import torch._dynamo
+import time
+from torch.nn.attention import SDPBackend
 
-    def forward(self, input_ids):
-        # Embedding layer
-        x = self.embedding(input_ids)
-        # Cross-attention using encoder outputs as key/value
-        attn_output, _ = self.cross_attn(
-            x, 
-            self.encoder_outputs, 
-            self.encoder_outputs
-        )
-        return attn_output
+torch._dynamo.reset()
+compiled_model = get_model(config, "cuda")
 
-def my_model_function():
-    # Matches configuration from issue's encoder_args
-    return MyModel(max_output_patches=256, output_dim=768)
+compiled_model.decoder.model.setup_cache(
+    1,
+    config.decoder_args.max_seq_len,
+    config.encoder_args.max_output_patches,
+    device="cuda",
+)
+compiled_model.decoder.model = torch.compile(compiled_model.decoder.model, mode="max-autotune", fullgraph=True)  # type: ignore
 
-def GetInput():
-    # Example input size where slowdown occurs (n=2)
-    return torch.full(
-        (1, 2), 1, 
-        dtype=torch.long, 
-        device="cuda"
+encoder_outputs = (
+    torch.randn(
+        1, config.encoder_args.max_output_patches, config.encoder_args.output_dimensions
     )
+    .to("cuda")
+    .to(torch.bfloat16)
+)
+encoder_cache_pos = torch.arange(0, config.encoder_args.max_output_patches).to("cuda")
 
+
+def run_test(n: int):
+    print(f"===={n}====")
+    for i in range(10):
+        with torch.inference_mode():
+            with torch.autocast("cuda", dtype=torch.bfloat16):
+                with torch.nn.attention.sdpa_kernel([SDPBackend.MATH]):
+                    input_ids = torch.full(
+                        (encoder_outputs.shape[0], n),
+                        1,
+                        dtype=torch.long,
+                        device=encoder_outputs.device,
+                    )
+                    start = time.time()
+                    cache_pos = torch.arange(0, n, device="cuda")
+                    compiled_model.decoder.model(
+                        input_ids=input_ids,
+                        cache_pos=cache_pos,
+                        encoder_outputs=encoder_outputs,
+                        encoder_cache_pos=encoder_cache_pos,
+                        use_encoder_cache=i != 0,
+                    )
+                    torch.cuda.synchronize()
+                    print(time.time() - start)
+
+run_test(1)
+run_test(2)
+run_test(3)
+run_test(4)
+run_test(5)

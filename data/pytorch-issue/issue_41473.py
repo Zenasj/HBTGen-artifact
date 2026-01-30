@@ -1,42 +1,18 @@
-# torch.rand(3, 6, 2, dtype=torch.float32)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.mask = torch.tensor(
-            [
-                [0, 1, 1, 1, 1, 0],
-                [0, 1, 1, 0, 1, 1],
-                [0, 1, 1, 0, 1, 1],
-            ],
-            dtype=torch.bool,
-        )
+candidate = torch.tensor([[[-1, -2], [0, 1], [2, 3], [4, 5], [6, 7], [8, 9]],
+[[-11, -12], [10, 11], [12, 13], [14, 15], [16, 17], [18, 19]],
+[[-101, -102], [100, 101], [102, 103], [104, 105], [106, 107], [108, 109]]])
+mask = torch.tensor([[0, 1, 1, 1, 1, 0],
+[0, 1, 1, 0, 1, 1],
+[0, 1, 1, 0, 1, 1]], dtype=torch.bool)
+result_cpu = torch.masked_select(candidate.permute(2, 0, 1), mask)
+result_gpu = torch.masked_select(candidate.to('cuda').permute(2, 0, 1), mask.to('cuda'))
 
-    def forward(self, x):
-        # Compute CPU result
-        x_cpu = x.to("cpu")
-        permuted_cpu = x_cpu.permute(2, 0, 1)
-        mask_cpu = self.mask.to("cpu")
-        cpu_result = torch.masked_select(permuted_cpu, mask_cpu)
+assert not (result_cpu != result_gpu.cpu()).any()
 
-        # Compute GPU result if available
-        if torch.cuda.is_available():
-            x_gpu = x.to("cuda")
-            permuted_gpu = x_gpu.permute(2, 0, 1)
-            mask_gpu = self.mask.to("cuda")
-            gpu_result = torch.masked_select(permuted_gpu, mask_gpu)
-            gpu_result = gpu_result.cpu()
-        else:
-            return torch.tensor(False)  # GPU not available, cannot compare
-
-        # Compare results
-        return torch.all(cpu_result == gpu_result)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(3, 6, 2, dtype=torch.float32)
-
+x = torch.randn(3, 3)
+mask = torch.ones(3, 3, dtype=torch.bool)
+cpu_output = torch.masked_select(x.t(), mask)
+cuda_output = torch.masked_select(x.cuda().t(), mask.cuda())
+assert torch.allclose(cpu_output, cuda_output.cpu())

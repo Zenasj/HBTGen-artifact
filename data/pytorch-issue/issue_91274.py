@@ -1,20 +1,10 @@
-# torch.rand(2, dtype=torch.float32)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-    
-    def forward(self, b):
-        return self.func(a=1, **{'b': b})
-    
-    def func(self, a, b):
-        return a + b
+def func(a, b):
+    return a + b
 
-def my_model_function():
-    return MyModel()
+def func1(**kwargs):
+    return func(a=1, **kwargs)
 
-def GetInput():
-    return torch.rand(2)
-
+c_f = torch.compile(func1, fullgraph=True)
+c_f(b=torch.rand([2]))

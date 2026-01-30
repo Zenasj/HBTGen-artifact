@@ -1,24 +1,19 @@
-# torch.rand(512, 8, 64, dtype=torch.float16, device='cuda'), torch.rand(512, 64, 8, dtype=torch.float16, device='cuda')
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        mat_a, mat_b = inputs
-        # Loop-based approach (equivalent to original code's for-loop)
-        res_loop = torch.stack([torch.mm(a, b) for a, b in zip(mat_a, mat_b)])
-        # Batched approach using torch.bmm
-        res_bmm = torch.bmm(mat_a, mat_b)
-        # Calculate maximum absolute difference across all elements
-        max_diff = (res_bmm - res_loop).abs().max()
-        # Return whether difference is within 0.01 tolerance (as observed in comments)
-        return max_diff < 0.01  # Returns boolean tensor (scalar)
+torch.manual_seed(1234)
 
-def my_model_function():
-    return MyModel()
+mat_a = torch.rand(512, 8, 64).cuda()
+mat_b = torch.rand(512, 64, 8).cuda()
 
-def GetInput():
-    mat_a = torch.rand(512, 8, 64, dtype=torch.float16, device='cuda')
-    mat_b = torch.rand(512, 64, 8, dtype=torch.float16, device='cuda')
-    return (mat_a, mat_b)
+mat_a_half = mat_a.half()
+mat_b_half = mat_b.half()
 
+res_list = []
+for i in range(0, 512):
+  res_tmp =torch.mm(mat_a_half[i], mat_b_half[i])
+  res_list += [res_tmp]
+res = torch.cat(res_list, dim=0).reshape(512,8,8)
+
+res_half = torch.bmm(mat_a_half, mat_b_half)
+
+assert torch.allclose(res, res_half)

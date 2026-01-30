@@ -1,29 +1,20 @@
-# torch.rand(2, 12, 16, 32, 32, dtype=torch.float32)
 import torch
-from torch import nn
+from torch._subclasses import FakeTensorMode
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Initialize indices with fixed values for reproducibility
-        i1 = torch.arange(2).unsqueeze(-1)  # (2,1)
-        # Generate i2 with deterministic seed
-        torch.manual_seed(0)
-        rand_tensor = torch.rand(2, 12)
-        indices = torch.argsort(rand_tensor, dim=-1)
-        i2 = indices[:, :3]  # (2,3)
-        self.register_buffer('i1', i1)
-        self.register_buffer('i2', i2)
+device = "cuda"
 
-    def forward(self, x):
-        return x[self.i1, self.i2]
+x = torch.randn((24, 16, 32, 32), device=device).to(memory_format=torch.channels_last)
+x = x.view(2, 12, 16, 32, 32)
 
-def my_model_function():
-    return MyModel()
+i1 = torch.arange(2).unsqueeze(-1)
+i2 = torch.argsort(torch.rand(2, 12), dim=-1)[:, :3]
 
-def GetInput():
-    # Create input tensor with shape (2,12,16,32,32) and channels_last memory format
-    x = torch.randn((24, 16, 32, 32), dtype=torch.float32).to(memory_format=torch.channels_last)
-    x = x.view(2, 12, 16, 32, 32)
-    return x
+print(f"Eager stride: {x[i1, i2].stride()}")
 
+mode = FakeTensorMode()
+with mode:
+    f_x = mode.from_tensor(x)
+    f_i1 = mode.from_tensor(i1)
+    f_i2 = mode.from_tensor(i2)
+    f_out = f_x[f_i1, f_i2]
+    print(f"Meta stride: {f_out.stride()}")

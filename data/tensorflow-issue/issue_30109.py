@@ -1,6 +1,10 @@
-# tf.random.uniform((BATCH_SIZE, 5, 20), dtype=tf.float32) ← Input shape inferred from time_steps=5, sample_width=20
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
+from tensorflow import keras
 import tensorflow as tf
+import numpy as np
+import random
 
 time_steps = 5
 sample_width = 20
@@ -8,50 +12,51 @@ kernel_size = 3
 num_filters = 5
 num_classes = 5
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # The inner model that will be applied to each time step independently:
-        # This mimics the "sample_model" in the original code:
-        self.reshape1 = tf.keras.layers.Reshape((sample_width, 1))
-        # BatchNorm with momentum set to 0.5 to avoid training-validation mismatch described in the issue
-        self.batch_norm = tf.keras.layers.BatchNormalization(momentum=0.5)
-        self.conv = tf.keras.layers.Conv1D(num_filters, kernel_size, padding='same')
-        self.reshape2 = tf.keras.layers.Reshape((num_filters * sample_width,))
-        # TimeDistributed wrapper will be replaced by functional logic using tf.map_fn for easier control in subclassed model
-        self.dense = tf.keras.layers.Dense(num_classes, activation='softmax')
+def build_graph():
+    with tf.name_scope("SequenceProcess"):
+        sequence_input = keras.layers.Input(shape=(time_steps, sample_width))
 
-    def call(self, inputs, training=False):
-        # inputs shape: (batch_size, time_steps, sample_width)
-        # Process each time step independently via tf.map_fn to replicate TimeDistributed behavior
-        def step_fn(step_input):
-            # step_input shape: (batch_size, sample_width)
-            x = self.reshape1(step_input)
-            x = self.batch_norm(x, training=training)
-            x = self.conv(x)
-            x = self.reshape2(x)
-            return x
-        # map_fn iterates over the time dimension (axis=1)
-        # We transpose inputs to (time_steps, batch_size, sample_width) to map over time_steps
-        # then transpose back after.
-        # Alternatively, map over axis=1 using tf.map_fn with fn applied to each time slice.
-        # tf.map_fn defaults to mapping over the first dimension, so we transpose.
-        x = tf.transpose(inputs, perm=[1, 0, 2])  # (time_steps, batch_size, sample_width)
-        encoded = tf.map_fn(step_fn, x)
-        # encoded shape: (time_steps, batch_size, num_filters * sample_width)
-        encoded = tf.transpose(encoded, perm=[1, 0, 2])  # (batch_size, time_steps, num_filters * sample_width)
-        # Now apply dense layer to each time step output (Dense supports 3D input applied last dimension-wise)
-        # Result shape: (batch_size, time_steps, num_classes)
-        out = self.dense(encoded)
-        return out
+        with tf.name_scope("TimeDistributed"):
+            sample_input = keras.layers.Input(shape=(sample_width,))
 
-def my_model_function():
-    # Returns an instance of MyModel with initialized weights
-    return MyModel()
+            conv = keras.layers.Reshape([sample_width, 1])(sample_input)
+            conv = keras.layers.BatchNormalization(momentum=0.01)(conv)
+            conv = keras.layers.Conv1D(num_filters, kernel_size, padding='same')(conv)
+            encoded_sample = keras.layers.Reshape((num_filters * sample_width,))(conv)
 
-def GetInput():
-    # Returns a random tensor input shape matching (batch_size, time_steps, sample_width)
-    # batch size arbitrarily chosen as 32
-    batch_size = 32
-    return tf.random.uniform((batch_size, time_steps, sample_width), dtype=tf.float32)
+            sample_model = keras.models.Model(sample_input, encoded_sample)
 
+        processed_samples = keras.layers.TimeDistributed(sample_model)(sequence_input)
+        fc = keras.layers.Dense(num_classes, activation='softmax')(processed_samples)
+
+        sequence_model = keras.models.Model(sequence_input, fc)
+        sequence_model.compile(loss='sparse_categorical_crossentropy', optimizer='adam', metrics=['sparse_categorical_accuracy'])
+
+    return sequence_model
+
+def generate_data():
+    steps = []
+    for i in range(time_steps):
+        sample_data = np.random.rand(sample_width)
+        steps.append(sample_data)
+    steps = np.array(steps)
+
+    labels = []
+    for i in range(time_steps):
+        label = random.randint(0, num_classes - 1)
+        labels.append([label])
+    labels = np.array(labels)
+
+    input_data = []
+    input_labels = []
+
+    for i in range(1000):
+        input_data.append(steps)
+        input_labels.append(labels)
+
+    return np.array(input_data), np.array(input_labels)
+
+if __name__ == '__main__':
+    data, labels = generate_data()
+    model = build_graph()
+    model.fit(data, labels, 10, 100, validation_split= 0.5)

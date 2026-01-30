@@ -1,21 +1,14 @@
-# torch.rand(1, 3, 64, 64, dtype=torch.float32)
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Initialize weights as a parameter to ensure groups is fixed at construction
-        self.weight = nn.Parameter(torch.rand(3, 1, 3, 3, dtype=torch.float32))
-        self.groups = int(self.weight.shape[0])  # groups=3 here
+import torch
 
-    def forward(self, x):
-        return F.conv2d(x, self.weight, groups=self.groups)
+def func(x, w):
+    return torch.nn.functional.conv2d(x, w, groups=int(w.shape[0]))
 
-def my_model_function():
-    return MyModel()
+x = torch.rand(1, 3, 64, 64)
+w = torch.rand(3, 1, 3, 3)
+y1 = func(x, w)
+cfunc = torch.compile(func, fullgraph=True, dynamic=True)
+y2 = cfunc(x, w)
 
-def GetInput():
-    return torch.rand(1, 3, 64, 64, dtype=torch.float32)
-
+torch.testing.assert_close(y1, y2)

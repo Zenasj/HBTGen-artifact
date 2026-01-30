@@ -1,30 +1,23 @@
-# torch.rand(20, 20, dtype=torch.float64, device='cuda')
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-    
-    def forward(self, x):
-        # Test 1: Check physical_neg vs view_neg equivalence
-        physical_neg = torch.neg(x)
-        view_neg = torch._neg_view(x)
-        test1 = torch.allclose(physical_neg, view_neg)
-        
-        # Test 2: In-place operation on negative view
-        x_clone = x.clone()
-        original_x = x_clone.clone()
-        neg_view = torch._neg_view(x_clone)
-        neg_view.add_(1.0)
-        expected = -original_x + 1.0  # Expected based on original value before modification
-        test2 = torch.allclose(neg_view, expected)
-        
-        return torch.tensor([test1, test2], dtype=torch.bool)
+device = "cuda"
+dtype = torch.float64
 
-def my_model_function():
-    return MyModel()
+# Basic test for negative view
+x = torch.randn(20, 20, device=device, dtype=dtype, requires_grad=False)
+physical_neg = torch.neg(x)
+view_neg = torch._neg_view(x)
 
-def GetInput():
-    return torch.randn(20, 20, device='cuda', dtype=torch.float64, requires_grad=False)
+assert torch.is_neg(view_neg), "view_neg should be negative"
+assert not torch.is_neg(x), "x should not be negative"
+assert torch.allclose(
+    physical_neg, view_neg
+), "physical_neg and view_neg should be equal"
 
+# Test in-place operations on negative view
+x = torch.randn(20, 20, device=device, dtype=dtype, requires_grad=False)
+neg_x = torch._neg_view(x)
+neg_x.add_(1.0)
+assert torch.is_neg(neg_x), "neg_x should still be negative after in-place operation"
+expected = -x + 1.0
+assert torch.allclose(neg_x, expected), "neg_x should match expected result"

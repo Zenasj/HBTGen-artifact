@@ -1,39 +1,36 @@
-# tf.random.uniform((2000, 992, 5), dtype=tf.float64) ← input shape inferred from the issue: (batch_size=2000, backward=992, number_features=5)
+import random
+from tensorflow.keras import models
 
+import numpy as np
 import tensorflow as tf
+from tensorflow.keras import layers
+from tensorflow.keras.models import Sequential
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Following the original Sequential model in the issue:
-        # Input shape: (992, 5)
-        # LSTM with 40 units, return_sequences=False
-        # Dropout with 0.2
-        # Dense output of 3 units with sigmoid activation
-        self.lstm = tf.keras.layers.LSTM(40, return_sequences=False)
-        self.dropout = tf.keras.layers.Dropout(0.2)
-        self.dense = tf.keras.layers.Dense(3, activation='sigmoid')
+print(tf.config.list_physical_devices("GPU"))
 
-    def call(self, inputs, training=False):
-        x = self.lstm(inputs)
-        x = self.dropout(x, training=training)
-        output = self.dense(x)
-        return output
+if __name__ == "__main__":
 
-def my_model_function():
-    # Return an instance of MyModel
-    model = MyModel()
+    epoch = 10
+    batch_size = 2000
+    number_output = 3
+    number_features = 5
+    backward = 992
+    number_node = 40
 
-    # Build the model by calling it on a sample input for weights initialization
-    sample_input = GetInput()
-    _ = model(sample_input, training=False)
+    def train_gen():
+        for i in range(1000):
+            yield np.random.random((batch_size, backward, number_features)),\
+                  np.random.random((batch_size, number_output))
 
-    # Compile the model similarly to the issue snippet
+    train_dataset = tf.data.Dataset.from_generator(train_gen, output_types=(tf.float64, tf.float64))
+    train_dataset = train_dataset.prefetch(tf.data.AUTOTUNE)
+
+    drop_ratio = 0.2
+    model = Sequential([layers.Input(shape=(backward, number_features))])
+    model.add(layers.LSTM(number_node, return_sequences=False))
+    model.add(layers.Dropout(drop_ratio))
+    model.add(layers.Dense(number_output, activation='sigmoid'))
     model.compile(optimizer='adam', loss='mse')
-    return model
+    model.summary()
 
-def GetInput():
-    # Return a random tensor input with shape (2000, 992, 5) matching batch_size, backward, number_features
-    # dtype = tf.float64 to match the original dataset dtypes in the code
-    return tf.random.uniform((2000, 992, 5), dtype=tf.float64)
-
+    history = model.fit(train_dataset, epochs=epoch)

@@ -1,24 +1,31 @@
-# torch.rand(1, 2, dtype=torch.float32)  # Inferred input shape
-
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-class MyModel(nn.Module):
+py
+import torch
+
+torch.manual_seed(420)
+
+class Model(torch.nn.Module):
+
     def __init__(self):
         super().__init__()
-        self.linear1 = nn.Linear(2, 3)
-        self.linear2 = nn.Linear(3, 3)
-        self.linear3 = nn.Linear(3, 2)
+        self.linear1 = torch.nn.Linear(2, 3)
+        self.linear2 = torch.nn.Linear(3, 3)
+        self.linear3 = torch.nn.Linear(3, 2)
 
     def forward(self, x1):
-        return F.dropout(F.linear(x1, self.linear1.weight, self.linear1.bias), p=0.8).argmax(dim=-1).repeat(1, 3).add_(1)
+        return torch.nn.functional.dropout(torch.nn.functional.linear(x1, self.linear1.weight, self.linear1.bias), p=0.8).argmax(dim=-1).repeat(1, 3).add_(1)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+func = Model().to('cuda')
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(1, 2, dtype=torch.float32)
+x = torch.randn(1, 2).cuda()
 
+with torch.no_grad():
+    func = func.eval()
+    res1 = func(x) # without jit
+    print(res1)
+
+    jit_func = torch.compile(func)
+    res2 = jit_func(x)
+    # torch._dynamo.exc.BackendCompilerFailed: backend='inductor' raised:
+    # RuntimeError: PassManager::run failed

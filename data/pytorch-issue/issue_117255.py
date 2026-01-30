@@ -1,25 +1,10 @@
-# torch.rand(1, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
-
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # No specific layers or parameters are needed for this model
-        # as it is primarily used to demonstrate the sorting issue.
+self = torch.randn([1,1], dtype=torch.float16)
+self.sort(stable=None ,dim=0, descending=False)
 
-    def forward(self, x):
-        # The forward method will sort the input tensor and return it.
-        # The `stable` parameter is set to False to avoid the assertion error.
-        sorted_x, _ = x.sort(stable=False)
-        return sorted_x
+3
+import torch
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(1, dtype=torch.float32)
-
+x = torch.ones(1)
+x.sort(stable=None)

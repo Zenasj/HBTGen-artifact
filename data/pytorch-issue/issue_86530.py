@@ -1,68 +1,99 @@
-# torch.rand(3, dtype=torch.float64, device='cuda'), torch.rand(1,2,3,4,5, dtype=torch.float32, device='cuda'), torch.empty(4, dtype=torch.float32, device='cuda')
-
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
+import random
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.model1 = Scenario1()
-        self.model2 = Scenario2()
-        self.model3 = Scenario3()
-    
-    def forward(self, inputs):
-        input1, input2, input3 = inputs
-        out1 = self.model1(input1)
-        out2 = self.model2(input2)
-        out3 = self.model3(input3)
-        return (out1, out2, out3)
+py
+import torch
+torch._C._jit_set_nvfuser_single_node_mode(True)
 
-class Scenario1(nn.Module):
+class M(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.out = torch.tensor([1, 2, 3], dtype=torch.int64, device='cuda')
-    
+
     def forward(self, input):
         out = self.out
-        out = F.tanhshrink(out)
+        out = torch.nn.functional.tanhshrink(out) # disable this, it will work
         return torch.logical_not(input, out=out)
 
-class Scenario2(nn.Module):
-    def __init__(self):
-        super().__init__()
-    
-    def forward(self, input):
-        numel_val = torch.numel(input)
-        tensor_val = torch.tensor(-3, dtype=torch.float32, device='cuda')
-        res = torch.div(numel_val, tensor_val)
-        res = torch.mul(res, torch.tensor(-6, dtype=torch.float32, device='cuda'))
-        return res
+input = torch.tensor([-1., 1., 1.], dtype=torch.float64, device='cuda')
 
-class Scenario3(nn.Module):
+m = M().to('cuda')
+jit_m = torch.jit.trace(m, input)
+print(jit_m(input))
+# RuntimeError: tensor_inputs_to_check.size() INTERNAL ASSERT FAILED at "../torch/csrc/jit/codegen/cuda/graph_fuser.cpp":1558, please report a bug to PyTorch. CudaFusionGuard expects at least one tensor input
+
+py
+import torch
+
+def fn(input):
+    fn_res = torch.numel(input, )
+    fn_res = torch.div(fn_res, torch.tensor(-3, dtype=torch.float32, device='cuda'))
+    fn_res = torch.mul(fn_res, torch.tensor(-6, dtype=torch.float32, device='cuda'))
+    return fn_res
+
+input_tensor = torch.rand([1, 2, 3, 4, 5], dtype=torch.float32)
+
+jit_fn = torch.jit.script(fn)
+for i in range(5):
+    print(i)
+    jit_fn(input_tensor.clone().to('cuda'))
+
+py
+import torch
+# Tensor Info
+# {"name": "_input_tensor", "shape": [3], "dtype": "torch.float32"}
+class M(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.other = torch.randint(0, 2, (4, 1), dtype=torch.bool, device='cuda')
-        self.alpha = 10
-    
+
+    def forward(self, _input_tensor):
+        fn_res = _input_tensor.dim()
+        fn_res = torch.sub(fn_res, torch.tensor(-5, dtype=torch.float32, device='cuda'))
+        fn_res = torch.sub(fn_res, torch.tensor(-7, dtype=torch.float32, device='cuda'))
+        return fn_res
+
+fn = M().to('cuda')
+
+torch.random.manual_seed(54537)
+input_tensor = torch.empty([3], dtype=torch.float32, memory_format=torch.contiguous_format)
+input_tensor.uniform_(-32, 63)
+
+jit_fn = torch.jit.script(fn)
+for i in range(5):
+    print(i)
+    jit_fn(input_tensor.clone().to('cuda'))
+
+py
+import torch
+torch._C._jit_set_nvfuser_single_node_mode(True)
+torch._C._jit_set_nvfuser_horizontal_mode(True)
+
+class M(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        other = torch.randint(0, 2, [4, 1], dtype=torch.bool, device='cuda')
+        alpha = 10
+
+        self.other = other
+        self.alpha = alpha
+
     def forward(self, input):
         other = self.other
         alpha = self.alpha
+
         other = torch.cos(other)
         other = torch.mul(other, torch.tensor(-12, dtype=torch.float32, device='cuda'))
-        input = F.relu(input)
+        input = torch.nn.functional.relu(input)
         alpha = torch.sub(alpha, torch.tensor(-13, dtype=torch.float32, device='cuda'))
-        res = input.add(other, alpha=alpha)
+        res = input.add(other, alpha=alpha, )
         res = torch.sin(res)
         return res
 
-def my_model_function():
-    return MyModel()
+fn = M().to('cuda')
+input = torch.empty([4], dtype=torch.float32, memory_format=torch.contiguous_format, device='cuda')
+input.uniform_(0, 31)
 
-def GetInput():
-    input1 = torch.rand(3, dtype=torch.float64, device='cuda')
-    input2 = torch.rand(1, 2, 3, 4, 5, dtype=torch.float32, device='cuda')
-    input3 = torch.empty(4, dtype=torch.float32, memory_format=torch.contiguous_format, device='cuda')
-    input3.uniform_(0, 31)
-    return (input1, input2, input3)
-
+script_fn = torch.jit.script(fn)
+for i in range(10):
+    print(i)
+    script_fn(input.clone())

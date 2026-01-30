@@ -1,29 +1,19 @@
-# torch.rand(3, 3, 4, dtype=torch.long)
-import torch
-from torch import nn
+import torch 
 
-class MyModel(nn.Module):
-    def __init__(self, B=3, H=3, W=4):
-        super().__init__()
-        self.B = B
-        self.H = H
-        self.W = W
-        # Precompute indices and values as buffers for device handling
-        batch_idx = torch.arange(B).repeat_interleave(H * W).long()
-        hw_idx = torch.ones_like(batch_idx)
-        self.register_buffer('batch_idx', batch_idx)
-        self.register_buffer('hw_idx_h', hw_idx)  # H dimension indices
-        self.register_buffer('hw_idx_w', hw_idx)  # W dimension indices
-        # Values must match indices' numel (B*H*W) for GPU compatibility
-        self.register_buffer('values', torch.ones(B * H * W, dtype=torch.long))
+N = 21
 
-    def forward(self, grid):
-        indices = (self.batch_idx, self.hw_idx_h, self.hw_idx_w)
-        return grid.index_put_(indices, self.values, accumulate=True)
+dt = torch.int8
+# device = "cuda:0"
+device = "cpu"
 
-def my_model_function():
-    return MyModel()
+a = torch.ones(N, dtype=dt, device=device)
+indices = torch.arange(0, N, dtype=torch.uint8, device=device)
+values = torch.ones(N, dtype=dt, device=device)
 
-def GetInput():
-    return torch.zeros(3, 3, 4, dtype=torch.long)
+print(a.shape)
+print(indices.shape)
+print(values.shape)
 
+a.index_put_((indices, ), values, accumulate=True)
+
+print(a)

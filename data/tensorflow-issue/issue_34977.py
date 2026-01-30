@@ -1,72 +1,75 @@
-# tf.random.uniform((B, 10), dtype=tf.float32)  # inferred input shape from the example with shape=(10,)
+from tensorflow import keras
+from tensorflow.keras import layers
+
+import os
+import tensorflow as tf
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
+# NOT NESTED
+inp = tf.keras.Input((4,))
+y = tf.keras.layers.Dense(4, name="od_1")(inp)
+y = tf.keras.layers.Dense(2, name="od_2")(y)
+y = tf.keras.layers.Dense(4, name="id_1")(y)
+y = tf.keras.layers.Dense(10, name="od_3")(y)
+y = tf.keras.layers.Dense(10, name="od_4")(y)
+final_model = tf.keras.Model(inputs=[inp], outputs=[y])
+final_model.summary()
+
+sub_model = tf.keras.Model(inputs=[final_model.input], outputs=[final_model.get_layer("id_1").output])
+sub_model.summary()
+
+# NESTED
+inp_1 = tf.keras.Input(shape=(2,))
+x = tf.keras.layers.Dense(4, name="id_1")(inp_1)
+inner_model = tf.keras.Model(inputs=[inp_1], outputs=[x], name="inner_model")
+
+inp_outer = tf.keras.Input((4,))
+y = tf.keras.layers.Dense(4, name="od_1")(inp_outer)
+y = tf.keras.layers.Dense(2, name="od_2")(y)
+y = inner_model(y)
+y = tf.keras.layers.Dense(10, name="od_3")(y)
+y = tf.keras.layers.Dense(10, name="od_4")(y)
+final_model = tf.keras.Model(inputs=[inp_outer], outputs=[y])
+final_model.summary()
+
+sub_model = tf.keras.Model(inputs=[final_model.input], outputs=[final_model.get_layer("inner_model").get_layer("id_1").output])
+sub_model.summary()
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define the inner model: Input(10) => Dense(10, name='inner_layer')
-        inner_input = tf.keras.layers.Input(shape=(10,))
-        x = tf.keras.layers.Dense(10, name='inner_layer')(inner_input)
-        self.inner_model = tf.keras.Model(inner_input, x, name='inner_model')
+# Define an inner model of an input and a single dense layer
+inner_input = tf.keras.layers.Input(10)
+x = inner_input
+x = tf.keras.layers.Dense(10, name="inner_layer")(x)
+inner_output = x
 
-        # Define the outer model, which uses inner_model as a layer:
-        # Input(10) => Dense(10, name='outer_layer') => inner_model
-        outer_input = tf.keras.layers.Input(shape=(10,))
-        y = tf.keras.layers.Dense(10, name='outer_layer')(outer_input)
-        y = self.inner_model(y)
-        self.outer_model = tf.keras.Model(outer_input, y, name='outer_model')
+inner_model = tf.keras.Model(inner_input, inner_output, name='inner_model')
+inner_model.summary()
 
-        # Define an "extended inner model" that appends a Dense(10) layer after inner_layer inside inner_model
-        inner_layer_output = self.inner_model.get_layer('inner_layer').output
-        extended_inner_output = tf.keras.layers.Dense(10, name='extended_inner_dense')(inner_layer_output)
-        self.extended_inner_model = tf.keras.Model(self.inner_model.input, extended_inner_output)
+# Define an outer model in which we prepend a single Dense layer before the inner model.
+# The inner model is thus a layer or sub-model within the outer model
+outer_input = tf.keras.layers.Input(10)
+x = outer_input
+x = tf.keras.layers.Dense(10, name="outer_layer")(x)
+outer_output = inner_model(x)
 
-        # Attempt to define an "extended inner model" but with outer_input as input
-        # That tries to get inner_layer output through the outer_model nested structure.
-        # This reflects the problem in the question.
-        # It works for inner_model, but not for outer_model directly by layer.output
-        outer_inner_layer_output = self.outer_model.get_layer('inner_model').get_layer('inner_layer').output
-        extended_outer_inner_output = tf.keras.layers.Dense(10, name='extended_outer_inner_dense')(outer_inner_layer_output)
-        # We capture the ValueError that the issue raises by commenting out model creation here.
-        # Instead, we build a Lambda layer that simply calls outer_model and pipes to the extended_inner_model
-        # This is a workaround for the nested model layer output issue.
+outer_model = tf.keras.Model(outer_input, outer_output, name='outer_model')
+outer_model.summary()
 
-        # Build a functional model manually: Input -> outer_model -> access inner_layer functional output
-        # Note: Cannot directly create model with outer_input -> extended_outer_inner_output because of graph disconnect.
+# Append an extra Dense layer after `inner_layer`, and create a new model with inputs
+# the `inner_input` and outputs the output of the newly appended Dense layer.
+# This works.
+x = inner_model.get_layer('inner_layer').output
+x = tf.keras.layers.Dense(10)(x)
+extended_inner_model_output = x
+extended_inner_model = tf.keras.Model(inner_input, extended_inner_model_output)
+extended_inner_model.summary()
 
-        # Instead, we implement a forward pass logic in `call` that uses the nested models to produce outputs
-        # The call method will return both:
-        #   - The output of outer_model
-        #   - The output from extended_inner_model applied to the intermediate inner_layer output
-
-        # It's not trivial to get the intermediate tensor from nested model in Functional API outside inner_model,
-        # because of graph disconnected errors, so we use the inner_model separately here.
-
-    def call(self, inputs):
-        # Forward pass through outer model's first Dense layer
-        x = self.outer_model.get_layer('outer_layer')(inputs)
-
-        # Forward through inner_model
-        inner_out = self.inner_model(x)
-
-        # Also forward through extended_inner_model (adds extra Dense layer after inner_layer)
-        # We get the 'inner_layer' output first by manually applying layer on x
-        inner_layer_layer = self.inner_model.get_layer('inner_layer')
-        intermediate_inner_layer_out = inner_layer_layer(x)
-        extended_inner_out = self.extended_inner_model(intermediate_inner_layer_out)
-
-        # Output a tuple of (outer_model output, extended_inner_model's output)
-        # to represent the nested model outputs and an extended output.
-        return (inner_out, extended_inner_out)
-
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # The input shape for outer_model input is (10,)
-    # Batch size can be any positive integer; choose 2 as an example
-    return tf.random.uniform((2, 10), dtype=tf.float32)
-
+# Append an extra Dense layer after `inner_layer`, and create a new model with inputs
+# the `outer_input`(!) and outputs the output of the newly appended Dense layer.
+# This does not work.
+x = outer_model.get_layer('inner_model').get_layer('inner_layer').output
+x = tf.keras.layers.Dense(10)(x)
+extended_inner_model_output = x
+extended_inner_model = tf.keras.Model(outer_input, extended_inner_model_output)
+extended_inner_model.summary()

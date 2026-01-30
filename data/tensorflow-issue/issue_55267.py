@@ -1,46 +1,58 @@
-# tf.random.uniform((BATCH_SIZE, 28, 28), dtype=tf.float32) ← Input shape inferred from MNIST dataset and model input
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Build the same model architecture as in the issue:
-        # Input: (28, 28), GRU with 5 units, return sequences, Flatten, Dense(10) output logits
-        self.gru = tf.keras.layers.GRU(5, return_sequences=True)
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense = tf.keras.layers.Dense(10)
+# Load MNIST dataset
+mnist = tf.keras.datasets.mnist
+(train_images, train_labels), (test_images, test_labels) = mnist.load_data()
 
-    def call(self, inputs, training=False):
-        """
-        Forward pass:
-        inputs: shape (batch_size, 28, 28), dtype float32, normalized [0,1]
+# Normalize the input image so that each pixel value is between 0 to 1.
+train_images = train_images / 255.0
+test_images = test_images / 255.0
 
-        Output: logits tensor, shape (batch_size, 10)
-        """
-        x = self.gru(inputs)
-        x = self.flatten(x)
-        x = self.dense(x)
-        return x
+# Define the model architecture
+model = tf.keras.Sequential([
+  tf.keras.layers.InputLayer(input_shape=(28, 28)),
+  tf.keras.layers.GRU(5,return_sequences=True),
+  tf.keras.layers.Flatten(),
+  tf.keras.layers.Dense(10)
+])
 
-def my_model_function():
-    """
-    Return an instance of MyModel.
-    This mimics the original Sequential model in the issue which was trained on MNIST digits.
-    """
-    model = MyModel()
-    # Note: The original model was trained before saving, weights are not included here since training code is not asked.
-    # If pretrained weights required, they should be loaded here.
-    return model
+# Train the digit classification model
+model.compile(optimizer='adam',
+              loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+              metrics=['accuracy'])
+model.fit(
+  train_images,
+  train_labels,
+  epochs=1,
+  validation_data=(test_images, test_labels)
+)
 
-def GetInput():
-    """
-    Generate a random tensor input matching MNIST input shape and type (float32, normalized).
-    Shape: (batch_size=1, 28, 28)
-    Values: uniform in [0, 1] as per normalization in the example.
-    """
-    BATCH_SIZE = 1
-    H, W = 28, 28
-    # Use float32 to match model input dtype
-    return tf.random.uniform((BATCH_SIZE, H, W), minval=0, maxval=1, dtype=tf.float32)
+# Wrap it into function (like in https://colab.research.google.com/github/tensorflow/tensorflow/blob/master/tensorflow/lite/examples/experimental_new_converter/Keras_LSTM_fusion_Codelab.ipynb )
+run_model = tf.function(lambda x: model(x))
+BATCH_SIZE = 1
+concrete_func = run_model.get_concrete_function(
+    tf.TensorSpec([BATCH_SIZE, model.input.shape[1], model.input.shape[2]], model.inputs[0].dtype))
 
+MODEL_DIR = "keras_model"
+model.save(MODEL_DIR, save_format="tf", signatures=concrete_func)
+
+# Convert it using integer quantization with int16 activations
+converter = tf.lite.TFLiteConverter.from_saved_model(MODEL_DIR)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.target_spec.supported_ops = [tf.lite.OpsSet.EXPERIMENTAL_TFLITE_BUILTINS_ACTIVATIONS_INT16_WEIGHTS_INT8]
+converter.inference_input_type = tf.int16
+converter.inference_output_type = tf.int16
+
+mnist_train, _ = tf.keras.datasets.mnist.load_data()
+images = tf.cast(mnist_train[0], tf.float32) / 255.0
+mnist_ds = tf.data.Dataset.from_tensor_slices((images)).batch(1)
+def representative_data_gen():
+  for input_value in mnist_ds.take(10):
+    # Model has only one input so each data point has one element.
+    yield [input_value]
+converter.representative_dataset = representative_data_gen
+
+tflite_16x8_model = converter.convert()

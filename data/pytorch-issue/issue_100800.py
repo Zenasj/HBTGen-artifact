@@ -1,17 +1,13 @@
-# torch.rand(3, 3, dtype=torch.float32)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        condition = torch.ones_like(x).to(torch.bool)
-        x_val = torch.zeros_like(x)
-        y_val = torch.ones_like(x) * 2
-        return torch.where(condition, x_val, y_val)
+input_tensor = torch.ones(3, 3)
 
-def my_model_function():
-    return MyModel()
+def f(x):
+    return torch.where(torch.ones_like(x).to(torch.bool), torch.zeros_like(x), torch.ones_like(x)* 2)
 
-def GetInput():
-    return torch.rand(3, 3, dtype=torch.float32)
+res1 = f(input_tensor)
+print(res1)
 
+jit_func = torch.compile(f)
+res2 = jit_func(input_tensor)
+print(res2)

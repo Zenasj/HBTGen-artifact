@@ -1,40 +1,90 @@
-# tf.random.uniform((1, 10), dtype=tf.float32), tf.random.uniform((1, 2), dtype=tf.float32)
 import tensorflow as tf
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Parameters as inferred from the discussion:
-        # vocab_size = 10, embedding dim = 256, lstm units = 256, input_int shape=2
-        self.vocab_size = 10
-        self.max_length = 10
-        self.embedding = tf.keras.layers.Embedding(self.vocab_size, 256, mask_zero=True)
-        self.lstm = tf.keras.layers.LSTM(256)
-        self.dense_concat = tf.keras.layers.Concatenate()
-        self.dense_out = tf.keras.layers.Dense(self.vocab_size, activation='softmax')
+converter = tf.lite.TFLiteConverter.from_saved_model("<model_folder>")
+converter.experimental_new_converter = True
+tfmodel = converter.convert()
+open(args.output , "wb").write(tfmodel)
+interpreter= tf.lite.Interpreter("<tflite_model_name>")
+print(interpreter.get_input_details())
 
-    def call(self, inputs):
-        # inputs is a tuple/list of two tensors: (input_int, input_str)
-        input_int, input_str = inputs
-        # input_str : shape (batch, max_length) = (1,10)
-        # input_int : shape (batch, 2) = (1,2)
+import tensorflow
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import LSTM, Embedding
+from tensorflow.keras.layers import Input, Dense
+from tensorflow.keras.layers import concatenate
 
-        x = self.embedding(input_str)   # (batch, max_length, 256)
-        x = self.lstm(x)                # (batch, 256)
-        z = self.dense_concat([input_int, x])  # (batch, 258)
-        outputs = self.dense_out(z)     # (batch, vocab_size=10)
-        return outputs
+vocab_size = 10
+max_length = 10
+def create_model():
+    input_str = Input(shape=(max_length,))
+    x = Embedding(vocab_size, 256, mask_zero=True)(input_str)
+    x = LSTM(256)(x)
+    input_int = Input(shape=(2))
+    y = input_int
+    z = concatenate([y, x])
+    outputs = Dense(vocab_size, activation='softmax')(z)
+    return Model([input_int, input_str], outputs, name='lstm')
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+model = create_model()
+model.summary()
+model.save("model_lstm2")
 
-def GetInput():
-    # Returns a tuple of two inputs matching the model inputs:
-    # - input_int of shape (1, 2), dtype float32
-    # - input_str of shape (1, 10), dtype int32 (for embedding indices)
-    # We use int32 for input_str because it's used as indices into embedding.
-    input_int = tf.random.uniform((1, 2), minval=0, maxval=1, dtype=tf.float32)
-    input_str = tf.random.uniform((1, 10), minval=1, maxval=9, dtype=tf.int32)  # vocab indices>0 since mask_zero=True
-    return (input_int, input_str)
+import tensorflow
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import LSTM, Embedding
+from tensorflow.keras.layers import Input, Dense
+from tensorflow.keras.layers import concatenate
+vocab_size = 10
+max_length = 10
+def create_model():
+    input_str = Input(shape=(max_length), batch_size=1)
+    x = Embedding(vocab_size, 256, mask_zero=True)(input_str)
+    x = LSTM(256)(x)
+    input_int = Input(shape=(2), batch_size=1)
+    y = input_int
+    z = concatenate([y, x])
+    outputs = Dense(vocab_size, activation='softmax')(z)
+    return Model([input_int, input_str], outputs, name='lstm')
 
+model = create_model()
+model.summary()
+model.save("model_lstm2")
+
+run_model = tf.function(lambda x: model(x))
+BATCH_SIZE = 1
+STEPS = 1
+INPUT_SIZE = 2
+concrete_func = run_model.get_concrete_function(tf.TensorSpec([BATCH_SIZE, STEPS, INPUT_SIZE], model.inputs[0].dtype))
+model.save("model_lstm2", save_format="tf", signatures=concrete_func)
+
+import tensorflow
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import LSTM, Embedding
+from tensorflow.keras.layers import Input, Dense
+from tensorflow.keras.layers import concatenate
+import tensorflow.compat.v2 as tf
+tf.enable_v2_behavior()
+
+vocab_size = 10
+max_length = 10
+def create_model():
+    input_str = Input(shape=(max_length,))
+    x = Embedding(vocab_size, 256, mask_zero=True)(input_str)
+    x = LSTM(256)(x)
+    input_int = Input(shape=(2))
+    y = input_int
+    z = concatenate([y, x])
+    outputs = Dense(vocab_size, activation='softmax')(z)
+    return Model([input_int, input_str], outputs, name='lstm')
+
+model = create_model()
+model.summary()
+model.save("model_lstm2")
+run_model = tf.function(lambda x, y: model([x, y]))
+BATCH_SIZE = 1
+STEPS = 1
+INPUT_SIZE = 2
+concrete_func = run_model.get_concrete_function(tf.TensorSpec((BATCH_SIZE, 2), model.inputs[0].dtype),tf.TensorSpec((BATCH_SIZE, 10), model.inputs[0].dtype))
+model.save("model_lstm2", save_format="tf", signatures=concrete_func)

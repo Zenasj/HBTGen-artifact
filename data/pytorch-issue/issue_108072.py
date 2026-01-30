@@ -1,20 +1,13 @@
-# torch.rand(2, 2, 2, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.ln = nn.LayerNorm(2, eps=1e-6, elementwise_affine=False)
+import torch
+x = torch.Tensor([[[2.0, 2.0], [14.0, 14.0]], [[2.0, 2.0], [14.0, 14.0]]])
+ln = torch.nn.LayerNorm(2, eps=1e-6)
+for n,p in ln.named_parameters():
+  torch.nn.init.ones_(p)
+ln.eval()
 
-    def forward(self, x):
-        return self.ln(x)
+y = ln(x)
+print(y)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.tensor([[[2.0, 2.0], [14.0, 14.0]], [[2.0, 2.0], [14.0, 14.0]]])
-
+x * rstd_val + (-rstd_val * mean_val)

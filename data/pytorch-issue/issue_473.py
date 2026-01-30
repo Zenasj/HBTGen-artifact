@@ -1,19 +1,11 @@
-# torch.rand(5, 5, dtype=torch.float32)
 import torch
-from torch import nn
-
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.x = nn.Parameter(torch.zeros(5, 5, dtype=torch.float32))
-        self.register_buffer('indices', torch.tensor([0, 0, 0, 0, 0], dtype=torch.long))
-
-    def forward(self, y):
-        return self.x.index_copy(0, self.indices, y)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(5, 5, dtype=torch.float32, requires_grad=True)
-
+from torch.autograd import *
+x = Variable(torch.zeros(5, 5), requires_grad=True)
+print(x)
+y = Variable(torch.range(1, 25).view(5, 5), requires_grad=True)
+print(y)
+idx = Variable(torch.LongTensor([0, 0, 0, 0, 0]))
+z = x.index_copy(0, idx, y)
+print(z)  # Note only the last row of y is copied to the first row of z. No other rows of y are used.
+z.backward(torch.ones(5, 5))
+print(y.grad)  # Incorrectly all ones. Only the last row of y.grad should be non-zero.

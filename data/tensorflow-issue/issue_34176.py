@@ -1,41 +1,59 @@
-# tf.random.uniform((5,), dtype=tf.float32) ← input shape is a vector of length 5 (matching the variables in original code)
+def my_graph(use_identity_op) :
+   """Dummy function for testing
+   
+   :param use_identity_op: whether to apply the identity operator to the 
+   a variable or not
+   :type use_identity_op: bool
+   :return: a dummy vector
+   :rtype: list(float)
+   """
+   tf.compat.v1.reset_default_graph()
+   tf.compat.v1.set_random_seed(32)
+   a = tf.compat.v1.get_variable('my_a', [5], initializer=None)
+   if use_identity_op : 
+        a = tf.identity(a)
+   b = tf.compat.v1.get_variable('my_b', [5], initializer=None)
+   c = a + b
+   session = tf.compat.v1.Session()
+   session.run(tf.compat.v1.global_variables_initializer())
+   return session.run(c).tolist()
 
 import tensorflow as tf
+import unittest
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # In the original TF1 code, 'my_a' and 'my_b' were variables initialized without explicit initializers.
-        # For deterministic behavior and simplicity, we initialize variables randomly here but with seeded initializer.
-        # We'll simulate the behavior by creating two variables of shape [5] with deterministic initial values.
-        self.my_a = tf.Variable(
-            initial_value=tf.random.uniform(shape=(5,), minval=-1, maxval=1, seed=32),
-            trainable=False,
-            name="my_a"
-        )
-        self.my_b = tf.Variable(
-            initial_value=tf.random.uniform(shape=(5,), minval=-1, maxval=1, seed=1234),
-            trainable=False,
-            name="my_b"
-        )
+def my_graph(use_identity_op) :
+   """Dummy function for testing
+   
+   :param use_identity_op: whether to apply the identity operator to the 
+   a variable or not
+   :type use_identity_op: bool
+   :return: a dummy vector
+   :rtype: list(float)
+   """
+   tf.compat.v1.reset_default_graph()
+   tf.compat.v1.set_random_seed(32)
+   a = tf.compat.v1.get_variable('my_a', [5], initializer=None)
+   if use_identity_op : 
+        a = tf.identity(a)
+   b = tf.compat.v1.get_variable('my_b', [5], initializer=None)
+   c = a + b
+   session = tf.compat.v1.Session()
+   session.run(tf.compat.v1.global_variables_initializer())
+   return session.run(c).tolist()
 
-    def call(self, inputs, use_identity_op=False):
-        # inputs are ignored, kept for API consistency here
-        a = self.my_a
-        if use_identity_op:
-            # The core issue discussed was that applying tf.identity on 'a'
-            # changes the initialization order or determinism.
-            a = tf.identity(a)
-        b = self.my_b
-        c = a + b
-        return c
+class TestTFIdentity(unittest.TestCase): 
+   def test_my_graph_is_deterministic_CPU(self):
+      
+      with tf.device('/device:CPU:0'):
+         #The 3 calls below should be equivalent.
 
-def my_model_function():
-    # Return an instance of MyModel with deterministic initialized variables
-    return MyModel()
+         run1 = my_graph(use_identity_op=False)
+         run2 = my_graph(use_identity_op=False)
+         self.assertEqual(run1, run2)
+         
+         run3 = my_graph(use_identity_op=True)
+         #This fails though I feel it shouldn't 
+         self.assertEqual(run1, run3)
 
-def GetInput():
-    # Return dummy input that matches the model signature; model ignores input as variables encapsulate state
-    # But to keep API, we return a tensor of shape (5,) matching original variable sizes.
-    return tf.random.uniform(shape=(5,), minval=-1, maxval=1, seed=42)
-
+if __name__ == '__main__':
+    unittest.main()

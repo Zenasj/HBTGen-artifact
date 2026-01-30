@@ -1,0 +1,8 @@
+import torch
+
+op=lambda *args, out=None: torch.linalg.multi_dot([*args], out=out),
+
+TestCommonCUDA.test_variant_consistency_jit_pow_cuda_complex128 
+TestCommonCUDA.test_variant_consistency_jit_pow_cuda_complex64
+TestCommonCPU.test_variant_consistency_jit_pow_cpu_complex128 
+TestCommonCPU.test_variant_consistency_jit_pow_cpu_complex64

@@ -1,27 +1,35 @@
-# tf.random.uniform((B,), dtype=tf.string) ← input is a 1D tf.string tensor with shape [None]
+from tensorflow import keras
+from tensorflow.keras import models
 
-import tensorflow as tf
+import tensorflow as tf                                                        
+                                                                               
+class TestModel(tf.keras.models.Model):                                        
+  
+  def __init__(self, **kwargs):
+    super().__init__(**kwargs)                                                 
+    self._hash = tf.lookup.StaticHashTable(
+        tf.lookup.KeyValueTensorInitializer(
+            tf.constant(['testing', 'this', 'thing']),                         
+            tf.constant([1, 2, 3])),
+        default_value=-1)                                                      
 
-class MyModel(tf.keras.Model):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        # StaticHashTable mapping strings to integers:
-        keys = tf.constant(['testing', 'this', 'thing'])
-        values = tf.constant([1, 2, 3], dtype=tf.int32)
-        initializer = tf.lookup.KeyValueTensorInitializer(keys, values)
-        self._hash = tf.lookup.StaticHashTable(initializer, default_value=-1)
+  @tf.function
+  def test(self, word):
+    return self._hash.lookup(word)                                             
 
-    @tf.function
-    def call(self, word):
-        # Perform lookup in the static hash table
-        return self._hash.lookup(word)
 
-def my_model_function():
-    return MyModel()
+test_model = TestModel()                                                       
+signatures = [test_model.test.get_concrete_function(tf.TensorSpec([None], tf.string))] 
+    
+converter = tf.lite.TFLiteConverter.from_concrete_functions(signatures, test_model) 
+converter.optimizations = [tf.lite.Optimize.DEFAULT]                           
+converter.target_spec.supported_ops = [                                        
+  tf.lite.OpsSet.TFLITE_BUILTINS,
+  tf.lite.OpsSet.SELECT_TF_OPS                                                 
+]
 
-def GetInput():
-    # Return a 1D tf.string tensor input of shape [batch_size]
-    # Using 3 elements as example to include some hits and misses.
-    example_input = tf.constant(['testing', 'that', 'thing'], dtype=tf.string)
-    return example_input
+tflite_model = converter.convert()                                             
+interpreter = tf.lite.Interpreter(model_content=tflite_model)
 
+# Causes segmentation fault. Running test_model.test directly works fine.
+result = interpreter.get_signature_runner()(word=tf.constant(['testing', 'that', 'thing']))

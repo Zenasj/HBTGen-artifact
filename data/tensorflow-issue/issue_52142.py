@@ -1,41 +1,71 @@
-# This example illustrates a model with multiple signatures (methods) 
-# that take no meaningful input, illustrating the issue of concrete functions with no inputs.
-# Input shape is empty (no input tensors)
-# tf.random.uniform(())  # no input shape since functions take no inputs
+from tensorflow import keras
+from tensorflow.keras import models
 
-import tensorflow as tf
+import tensorflow as tf                                                        
+                                                                               
+class TestModel(tf.keras.models.Model):
+  @tf.function
+  def test(self):
+    return 123
 
+test_model = TestModel()
+signatures = [test_model.test.get_concrete_function()]
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
+converter = tf.lite.TFLiteConverter.from_concrete_functions(signatures, test_model)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+tflite_model = converter.convert()
 
-    @tf.function
-    def test_1(self):
-        # Returns a constant integer; no input arguments
-        return tf.constant(123)
+import tensorflow as tf                                                        
+                                                                               
+class TestModel(tf.keras.models.Model):                                        
+  @tf.function                                                                 
+  def test_1(self):                                                            
+    return 123                                                                 
+                                                                               
+  @tf.function                                                                 
+  def test_2(self):                                                            
+    return 456                                                                 
+                                                                               
+test_model = TestModel()                                                       
+signatures = [                                                                 
+  test_model.test_1.get_concrete_function(),                                   
+  test_model.test_2.get_concrete_function(),                                   
+]                                                                              
+                                                                               
+converter = tf.lite.TFLiteConverter.from_concrete_functions(signatures, test_model)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]                           
 
-    @tf.function
-    def test_2(self):
-        # Returns another constant integer; no input arguments
-        return tf.constant(456)
+# This now works but...
+tflite_model = converter.convert()
 
-    # For demonstration, a method showing signature with a dummy input to workaround known issues,
-    # but note that this breaks compatibility with older signatures as discussed.
-    @tf.function
-    def test_dummy(self, dummy):
-        # Just returns dummy (ignored)
-        return dummy
+# This throws "ValueError: NULL SignatureDef inputs for exported method test_1"
+interpreter = tf.lite.Interpreter(model_content=tflite_model)
 
+import tensorflow as tf                                                        
+                                                                               
+class TestModel(tf.keras.models.Model):
+  @tf.function
+  def test_1(self, dummy):                                                     
+    return 123                                                                 
+                                                                               
+  @tf.function                                                                 
+  def test_2(self, dummy):
+    return 456                                                                 
+  
+test_model = TestModel()
+signatures = [
+  test_model.test_1.get_concrete_function(dummy=tf.constant(0)),               
+  test_model.test_2.get_concrete_function(dummy=tf.constant(0)),               
+] 
+    
+converter = tf.lite.TFLiteConverter.from_concrete_functions(signatures, test_model) 
+converter.optimizations = [tf.lite.Optimize.DEFAULT]                           
+tflite_model = converter.convert()
+    
+interpreter = tf.lite.Interpreter(model_content=tflite_model)
 
-def my_model_function():
-    # Return an instance of MyModel (no special weights or initialization needed)
-    return MyModel()
+# This works, but requires explicitly setting the dummy, which I'm trying to avoid.
+interpreter.get_signature_runner('test_1')(dummy=tf.constant(0))
 
-
-def GetInput():
-    # Since the main functions have no inputs, we return an empty tuple to match their expected input.
-    # For test_dummy (not usually called), input would be a scalar tensor.
-    # But to be safe, the model's call expects no arguments, so return no input.
-    return ()
-
+# Throws "ValueError: Invalid number of inputs provided for running a SignatureDef, expected 1 vs provided 0".
+interpreter.get_signature_runner('test_1')()

@@ -1,18 +1,20 @@
-# torch.rand(3, 3, dtype=torch.float32), torch.rand(3, 3, dtype=torch.float64)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        x, y = inputs
-        d = y.sum()  # Sum of Double tensor produces a Double scalar
-        return x * d  # Float * Double → results in Float tensor (problem source)
+def f(x, y):
+    d = y.sum()
+    return x * d
 
-def my_model_function():
-    return MyModel()
+x = torch.randn(3,3, requires_grad=True)
+y = torch.randn(3,3, requires_grad=True, dtype=torch.float64)
+tf = torch.jit.trace(f, (x, y))
+z = tf(x, y)
+z.backward(torch.randn_like(x))
 
-def GetInput():
-    x = torch.rand(3, 3, dtype=torch.float32, requires_grad=True)
-    y = torch.rand(3, 3, dtype=torch.float64, requires_grad=True)
-    return (x, y)
+def f(x, y):
+    d = y.sum()
+    return x * d
 
+x = torch.randn(3,3, requires_grad=True)
+y = torch.randn(3,3, requires_grad=True, dtype=torch.float64)
+z = f(x, y)
+z.backward(torch.randn_like(x))

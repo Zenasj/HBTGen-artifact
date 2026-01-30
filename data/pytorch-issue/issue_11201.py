@@ -1,21 +1,35 @@
-# torch.randint(0, 1000000, (B,), dtype=torch.int64)  # Inferred input shape from Dataset returning single index integers
 import torch
-from torch import nn
+import numpy as np
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.fc = nn.Linear(1, 1)  # Process 1D input (indices)
+class PhysicsDataset(Dataset):
+    def __init__(self, data_dir, transform=None):
+        super().__init__()
+        self.data_dir = data_dir
+        self.transform = transform
+        self.gt_spectra = list(self.data_dir.glob("*.npz"))
+        self.gt_parameters = json.load(
+            open(self.data_dir / "all_params.json", 'r'))
 
-    def forward(self, x):
-        # Convert index tensor to float and add channel dimension
-        return self.fc(x.float().unsqueeze(1))
+    def __len__(self):
+        return len(self.gt_spectra)
 
-def my_model_function():
-    return MyModel()
+    def __getitem__(self, index):
+        with np.load(self.gt_spectra[index]) as data:
+            pdata = data['spectrum']
+        pdata = (pdata - pdata.min()) / (pdata.max() - pdata.min())
+        pdata = torch.from_numpy(pdata).float()
+        parameters = self.gt_parameters[self.gt_spectra[index].name.replace(
+            ".npz", "")]
+        if self.transform:
+            pdata = self.transform(pdata)
 
-def GetInput():
-    # Generate random indices matching Dataset's output format
-    batch_size = 4  # Example batch size
-    return torch.randint(0, 1000000, (batch_size,), dtype=torch.int64)
-
+        # create output tensor with normalised weights
+        gt_tensor = torch.from_numpy(
+            np.asarray([(parameters[k] - KEYS[k]['min']) /
+                        (KEYS[k]['max'] - KEYS[k]['min'])
+                        for k in KEYS])).float()
+        return {
+            "spectrum": pdata,
+            "gt_tensor": gt_tensor,
+            "filename": self.gt_spectra[index].name
+        }

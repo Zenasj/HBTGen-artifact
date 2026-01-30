@@ -1,41 +1,54 @@
-# tf.random.uniform((BATCH_SIZE, 5), dtype=tf.float32) ← inferred input shape from provided dataset (num_features=5)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
+
+import os
+import numpy as np
 import tensorflow as tf
+import tensorflow.keras as keras
 
-BATCH_SIZE = 4  # as given in original code
+BATCH_SIZE = 4
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self._layer = tf.keras.layers.Dense(1)
-    
-    def call(self, inputs):
-        # The original code inspects keras.backend.learning_phase(),
-        # which is a symbolic tensor related to training phase.
-        # In TF2, learning_phase() is deprecated in behavior, but we replicate original intent.
+class SimpleModel(keras.Model):
 
-        # Get learning_phase tensor (likely 0d scalar in TF2 eager, but originally problematic)
-        learning_phase = tf.keras.backend.learning_phase()
+  def __init__(self):
+    super(SimpleModel, self).__init__()
+    self._layer = keras.layers.Dense(1)
 
-        # We'll try to illustrate the core issue in original code: 
-        # learning_phase shape and value behavior, but since TF2 disables tf.Print,
-        # replace with tf.print (for side effects).
-        # Since side effects in tf.function are tricky, we just replicate the key logic here.
+  def call(self, inputs):
+    learning_phase = keras.backend.learning_phase()
+    inputs = tf.Print(inputs, [tf.constant(learning_phase.shape.ndims)],
+                      "Looking at the ndims says this is a salar: ",
+                      summarize=BATCH_SIZE)
+    inputs = tf.Print(inputs, [learning_phase], "But this is not a scalar: ",
+                      summarize=BATCH_SIZE)
+    inputs = tf.Print(inputs,
+                      [tf.reduce_any(learning_phase)],
+                      "Even reduce_any does not create a scalar: ", summarize=BATCH_SIZE)
+    return self._layer(inputs)
 
-        # Show dimension info (symbolic in TF1, here is static)
-        # learning_phase shape may be None or 0d
-        # We replicate prints using tf.print for demonstration:
-        tf.print("learning_phase shape.ndims:", tf.shape(learning_phase))
-        tf.print("learning_phase value:", learning_phase)
-        tf.print("reduce_any(learning_phase):", tf.reduce_any(learning_phase))
 
-        x = self._layer(inputs)
-        return x
+def get_dataset(batch_size=BATCH_SIZE):
+  num_batches = 16
+  num_features = 5
+  inputs = np.random.random((num_batches, num_features))
+  labels = np.random.random((num_batches))
+  sample_weights = (np.random.random((num_batches)) > 0.5).astype(np.float32)
+  dataset = tf.data.Dataset.from_tensor_slices((inputs, labels, sample_weights))
+  return dataset.batch(batch_size).take(1)
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    # Generate random float32 input tensor of shape (BATCH_SIZE, 5)
-    # consistent with get_dataset() input shape from issue
-    return tf.random.uniform((BATCH_SIZE, 5), dtype=tf.float32)
+if __name__ == "__main__":
+  tf.logging.set_verbosity(tf.logging.ERROR)
+  os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
+  print("-------------")
+  print(tf.__version__)
+  print("-------------")
+
+  model = SimpleModel()
+  optimizer = tf.keras.optimizers.SGD(learning_rate=0.005)
+  loss = tf.keras.losses.BinaryCrossentropy(from_logits=True)
+  model.compile(optimizer, loss)
+  model.fit(get_dataset(), verbose=0)

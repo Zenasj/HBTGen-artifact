@@ -1,43 +1,53 @@
-# torch.rand(B, 1, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
-
 import torch
 import torch.nn as nn
 import numpy as np
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.model = nn.Sequential(
-            nn.Linear(1, 10),
-            nn.ELU(),
-            nn.Linear(10, 1)
-        )
+x = torch.autograd.Variable(torch.FloatTensor(np.ones((5,2))*np.expand_dims(np.linspace(-1,1,5),1)), requires_grad=True)
+f = torch.tanh(x[:,0]**2*x[:,1]**2+2*x[:,0])
 
-    def forward(self, x):
-        return self.model(x)
+f.backward(torch.ones_like(f),retain_graph=True,create_graph=True)
+dx=x.grad
+print(dx)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+x.grad.data.zero_()
+dx[:,0].backward(torch.ones_like(dx[:,0]),retain_graph=True)
+dx2 = x.grad
+print(dx2)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    x = np.linspace(-1, 1, 100)
-    X_pt = torch.autograd.Variable(torch.FloatTensor(np.expand_dims(x, 1)), requires_grad=True)
-    return X_pt
+x.grad.data.zero_()
+dx[:,1].backward(torch.ones_like(dx[:,1]),retain_graph=True)
+dx3 = x.grad
+print(dx3)
 
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
-# output.backward(torch.ones_like(output), retain_graph=True, create_graph=True)
-# dx = input_tensor.grad
-# input_tensor.grad.data.zero_()
-# dx.backward(torch.ones_like(dx), retain_graph=True)
-# dx2 = input_tensor.grad
+#Model
+x = np.linspace(-1,1,100)
+y = x**4
 
-# ### Explanation:
-# 1. **MyModel**: The model is defined as a simple feedforward neural network with one hidden layer using `nn.ELU` activation.
-# 2. **my_model_function**: This function returns an instance of `MyModel`.
-# 3. **GetInput**: This function generates a tensor input that matches the input expected by `MyModel`. It uses a linearly spaced array from -1 to 1, which is then expanded to a 2D tensor with shape (100, 1).
-# The code is designed to be used for higher-order gradient calculations, as described in the issue. The example usage comments show how to compute the first and second-order gradients.
+X_pt = torch.autograd.Variable(torch.FloatTensor(np.expand_dims(x,1)),requires_grad=True)
+y_pt = torch.FloatTensor(np.expand_dims(y,1))
+
+model = torch.nn.Sequential(torch.nn.Linear(1,10),
+                            torch.nn.ELU(),
+                            torch.nn.Linear(10,1))
+loss_fn = torch.nn.MSELoss()
+learning_rate = 1e-4
+optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+steps=50000
+for i in np.arange(steps):
+    y_pred = model(X_pt)
+
+    loss = loss_fn(y_pred, y_pt)
+    if i%10000==0:
+        print(i, loss.item())
+  
+    optimizer.zero_grad()
+    loss.backward(retain_graph=True)
+    optimizer.step()
+
+#Gradient calculation
+X_pt.grad.data.zero_()
+y_pred.backward(torch.ones_like(y_pred),retain_graph=True,create_graph=True)
+dx=X_pt.grad
+X_pt.grad.data.zero_()
+dx.backward(torch.ones_like(dx),retain_graph=True)
+dx2 = X_pt.grad

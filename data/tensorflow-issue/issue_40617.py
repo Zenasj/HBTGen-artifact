@@ -1,53 +1,48 @@
-# tf.random.uniform((B, 1), dtype=tf.float32) ← inferred input shape based on original example Input(shape=(1,), dtype=tf.float32)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define a simple identity layer (mimicking the Lambda lambda x: x in the original issue)
-        self.identity = tf.keras.layers.Lambda(lambda x: x)
+# Build a sequential and functional model
+original_input = tf.keras.Input(shape=(1,), dtype=tf.float32)
+sequential_model = tf.keras.Sequential([
+    original_input,
+    # tf.keras.layers.Lambda(lambda x: x),
+])
+functional_model = tf.keras.Model(sequential_model.inputs, sequential_model.outputs)
 
-        # Define a simple negation model as a submodel (mimicking the other_model)
-        input_neg = tf.keras.Input(shape=(1,), dtype=tf.float32)
-        output_neg = tf.keras.layers.Lambda(lambda x: -x)(input_neg)
-        self.neg_model = tf.keras.Model(input_neg, output_neg)
+# Predict some data
+print("sequential_model:", sequential_model.predict([[1.5]]))
+print("functional_model:", functional_model.predict([[1.5]]))
 
-        # Functional model input and output using the identity layer
-        input_func = tf.keras.Input(shape=(1,), dtype=tf.float32)
-        output_func = self.identity(input_func)
-        self.func_model = tf.keras.Model(input_func, output_func)
+# Clone the model
+cloned_sequential_model = tf.keras.models.clone_model(sequential_model)
+cloned_functional_model = tf.keras.models.clone_model(functional_model)
+assert id(cloned_sequential_model.input) != id(original_input)  # OK
+assert id(cloned_functional_model.input) != id(original_input)  # OK
 
-    def call(self, inputs, training=False):
-        # Run the functional model (identity)
-        y_func = self.func_model(inputs, training=training)
+# Clone the model and make the input expect a different shape and dtype
+new_input = tf.keras.Input(shape=(None,), dtype=tf.uint8)
+cloned_sequential_model = tf.keras.models.clone_model(sequential_model, input_tensors=[new_input])
+cloned_functional_model = tf.keras.models.clone_model(functional_model, input_tensors=[new_input])
 
-        # Run the negation model on the same inputs
-        y_neg = self.neg_model(inputs, training=training)
+assert id(cloned_sequential_model.input) == id(new_input) # OK
+assert id(cloned_functional_model.input) == id(new_input) # FAILS (expected to pass)
+assert id(cloned_functional_model.input) != id(original_input)  # FAILS (expected to pass)
 
-        # Compare outputs to demonstrate the problem described: 
-        # we produce both outputs and return a boolean tensor indicating equality approx
-        # This fuses the two submodels and their comparison into one model, as per instructions.
+print("cloned_sequential_model.inputs:", cloned_sequential_model.inputs)
+print("cloned_functional_model.inputs:", cloned_functional_model.inputs)
 
-        # To compare, convert to float32 in case of dtype differences
-        y_func_f = tf.cast(y_func, tf.float32)
-        y_neg_f = tf.cast(y_neg, tf.float32)
+assert(cloned_sequential_model.predict([[1.5]]) == cloned_functional_model.predict([[1.5]])) # FAILS (expected to pass)
+print("cloned_sequential_model:", cloned_sequential_model.predict([[1.5]]))
+print("cloned_functional_model:", cloned_functional_model.predict([[1.5]]))
 
-        # Compute boolean tensor where outputs are close within tolerance
-        is_close = tf.math.abs(y_func_f - y_neg_f) < 1e-5
+## Chain example
+x = tf.keras.Input(shape=(1,), dtype=tf.float32)
+y = tf.keras.layers.Lambda(lambda x: -x)(x)
+other_model = tf.keras.Model(x, y)
 
-        # For demonstration, return:
-        # - the functional model output
-        # - the negation model output
-        # - the boolean tensor indicating if they are approximately equal elementwise
-        return y_func, y_neg, is_close
-
-def my_model_function():
-    # Return an instance of MyModel, no special initialization necessary
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches input expected by MyModel
-    # The input shape inferred from the issue is (batch_size, 1), float32 dtype
-    batch_size = 4  # arbitrary batch size
-    return tf.random.uniform((batch_size, 1), dtype=tf.float32)
-
+chained_models = tf.keras.models.clone_model(functional_model, other_model.outputs)
+assert chained_models.predict([[1]]) == [[-1]] # FAILS (expected to pass)
+print("chained_models:", chained_models.predict([[1]]))

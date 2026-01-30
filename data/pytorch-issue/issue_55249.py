@@ -1,26 +1,18 @@
-# torch.randint(0, 10, (3,), dtype=torch.int32)  # Input shape: 1D tensor of 3 integers
 import torch
-from torch import nn
+from typing import Tuple
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Extract tuples from input tensor
-        a = (x[0].item(), x[1].item())  # Original a: Tuple[int, int]
-        b = (x[2].item(),)              # Original b: Tuple[int]
-        
-        # Python-style tuple concatenation (expected behavior)
-        py_result = a + b
-        
-        # Simulate TorchScript behavior (returns list instead of tuple)
-        ts_result = list(a) + list(b)    # Convert tuples to lists and concatenate
-        
-        # Return 0 if types differ (tuple vs list), 1 if same (should never happen)
-        return torch.tensor(0 if type(py_result) != type(ts_result) else 1)
+def fn(a: Tuple[int, int], b: Tuple[int]):
+    return a + b
 
-def my_model_function():
-    return MyModel()
+a = (1, 2)
+b = (3,)
 
-def GetInput():
-    # Returns a random 1D tensor of 3 integers (matches input shape expectation)
-    return torch.randint(0, 10, (3,), dtype=torch.int32)
+print(f"Python: {fn(a, b)}")
+scripted = torch.jit.script(fn)
+print(f"TorchScript: {scripted(a, b)}")
 
+Python: (1, 2, 3)
+TorchScript: [1, 2, 3]
+
+Python: (1, 2, 3)
+TorchScript: (1, 2, 3)

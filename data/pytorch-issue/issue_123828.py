@@ -1,24 +1,70 @@
-# torch.rand(1, 1, 2, dtype=torch.float32)
-import torch
-import torch.nn as nn
+import multiprocessing
+import torch 
+import torch.nn as nn 
+ 
+# Change the hidden from 128 to 6 will erase the stuck?
+strange_hidden = 128
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # LSTM with hidden_size=128 (problematic case causing deadlock)
-        self.lstm_large = nn.LSTM(input_size=2, hidden_size=128, num_layers=1, batch_first=True)
-        # LSTM with hidden_size=6 (non-problematic case for comparison)
-        self.lstm_small = nn.LSTM(input_size=2, hidden_size=6, num_layers=1, batch_first=True)
-    
-    def forward(self, x):
-        # Run both models and return their outputs for comparison
-        out_large, _ = self.lstm_large(x)
-        out_small, _ = self.lstm_small(x)
-        return out_large, out_small
+lstm = nn.LSTM(input_size=2, hidden_size=strange_hidden, num_layers=1, batch_first=True)
+torch.save(lstm.state_dict(),"./plain.pt") 
 
-def my_model_function():
-    return MyModel()
+def run(inputs): 
+    model = nn.LSTM(input_size=2, hidden_size=strange_hidden, num_layers=1, batch_first=True)
+    model.load_state_dict(torch.load("./plain.pt")) 
+    x=model(inputs) 
+    return x 
 
-def GetInput():
-    return torch.rand(1, 1, 2, dtype=torch.float32)
+state=torch.rand(1,1,2) 
+print("CHECKPOINT 0 PASS")
 
+# Comment the line below will erase the stuck
+lstm.load_state_dict(torch.load("./plain.pt"))
+# Comment the line above will erase the stuck
+# What is weird, if I change the strange hidden_size from 128 to 6, it would never stuck!
+
+
+x = lstm(state)
+print(x[0].shape)
+print("CHECKPOINT 1 PASS")
+
+pool = multiprocessing.Pool(5)
+for i in range(5):
+    pool.apply_async(func=run,args=(state,))
+pool.close()
+pool.join()
+print("CHECKPOINT 2 PASS")
+
+# WINDOWS VERSION
+import multiprocessing
+import torch 
+import torch.nn as nn 
+
+def run(inputs): 
+        model = nn.LSTM(input_size=2, hidden_size=strange_hidden, num_layers=1, batch_first=True)
+        model.load_state_dict(torch.load("./plain.pt")) 
+        x=model(inputs) 
+        return x 
+
+
+if __name__=="__main__":
+    strange_hidden = 128
+
+    lstm = nn.LSTM(input_size=2, hidden_size=strange_hidden, num_layers=1, batch_first=True)
+    torch.save(lstm.state_dict(),"./plain.pt") 
+
+    state=torch.rand(1,1,2) 
+    print("CHECKPOINT 0 PASS")
+
+    lstm.load_state_dict(torch.load("./plain.pt"))
+
+
+    x = lstm(state)
+    print(x[0].shape)
+    print("CHECKPOINT 1 PASS")
+
+    pool = multiprocessing.Pool(5)
+    for i in range(5):
+        pool.apply_async(func=run,args=(state,))
+    pool.close()
+    pool.join()
+    print("CHECKPOINT 2 PASS")

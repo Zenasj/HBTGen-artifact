@@ -1,17 +1,20 @@
-# torch.rand(2**18, dtype=torch.float32)  # Inferred input shape (1D tensor of size 2^18)
+import timeit
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        return x + x
+torch._C._jit_override_can_fuse_on_cpu(True)
+torch._C._debug_set_fusion_group_inlining(False)
 
-def my_model_function():
-    return MyModel()
+x = torch.randn(2**18)
 
-def GetInput():
-    return torch.rand(2**18, dtype=torch.float32)
+@torch.jit.script
+def script_add(x):
+    return x + x
 
+for _ in range(5):
+    script_add(x)
+
+print(timeit.timeit(stmt="x + x", globals=globals(), number=1000))
+print(timeit.timeit(stmt="script_add(x)", globals=globals(), number=1000))
+
+0.02427208423614502
+0.1031530424952507

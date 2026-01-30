@@ -1,25 +1,27 @@
-# torch.rand(1, 3, 224, 224, dtype=torch.float32, device=torch.device('cuda:0'))  # Add a comment line at the top with the inferred input shape
+import time
+import torch
+
+data = torch.rand(2000000, dtype=torch.float32, device=torch.device('cuda:0'))
+num_topk = 1000
+
+def topk1():
+    return data.topk(num_topk, sorted=False)
+
+def topk2():
+    sort, idx = data.sort(descending=True)
+    return sort[:num_topk], idx[:num_topk]
+
+def benchmark(f, iter, warmup):
+    for k in range(warmup): f()
+    start = time.perf_counter()
+    for k in range(iter): f()
+    torch.cuda.synchronize()
+    return time.perf_counter() - start
+
+print(benchmark(topk1, 100, 3))
+print(benchmark(topk2, 100, 3))
+print(benchmark(topk1, 100, 3))
+print(benchmark(topk2, 100, 3))
 
 import torch
-import torch.nn as nn
-
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        half_k = x.numel() // 2
-        sort_values, _ = x.view(-1).sort(descending=True)
-        topk_values, _ = x.view(-1).topk(half_k, sorted=False)
-        kthvalue_value, _ = x.view(-1).kthvalue(half_k)
-        
-        return sort_values[half_k], topk_values[-1], kthvalue_value
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32, device=torch.device('cuda:0'))
-
+t = torch.randn(1, 3, 224, 224, device="cuda:0")

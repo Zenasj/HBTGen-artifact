@@ -1,84 +1,111 @@
-# tf.random.uniform((B, T, 512), dtype=tf.float32) ← Input shape: (batch_size, time_steps, 512)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
+import numpy as np
 import tensorflow as tf
+from tensorflow.keras import backend as K
+from tensorflow.keras.callbacks import TensorBoard
+from tensorflow.keras.layers import GRU, CuDNNGRU, Dense, Embedding, Reshape
+from tensorflow.keras.optimizers import Adam
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # CuDNNGRU layer with 384 units, returns sequences and state
-        self.cudnn_gru = tf.keras.layers.GRU(
-            384,
-            return_sequences=True,
-            return_state=True,
-            reset_after=True,
-            recurrent_activation='sigmoid',
-            # In TF 2.x, CuDNNGRU is deprecated and merged into GRU with 
-            # reset_after=True and recurrent_activation='sigmoid'
-            # This ensures it uses the CuDNN kernels on GPU if available
-        )
-        # For the first model from chunk 1/2:
-        # Split GRU outputs into two halves and use separate Dense stacks
-        self.dense_256_relu_1 = tf.keras.layers.Dense(256, activation='relu')
-        self.dense_128_1 = tf.keras.layers.Dense(128)
-        self.dense_256_relu_2 = tf.keras.layers.Dense(256, activation='relu')
-        self.dense_128_2 = tf.keras.layers.Dense(128)
+batch_size = 256
+time_steps = 750
 
-        # For the simplified model from chunk 2/3 (single logits path)
-        self.dense_256_relu_single = tf.keras.layers.Dense(256, activation='relu')
-        self.dense_128_single = tf.keras.layers.Dense(128)
-
-    def call(self, inputs, training=False):
-        """
-        inputs: shape (batch_size, time_steps, 512)
-        Return: a dictionary of outputs for both variants and a 'comparison' boolean tensor 
-        that tests if outputs are "close".
-        
-        This fuses the two described models:
-        - original split GRU outputs + two dense paths concatenated (outputs_part1)
-        - simplified single logits output (output_single)
-        
-        Then compares the outputs for debugging / analysis as in issue context.
-        """
-        rnn_outputs, rnn_state = self.cudnn_gru(inputs, training=training)
-
-        # Original model split output path
-        h_1, h_2 = tf.split(rnn_outputs, num_or_size_splits=2, axis=-1)
-        logits_1 = self.dense_128_1(self.dense_256_relu_1(h_1))
-        logits_2 = self.dense_128_2(self.dense_256_relu_2(h_2))
-        outputs_part1 = tf.concat([logits_1, logits_2], axis=-1)  # shape (B, T, 256)
-
-        # Simplified single logits output (from chunk 2/3)
-        outputs_single = self.dense_128_single(self.dense_256_relu_single(rnn_outputs))  # shape (B, T, 128)
-
-        # For the sake of comparison, reduce outputs_part1 to 128 channels by average pooling over last dim pairs
-        # This is an approximation to allow shape matching for comparison (256 -> 128)
-        outputs_part1_reduced = 0.5 * (outputs_part1[..., :128] + outputs_part1[..., 128:])
-
-        # Compare shapes: outputs_part1_reduced and outputs_single both (B,T,128)
-        # Use element-wise close comparison with tolerance for float differences
-        comparison = tf.reduce_all(
-            tf.abs(outputs_part1_reduced - outputs_single) < 1e-4
-        )
-
-        # Return a dictionary of these outputs and the comparison boolean
-        # This fused output reflects the original issue discussion about both models
-        return {
-            'outputs_part1': outputs_part1,
-            'outputs_single': outputs_single,
-            'outputs_part1_reduced': outputs_part1_reduced,
-            'comparison_result': comparison
-        }
+# datasets with almost no time delay
+np_input = np.random.random((batch_size, time_steps, 512))
+np_output = np.random.randint(0, 32, size=(batch_size, time_steps, 8))
+def generate():
+  while True:
+    yield np_input, np_output
+output_shapes = ((batch_size, time_steps, 512), (batch_size, time_steps, 8))
 
 
-def my_model_function():
-    # Return an instance of MyModel, no pretrained weights to load
-    return MyModel()
+# split the output to 8 parts, calculate loss with 8 labels
+def loss(y_true, y_pred):
+  y_true = tf.split(y_true, num_or_size_splits=8, axis=-1)
+  y_pred = tf.split(y_pred, num_or_size_splits=8, axis=-1)
+  loss_func = lambda true, pred: tf.keras.losses.sparse_categorical_crossentropy(
+      true, pred, from_logits=True)
+  return tf.reduce_mean(
+      tf.add_n([loss_func(y_true[i], y_pred[i]) for i in range(8)]))
 
-def GetInput():
-    # Return a random tensor matching the input expected by MyModel
-    # batch_size and time_steps from issue examples for typical benchmarking
-    batch_size = 256
-    time_steps = 750
-    # Input shape: (batch_size, time_steps, 512)
-    return tf.random.uniform((batch_size, time_steps, 512), dtype=tf.float32)
 
+# two v100 gpus, each of which has 16GB of memory
+strategy = tf.distribute.MirroredStrategy()
+with strategy.scope():
+  # get dataset
+  dataset = tf.data.Dataset.from_generator(generate,
+                                           output_types=(tf.float32, tf.int32),
+                                           output_shapes=output_shapes)
+  dataset = dataset.prefetch(2)
+
+  # create model
+  inputs = tf.keras.Input(shape=(None, 512))
+  rnn_outputs, rnn_state = CuDNNGRU(384,
+                                    return_sequences=True,
+                                    return_state=True)(inputs)
+  h_1, h_2 = tf.split(rnn_outputs, num_or_size_splits=2, axis=-1)
+  logits_1 = Dense(128)(Dense(256, activation='relu')(h_1))
+  logits_2 = Dense(128)(Dense(256, activation='relu')(h_2))
+  outputs = K.concatenate([logits_1, logits_2], axis=-1)
+  model = tf.keras.Model(inputs, outputs)
+
+  tensorboard = TensorBoard(log_dir='/workspace/exp/tf_log',
+                            update_freq=500,
+                            profile_batch=0)
+  optimizer = Adam(lr=1e-4, clipnorm=1.)
+  model.compile(optimizer=optimizer, loss=loss)
+
+# train
+model.fit(dataset, epochs=4, steps_per_epoch=1000, callbacks=[tensorboard])
+
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras import backend as K
+from tensorflow.keras.callbacks import TensorBoard
+from tensorflow.keras.layers import GRU, CuDNNGRU, Dense, Embedding, Reshape
+from tensorflow.keras.optimizers import Adam
+
+batch_size = 384
+time_steps = 750
+
+# datasets with almost no time delay
+np_input = np.random.random((batch_size, time_steps, 512))
+np_output = np.random.randint(0, 32, size=(batch_size, time_steps, 1))
+
+
+def generate():
+  while True:
+    yield np_input, np_output
+
+
+output_shapes = ((batch_size, time_steps, 512), (batch_size, time_steps, 1))
+
+
+# split the output to 8 parts, calculate loss with 8 labels
+def loss(y_true, y_pred):
+  loss_func = lambda true, pred: tf.keras.losses.sparse_categorical_crossentropy(
+      true, pred, from_logits=True)
+  return loss_func(y_true, y_pred)
+
+
+# get dataset
+dataset = tf.data.Dataset.from_generator(generate,
+                                         output_types=(tf.float32, tf.int32),
+                                         output_shapes=output_shapes)
+dataset = dataset.prefetch(3)
+
+# create model
+inputs = tf.keras.Input(shape=(None, 512))
+rnn_outputs, rnn_state = CuDNNGRU(384, return_sequences=True,
+                                  return_state=True)(inputs)
+logits_1 = Dense(128)(Dense(256, activation='relu')(rnn_outputs))
+model = tf.keras.Model(inputs, logits_1)
+
+optimizer = Adam(lr=1e-4, clipnorm=1.)
+model.compile(optimizer=optimizer, loss=loss)
+
+# train
+model.fit(dataset, epochs=4, steps_per_epoch=1000)

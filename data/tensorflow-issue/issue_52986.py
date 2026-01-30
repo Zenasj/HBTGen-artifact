@@ -1,128 +1,136 @@
-# tf.random.uniform((B, 32, 32, 1), dtype=tf.float32) ← Input shape based on padded Fashion MNIST images with single channel
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
+# Import TensorFlow
 import tensorflow as tf
 
+# Helper libraries
+import numpy as np
+import os
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Input layer: expects (32, 32, 1)
-        self.input_layer = tf.keras.Input(shape=(32, 32, 1), name="image")
+print(tf.__version__)
 
-        # Convert single channel to 3 channels (ResNet50V2 requires 3 channels)
-        self.preprocess_conv = tf.keras.layers.Conv2D(3, (1, 1), name="conv1x1_channel_expand")
+fashion_mnist = tf.keras.datasets.fashion_mnist
 
-        # Base backbone: ResNet50V2 without top, global average pooling
-        self.backbone = tf.keras.applications.ResNet50V2(
-            include_top=False,
-            pooling="avg",
-            weights=None,
-            input_shape=(32, 32, 3),
-        )
+(train_images, train_labels), _ = fashion_mnist.load_data()
 
-        # Dense layer for logits/classes (10 classes for Fashion MNIST)
-        self.logits_layer = tf.keras.layers.Dense(10, name="dense_logits")
+# Adding a dimension to the array -> new shape == (28, 28, 1)
+# We are doing this because the first layer in our model is a convolutional
+# layer and it requires a 4D input (batch_size, height, width, channels).
+# batch_size dimension will be added later on.
+train_images = train_images[..., None]
 
-    def call(self, inputs, training=False):
-        x = inputs
-        # Convert 1 channel to 3 channels
-        x = self.preprocess_conv(x)
-        # Compute features via ResNet backbone
-        features = self.backbone(x, training=training)
-        # Dense logits layer (not necessarily used in original reproduction code's output, but typical)
-        logits = self.logits_layer(features)
-        return logits
+# Getting the images in [0, 1] range.
+train_images = train_images / np.float32(255)
 
+# Padding images because ResNet requires a miniaml shape of (32, 32)
+padded_train_images = np.concatenate([
+    np.zeros((len(train_images), 2, 28, 1)), 
+    train_images, 
+    np.zeros((len(train_images), 2, 28, 1))
+], axis=1)
+padded_train_images = np.concatenate([
+    np.zeros((len(train_images), 32, 2, 1)), 
+    padded_train_images, 
+    np.zeros((len(train_images), 32, 2, 1))
+], axis=2)
 
-def convert_to_sync_batch_norm(old_model: tf.keras.Model, input_layer: tf.keras.Input) -> tf.keras.Model:
-    """
-    Convert all BatchNormalization layers in a Keras model to SyncBatchNormalization.
-    Rebuilds the model layer by layer, replacing BatchNorm layers.
-    Args:
-      old_model: tf.keras.Model instance to convert.
-      input_layer: Input to the new model, tf.keras.Input.
-    Returns:
-      new_model: tf.keras.Model with SyncBatchNormalization layers.
-    """
+# If the list of devices is not specified in the
+# `tf.distribute.MirroredStrategy` constructor, it will be auto-detected.
+strategy = tf.distribute.MirroredStrategy()
+
+print ('Number of devices: {}'.format(strategy.num_replicas_in_sync))
+
+BUFFER_SIZE = len(train_images)
+
+BATCH_SIZE_PER_REPLICA = 64
+GLOBAL_BATCH_SIZE = BATCH_SIZE_PER_REPLICA * strategy.num_replicas_in_sync
+
+EPOCHS = 10
+
+# We keep only the first images, so that the last GPU receives an empty batch
+padded_train_images = padded_train_images[:strategy.num_replicas_in_sync-1]
+train_labels = train_labels[:strategy.num_replicas_in_sync-1]
+
+train_dataset = tf.data.Dataset.from_tensor_slices((padded_train_images, train_labels)).shuffle(BUFFER_SIZE).batch(GLOBAL_BATCH_SIZE) 
+train_dist_dataset = strategy.experimental_distribute_dataset(train_dataset)
+
+def create_model():
+  inputs = tf.keras.Input((32, 32, 1))
+  preprocessed = tf.keras.layers.Conv2D(3, (1, 1))(inputs) # ResNet requires 3 channels
+  features = tf.keras.applications.ResNet50V2(
+      include_top=False, 
+      input_tensor=preprocessed, 
+      pooling="avg", weights=None).output
+  logits = tf.keras.layers.Dense(10)(features)
+  return tf.keras.Model(inputs, features)
+
+with strategy.scope():
+  # Set reduction to `none` so we can do the reduction afterwards and divide by
+  # global batch size.
+  loss_object = tf.keras.losses.SparseCategoricalCrossentropy(
+      from_logits=True,
+      reduction=tf.keras.losses.Reduction.NONE)
+  def compute_loss(labels, predictions):
+    per_example_loss = loss_object(labels, predictions)
+    return tf.nn.compute_average_loss(per_example_loss, global_batch_size=GLOBAL_BATCH_SIZE)
+
+# model, optimizer, and checkpoint must be created under `strategy.scope`.
+with strategy.scope():
+  model = create_model()
+
+  optimizer = tf.keras.optimizers.Adam()
+
+  checkpoint = tf.train.Checkpoint(optimizer=optimizer, model=model)
+
+def train_step(inputs):
+  images, labels = inputs
+
+  with tf.GradientTape() as tape:
+    predictions = model(images, training=True)
+    loss = compute_loss(labels, predictions)
+
+  gradients = tape.gradient(loss, model.trainable_variables)
+  optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+  return loss 
+
+# `run` replicates the provided computation and runs it
+# with the distributed input.
+@tf.function
+def distributed_train_step(dataset_inputs):
+  per_replica_losses = strategy.run(train_step, args=(dataset_inputs,))
+  return strategy.reduce(tf.distribute.ReduceOp.SUM, per_replica_losses,
+                         axis=None)
+
+for epoch in range(EPOCHS):
+  # TRAIN LOOP
+  total_loss = 0.0
+  num_batches = 0
+  for x in train_dist_dataset:
+    total_loss += distributed_train_step(x)
+    num_batches += 1
+  train_loss = total_loss / num_batches
+
+  print(f"Epoch {epoch+1}, Loss: {train_loss}")
+
+def convert_to_sync_batch_norm(old_model: tf.keras.Model, input_layer: tf.keras.Input):
     old_layer_names = [layer.name for layer in old_model.layers]
     new_xs = [input_layer]
     for old_layer in old_model.layers[1:]:
-        # Determine the input(s) for this layer in new model
         if isinstance(old_layer.input, list):
             input_x = [new_xs[old_layer_names.index(l.name.split("/")[0])] for l in old_layer.input]
         else:
             input_x = new_xs[old_layer_names.index(old_layer.input.name.split("/")[0])]
-
-        # Replace BatchNormalization layers with SyncBatchNormalization
         if isinstance(old_layer, tf.keras.layers.BatchNormalization):
-            # Recreate layer with SyncBatchNormalization config
-            old_layer = tf.keras.layers.SyncBatchNormalization.from_config(old_layer.get_config())
-        # Call layer with new input(s)
+            old_layer = tf.keras.layers.experimental.SyncBatchNormalization.from_config(
+                old_layer.get_config()
+            )
         x = old_layer(input_x)
         new_xs.append(x)
 
-    # Build new Model
     new_model = tf.keras.Model(new_xs[0], new_xs[-1])
-
-    # Transfer weights from old model layers to new model layers
     for old_layer, new_layer in zip(old_model.layers, new_model.layers):
-        try:
-            new_layer.set_weights(old_layer.get_weights())
-        except ValueError:
-            # Some layers may not have weights or mismatch - ignore these layers gracefully
-            pass
+        new_layer.set_weights(old_layer.get_weights())
 
     return new_model
-
-
-def my_model_function(sync_batch_norm: bool = False):
-    """
-    Returns an instance of MyModel.
-    If sync_batch_norm is True, converts ResNet backbone to use SyncBatchNormalization layers.
-    """
-    base_model = MyModel()
-
-    if not sync_batch_norm:
-        # Return as-is with standard BatchNormalization layers
-        return base_model
-
-    # Otherwise, convert backbone to use SyncBatchNormalization layers
-    # We need input tensor for conversion
-    input_shape = (32, 32, 1)
-    input_layer = tf.keras.Input(shape=input_shape, name="image")
-    # Expand channels from 1 to 3
-    preprocess_conv = tf.keras.layers.Conv2D(3, (1, 1))(input_layer)
-    # Create ResNet50V2 backbone with BatchNorm layers
-    backbone_base = tf.keras.applications.ResNet50V2(
-        include_top=False, pooling="avg", input_tensor=preprocess_conv, weights=None
-    )
-    backbone_model = tf.keras.Model(input_layer, backbone_base.output)
-
-    # Convert BatchNormalization layers to SyncBatchNormalization
-    new_backbone = convert_to_sync_batch_norm(backbone_model, input_layer=input_layer)
-
-    class SyncBNModel(tf.keras.Model):
-        def __init__(self):
-            super().__init__()
-            self.input_layer = input_layer
-            self.backbone = new_backbone
-            self.logits_layer = tf.keras.layers.Dense(10, name="dense_logits")
-
-        def call(self, inputs, training=False):
-            x = inputs
-            features = self.backbone(x, training=training)
-            logits = self.logits_layer(features)
-            return logits
-
-    return SyncBNModel()
-
-
-def GetInput():
-    """
-    Returns a batch input tensor compatible with MyModel.
-    The shape matches (batch_size, 32, 32, 1) with float32 values in [0,1].
-    """
-    batch_size = 4  # Assumed batch size for testing; can be adjusted
-    # Generate random float input to mimic padded Fashion MNIST
-    return tf.random.uniform(shape=(batch_size, 32, 32, 1), dtype=tf.float32)
-

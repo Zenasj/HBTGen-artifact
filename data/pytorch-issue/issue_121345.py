@@ -1,22 +1,19 @@
-import torch
-from torch import nn
-from einops import rearrange
+_loaded_backends: dict = {}
+_type2backend: dict = {}
+_debug_importing = False
 
-# torch.rand(B, C, H, W, dtype=torch.float32)
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.conv = nn.Conv2d(32, 64, kernel_size=3, padding=1)
-        
-    def forward(self, x):
-        x = self.conv(x)
-        # Einops rearrange triggers backend lookup causing the graph break
-        x = rearrange(x, 'b c h w -> b h w c')
-        return x
 
-def my_model_function():
-    return MyModel()
+def get_backend(tensor) -> "AbstractBackend":
+    """
+    Takes a correct backend (e.g. numpy backend if tensor is numpy.ndarray) for a tensor.
+    If needed, imports package and creates backend
+    """
+    _type = type(tensor)
+    _result = _type2backend.get(_type, None)
+    if _result is not None:
+        return _result
 
-def GetInput():
-    return torch.rand(2, 32, 16, 16, dtype=torch.float32)
-
+    for framework_name, backend in list(_loaded_backends.items()):
+        if backend.is_appropriate_type(tensor):
+            _type2backend[_type] = backend
+            return backend

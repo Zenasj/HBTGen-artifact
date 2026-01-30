@@ -1,22 +1,29 @@
-# torch.rand(1, 3, 224, 224, dtype=torch.float32)
+import numpy as np
+import cv2
+import os
 import torch
 import torchvision.models as models
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.model = models.resnet50()  # Base model from the issue's reproduction code
+current_path = os.path.dirname(os.path.abspath(__file__))
+testset_folder = os.path.join(current_path, '../datasets/widerface/validation/images')
+testset_list = os.path.join(current_path, '../datasets/widerface/validation/wider_val.txt')
 
-    def forward(self, x):
-        return self.model(x)
+with open(testset_list, 'r') as fr:
+    test_dataset = fr.read().split()
 
-def my_model_function():
-    model = MyModel()
-    model.eval()  # Matches the original code's evaluation mode
-    return model
+torch.set_grad_enabled(False)
+model = models.resnet50()
+model.eval()
 
-def GetInput():
-    # Generates a random input matching the expected shape for ResNet50 (3-channel, 224x224)
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
+device = torch.device('cpu')
+model = model.to(device)
 
+for i, filename in enumerate(test_dataset):
+    print('{}/{}'.format(i, len(test_dataset)))
+    img_path = os.path.join(testset_folder, filename)
+    img_raw = cv2.imread(img_path, cv2.IMREAD_COLOR)
+    img = np.float32(img_raw)
+    img = img.transpose(2, 0, 1)
+    img = torch.from_numpy(img).unsqueeze(0)
+    img = img.to(device)
+    model(img)

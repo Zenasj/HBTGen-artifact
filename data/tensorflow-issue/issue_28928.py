@@ -1,30 +1,28 @@
-# tf.random.uniform((B, 2), dtype=tf.float32) ← Input shape inferred from example: 2 features per sample
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
 
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Single Dense layer as per example
-        self.dense = tf.keras.layers.Dense(1)
+x = np.random.random((1000, 2))
+y = 2 * x[:, 0] + 3 * x[:, 1] + np.random.normal(size=(1000,))
 
-    def call(self, inputs):
-        # inputs can be a tensor or a dictionary with key "input"
-        # Support either form for robustness based on the issue reproducibility context
-        if isinstance(inputs, dict):
-            x = inputs.get("input", None)
-            if x is None:
-                raise ValueError("Expected input dict to have key 'input'")
-        else:
-            x = inputs
-        return self.dense(x)
+input_ = tf.keras.Input((2,), name="input")
+output = tf.keras.layers.Dense(1)(input_)
+model = tf.keras.Model(inputs=[input_], outputs=[output])
 
-def my_model_function():
-    # Instantiate and return the model
-    return MyModel()
+model.compile(tf.optimizers.Adam(), loss=tf.losses.mse)
 
-def GetInput():
-    # Generate a random tensor matching the input shape (batch size, 2 features)
-    # Batch size picked arbitrarily as 10 to match example batch_size
-    return tf.random.uniform((10, 2), dtype=tf.float32)
+model.fit(
+    x, y, steps_per_epoch=2, batch_size=10,
+)
 
+model.fit(
+    {"input": x}, y, steps_per_epoch=2, batch_size=10,
+)
+
+model.compile(
+    tf.train.AdamOptimizer(),
+    loss=tf.losses.mean_squared_error,
+)

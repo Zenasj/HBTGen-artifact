@@ -1,14 +1,9 @@
-# torch.rand(1, dtype=torch.float32)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return x.to("cuda:0")
+def fun(x):
+    x = x.to("cuda:0")
+    
+fun_compiled = torch.compile(fun)
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.randn(1)
-
+x = torch.randn(1)
+out = fun_compiled(x)

@@ -1,138 +1,94 @@
-# tf.random.uniform((B, ...), dtype=tf.float32) ← Input shape is assumed as (batch_size, num_classes) with float predictions in [0,1]
+@tf.function
+def f1(y_true, y_pred):
+    y_true = K.flatten(y_true)
+    y_pred = K.flatten(y_pred)
+    return 2 * (K.sum(y_true * y_pred)+ K.epsilon()) / (K.sum(y_true) + K.sum(y_pred) + K.epsilon())
 
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras import backend as K
-from tensorflow.keras.metrics import Metric
-from tensorflow.python.ops import init_ops
 from tensorflow.python.ops import math_ops
-from tensorflow.python.keras.utils import metrics_utils
+from tensorflow.python.keras import backend as K
 from tensorflow.python.keras.utils.generic_utils import to_list
+from tensorflow.python.keras import metrics
 
+class F1Score(metrics.Metric):
+  """Computes the f1_score of the predictions with respect to the labels.
 
-class MyModel(tf.keras.Model):
+  For example, if `y_true` is [0, 1, 1, 1] and `y_pred` is [1, 0, 1, 1]
+  then the f1_score value is 0.66. If the weights were specified as
+  [0, 0, 1, 0] then the precision value would be 1.
+
+  The metric creates three local variables, `true_positives`, `false_positives` and
+  `false_negatives` that are used to compute the f1 score.
+  This value is ultimately returned as `f1_score`, an operation that
+  simply computes 2* `precision`*`recall` /(`precision` + `recall`).
+  Where `precision` is ...
+  and `recall` is ...
+
+  If `sample_weight` is `None`, weights default to 1.
+  Use `sample_weight` of 0 to mask values.
+
+  Usage: ...
+  """
+
+  def __init__(self, thresholds=None, name=None, dtype=None):
+    """Creates a `F1Score` instance.
+
+    Args:
+      thresholds: (Optional) Defaults to 0.5. A float value or a python
+        list/tuple of float threshold values in [0, 1]. A threshold is compared
+        with prediction values to determine the truth value of predictions
+        (i.e., above the threshold is `true`, below is `false`). One metric
+        value is generated for each threshold value.
+      name: (Optional) string name of the metric instance.
+      dtype: (Optional) data type of the metric result.
     """
-    This model encapsulates the F1Score metric as a submodule and acts as a wrapper.
-    Input: prediction tensor of shape (batch_size, num_classes) with floats in [0,1].
-    Output: the computed F1 score scalar (or vector if multiple thresholds).
-    
-    This is a reconstructed F1Score Metric based on the issue discussion and code fragments.
+    super(F1Score, self).__init__(name=name, dtype=dtype)
+    self.thresholds = metrics._parse_init_thresholds(
+        thresholds, default_threshold=0.5)
+    self.tp = self.add_weight(
+        'true_positives',
+        shape=(len(self.thresholds),),
+        initializer=metrics.init_ops.zeros_initializer)
+    self.fp = self.add_weight(
+        'false_positives',
+        shape=(len(self.thresholds),),
+        initializer=metrics.init_ops.zeros_initializer)
+    self.fn = self.add_weight(
+        'false_negatives',
+        shape=(len(self.thresholds),),
+        initializer=metrics.init_ops.zeros_initializer)
+
+  def update_state(self, y_true, y_pred, sample_weight=None):
+    """Accumulates true positive, false positive and false negative statistics.
+
+    Args:
+      y_true: The ground truth values.
+      y_pred: The predicted values.
+      sample_weight: Optional weighting of each example. Defaults to 1. Can be a
+        `Tensor` whose rank is either 0, or the same rank as `y_true`, and must
+        be broadcastable to `y_true`.
+
+    Returns:
+      Update op.
     """
+    return metrics._update_confusion_matrix_variables({
+        metrics._ConfusionMatrix.TRUE_POSITIVES: self.tp,
+        metrics._ConfusionMatrix.FALSE_POSITIVES: self.fp,
+        metrics._ConfusionMatrix.FALSE_NEGATIVES: self.fn
+    }, y_true, y_pred, self.thresholds, sample_weight)
 
-    def __init__(self,
-                 thresholds=None,
-                 top_k=None,
-                 class_id=None,
-                 name="f1_score_model",
-                 dtype=tf.float32):
-        super(MyModel, self).__init__(name=name, dtype=dtype)
-        # Initialize the inner metric object:
-        # If thresholds is None, default threshold is 0.5 unless top_k is set.
-        default_threshold = 0.5 if top_k is None else metrics_utils.NEG_INF
-        self.thresholds = metrics_utils.parse_init_thresholds(
-            thresholds, default_threshold=default_threshold)
+  def result(self):
+    precision = math_ops.div_no_nan(self.tp, self.tp + self.fp)
+    recall = math_ops.div_no_nan(self.tp, self.tp + self.fn)
+    numerator = math_ops.multiply(precision, recall)
+    denominator = math_ops.add(precision, recall)
+    frac = math_ops.div_no_nan(numerator, denominator)
+    result = math_ops.multiply(tf.constant(2.), frac)
 
-        # Weights to accumulate confusion matrix stats for each threshold
-        num_thresholds = len(self.thresholds)
-        self.true_positives = self.add_weight(
-            'true_positives',
-            shape=(num_thresholds,),
-            initializer=init_ops.zeros_initializer)
-        self.false_positives = self.add_weight(
-            'false_positives',
-            shape=(num_thresholds,),
-            initializer=init_ops.zeros_initializer)
-        self.false_negatives = self.add_weight(
-            'false_negatives',
-            shape=(num_thresholds,),
-            initializer=init_ops.zeros_initializer)
+    return result[0] if len(self.thresholds) == 1 else result
 
-        self.init_thresholds = thresholds
-        self.top_k = top_k
-        self.class_id = class_id
-
-    def call(self, y_pred, y_true=None, sample_weight=None, training=None):
-        """
-        y_pred: Tensor with shape (batch_size, num_classes), prediction probs in [0,1]
-        y_true: Tensor with matching shape, ground truth labels (typically one-hot or multi-label binary)
-
-        We define the call so that model(y_pred, y_true) returns F1 score(s).
-
-        As tensorflow.keras.Model calls call with just one tensor input normally,
-        here we'll accept a tuple input: (y_true, y_pred). For embedded use,
-        y_true may be optional. We'll allow only tuple input (y_true, y_pred).
-        """
-        # Support tuple input (y_true, y_pred)
-        # If only y_pred is passed, cannot compute F1, raise error
-        if y_true is None:
-            if isinstance(y_pred, (tuple, list)) and len(y_pred) == 2:
-                y_true, y_pred = y_pred
-            else:
-                raise ValueError("Input must be (y_true, y_pred) tuple to compute F1 score.")
-
-        # Update confusion matrix statistics weights in this forward pass
-        metrics_utils.update_confusion_matrix_variables(
-            {
-                metrics_utils.ConfusionMatrix.TRUE_POSITIVES: self.true_positives,
-                metrics_utils.ConfusionMatrix.FALSE_POSITIVES: self.false_positives,
-                metrics_utils.ConfusionMatrix.FALSE_NEGATIVES: self.false_negatives
-            },
-            y_true,
-            y_pred,
-            thresholds=self.thresholds,
-            top_k=self.top_k,
-            class_id=self.class_id,
-            sample_weight=sample_weight)
-
-        # Calculate precision and recall from accumulated weights
-        precision = math_ops.div_no_nan(self.true_positives,
-                                        self.true_positives + self.false_positives)
-        recall = math_ops.div_no_nan(self.true_positives,
-                                     self.true_positives + self.false_negatives)
-        # F1 score formula: 2 * (precision * recall) / (precision + recall)
-        numerator = math_ops.multiply(precision, recall)
-        denominator = math_ops.add(precision, recall)
-        f1 = 2 * math_ops.div_no_nan(numerator, denominator)
-
-        # If single threshold, return scalar, else vector
-        if len(self.thresholds) == 1:
-            return f1[0]
-        else:
-            return f1
-
-    def reset_states(self):
-        num_thresholds = len(to_list(self.thresholds))
-        # Reset the variables to zero
-        K.batch_set_value(
-            [(v, np.zeros((num_thresholds,))) for v in
-             [self.true_positives, self.false_positives, self.false_negatives]]
-        )
-
-    def get_config(self):
-        config = {
-            'thresholds': self.init_thresholds,
-            'top_k': self.top_k,
-            'class_id': self.class_id
-        }
-        base_config = super(MyModel, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
-
-
-def my_model_function():
-    # Return an instance of MyModel with default parameters (threshold=0.5)
-    return MyModel()
-
-
-def GetInput():
-    # Generate a random binary ground truth tensor and random prediction probs tensor
-    # Both shapes are (batch_size, num_classes)
-    batch_size = 4
-    num_classes = 3
-    # y_true is binary labels: 0 or 1, shape (batch_size, num_classes)
-    y_true = tf.random.uniform(shape=(batch_size, num_classes), minval=0, maxval=2, dtype=tf.int32)
-    y_true = tf.cast(y_true, tf.float32)
-    # y_pred is float probabilities in [0,1], same shape
-    y_pred = tf.random.uniform(shape=(batch_size, num_classes), minval=0, maxval=1, dtype=tf.float32)
-    # Return tuple (y_true, y_pred) as expected input for MyModel call
-    return (y_true, y_pred)
-
+  def reset_states(self):
+    num_thresholds = len(to_list(self.thresholds))
+    for v in self.variables:
+      K.set_value(v, np.zeros((num_thresholds,)))

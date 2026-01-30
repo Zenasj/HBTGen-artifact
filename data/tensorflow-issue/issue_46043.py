@@ -1,29 +1,40 @@
-# tf.random.uniform((B, 28, 28), dtype=tf.float32)  ← inferred input shape according to MNIST example in the issue
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
+import time
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define a simple MNIST classifier consistent with the example in the issue:
-        self.flatten = tf.keras.layers.Flatten(input_shape=(28, 28))
-        self.dense1 = tf.keras.layers.Dense(128, activation='relu')
-        self.dropout = tf.keras.layers.Dropout(0.2)
-        self.dense2 = tf.keras.layers.Dense(10)
-    
-    def call(self, x, training=False):
-        x = self.flatten(x)
-        x = self.dense1(x)
-        x = self.dropout(x, training=training)
-        logits = self.dense2(x)
-        return logits
+if tf.test.gpu_device_name():
+    print('Default GPU Device: {}'.format(tf.test.gpu_device_name()))
+else:
+    print("Please install GPU version of TF")
 
-def my_model_function():
-    # Return an instance of MyModel.
-    return MyModel()
+from tensorflow.python.client import device_lib
+print(device_lib.list_local_devices())
 
-def GetInput():
-    # Return a random input tensor shaped (batch_size, 28, 28) with float32 dtype
-    # Batch size is guessed as 32 for this example
-    return tf.random.uniform((32, 28, 28), dtype=tf.float32)
+mnist = tf.keras.datasets.mnist
 
+(x_train, y_train), (x_test, y_test) = mnist.load_data()
+x_train, x_test = x_train / 255.0, x_test / 255.0
+
+start = time.time()
+
+model = tf.keras.models.Sequential([
+  tf.keras.layers.Flatten(input_shape=(28, 28)),
+  tf.keras.layers.Dense(128, activation='relu'),
+  tf.keras.layers.Dropout(0.2),
+  tf.keras.layers.Dense(10)
+])
+
+end = time.time()
+print("Time delta: ", end - start)
+loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+model.compile(optimizer='adam',
+              loss=loss_fn,
+              metrics=['accuracy'])
+
+start = time.time()
+model.fit(x_train, y_train, epochs=10)
+end = time.time()
+print("Time delta: ", end - start)

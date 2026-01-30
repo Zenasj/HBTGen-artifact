@@ -1,20 +1,20 @@
-# torch.rand(B, C, H, W, dtype=torch.float64)
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        # Use output_size=(2,3) based on input spatial dimensions (5x7) and kernel_size 2x2
-        # Avoid passing _random_samples to let PyTorch generate it internally
-        return F.fractional_max_pool2d(x, kernel_size=(2,2), output_size=(2,3))
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(1, 3, 5, 7, dtype=torch.float64)
-
+import torch
+import numpy as np
+arg_1_tensor = torch.rand([1, 3, 5, 7], dtype=torch.float64)
+arg_1 = arg_1_tensor.clone()
+arg_2_0 = 2
+arg_2_1 = 2
+arg_2 = [arg_2_0,arg_2_1,]
+arg_3 = None
+arg_4_0 = 0.5
+arg_4_1 = 0.5
+arg_4 = [arg_4_0,arg_4_1,]
+arg_5 = False
+arg_6_tensor = torch.tensor([], dtype=torch.float64)
+arg_6 = arg_6_tensor.clone()
+try:
+  res = torch.nn.functional.fractional_max_pool2d(arg_1,arg_2,arg_3,arg_4,arg_5,_random_samples=arg_6,)
+except Exception as e:
+  print("Error:"+str(e))

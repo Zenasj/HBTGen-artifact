@@ -1,113 +1,158 @@
-# tf.random.uniform((B, T, F, 1), dtype=tf.float32) ← 
-# Inferred input shape: B=batch size (dynamic), T=time steps (sequence length), F=feature dims, 1=channel dimension
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
+from keras.models import Model, Sequential
+from keras.layers import Input, Concatenate, GRU, Dense, Reshape
+from keras.optimizers import Adam
+from keras.backend import clear_session
+from pathlib import Path
+from subprocess import Popen, PIPE, STDOUT, TimeoutExpired
+import numpy as np
 import tensorflow as tf
+from rl.agents import SARSAAgent
+from rl.policy import BoltzmannQPolicy
+import os
 
-class MyModel(tf.keras.Model):
-    def __init__(self, nb_actions=96, hidden_layers=4, layer_neurons=128):
-        super().__init__()
-        self.nb_actions = nb_actions
-        self.hidden_layers = hidden_layers
-        self.layer_neurons = layer_neurons
+cmd = 'echo Hello World!'
+env_reward = 0
+length_penalty = .25
+learning_reward = 10
 
-        # Build the two main GRU-based encoders (like main and main2 in the issue)
-        # Each produces a feature vector from input sequences 
-        # Mimicking build_main(shape) with GRU layers returns final output without sequences
-        self.main_grus = []
-        for i in range(self.hidden_layers):
-            self.main_grus.append(
-                tf.keras.layers.GRU(self.layer_neurons, return_sequences=True, name=f"main_GRU{i}")
-            )
-        # Last GRU layer has return_sequences=False to reduce sequence to single vector
-        self.main_gru_final = tf.keras.layers.GRU(self.layer_neurons, return_sequences=False, name=f"main_GRU{self.hidden_layers}")
+hidden_layers = 4
+layer_neurons = 128
+learning_rate = 0.001
+nb_actions = 96
 
-        self.main2_grus = []
-        for i in range(self.hidden_layers):
-            self.main2_grus.append(
-                tf.keras.layers.GRU(self.layer_neurons, return_sequences=True, name=f"main2_GRU{i}")
-            )
-        self.main2_gru_final = tf.keras.layers.GRU(self.layer_neurons, return_sequences=False, name=f"main2_GRU{self.hidden_layers}")
+tf.get_logger().setLevel('ERROR')
 
-        # Inverse model: concatenates the outputs of main and main2,
-        # then a Dense layer with sigmoid activation outputs a prediction vector of size nb_actions
-        self.icm_inverse_dense = tf.keras.layers.Dense(nb_actions, activation='sigmoid', name='icm_i_output')
+done = False
+cmd_in = True
+obs_last = None
+initialize = True
 
-        # Forward model: concatenates main output with the action input,
-        # then outputs a vector matching the main output feature dimension with a linear Dense layer
-        # Output shape matches the main encoder output dimension = layer_neurons
-        self.icm_forward_dense = tf.keras.layers.Dense(self.layer_neurons, activation='linear', name='icm_f_output')
+while True:
+    if cmd_in:
+        proc = Popen(cmd, shell=True, stdin=PIPE, stdout=PIPE, stderr=STDOUT, close_fds=True)
+        try:
+            stdout = proc.communicate(timeout=1)[0].decode()
+            exitcode = proc.returncode
+        except TimeoutExpired:
+            proc.kill()
+            stdout = proc.communicate()[0].decode()
+            exitcode = proc.returncode
+        nnin = ''.join(char for char in stdout if char.isprintable())
+        filename = Path('mem.txt')
+        filename.touch(exist_ok=True)
+        if not nnin:
+            nnin = 'Done!'
+            stdout = nnin
+        if exitcode == 0:
+            done = True
+            with open('mem.txt', 'r+') as mem:
+                for line in stdout.splitlines():
+                    if line + '\n' not in mem:
+                        mem.write(line + '\n')
+                        env_reward += learning_reward
+        cmd = ''
+        print('\n')
+        print(stdout)
+        print('# ', end='', flush=True)
+    else:
+        nnin = cmd
+        print(nnin[-1], end='', flush=True)
+        env_reward -= length_penalty
+    idxs = (np.frombuffer(nnin.encode(), dtype=np.uint8) - 32) / 100 
+    env = tf.reshape(idxs, idxs.shape + (1,))
+    shape = env.shape
 
-    def call(self, inputs, training=False):
-        """
-        Forward pass expects inputs as tuple:
-           (obs1, obs2, icm_action)
-           obs1, obs2: sequences of shape (B, T, F, 1) or (B, T, F)
-           icm_action: one-hot tensor with shape (B, nb_actions)
 
-        Returns:
-          comparison boolean tensor whether inverse_model output matches icm_action within tolerance.
+    def build_actor_model(shape, nb_actions):
+        model = Sequential()
+        model.add(Reshape(shape[1::], input_shape=shape))
+        for layer in range(hidden_layers):
+            model.add(GRU(layer_neurons, name='GRU' + str(layer), return_sequences=True))
+        model.add(GRU(layer_neurons, name='GRU' + str(hidden_layers)))
+        model.add(Dense(nb_actions, name='output', activation='softmax'))
+        return model
 
-        Note:
-          This merges the inverse and forward models with main encoders.
-          The original builds use keras.Model separately -
-          here fused into a single custom Model per the instructions.
-        """
 
-        obs1, obs2, icm_action = inputs
+    def build_main(shape, name_prefix='main.'):
+        inputs = Input(shape=shape)
+        x = inputs
+        for layer in range(hidden_layers):
+            x = GRU(layer_neurons, name=name_prefix + ('GRU' + str(layer)), return_sequences=True)(x)
+        x = GRU(layer_neurons, name=name_prefix + ('GRU' + str(hidden_layers)))(x)
+        model = Model(inputs, x, name=name_prefix + 'main')
+        return model
 
-        # Encode obs1 with main GRU stack
-        x1 = obs1
-        for gru_layer in self.main_grus:
-            x1 = gru_layer(x1, training=training)
-        x1 = self.main_gru_final(x1, training=training)  # shape (B, layer_neurons)
 
-        # Encode obs2 with main2 GRU stack
-        x2 = obs2
-        for gru_layer in self.main2_grus:
-            x2 = gru_layer(x2, training=training)
-        x2 = self.main2_gru_final(x2, training=training)  # shape (B, layer_neurons)
+    def build_inverse_model(obs1, obs2, nb_actions):
+        x = Concatenate()([obs1.output, obs2.output])
+        x = Dense(nb_actions, name='icm_i.output', activation='sigmoid')(x)
+        i_model = Model([obs1.input, obs2.input], x, name='icm_inverse_model')
+        return i_model
 
-        # Inverse model: concat features from both obs
-        inverse_concat = tf.concat([x1, x2], axis=-1)  # shape (B, 2*layer_neurons)
-        inverse_pred = self.icm_inverse_dense(inverse_concat)  # shape (B, nb_actions), sigmoid activation
 
-        # Forward model: concat obs1 features and icm action
-        forward_concat = tf.concat([x1, icm_action], axis=-1)  # shape (B, layer_neurons + nb_actions)
-        forward_pred = self.icm_forward_dense(forward_concat)  # shape (B, layer_neurons), linear activation
+    def build_forward_model(obs1, nb_actions):
+        act1 = Input(shape=nb_actions)
+        x = Concatenate()([obs1.output, act1])
+        output_shape = obs1.output_shape[1]
+        x = Dense(output_shape, name='icm_f.output', activation='linear')(x)
+        f_model = Model([obs1.input, act1], x, name='icm_forward_model')
+        return f_model
 
-        # For comparison, compute if inverse model output matches icm_action with tolerance
-        # Using a threshold to binarize inverse_pred since it outputs sigmoid probabilities
-        inverse_pred_binary = tf.cast(inverse_pred > 0.5, dtype=tf.float32)
-        matches = tf.reduce_all(tf.equal(inverse_pred_binary, icm_action), axis=-1)  # (B,)
 
-        return matches  # boolean tensor shape (B,), True if predictions exactly match ground truth action
+    inv_weights_fname = '{}_inv_weights.h5f'.format("SMB")
+    fwd_weights_fname = '{}_fwd_weights.h5f'.format("SMB")
+    agent_weights_fname = '{}_agent_weights.h5f'.format("SMB")
 
-def my_model_function():
-    # Instantiate MyModel with default parameters from issue context
-    return MyModel()
+    main = build_main(shape)
+    main2 = build_main(shape, name_prefix='main2.')
+    inverse_model = build_inverse_model(main, main2, nb_actions)
+    inverse_model.compile(Adam(learning_rate), loss='mse', metrics=['mse'])
+    forward_model = build_forward_model(main, nb_actions)
+    forward_model.compile(Adam(learning_rate), loss='mse', metrics=['mse'])
+    model = build_actor_model((1,) + shape, nb_actions)
+    policy = BoltzmannQPolicy()
+    agent = SARSAAgent(model=model, nb_actions=nb_actions, policy=policy)
+    agent.compile(Adam(learning_rate), metrics=['mae'])
+    agent.reset_states()
 
-def GetInput():
-    # Generate random inputs matching model expectations:
-    # obs1 and obs2 are sequences of shape (B, T, F, 1) with dtype float32
-    # icm_action: one-hot vector of size nb_actions
+    if initialize:
+        if os.path.isfile(inv_weights_fname):
+            inverse_model.load_weights(inv_weights_fname)
+        if os.path.isfile(fwd_weights_fname):
+            forward_model.load_weights(fwd_weights_fname)
+        if os.path.isfile(agent_weights_fname):
+            agent.load_weights(agent_weights_fname)
+        initialize = False
+    agent.training = True
 
-    B = 4     # batch size (chosen arbitrarily)
-    T = 10    # assumed sequence steps (since original env.shape not fully specified)
-    F = 8     # assumed feature dimension (inferred from example reshapes and plausible)
-    nb_actions = 96
+    obs_now = env
+    if obs_last is None:
+        obs_last = obs_now
+    action = agent.forward(obs_now)
+    icm_action = np.zeros(nb_actions)
+    icm_action[action] = 1
+    inv_loss = inverse_model.train_on_batch([np.expand_dims(obs_last, 0), np.expand_dims(obs_now, 0)],
+                                            [np.expand_dims(icm_action, 0)])
+    features_now = main.predict(np.expand_dims(obs_now, 0))
+    fwd_loss = forward_model.train_on_batch([np.expand_dims(obs_last, 0), np.expand_dims(icm_action, 0)],
+                                            [features_now])
+    obs_last = obs_now
+    r_intr = (fwd_loss[0] ** 0.5) / 100
+    reward = r_intr + env_reward
+    agent.backward(reward, done)
+    clear_session()
+    done = False
 
-    # Random float inputs simulating observations
-    obs1 = tf.random.uniform((B, T, F, 1), dtype=tf.float32, minval=0.0, maxval=1.0)
-    obs2 = tf.random.uniform((B, T, F, 1), dtype=tf.float32, minval=0.0, maxval=1.0)
-
-    # Generate random one-hot actions for icm_action input
-    indices = tf.random.uniform((B,), minval=0, maxval=nb_actions, dtype=tf.int32)
-    icm_action = tf.one_hot(indices, nb_actions, dtype=tf.float32)
-
-    # The GRU layers expect inputs of shape (B, T, features), so squeeze 4th dim
-    # Original code reshapes input to remove leading dims except last 3 possibly
-    obs1 = tf.squeeze(obs1, axis=-1)  # (B, T, F)
-    obs2 = tf.squeeze(obs2, axis=-1)  # (B, T, F)
-
-    return (obs1, obs2, icm_action)
-
+    enc_ascii = action + 32
+    if enc_ascii != 127:
+        cmd += chr(enc_ascii)
+        cmd_in = False
+        continue
+    cmd_in = True
+    inverse_model.save_weights(inv_weights_fname, overwrite=True)
+    forward_model.save_weights(fwd_weights_fname, overwrite=True)
+    agent.save_weights(agent_weights_fname, overwrite=True)

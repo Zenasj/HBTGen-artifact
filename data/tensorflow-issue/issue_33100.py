@@ -1,19 +1,22 @@
-# tf.random.uniform((32, 4), dtype=tf.float32) ← Based on example input shape (batch=32, features=4)
-import tensorflow as tf
+import random
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Simple dense layer with sigmoid activation as per example
-        self.dense = tf.keras.layers.Dense(1, activation='sigmoid')
+from tensorflow.python.keras.layers import Input, Dense
+from tensorflow.python.keras.models import Model
+from tensorflow.python.keras.optimizers import Nadam # [3]
 
-    def call(self, inputs):
-        return self.dense(inputs)
+import numpy as np
+ipt = Input(shape=(4,))
+out = Dense(1, activation='sigmoid')(ipt)
 
-def my_model_function():
-    return MyModel()
+model = Model(ipt, out)
+model.compile(optimizer=Nadam(lr=1e-4), loss='binary_crossentropy')
 
-def GetInput():
-    # Return random input matching the example shape (batch of 32, 4 features)
-    return tf.random.uniform((32, 4), dtype=tf.float32)
+X = np.random.randn(32,4)
+Y = np.random.randint(0,2,(32,1))
+model.train_on_batch(X,Y)
 
+modelpath = "folder/model.h5"
+model.save(modelpath)

@@ -1,14 +1,20 @@
-# torch.rand(B, C, H, W, dtype=...)  # Add a comment line at the top with the inferred input shape
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self, input_dim):
+import torch
+import torch._dynamo as torchdynamo
+
+class Foo(torch.nn.Module):
+    def __init__(
+        self,
+        input_dim,
+    ):
         super().__init__()
-        self.torch_module = nn.LayerNorm(input_dim, eps=1e-5, elementwise_affine=True)
+        self.torch_module = torch.nn.LayerNorm(
+            input_dim, eps=1e-5, elementwise_affine=True
+        )
 
     def forward(self, input):
-        output = nn.functional.layer_norm(
+        output = torch.nn.functional.layer_norm(
             input,
             self.torch_module.normalized_shape,
             self.torch_module.weight,
@@ -17,11 +23,7 @@ class MyModel(nn.Module):
         ).type_as(input)
         return output
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel(128)
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(3, 128)
-
+mod = Foo(128)
+inp = torch.randn(3, 128)
+gm, _ = torchdynamo.export(mod, inp, aten_graph=True, tracing_mode="symbolic")
+print(gm.graph)

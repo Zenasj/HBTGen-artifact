@@ -1,19 +1,30 @@
-# torch.rand(B, 10, dtype=torch.float32)
-import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
+py
+import torch
+
+torch.manual_seed(420)
+
+x = torch.randn(1, 10)
+
+class Model(torch.nn.Module):
+
     def __init__(self, in_features=10, out_features=5):
-        super().__init__()
-        self.linear = nn.Linear(in_features, out_features)
+        super(Model, self).__init__()
+        self.linear = torch.nn.quantized.dynamic.Linear(in_features=in_features, out_features=out_features)
 
     def forward(self, x):
-        return self.linear(x)
+        x = self.linear(x)
+        return x
 
-def my_model_function():
-    return MyModel()  # Uses default in_features=10, out_features=5
+func = Model().to('cpu')
 
-def GetInput():
-    # Returns a batch of 1 sample with 10 features (matches Linear layer's in_features)
-    return torch.randn(1, 10)
 
+with torch.no_grad():
+    func.train(False)
+    res1 = func(x) # without jit
+    print(res1)
+
+    jit_func = torch.compile(func)
+    res2 = jit_func(x)
+    # AttributeError: __torch__.torch.classes.quantized.LinearPackedParamsBase (of Python compilation unit at: 0) does not have a field with name 'is_complex'

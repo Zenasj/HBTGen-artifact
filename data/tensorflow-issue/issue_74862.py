@@ -1,76 +1,85 @@
-# tf.random.uniform((B, H, W, C), dtype=tf.float32)  # Assumed input shape (batch, H, W, C) inferred from model input shape in lenet(inp.shape[1:])
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
+import copy
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Build the sub-model as per lenet function in the issue
-        
-        # Activation layers in sequence
-        self.act_relu = tf.keras.layers.Activation(activation="relu")
-        self.maxpool1 = tf.keras.layers.MaxPool2D(pool_size=8, strides=3, padding='same')
-        self.act_sigmoid = tf.keras.layers.Activation(activation='sigmoid')
-        self.maxpool2 = tf.keras.layers.MaxPool2D(pool_size=5, strides=1, padding='same')
-        self.act_softplus = tf.keras.layers.Activation(activation='softplus')
-        self.maxpool3 = tf.keras.layers.MaxPooling2D(pool_size=7, strides=8, padding='same', data_format='channels_last')
-        
-        # Flatten with channels_first data_format (note: input likely channels_last, so we preserve this part as is)
-        self.flatten1 = tf.keras.layers.Flatten(data_format='channels_first')
-        
-        # Dense layers with activation='exponential'
-        # From issue code, first Dense has:
-        # units=2, activation='exponential', use_bias=False, kernel_initializer='ones'
-        self.dense_exp1 = tf.keras.layers.Dense(
-            units=2, activation='exponential', use_bias=False, kernel_initializer='ones')
-        
-        # Second Dense layer has:
-        # units=7, activation='exponential', use_bias=True, kernel_initializer='glorot_uniform'
-        self.dense_exp2 = tf.keras.layers.Dense(
-            units=7, activation='exponential', use_bias=True, kernel_initializer='glorot_uniform')
-        
-        # Flatten again with channels_first
-        self.flatten2 = tf.keras.layers.Flatten(data_format='channels_first')
-        
-        # Final Dense layer with units=10, no activation specified (linear)
-        self.dense_final = tf.keras.layers.Dense(units=10)
 
-    def call(self, inputs, training=None):
-        x = self.act_relu(inputs)
-        x = self.maxpool1(x)
-        x = self.act_sigmoid(x)
-        x = self.maxpool2(x)
-        x = self.act_softplus(x)
-        x = self.maxpool3(x)
-        
-        x = self.flatten1(x)
-        x = self.dense_exp1(x)
-        x = self.dense_exp2(x)
-        x = self.flatten2(x)
-        x = self.dense_final(x)
-        return x
+def lenet(input_shape):
+    input_tensor = tf.keras.Input(shape=input_shape)
+    x = tf.keras.layers.Activation(activation="relu")(input_tensor)
+    x = tf.keras.layers.MaxPool2D(pool_size=8, strides=3, padding='same')(x)
+    x = tf.keras.layers.Activation(activation='sigmoid')(x)
+    x = tf.keras.layers.MaxPool2D(pool_size=5, strides=1, padding='same')(x)
+    x = tf.keras.layers.Activation(activation='softplus')(x)
+    x = tf.keras.layers.MaxPooling2D(pool_size=7, strides=8, padding='same', data_format='channels_last')(x)
+    x = tf.keras.layers.Flatten(data_format='channels_first')(x)
+    x = tf.keras.layers.Dense(units=2, activation='exponential', kernel_constraint=None, bias_regularizer=None, use_bias=False, bias_initializer='he_uniform', activity_regularizer=None, kernel_initializer='ones', bias_constraint=None, kernel_regularizer=None)(x)
+    x = tf.keras.layers.Dense(units=7, activation='exponential', use_bias=True, kernel_initializer='glorot_uniform', kernel_constraint=None, bias_regularizer=None)(x)
+    output_tensor = tf.keras.layers.Flatten(data_format='channels_first')(x)
+    tail_flatten = tf.keras.layers.Flatten()(output_tensor)
+    tail_fc = tf.keras.layers.Dense(units=10)(tail_flatten)
+    model = tf.keras.models.Model(inputs=input_tensor, outputs=tail_fc)
+    return model
 
 
-def my_model_function():
-    # Instantiate MyModel and return it
-    return MyModel()
+def chebyshev_distance(A: np.ndarray, B: np.ndarray):
+    if A is None or B is None:
+        return 0.0
+    if A.shape != B.shape:
+        return 9999999
+    else:
+        return float(np.max(np.abs(A - B)))
 
 
-def GetInput():
-    # To generate a valid input tensor:
-    # From the original code, the input shape is inferred from inp.shape[1:] in lenet.
-    # We don't have the exact input dimensions in the issue, but based on typical lenet usage and the 
-    # usage of maxpool with large kernel sizes and strides, let's assume a 4D input tensor with shape:
-    # (batch_size, height, width, channels) = (1, 56, 56, 3)
-    #
-    # This is an assumption for demonstration since the exact shape is not given.
-    #
-    # Use dtype float32 for compatibility.
-    
-    B = 1
-    H = 56
-    W = 56
-    C = 3
-    
-    return tf.random.uniform((B, H, W, C), dtype=tf.float32)
+def train(inp, label):
+    flag = True
+    label = tf.convert_to_tensor(label)
+    model_g = lenet(inp.shape[1:])
+    model_g.load_weights("./output_dict/grad_diff_initial_weights.h5")
+    with tf.device('GPU'):
+        with tf.GradientTape() as tape:
+            output_g = model_g(inp)
+            loss_g = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)(label, output_g)
+        gradients_g = tape.gradient(loss_g, model_g.trainable_variables)
+        gradients_dic_g = {}
+        for var, gradient in zip(model_g.trainable_variables, gradients_g):
+            if gradient != None:
+                gradients_dic_g.setdefault(var.name.replace('/', '.')[:-2], gradient)
 
+    model_c = copy.deepcopy(model_g)
+    model_c.load_weights("./output_dict/grad_diff_initial_weights.h5")
+    with tf.device('CPU'):
+        with tf.GradientTape() as tape:
+            output_c = model_c(inp)
+            loss_c = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)(label, output_c)
+        gradients_c = tape.gradient(loss_c, model_c.trainable_variables)
+        gradients_dic_c = {}
+        for var, gradient in zip(model_c.trainable_variables, gradients_c):
+            if gradient != None:
+                gradients_dic_c.setdefault(var.name.replace('/', '.')[:-2], gradient)
+    if chebyshev_distance(output_c.numpy(), output_g.numpy()) > 1.0:
+        flag = False
+        return flag, 'Output diff too big'
+    if abs(loss_c - loss_g) > 0.1:
+        flag = False
+        return flag, 'Loss diff too big'
+    for name in gradients_dic_c.keys():
+        if name in gradients_dic_g.keys():
+            if chebyshev_distance(gradients_dic_c[name], gradients_dic_g[name]) > 0.1:
+                flag = False
+                return flag, 'Grad diff too big'
+    for name in gradients_dic_g.keys():
+        if name in gradients_dic_c.keys():
+            if chebyshev_distance(gradients_dic_g[name], gradients_dic_c[name]) > 0.1:
+                flag = False
+                return flag, 'Grad diff too big'
+    return flag, ''
+
+
+data = np.load("./output_dict/grad_diff_input.npz")
+inp = data['inp']
+label = data['label']
+print(train(inp, label))

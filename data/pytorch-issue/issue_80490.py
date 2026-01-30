@@ -1,11 +1,11 @@
-# torch.rand(1, 4, dtype=torch.float32)  # Inferred input shape: (batch_size, input_features)
-
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+
+class Model(nn.Module):
+
     def __init__(self):
-        super(MyModel, self).__init__()
+        super(Model, self).__init__()
         self.fc = nn.Linear(4, 4, bias=False)
         self.register_buffer("buf", torch.randn(4))
 
@@ -14,11 +14,17 @@ class MyModel(nn.Module):
         x = x + self.buf
         return x
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(1, 4, dtype=torch.float32)
+m = Model()
 
+for n, p in m.named_parameters():
+    print("Before to(): parameter {} id={}".format(n, id(p)))
+for n, b in m.named_buffers():
+    print("Before to(): buffer {} id={}".format(n, id(b)))
+
+m.to(torch.device("cuda"))
+
+for n, p in m.named_parameters():
+    print("After to(): parameter {} id={}".format(n, id(p)))
+for n, b in m.named_buffers():
+    print("After to(): buffer {} id={}".format(n, id(b)))

@@ -1,20 +1,21 @@
-# torch.rand(8, 8, dtype=torch.float)
 import torch
-from torch import nn
+from torch._dynamo.backends.common import aot_autograd
+from torch._decomp import core_aten_decompositions
 
-class MyModel(nn.Module):
-    def __init__(self, offset=0):
-        super().__init__()
-        self.offset = offset  # Matches the example's offset (0)
+def inner_compiler(fx_module: torch.fx.GraphModule, example_inputs):
+    print(fx_module.code)
+    return fx_module
 
-    def forward(self, input_tensor):
-        return torch.diag(input_tensor, self.offset)
+aot_backend = aot_autograd(fw_compiler=inner_compiler, decompositions=core_aten_decompositions())
 
-def my_model_function():
-    # Initialize with offset 0 as in the original example
-    return MyModel(offset=0)
+def fn(i1, i2):
+    return torch.diag(i1, i2)
+torch._dynamo.reset()
+c = torch.compile(fn, backend=aot_backend)
+x = torch.rand((8,8), dtype=torch.float)
+y = 0
+c(x, y)
 
-def GetInput():
-    # Generate 8x8 tensor matching the input shape from the issue's example
-    return torch.rand((8,8), dtype=torch.float)
-
+def forward(self, arg0_1):
+    diagonal_copy = torch.ops.aten.diagonal_copy.default(arg0_1);  arg0_1 = None
+    return (diagonal_copy,)

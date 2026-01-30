@@ -1,25 +1,43 @@
-# torch.rand(1, 3, 32, 32, dtype=torch.float32)
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.quant = torch.quantization.QuantStub()
-        self.conv = nn.Conv2d(3, 1, kernel_size=3)
+class TestModel(nn.Module):
+    def __init__(self, in_features, out_features):
+        super(TestModel, self).__init__()
+        self.conv = nn.Conv2d(in_features, out_features, kernel_size=3)
         self.relu = nn.ReLU()
-        self.dequant = torch.quantization.DeQuantStub()
 
     def forward(self, x):
-        x = self.quant(x)
-        x = self.relu(self.conv(x))
-        x = torch.cat([x, x], dim=1)  # Concatenation along channel axis
-        x = self.dequant(x)
-        return x
+        out = self.relu(self.conv(x))
+        out = torch.cat([out, out], 1)
+        return out
 
-def my_model_function():
-    return MyModel()
+model = TestModel(3,1)
 
-def GetInput():
-    return torch.randn(1, 3, 32, 32)
+model.eval()
+qconfig = torch.quantization.get_default_qconfig('fbgemm')
+model.qconfig = qconfig
 
+# Fuse modules here if required
+
+model = nn.Sequential(torch.quantization.QuantStub(qconfig), 
+                      model, 
+                      torch.quantization.DeQuantStub(qconfig))
+
+torch.quantization.prepare(model, inplace=True)
+
+with torch.inference_mode():
+    for _ in range(100):
+        model(torch.randn(1,3,32,32))
+
+torch.quantization.convert(model, inplace=True)
+
+model.eval()
+qconfig_dict = {"": torch.quantization.get_default_qconfig('fbgemm')}
+model = quantize_fx.prepare_fx(model, qconfig_dict, example_inputs=(torch.randn(1,3,32,32),))
+
+with torch.inference_mode():
+    for _ in range(100):
+        model(torch.randn(1,3,32,32))
+
+model = quantize_fx.convert_fx(model)

@@ -1,77 +1,111 @@
-# tf.random.uniform((1, 5, 64), dtype=tf.float32) ← Assumed input shape: batch=1, time=5, features=64
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
+import os
+os.environ['TF_ENABLE_CONTROL_FLOW_V2'] = '1'
 import tensorflow as tf
+from tensorflow_core.python.keras.models import Model, Sequential
+from tensorflow_core.python.keras.layers.core import Dense, Activation, Lambda, Reshape
+from tensorflow_core.python.keras.engine.input_layer import Input
+from tensorflow_core.python.keras.layers.recurrent import RNN, StackedRNNCells
+from tensorflow_core.lite.experimental.examples.lstm.rnn_cell import TFLiteLSTMCell, TfLiteRNNCell
+from tensorflow_core.lite.experimental.examples.lstm.rnn import dynamic_rnn
+from tensorflow_core.python.ops.rnn_cell_impl import LSTMStateTuple
+from tensorflow_core.lite.python.interpreter import Interpreter
+from tensorflow_core.python.ops.rnn_cell_impl import MultiRNNCell
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Construct multi-layer LSTM cell stack
-        # Using 3 layers of TFLiteLSTMCell with 192 units each, as per original code.
-        # Since tensorflow_core and TFLiteLSTMCell are not standard imports,
-        # we use tf.keras.layers.LSTMCell as placeholder for demonstration.
-        # In practice, replace with TFLiteLSTMCell from experimental examples if available.
-        self.num_layers = 3
-        self.units = 192
-        
-        # Create list of LSTMCells
-        self.cells = [tf.keras.layers.LSTMCell(self.units, name=f'lstm{i}') for i in range(self.num_layers)]
-        self.rnn_layer = tf.keras.layers.RNN(tf.keras.layers.StackedRNNCells(self.cells), 
-                                             return_state=True, return_sequences=True, name='stacked_lstm')
-        # Final dense layer with sigmoid activation
-        self.dense = tf.keras.layers.Dense(64, activation='sigmoid', name='fin_dense')
+def get_state_variables(batch_size, cell):
+    # For each layer, get the initial state and make a variable out of it
+    # to enable updating its value.
+    state_variables = []
+    for state_c, state_h in cell.zero_state(batch_size, tf.float32):
+        state_variables.append(tf.contrib.rnn.LSTMStateTuple(
+            tf.Variable(state_c, trainable=False),
+            tf.Variable(state_h, trainable=False)))
+    # Return as a tuple, so that it can be fed to dynamic_rnn as an initial state
+    return tuple(state_variables)
 
-        # Initialize state variables to make the model stateful
-        # We create trainable=False variables to hold cell states (c) and hidden states (h) for each layer
-        self.state_c_vars = [tf.Variable(tf.zeros([1, self.units]), trainable=False, name=f'state_c_{i}') 
-                             for i in range(self.num_layers)]
-        self.state_h_vars = [tf.Variable(tf.zeros([1, self.units]), trainable=False, name=f'state_h_{i}') 
-                             for i in range(self.num_layers)]
 
-    def call(self, inputs, training=None):
-        # inputs : Tensor of shape [batch, time, features]
-        # Compose initial states for the multi-layer LSTM from the stored state variables
-        initial_states = []
-        for c_var, h_var in zip(self.state_c_vars, self.state_h_vars):
-            initial_states.append([c_var, h_var])
-        # Flatten initial_states list as layers expect [c0, h0, c1, h1, ...]
-        # Keras LSTMCell expects initial_state as [h, c] per cell, but we keep convention [c, h]
-        # So we swap order if necessary.
-        # Keras LSTMCell signature expects [hidden_state, cell_state], so swap per cell.
-        # Our stored vars are (c, h), so swap to (h, c)
-        k_initial_states = []
-        for c_var, h_var in zip(self.state_c_vars, self.state_h_vars):
-            k_initial_states.append(h_var)
-            k_initial_states.append(c_var)
+def get_state_update_op(state_variables, new_states):
+    # Add an operation to update the train states with the last state tensors
+    update_ops = []
+    for state_variable, new_state in zip(state_variables, new_states):
+        # Assign the new state to the state variables on this layer
+        update_ops.extend([state_variable[0].assign(new_state[0]),
+                           state_variable[1].assign(new_state[1])])
+    # Return a tuple in order to combine all update_ops into a single operation.
+    # The tuple's actual value should not be used.
+    return tf.tuple(update_ops)
 
-        # Run the stacked LSTM with initial states
-        # rnn_layer returns (all_outputs, *last_states)
-        outputs_and_states = self.rnn_layer(inputs, initial_state=k_initial_states, training=training)
-        outputs = outputs_and_states[0]  # sequence output [batch, time, units]
-        last_states = outputs_and_states[1:]  # states: list with len=num_layers*2 (h, c) per layer
 
-        # Extract last output in time dimension (assuming return_sequences=True)
-        last_output = outputs[:, -1, :]  # [batch, units]
+def buildMultiCell(cells):
+    return MultiRNNCell(cells)
 
-        # Update stored state variables with new states
-        # last_states returned in order: h0, c0, h1, c1, ...
-        # So we map these back to state_c_vars and state_h_vars appropriately
-        for i in range(self.num_layers):
-            # last_states has h,i at 2*i, c,i at 2*i+1
-            h_new = last_states[2*i]
-            c_new = last_states[2*i+1]
-            self.state_h_vars[i].assign(h_new)
-            self.state_c_vars[i].assign(c_new)
 
-        # Pass last output through Dense layer with sigmoid activation
-        out = self.dense(last_output)
-        return out
+def buildRNNLayer(inputs, rnn_cells, initial_state=None):
+  """Build the lstm layer.
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+  Args:
+    inputs: The input data.
+    num_layers: How many LSTM layers do we want.
+    num_units: The unmber of hidden units in the LSTM cell.
+  """
+  # Assume the input is sized as [batch, time, input_size], then we're going
+  # to transpose to be time-majored.
+  transposed_inputs = tf.transpose(inputs, perm=[1, 0, 2])
+  outputs, new_state = dynamic_rnn(
+      rnn_cells,
+      transposed_inputs,
+      initial_state=initial_state,
+      dtype='float32',
+      time_major=True)
+  unstacked_outputs = tf.unstack(outputs, axis=0)
+  # update_op = get_state_update_op(initial_state, new_state)
+  return unstacked_outputs[-1], new_state
 
-def GetInput():
-    # Return a random input tensor with shape [1, 5, 64]
-    # batch=1, time=5, input features=64, matching original input shape in the code
-    return tf.random.uniform((1, 5, 64), dtype=tf.float32)
 
+def build_rnn_lite(model, state=False):
+    tf.reset_default_graph()
+    # Construct RNN
+    cells = []
+    for layer in range(3):
+        if model == 'LSTMLite':
+            cells.append(TFLiteLSTMCell(192, name='lstm{}'.format(layer)))
+        else:
+            cells.append(TfLiteRNNCell(192, name='rnn{}'.format(layer)))
+
+    rnn_cells = Lambda(buildMultiCell, name='multicell')(cells)
+    states = get_state_variables(1, rnn_cells)
+    if state:
+        spec_input = Input(shape=(5, 64,), name='rnn_in', batch_size=1)
+        x, new_states = Lambda(buildRNNLayer, arguments={'rnn_cells': rnn_cells, 'initial_state': states}, name=model.lower())(spec_input)
+        updated_states = Lambda(get_state_update_op, arguments={'new_states': new_states}, name='update_state')(states)
+    else:
+        spec_input = Input(shape=(5, 64,), name='rnn_in')
+        x, new_states = Lambda(buildRNNLayer, arguments={'rnn_cells': rnn_cells}, name=model.lower())(spec_input)
+        updated_states = Lambda(get_state_update_op, arguments={'new_states': states}, name='update_state')(states)
+
+    out = Dense(64, activation='sigmoid', name='fin_dense')(x)
+    return Model(inputs=spec_input, outputs=[out, updated_states])
+
+model = build_rnn_lite('LSTMLite', True)
+
+###### TF LITE CONVERSION
+sess = tf.keras.backend.get_session()
+input_tensor = sess.graph.get_tensor_by_name('rnn_in:0')
+output_tensor = []
+output_tensor.append(sess.graph.get_tensor_by_name('fin_dense/Sigmoid:0'))
+all_tensors = [tensor for op in tf.get_default_graph().get_operations() for tensor in op.values()]
+# output_tensor = sess.graph.get_tensor_by_name('fin_dense/Sigmoid:0')
+
+# imp_tensor = []
+for ten in all_tensors:
+    if 'update_state/Assign' in ten.name:
+        output_tensor.append(ten)
+
+converter = tf.lite.TFLiteConverter.from_session(sess, [input_tensor], output_tensor)
+# Note: It will NOT work without enabling the experimental converter!
+# `experimental_new_converter` flag.
+converter.experimental_new_converter = True
+tflite_seg = converter.convert()

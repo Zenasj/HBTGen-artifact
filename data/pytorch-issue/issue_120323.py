@@ -1,20 +1,5 @@
-# torch.rand(B, 3, 64, 64, dtype=torch.float32)  # Input shape inferred from Stable Diffusion XL's typical image input
 import torch
-from torch import nn
+from diffusers import DiffusionPipeline
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Replicates the problematic Conv2d layer from AutoencoderKL's encoder initialization
-        self.conv_in = nn.Conv2d(3, 128, kernel_size=4, stride=2, padding=1)  # Common parameters for SD-XL autoencoder
-
-    def forward(self, x):
-        return self.conv_in(x)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Batch size 2, 3 channels, 64x64 image (common SD-XL resolution)
-    return torch.rand(2, 3, 64, 64, dtype=torch.float32)
-
+with torch._subclasses.FakeTensorMode():
+    fake_model = DiffusionPipeline.from_pretrained("stabilityai/stable-diffusion-xl-base-1.0", use_safetensors=False)

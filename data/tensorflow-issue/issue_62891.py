@@ -1,14 +1,77 @@
-# tf.random.uniform((1, 80, 3000), dtype=tf.float32) ← inferred input shape of input_features 
+py
+from abc import ABC
 
 import tensorflow as tf
+from datasets import load_dataset
+from transformers import WhisperProcessor, TFWhisperForConditionalGeneration, WhisperFeatureExtractor, WhisperTokenizer
 
-class MyModel(tf.keras.Model):
+lang_dict = {
+    tf.constant('en').ref(): 50259,
+    tf.constant('zh').ref(): 50260,
+    tf.constant('de').ref(): 50261,
+    tf.constant('es').ref(): 50262,
+    tf.constant('ru').ref(): 50263,
+    tf.constant('ko').ref(): 50264,
+    tf.constant('fr').ref(): 50265,
+    tf.constant('ja').ref(): 50266,
+    tf.constant('pt').ref(): 50267,
+    tf.constant('tr').ref(): 50268,
+    tf.constant('ar').ref(): 50272,
+    tf.constant('it').ref(): 50274,
+    tf.constant('ur').ref(): 50290,
+    tf.constant('fa').ref(): 50300,
+    tf.constant('th').ref(): 50289,
+    tf.constant('id').ref(): 50275
+}
+
+
+def save_tf_model(model):
+    processor = WhisperProcessor.from_pretrained("./whisper-base")
+    feature_extractor = WhisperFeatureExtractor.from_pretrained("./whisper-base")
+    forced_decoder_ids = processor.get_decoder_prompt_ids(language="en", task="transcribe")
+    tokenizer = WhisperTokenizer.from_pretrained("./whisper-base", predict_timestamps=True)
+    processor = WhisperProcessor(feature_extractor, tokenizer)
+    # Loading dataset
+    ds = load_dataset("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation")
+
+    inputs = processor(
+        ds[0]["audio"]["array"], sampling_rate=ds[0]["audio"]["sampling_rate"], return_tensors="tf"
+    )
+    input_features = inputs.input_features
+
+    # Generating Transcription
+    generated_ids = model.generate(input_features=input_features, forced_decoder_ids=forced_decoder_ids)
+    print(generated_ids)
+    transcription = processor.tokenizer.decode(generated_ids[0])
+    print(transcription)
+    model.save('./content/tf_whisper_saved')
+
+
+def convert_tflite(model):
+    saved_model_dir = './content/tf_whisper_saved'
+    tflite_model_path = './whisper-base.tflite'
+
+    generate_model = GenerateModel(model=model)
+    tf.saved_model.save(generate_model, saved_model_dir, signatures={"serving_default": generate_model.serving})
+
+    # Convert the model
+    converter = tf.lite.TFLiteConverter.from_saved_model(saved_model_dir)
+    converter.target_spec.supported_ops = [
+        tf.lite.OpsSet.TFLITE_BUILTINS,  # enable TensorFlow Lite ops.
+        tf.lite.OpsSet.SELECT_TF_OPS  # enable TensorFlow ops.
+    ]
+    converter.optimizations = [tf.lite.Optimize.DEFAULT]
+    tflite_model = converter.convert()
+
+    # Save the model
+    with open(tflite_model_path, 'wb') as f:
+        f.write(tflite_model)
+
+
+class GenerateModel(tf.Module):
     def __init__(self, model):
-        super(MyModel, self).__init__()
+        super(GenerateModel, self).__init__()
         self.model = model
-        
-        # lang_dict maps lang tensor refs to token IDs for forced decoder ids
-        # The dictionary keys and values are token IDs (int constants)
         self.lang_dict = {
             tf.constant(50259).ref(): 50259,
             tf.constant(50260).ref(): 50260,
@@ -27,51 +90,49 @@ class MyModel(tf.keras.Model):
             tf.constant(50289).ref(): 50289,
             tf.constant(50275).ref(): 50275
         }
-    
+
     @tf.function(
+        # shouldn't need static batch size, but throws exception without it (needs to be fixed)
         input_signature=[
-            tf.TensorSpec(shape=(1, 80, 3000), dtype=tf.float32, name="input_features"),
-            tf.TensorSpec(shape=(), dtype=tf.int32, name="lang")
-        ]
+            tf.TensorSpec((1, 80, 3000), tf.float32, name="input_features"),
+            tf.TensorSpec((), tf.int32, name="lang")
+        ],
     )
-    def call(self, input_features, lang):
-        # Generate sequences with forced_decoder_ids to control language and task
-        forced_ids = [
-            (1, self.lang_dict.get(lang.ref(), 50259)),  # language token forced at position 1
-            (2, 50359),                                  # special task token for transcribe?
-            (3, 50363)                                   # special task token for timestamps?
-        ]
+    def serving(self, input_features, lang):
         outputs = self.model.generate(
-            input_features=input_features,
-            max_new_tokens=450,
+            input_features,
+            max_new_tokens=450,  # change as needed
             return_dict_in_generate=True,
-            forced_decoder_ids=forced_ids
+            forced_decoder_ids=[(1, self.lang_dict.get(lang.ref(), 50259)), (2, 50359), (3, 50363)]
         )
-        # Return the generated sequence IDs as output
-        return outputs["sequences"]
+        return {"sequences": outputs["sequences"]}
 
-def my_model_function():
-    """
-    Returns an instance of MyModel wrapping the TFWhisperForConditionalGeneration model.
-    Assumes 'transformers' and whisper-base model files are available under ./whisper-base.
-    """
-    from transformers import TFWhisperForConditionalGeneration
-    
-    # Load the pretrained whisper model from local directory
+
+def test():
+    tflite_model_path = 'whisper-base.tflite'
+    feature_extractor = WhisperFeatureExtractor.from_pretrained("./whisper-base")
+    tokenizer = WhisperTokenizer.from_pretrained("./whisper-base", predict_timestamps=True)
+    processor = WhisperProcessor(feature_extractor, tokenizer)
+    ds = load_dataset("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation")
+
+    inputs = processor(
+        ds[0]["audio"]["array"], sampling_rate=ds[0]["audio"]["sampling_rate"], return_tensors="tf"
+    )
+    input_features = inputs.input_features
+
+    interpreter = tf.lite.Interpreter(tflite_model_path)
+
+    tflite_generate = interpreter.get_signature_runner()
+    generated_ids = tflite_generate(input_features=input_features, lang=tf.constant(50259))["sequences"]
+    transcription = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
+    print(transcription)
+
+
+if __name__ == '__main__':
     model = TFWhisperForConditionalGeneration.from_pretrained("./whisper-base")
-    return MyModel(model)
+    # forced_decoder_ids = processor.get_decoder_prompt_ids(language="zh", task="transcribe")
+    # print(forced_decoder_ids)
 
-def GetInput():
-    """
-    Returns a random input_features tensor with shape (1, 80, 3000) and a language token int32 scalar.
-    These inputs are compatible with MyModel.
-    
-    Assumptions:
-    - batch size = 1
-    - input_features dims from the original code: (1, 80, 3000)
-    - lang token int32, default 50259 ('en' English)
-    """
-    input_features = tf.random.uniform((1, 80, 3000), dtype=tf.float32)
-    lang = tf.constant(50259, dtype=tf.int32)  # English language token
-    return input_features, lang
-
+    save_tf_model(model)
+    convert_tflite(model)
+    test()

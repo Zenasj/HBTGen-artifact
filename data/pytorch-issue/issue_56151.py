@@ -1,47 +1,64 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
-import torch
-import torch.nn as nn
+import ruamel.yaml
+from ruamel.yaml.tokens import CommentToken
+from ruamel.yaml.error import CommentMark
+from tools.codegen.model import *  # noqa: F403
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        # Apply rsqrt
-        x = torch.rsqrt(x)
-        # Apply bitwise_not (assuming x is a float tensor, we cast it to int for bitwise operation)
-        x = torch.bitwise_not(x.to(torch.int32)).to(torch.float32)
-        # Apply frac
-        x = torch.frac(x)
-        # Apply i0 (Bessel function of the first kind, order 0)
-        x = torch.special.i0(x)
-        # Apply round
-        x = torch.round(x)
-        return x
+with open("aten/src/ATen/native/native_functions.yaml", "r") as f:
+    contents = f.read()
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+yaml = ruamel.yaml.YAML()
+yaml.preserve_quotes = True
+yaml.width = 1000
+yaml.boolean_representation = ['False', 'True']
+r = yaml.load(contents)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    B, C, H, W = 1, 1, 10, 10
-    return torch.rand(B, C, H, W, dtype=torch.float32)
+convert = '''\
+rsqrt
+bitwise_not
+frac
+i0
+round
+'''.split()
 
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
+for e in r:
+    f = NativeFunction.from_yaml(e, Location("", 0))
+    if f.structured or f.structured_delegate is not None:
+        continue
+    n = f.func.name.name.base
+    if n not in convert:
+        continue
+    # mutate e to make changes
+    if f.func.kind() == SchemaKind.out:
+        e.insert(1, 'structured', True)
+        e.insert(2, 'structured_inherits', 'TensorIteratorBase')
+    else:
+        # TODO: The .out overload assumption is not sound in general
+        e.insert(1, 'structured_delegate', f'{n}.out')
 
-# The provided GitHub issue is about porting non-float unary operators to a structured format in PyTorch. It does not contain any model definition or code that can be directly converted into a complete Python file with a `MyModel` class and related functions. 
-# However, I can infer a simple example based on the context of the issue. The issue mentions unary operators like `rsqrt`, `bitwise_not`, `frac`, `i0`, and `round`. I will create a simple model that applies these unary operations to an input tensor.
-# Here is the generated code:
-# ### Explanation:
-# 1. **MyModel Class**:
-#    - The `MyModel` class is defined as a subclass of `nn.Module`.
-#    - The `forward` method applies the unary operations mentioned in the issue: `rsqrt`, `bitwise_not`, `frac`, `i0`, and `round`.
-# 2. **my_model_function**:
-#    - This function returns an instance of `MyModel`.
-# 3. **GetInput**:
-#    - This function generates a random tensor with the shape `(B, C, H, W)` and `dtype=torch.float32` to match the input expected by `MyModel`.
-# This code provides a simple example of how to apply the unary operations mentioned in the issue to a tensor. The input shape is assumed to be `(1, 1, 10, 10)` for demonstration purposes. You can adjust the input shape and other parameters as needed.
+        if 'dispatch' in e:
+            e['dispatch'].pop('CPU', None)
+            e['dispatch'].pop('CUDA', None)
+            e['dispatch'].pop('CPU, CUDA', None)
+            e['dispatch'].pop('CompositeExplicitAutograd', None)
+        else:
+            print(n)
+
+        *_, last_k = e.keys()
+        needs_fixup = False
+
+        if 'dispatch' in e and not e['dispatch']:
+            if last_k == 'dispatch':
+                needs_fixup = True
+            del e['dispatch']
+
+        # Manually fix up newlines at the end, because ruamel
+        # made some bad life choices about where to associate trailing
+        # whitespace for nested dicts; see
+        # https://stackoverflow.com/questions/42172399/modifying-yaml-using-ruamel-yaml-adds-extra-new-lines
+        if needs_fixup:
+            *_, last_k = e.keys()
+            # post_key, pre_key, post_value, pre_value
+            e.ca.items[last_k] = [None, None, CommentToken('\n\n', CommentMark(0), None), None]
+
+with open("aten/src/ATen/native/native_functions.yaml.new", "w") as f:
+    yaml.dump(r, f)

@@ -1,22 +1,15 @@
-# torch.rand(1, 2, 7, 8, 9, dtype=torch.float32) ← Add a comment line at the top with the inferred input shape
-
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Define the 3D convolutional layer
-        self.conv3d = nn.Conv3d(in_channels=2, out_channels=3, kernel_size=(2, 2, 2), stride=(1, 1, 1), padding=(1, 1, 1))
+import torch
 
-    def forward(self, x):
-        return self.conv3d(x)
+# Input tensor of shape (batch_size, channels, depth, height, width)
+import torch
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+# Input tensor of shape (batch_size, channels, depth, height, width)
+input = torch.randn([1, 2, 7, 8, 9])
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(1, 2, 7, 8, 9, dtype=torch.float32)
+# Weight tensor of shape (out_channels, in_channels, kernel_depth, kernel_height, kernel_width)
+weight = torch.randn([3, 2, 2, 2, 2])
 
+output = torch._C._nn.slow_conv3d(input, weight, kernel_size = [1, 2, 3], stride= [1], padding=[1, 1, 1])
+print(output)

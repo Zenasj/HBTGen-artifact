@@ -1,27 +1,56 @@
-# tf.random.uniform((B, 32), dtype=tf.float32) ← inferred input shape is (batch_size, 32) based on provided code
+import random
+from tensorflow import keras
+from tensorflow.keras import models
+
+import numpy as np
+train_x = np.random.random((1000, 32))
+train_y = np.random.random((1000, 10))
 
 import tensorflow as tf
+from tensorflow.keras import layers
+inputs = tf.keras.Input(shape=(32,)) 
+x = layers.Dense(60, activation='relu')(inputs)
+x = layers.Dense(30, activation='relu')(x)
+predictions = layers.Dense(10)(x)
+model = tf.keras.Model(inputs=inputs, outputs=predictions)
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define layers as per the reported model architecture
-        self.dense1 = tf.keras.layers.Dense(60, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(30, activation='relu')
-        self.dense3 = tf.keras.layers.Dense(10)
+model.compile(optimizer='adam',
+              loss='mse',
+              metrics=['accuracy'])
 
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        outputs = self.dense3(x)
-        return outputs
+import keras.backend as K
+def scheduler(epoch):
+    lr = K.get_value(model.optimizer.lr)
+    print("lr:{}".format(lr * 1))
+    return K.get_value(model.optimizer.lr)
+ 
+reduce_lr = tf.keras.callbacks.LearningRateScheduler(scheduler)
+history = model.fit(train_x, train_y, batch_size=16, epochs=10,callbacks=[reduce_lr])
+b = history.history['lr']
 
-def my_model_function():
-    # Return an instance of MyModel, no weights preloaded
-    return MyModel()
+import numpy as np
+train_x = np.random.random((1000, 32))
+train_y = np.random.random((1000, 10))
 
-def GetInput():
-    # Return a random tensor input with shape (batch_size=16, 32)
-    # Batch size 16 chosen as it was used in original model.fit calls
-    return tf.random.uniform((16, 32), dtype=tf.float32)
+from keras.models import Model
+from keras.layers import Input, Dense
+inputs = Input(shape=(32,)) 
+x = Dense(60, activation='relu')(inputs)
+x = Dense(30, activation='relu')(x)
+predictions = Dense(10)(x)
 
+model = Model(inputs=inputs, outputs=predictions)
+model.compile(optimizer='adam',
+              loss='mse',
+              metrics=['acc'])
+
+import keras.backend as K
+from keras.callbacks import LearningRateScheduler
+def scheduler(epoch):
+    lr = K.get_value(model.optimizer.lr)
+    print("lr:{}".format(lr * 1))
+    return K.get_value(model.optimizer.lr)
+ 
+reduce_lr = LearningRateScheduler(scheduler)
+history = model.fit(train_x, train_y, batch_size=16, epochs=10,callbacks=[reduce_lr])
+b = history.history['lr']

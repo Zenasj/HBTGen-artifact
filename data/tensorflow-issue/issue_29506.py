@@ -1,35 +1,33 @@
-# tf.random.uniform((6720, 700, 3), dtype=tf.float32)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+
+# Imports
+import numpy as np
 import tensorflow as tf
+tf.executing_eagerly()
+print('TensorFlow version: ' + str(tf.__version__))
 
-class MyModel(tf.keras.Model):
-    """
-    This model replicates the toy example discussed in the issue:
-    - Input shape: (batch_size, timesteps=700, features=3)
-    - Single LSTM layer with state size 1
-    The example highlights differences in performance related to cuDNN usage in TF2 nightlies.
-    """
-    def __init__(self):
-        super().__init__()
-        # LSTM layer with units=1
-        self.lstm = tf.keras.layers.LSTM(1)
+# Print checks
+from tensorflow.python.eager import context
+print('Executing eagerly? : ' + str(context.executing_eagerly()))
+print('Number of GPUs: ' + str(context.num_gpus()))
 
-    def call(self, inputs, training=False):
-        return self.lstm(inputs, training=training)
+# Generate random data
+X = np.random.rand(6720,700,3)
+y = X[:,1,1]
+print('Shapes: ', X.shape, y.shape)
 
-def my_model_function():
-    """
-    Returns an instance of MyModel, ready for use.
-    """
-    return MyModel()
+# Define toy network
+input_shape = X.shape[2]
+rnn_state_size = 1
+timesteps = X.shape[1]
 
-def GetInput():
-    """
-    Generates a random input tensor matching the expected input shape:
-    batch size arbitrary (e.g. 8), timesteps=700, feature dim=3,
-    dtype tf.float32 to match the example.
-    """
-    batch_size = 8  # smaller batch size for quick testing
-    timesteps = 700
-    features = 3
-    return tf.random.uniform((batch_size, timesteps, features), dtype=tf.float32)
+inputs = tf.keras.layers.Input(shape=[timesteps, input_shape], dtype=np.float32)
+output = tf.keras.layers.LSTM(rnn_state_size)(inputs)
+model = tf.keras.Model(inputs, output)
+model.compile('rmsprop', 'mse')
+print(model.summary())
 
+# Fit
+model.fit(X,y)

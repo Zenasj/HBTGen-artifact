@@ -1,22 +1,21 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-# Inputs: (x (5, 20), y (5, 20), w (40, 20), b (40)) (all dtype=torch.float32)
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        x, y, w, b = inputs
-        z = torch.cat([x, y], dim=0)
-        li = F.linear(z, w, b)
-        return F.layer_norm(li, li.size())
+def test_mm_cat(self):
 
-def my_model_function():
-    return MyModel()
+        @torch.jit.script
+        def func(x, y, w, b):
+            l = [x, y]
+            z = torch.cat(l, dim = 0)
+            li = torch.torch.nn.functional.linear(z, w, b)
+            return torch.nn.functional.layer_norm(li, li.size())
 
-def GetInput():
-    x = torch.rand(5, 20)
-    y = torch.rand(5, 20)
-    w = torch.rand(40, 20)
-    b = torch.rand(40)
-    return (x, y, w, b)
+        x = torch.rand(5, 20)
+        y = torch.rand(5, 20)
+        w = torch.rand(40, 20)
+        b = torch.rand(40)
 
+        with num_profiled_runs(1):
+            func(x, y, w, b)
+            func(x, y, w, b)
+            func(x, y, w, b)

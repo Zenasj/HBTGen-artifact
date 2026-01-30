@@ -1,29 +1,21 @@
-# tf.random.uniform((64, 3), dtype=tf.float32) ← inferred input shape and dtype from test case
-
-import tensorflow as tf
-
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Recreate a small MLP similar to testing_utils.get_small_sequential_mlp(num_hidden=10, num_classes=2, input_dim=3)
-        self.dense1 = tf.keras.layers.Dense(10, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(2, activation='linear')
-
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        return self.dense2(x)
+import numpy as np
+from tensorflow.python import keras
+from tensorflow.python.keras import keras_parameterized
+from tensorflow.python.keras import testing_utils
+from tensorflow.python.keras.callbacks import Callback
+from tensorflow.python.platform import test
 
 
-def my_model_function():
-    # Return an instance of MyModel
-    model = MyModel()
-    # Compile model with sgd optimizer and mse loss like in the test case
-    model.compile(optimizer='sgd', loss='mse')
-    return model
+class TestCase(keras_parameterized.TestCase):
+  def test_callback_params_samples(self):
+    x, y = np.ones((64, 3)), np.ones((64, 2))
+    model = testing_utils.get_small_sequential_mlp(
+        num_hidden=10, num_classes=2, input_dim=3)
+    model.compile('sgd', 'mse')
+    callback = Callback()
+    model.evaluate(x, y, callbacks=[callback])
+    self.assertEqual(callback.params['samples'], 64)
 
 
-def GetInput():
-    # Return input tensor shaped (64, 3) matching test case input
-    # dtype float32 by default, consistent with typical keras input
-    return tf.random.uniform((64, 3), dtype=tf.float32)
-
+if __name__ == '__main__':
+  test.main()

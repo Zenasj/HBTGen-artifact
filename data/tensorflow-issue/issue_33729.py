@@ -1,44 +1,66 @@
-# tf.random.uniform((B, 28, 28, 1), dtype=tf.float32) ← Input shape is MNIST images (batch size unspecified)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
+
+from __future__ import print_function
 
 import tensorflow as tf
 import tensorflow_probability as tfp
 
-class MyModel(tf.keras.Model):
-    def __init__(self, input_shape=(28, 28, 1), num_classes=10):
-        super().__init__()
-        # Bayesian convolutional layer with Flipout estimator, kernel_divergence_fn set to None per issue workaround
-        # This avoids the "Graph tensor" error by disabling automatic KL divergence calculation,
-        # which otherwise uses symbolic tensors incompatible with eager + tf.function.
-        self.conv_flipout = tfp.layers.Convolution2DFlipout(
-            6,
-            kernel_size=5,
-            padding="SAME",
-            activation=tf.nn.relu,
-            kernel_divergence_fn=None,
-            input_shape=input_shape
-        )
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense_flipout_1 = tfp.layers.DenseFlipout(84, activation=tf.nn.relu)
-        self.dense_flipout_2 = tfp.layers.DenseFlipout(num_classes)
+# tf.compat.v1.disable_eager_execution()
 
-    def call(self, inputs, training=False):
-        x = tf.convert_to_tensor(inputs)
-        x = self.conv_flipout(x, training=training)
-        x = self.flatten(x)
-        x = self.dense_flipout_1(x, training=training)
-        x = self.dense_flipout_2(x, training=training)
-        return x
+def get_bayesian_model(input_shape=None, num_classes=10):
+    model = tf.keras.Sequential()
+    model.add(tf.keras.layers.Input(shape=input_shape))
+    model.add(tfp.layers.Convolution2DFlipout(6, kernel_size=5, padding="SAME", activation=tf.nn.relu))
+    model.add(tf.keras.layers.Flatten())
+    model.add(tfp.layers.DenseFlipout(84, activation=tf.nn.relu))
+    model.add(tfp.layers.DenseFlipout(num_classes))
+    return model
+
+def get_mnist_data(normalize=True):
+    img_rows, img_cols = 28, 28
+    (x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
+
+    if tf.keras.backend.image_data_format() == 'channels_first':
+        x_train = x_train.reshape(x_train.shape[0], 1, img_rows, img_cols)
+        x_test = x_test.reshape(x_test.shape[0], 1, img_rows, img_cols)
+        input_shape = (1, img_rows, img_cols)
+    else:
+        x_train = x_train.reshape(x_train.shape[0], img_rows, img_cols, 1)
+        x_test = x_test.reshape(x_test.shape[0], img_rows, img_cols, 1)
+        input_shape = (img_rows, img_cols, 1)
+
+    x_train = x_train.astype('float32')
+    x_test = x_test.astype('float32')
+
+    if normalize:
+        x_train /= 255
+        x_test /= 255
+
+    return x_train, y_train, x_test, y_test, input_shape
 
 
-def my_model_function():
-    # Return an instance of MyModel with default MNIST input shape and 10 classes.
-    # The model initializes layers and disables kernel_divergence_fn to avoid symbolic tensor issues.
-    return MyModel()
+def train():
+    # Hyper-parameters.
+    batch_size = 128
+    num_classes = 10
+    epochs = 1
 
-def GetInput():
-    # Returns a batch of one random MNIST-like input, normalized to [0,1].
-    # Assumes data format 'channels_last' (28, 28, 1)
-    # Batch size 1 chosen to keep runtime small.
-    input_shape = (28, 28, 1)
-    return tf.random.uniform(shape=(1, *input_shape), minval=0.0, maxval=1.0, dtype=tf.float32)
+    # Get the training data.
+    x_train, y_train, x_test, y_test, input_shape = get_mnist_data()
 
+    # Get the model.
+    model = get_bayesian_model(input_shape=input_shape, num_classes=num_classes)
+
+    # Prepare the model for training.
+    model.compile(optimizer=tf.keras.optimizers.Adam(), loss="sparse_categorical_crossentropy",
+                  metrics=['accuracy'])
+
+    # Train the model.
+    model.fit(x_train, y_train, batch_size=batch_size, epochs=epochs, verbose=1)
+    model.evaluate(x_test, y_test, verbose=0)
+
+
+if __name__ == "__main__":
+    train()

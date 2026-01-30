@@ -1,61 +1,223 @@
-# torch.rand(1, 3, 16, 16, dtype=torch.float32)
 import torch
+import torchvision
+import torchvision.transforms as transforms
 import torch.nn as nn
-
-class MyModel(nn.Module):
+import os
+import torch.nn.functional as F
+gpu_device = torch.device("cuda")
+cpu_device = torch.device("cpu")
+class PreprocessAndCalculateModel(nn.Module):
     def __init__(self):
         super().__init__()
-    
     def forward(self, x):
-        return x.arcsin()
+        # = x.view(x.size(0), -1
+        output = x.arcsin()
+        return output
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    # Generate input within valid [-1, 1] range to avoid NaNs
-    return torch.rand(1, 3, 16, 16, dtype=torch.float32) * 2 - 1  # Scaled to stay within valid range
+real_inputs = torch.Tensor([[[[0.1747, 0.3360, 0.4972, 0.3946, 0.2480, 0.4568, 0.8077, 0.8697,
+           0.7149, 0.6920, 0.8447, 0.9502, 0.9375, 0.8867, 0.6080, 0.3292],
+          [0.0000, 0.3290, 0.4512, 0.3514, 0.2145, 0.4202, 0.7628, 0.8747,
+           0.8135, 0.7791, 0.7803, 0.7771, 0.7628, 0.7235, 0.5338, 0.3441],
+          [0.0000, 0.0000, 0.4052, 0.3082, 0.1811, 0.3836, 0.7180, 0.8797,
+           0.9121, 0.8662, 0.7159, 0.6041, 0.5882, 0.5602, 0.4596, 0.3590],
+          [0.0000, 0.0000, 0.0000, 0.4829, 0.3146, 0.4200, 0.6349, 0.7930,
+           0.9085, 0.8897, 0.6920, 0.5737, 0.6538, 0.7143, 0.6567, 0.5991],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.4758, 0.4685, 0.5455, 0.6910,
+           0.8879, 0.9027, 0.6748, 0.5670, 0.7595, 0.9213, 0.8990, 0.8767],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.4434, 0.5484, 0.6284,
+           0.6896, 0.7015, 0.6475, 0.6168, 0.6438, 0.6759, 0.7383, 0.8007],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.5882, 0.5815,
+           0.4202, 0.4145, 0.6162, 0.6891, 0.4396, 0.2496, 0.4164, 0.5832],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.5796,
+           0.4224, 0.4025, 0.5659, 0.6247, 0.4223, 0.2568, 0.3122, 0.3676],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.6282, 0.5968, 0.5012, 0.4579, 0.5453, 0.5890, 0.3712, 0.1534],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.7377, 0.5391, 0.4350, 0.5669, 0.6401, 0.3609, 0.0818],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.0000, 0.7138, 0.6039, 0.4534, 0.3161, 0.2583, 0.2005],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.0000, 0.0000, 0.6826, 0.3851, 0.1413, 0.2195, 0.2977],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.0000, 0.0000, 0.0000, 0.4301, 0.3395, 0.3404, 0.3413],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.5307, 0.4507, 0.3707],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.4977, 0.3154],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.2602]],
 
-# Okay, let's tackle this problem. The user provided a GitHub issue where someone is getting NaNs when using torch.arcsin(). The model in question is PreprocessAndCalculateModel, which applies arcsin to the input. The error occurs because some input values are outside the valid range for arcsin, which is [-1, 1]. The input data includes a value of 1.0041, which is over 1, hence the NaN.
-# The task is to generate a complete Python code file based on the issue. The structure requires a MyModel class, a function to create the model, and a GetInput function. Also, if there are multiple models to compare, they need to be fused. 
-# Looking at the issue, the model is straightforward: it just applies arcsin. The input is given as a specific tensor. The problem mentions comparing GPU and CPU outputs, but the code structure here requires a single MyModel. Since the issue doesn't mention multiple models to compare, maybe the user wants the model as described, with the input that triggers the NaN.
-# The input shape from the example is 1 batch, 3 channels, 16x16? Wait, looking at the input data: the real_inputs tensor has dimensions (1, 3, 16, 16). Let me check the data. The user provided a tensor with 3 channels and 16 rows and columns. So the input shape is (B, 3, 16, 16). 
-# The GetInput function should return a random tensor with the same shape. But the actual input in the issue has specific values, but since the user wants a function that works, maybe we can use the provided real_inputs. However, the code should be self-contained. Wait, the input in the issue is a specific tensor, but the GetInput function needs to generate a valid input. However, the problem says to infer if missing. Since the input has a value exceeding 1, but the model's forward just applies arcsin, which would produce NaNs. But the user wants the code to be complete. 
-# Wait, the task requires to create a code that can be used with torch.compile, so the input must be valid. But the original issue's input has invalid values. To make the code work without errors, maybe we should adjust the input to stay within [-1,1]. Alternatively, since the GetInput function needs to return a valid input that works, perhaps we should generate a random tensor clamped between -1 and 1? But the original input has values up to 1.0041. The problem says to infer missing parts. Since the user's input is invalid, but the code needs to have GetInput that works, maybe the best is to generate a random input within the valid range. 
-# Alternatively, maybe the user wants to replicate the original input but the GetInput function would then produce the same problem. However, the requirement says that GetInput must return a valid input that works with MyModel. Therefore, the GetInput should generate a tensor with values in [-1,1]. 
-# So, the MyModel class is straightforward: apply arcsin. The GetInput function should return a random tensor of shape (1, 3, 16, 16) with values between, say, -0.9 and 0.9 to avoid the NaNs. 
-# Wait, the original input has values up to 1.0041, but the problem is that's causing NaN. The user's code has that input, but for the GetInput function, we need to ensure it doesn't cause NaN. Therefore, the generated code's GetInput should avoid that. 
-# So putting it all together:
-# The input shape is B=1, C=3, H=16, W=16. 
-# The MyModel class has a forward that applies arcsin. 
-# The GetInput function will create a tensor with torch.rand(1,3,16,16) * 2 -1 to get between -1 and 1, but maybe scaled to avoid exceeding. Or just use 0.99 to be safe. 
-# Wait, the original input's problematic value is 1.0041. So to prevent that, the GetInput should generate values within [-1,1]. So using torch.rand(...)*2 -1 would give between -1 and 1. 
-# So the code structure would be:
-# # torch.rand(1, 3, 16, 16, dtype=torch.float32)
-# class MyModel(nn.Module):
-#     def __init__(self):
-#         super().__init__()
-#     def forward(self, x):
-#         return x.arcsin()
-# def my_model_function():
-#     return MyModel()
-# def GetInput():
-#     return torch.rand(1, 3, 16, 16, dtype=torch.float32)*2 -1  # scaled to stay within [-1,1]
-# Wait, but in the original code, the input is torch.Tensor with specific values. But the user's GetInput must return a valid input. Since the original input has invalid values, but the problem requires GetInput to work, we adjust.
-# Wait the user's real_inputs is a tensor with shape (1, 3, 16, 16) but with values exceeding 1. So to make GetInput work, the code must generate inputs that don't cause NaN. Hence the scaling. 
-# So the code would be as above. 
-# Now, checking the constraints:
-# - The class is MyModel, correct.
-# - The function my_model_function returns an instance of it.
-# - GetInput returns a tensor that works. 
-# No multiple models to compare here. The issue's user was just pointing out that the input has a value over 1, leading to NaN. The code as per the problem's requirements just needs to represent the model and input correctly. 
-# Another point: The original model was named PreprocessAndCalculateModel, but we have to rename it to MyModel. 
-# Also, the input's shape is inferred from the real_inputs provided. Looking at the data:
-# real_inputs is initialized with a list that has 2 elements in the first dimension (since it's [[[...]]], but in the code provided, the user's real_inputs is written as a tensor with [[[...]]], but the actual structure might be 1 batch, 3 channels, 16x16. Let me count the dimensions. The input data as written in the code starts with:
-# [[[[0.1747,...], ...], ...], ...], so the first dimension is batch (1), then channels (3), then 16 rows and 16 columns each. So the shape is (1, 3, 16, 16). 
-# Therefore, the input shape comment should be:
-# # torch.rand(1, 3, 16, 16, dtype=torch.float32)
-# Wait the original code uses torch.Tensor with the given data, but the GetInput function needs to generate a random one. The dtype in the original code is not specified, but torch.Tensor defaults to float32, so that's okay.
-# So the final code would be as structured above. 
-# I think that's it. Let me write it out.
-# </think>
+         [[0.2676, 0.1578, 0.0480, 0.0942, 0.1663, 0.3507, 0.5798, 0.7427,
+           0.8559, 0.9132, 0.8959, 0.7963, 0.4908, 0.2267, 0.2113, 0.1960],
+          [0.0000, 0.4691, 0.4106, 0.3391, 0.2654, 0.3293, 0.4482, 0.5110,
+           0.5318, 0.5333, 0.5092, 0.4446, 0.2788, 0.1604, 0.3262, 0.4919],
+          [0.0000, 0.0000, 0.7733, 0.5841, 0.3645, 0.3079, 0.3165, 0.2793,
+           0.2077, 0.1534, 0.1224, 0.0928, 0.0669, 0.0942, 0.4411, 0.7879],
+          [0.0000, 0.0000, 0.0000, 0.5133, 0.5111, 0.4232, 0.3010, 0.2410,
+           0.2277, 0.2139, 0.1994, 0.1958, 0.2192, 0.2604, 0.4089, 0.5573],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.6657, 0.5613, 0.3048, 0.2350,
+           0.3052, 0.3478, 0.3538, 0.3745, 0.4321, 0.4654, 0.3521, 0.2388],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.6266, 0.2852, 0.1867,
+           0.2705, 0.3459, 0.4102, 0.4671, 0.5056, 0.5271, 0.4468, 0.3665],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.2561, 0.1215,
+           0.1909, 0.2896, 0.4275, 0.5254, 0.5233, 0.5316, 0.6021, 0.6726],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.1472,
+           0.2015, 0.3133, 0.5017, 0.6152, 0.5415, 0.4926, 0.5926, 0.6927],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.2797, 0.3968, 0.6186, 0.7288, 0.5601, 0.4210, 0.4597, 0.4984],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.4650, 0.6417, 0.7132, 0.5213, 0.3558, 0.3486, 0.3414],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.0000, 0.5400, 0.5253, 0.4061, 0.2992, 0.2668, 0.2343],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.0000, 0.0000, 0.3568, 0.3584, 0.3489, 0.2724, 0.1960],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.0000, 0.0000, 0.0000, 0.4798, 0.6644, 0.4970, 0.3296],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.8889, 0.6745, 0.4600],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.5694, 0.5706],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.6813]],
+
+         [[0.9447, 0.6267, 0.3087, 0.4075, 0.5758, 0.6468, 0.6789, 0.5345,
+           0.2578, 0.2591, 0.6311, 0.8198, 0.5505, 0.3186, 0.3110, 0.3034],
+          [0.0000, 0.6470, 0.4606, 0.5441, 0.6725, 0.6481, 0.5624, 0.4823,
+           0.4062, 0.4010, 0.4901, 0.5520, 0.5456, 0.5341, 0.4924, 0.4507],
+          [0.0000, 0.0000, 0.6126, 0.6807, 0.7693, 0.6493, 0.4460, 0.4300,
+           0.5546, 0.5428, 0.3491, 0.2841, 0.5407, 0.7497, 0.6739, 0.5980],
+          [0.0000, 0.0000, 0.0000, 0.6567, 0.6722, 0.5528, 0.3795, 0.3425,
+           0.4078, 0.3929, 0.2711, 0.2726, 0.5824, 0.8255, 0.6676, 0.5096],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.5427, 0.4399, 0.3213, 0.2492,
+           0.2118, 0.1944, 0.2035, 0.3037, 0.6320, 0.8779, 0.6299, 0.3819],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.5148, 0.5051, 0.4238,
+           0.2887, 0.2610, 0.3765, 0.5124, 0.6993, 0.8336, 0.6523, 0.4710],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.7857, 0.7056,
+           0.4748, 0.4337, 0.6458, 0.7921, 0.7737, 0.7506, 0.6987, 0.6468],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.6310,
+           0.4460, 0.4129, 0.5822, 0.6795, 0.5970, 0.5295, 0.5528, 0.5761],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.2561, 0.2468, 0.2688, 0.2728, 0.2318, 0.2049, 0.2628, 0.3207],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.2204, 0.1118, 0.0472, 0.0926, 0.1348, 0.1582, 0.1815],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.0000, 0.1632, 0.0631, 0.2547, 0.4041, 0.3007, 0.1974],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.0000, 0.0000, 0.1958, 0.4437, 0.6269, 0.4223, 0.2176],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.0000, 0.0000, 0.0000, 0.6999, 0.7336, 0.4912, 0.2489],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.8317, 0.5643, 0.2969],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.6624, 0.4460],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.5951]]],
+
+
+        [[[0.3542, 0.3530, 0.3519, 0.4947, 0.6615, 0.6887, 0.6601, 0.6022,
+           0.5224, 0.5028, 0.5635, 0.6354, 0.7349, 0.7787, 0.4880, 0.1972],
+          [0.0000, 0.4548, 0.4975, 0.5664, 0.6395, 0.6110, 0.5418, 0.4693,
+           0.3943, 0.3474, 0.3383, 0.3850, 0.5714, 0.7095, 0.5582, 0.4069],
+          [0.0000, 0.0000, 0.6432, 0.6380, 0.6176, 0.5333, 0.4236, 0.3364,
+           0.2661, 0.1921, 0.1130, 0.1346, 0.4079, 0.6404, 0.6284, 0.6165],
+          [0.0000, 0.0000, 0.0000, 0.4723, 0.4880, 0.4426, 0.3726, 0.3899,
+           0.4727, 0.4351, 0.2370, 0.1378, 0.2857, 0.4229, 0.4957, 0.5685],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.3406, 0.3496, 0.3328, 0.4745,
+           0.7350, 0.7444, 0.4192, 0.1832, 0.1704, 0.1807, 0.3292, 0.4777],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.2644, 0.3112, 0.4835,
+           0.7499, 0.8139, 0.6081, 0.4284, 0.3141, 0.2426, 0.4281, 0.6135],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.2967, 0.4622,
+           0.6658, 0.7875, 0.7997, 0.7536, 0.5614, 0.4262, 0.6331, 0.8400],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.4992,
+           0.6377, 0.7640, 0.8740, 0.9028, 0.7287, 0.6020, 0.7602, 0.9184],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.6516, 0.7428, 0.8602, 0.9201, 0.8359, 0.7719, 0.8288, 0.8857],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.6486, 0.8023, 0.9052, 0.8810, 0.8575, 0.8382, 0.8189],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.0000, 0.6855, 0.8474, 0.8431, 0.8305, 0.7685, 0.7065],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.0000, 0.0000, 0.7719, 0.8041, 0.8193, 0.7327, 0.6461],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.0000, 0.0000, 0.0000, 0.7625, 0.8479, 0.7818, 0.7158],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.8745, 0.8280, 0.7814],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.8566, 0.8231],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.8648]],
+
+         [[0.1699, 0.5575, 0.9450, 0.9644, 0.9224, 0.8094, 0.6680, 0.6250,
+           0.6558, 0.6531, 0.6059, 0.6316, 0.8399, 1.0041, 0.9043, 0.8045],
+          [0.0000, 0.5242, 0.8958, 0.9130, 0.8711, 0.7974, 0.7108, 0.6382,
+           0.5759, 0.5269, 0.4956, 0.4942, 0.5676, 0.6191, 0.5388, 0.4586],
+          [0.0000, 0.0000, 0.8465, 0.8616, 0.8198, 0.7853, 0.7536, 0.6513,
+           0.4961, 0.4007, 0.3853, 0.3567, 0.2953, 0.2341, 0.1734, 0.1128],
+          [0.0000, 0.0000, 0.0000, 0.6902, 0.5544, 0.4978, 0.4730, 0.4799,
+           0.5105, 0.5093, 0.4657, 0.4344, 0.4341, 0.4244, 0.3580, 0.2916],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.2532, 0.1645, 0.1384, 0.2776,
+           0.5407, 0.6571, 0.5779, 0.5480, 0.6414, 0.7106, 0.6343, 0.5580],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.1862, 0.1884, 0.3487,
+           0.6276, 0.7287, 0.5925, 0.5404, 0.6982, 0.8184, 0.7127, 0.6069],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.3921, 0.5291,
+           0.7373, 0.7698, 0.5681, 0.4843, 0.6948, 0.8549, 0.7119, 0.5689],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.5885,
+           0.7180, 0.7320, 0.5921, 0.5218, 0.6254, 0.7107, 0.6866, 0.6625],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.6020, 0.6350, 0.6524, 0.6296, 0.5064, 0.4311, 0.6430, 0.8548],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.4941, 0.6390, 0.6791, 0.4572, 0.3075, 0.5916, 0.8757],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.0000, 0.5275, 0.6509, 0.5009, 0.3920, 0.5299, 0.6679],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.0000, 0.0000, 0.6590, 0.5803, 0.5114, 0.5008, 0.4902],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.0000, 0.0000, 0.0000, 0.7493, 0.7183, 0.5531, 0.3880],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.8755, 0.6067, 0.3379],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.6677, 0.6011],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.8642]],
+
+         [[0.1315, 0.4479, 0.7643, 0.8649, 0.9296, 0.8939, 0.8179, 0.6351,
+           0.3722, 0.2854, 0.4335, 0.5118, 0.4159, 0.3245, 0.2600, 0.1956],
+          [0.0000, 0.5855, 0.7666, 0.7361, 0.6702, 0.6335, 0.6085, 0.5433,
+           0.4480, 0.3790, 0.3451, 0.3627, 0.5087, 0.6107, 0.4480, 0.2853],
+          [0.0000, 0.0000, 0.7690, 0.6072, 0.4108, 0.3732, 0.3991, 0.4515,
+           0.5237, 0.4725, 0.2568, 0.2136, 0.6016, 0.8969, 0.6360, 0.3750],
+          [0.0000, 0.0000, 0.0000, 0.4739, 0.3536, 0.3584, 0.4132, 0.4267,
+           0.4091, 0.3971, 0.3927, 0.4382, 0.6085, 0.7269, 0.5340, 0.3411],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.3300, 0.3845, 0.4646, 0.4130,
+           0.2628, 0.2936, 0.5659, 0.7250, 0.6011, 0.4810, 0.3838, 0.2866],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.4599, 0.5370, 0.5030,
+           0.3859, 0.4042, 0.6032, 0.7024, 0.5520, 0.4197, 0.3953, 0.3710],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.6178, 0.6345,
+           0.6167, 0.6005, 0.5862, 0.5560, 0.4864, 0.4323, 0.4716, 0.5110],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.5829,
+           0.6386, 0.6619, 0.6420, 0.6178, 0.5830, 0.5494, 0.5232, 0.4970],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.5038, 0.6223, 0.7525, 0.8357, 0.8014, 0.7450, 0.5562, 0.3674],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.6003, 0.8056, 0.9282, 0.8439, 0.7458, 0.5651, 0.3844],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.0000, 0.7821, 0.8533, 0.6518, 0.4869, 0.5419, 0.5969],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.0000, 0.0000, 0.8043, 0.5536, 0.3636, 0.5376, 0.7116],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.0000, 0.0000, 0.0000, 0.6901, 0.5791, 0.5806, 0.5821],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.7196, 0.5939, 0.4682],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.4290, 0.4478],
+          [0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000,
+           0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.4274]]]])
+#real_inputs = torch.rand(2, 3, 8, 8)
+model = PreprocessAndCalculateModel()
+x = real_inputs
+output_gpu = model.to(gpu_device)(x.cuda())
+output_cpu = model.to(cpu_device)(x.cpu())
+print(torch.isnan(output_gpu).any())
+print(torch.isnan(output_gpu).any())
+#print(torch.allclose(output_gpu.cpu(), output_cpu, atol=1e-7))

@@ -1,111 +1,163 @@
-# tf.random.uniform((B, SeqLen), dtype=tf.int32)
-
 import tensorflow as tf
-from tensorflow.keras import layers
+from tensorflow.contrib.crf import crf_log_likelihood
+from tensorflow.contrib.layers.python.layers import initializers
 
-# Assumptions:
-# - The input consists of 3 int32 tensors named input_ids, input_mask, and segment_ids, each with shape [batch_size, max_seq_len]
-# - We do not implement the full ALBERT model here but provide a dummy embedding layer to simulate the behavior,
-#   since original TF1 code depends on external albert/modeling.py and tensorflow.contrib APIs which are deprecated.
-# - The CRF layer and biLSTM implementation is adapted using TF2 conventions, without using deprecated contrib.
-# - The number of tags and sequence length are configurable.
-# - We provide comparison between logits from projection (like softmax logits) and outputs of biLSTM,
-#   producing a difference output as forward pass output, fulfilling fusion and comparison requirement.
-# - We simulate all embedding calls as simple embedding layers due to missing ALBERT TF2 code.
-# - The model accepts tuple of 3 inputs matching TF1 placeholders and dropout scalar float.
+from albert import modeling
+import models.rnncell as rnn
+from models.file_path import BaseConfig
 
-class MyModel(tf.keras.Model):
-    def __init__(self, config=None):
-        super().__init__()
-        # Config with defaults if None
-        if config is None:
-            config = {}
-        self.batch_size = config.get("batch_size", 128)
-        self.max_seq_len = config.get("max_seq_len", 256)
-        self.lstm_dim = config.get("lstm_dim", 200)
-        self.num_tags = config.get("num_tags", 10)  # Assume 10 tags
-        self.dropout_rate = config.get("dropout_rate", 0.5)
-        # Embedding size assumed as 312 (common ALBERT size) for simulation
-        self.emb_size = config.get("emb_size", 312)
 
-        # Simulate ALBERT embedding with an Embedding layer
-        self.embedding_layer = layers.Embedding(input_dim=30000, output_dim=self.emb_size, mask_zero=True)
-
-        # BiLSTM layer
-        self.bi_lstm = layers.Bidirectional(
-            layers.LSTM(self.lstm_dim, return_sequences=True, dropout=self.dropout_rate),
-            name="biLSTM"
-        )
-        # Project layer: a simple Dense hidden + Dense output for tags
-        self.dense_hidden = layers.Dense(self.lstm_dim, activation="tanh")
-        self.dense_logits = layers.Dense(self.num_tags)
-        self.dropout = layers.Dropout(self.dropout_rate)
-
-    def call(self, inputs, training=False):
-        # inputs is a tuple: (input_ids, input_mask, segment_ids, dropout)
-        # dropout is a scalar float, or can be controlled by training flag
-        input_ids, input_mask, segment_ids, dropout = inputs
-
-        # Embedding lookup (simulate ALBERT embedding)
-        # shape: [batch_size, seq_len, emb_size]
-        embedding = self.embedding_layer(input_ids)
-
-        # Apply dropout
-        x = self.dropout(embedding, training=training)
-
-        # BiLSTM output
-        lstm_outputs = self.bi_lstm(x, mask=tf.cast(input_mask, tf.bool), training=training)  # [B, seq_len, 2*lstm_dim]
-
-        # Project layer
-        shape_before = tf.shape(lstm_outputs)
-        batch_size = shape_before[0]
-        seq_len = shape_before[1]
-
-        # Flatten last two dims to apply dense
-        flat_inputs = tf.reshape(lstm_outputs, [-1, self.lstm_dim * 2])
-        hidden = self.dense_hidden(flat_inputs)  # [B*seq_len, lstm_dim]
-        logits = self.dense_logits(hidden)      # [B*seq_len, num_tags]
-        logits = tf.reshape(logits, [batch_size, seq_len, self.num_tags])  # [B, seq_len, num_tags]
-
-        # Output comparison: difference between logits and part of BiLSTM outputs projected to num_tags
-        # To fuse the models and produce a comparison output as required by task:
-        # We project lstm_outputs with a learned linear layer to num_tags, then compute difference with logits.
-        # However, logits already represent that projection. So let's reuse logits and biLSTM outputs (reduced)
-        # For demonstration, compute simple numeric difference with a dense on lstm_outputs.
-
-        # Another dense on lstm_outputs to num_tags for comparison
-        projected_lstm = layers.Dense(self.num_tags)(lstm_outputs)  # shape [B, seq_len, num_tags]
-
-        # Compare logits and projected_lstm to get numeric diff output
-        diff = tf.abs(logits - projected_lstm)  # Absolute difference
-
-        # Return diff as output. This fuses two logical submodules and compares them numerically.
-        return diff
-
-def my_model_function():
-    # We hardcode config for demonstration
-    config = {
-        "batch_size": 128,
-        "max_seq_len": 256,
-        "lstm_dim": 200,
-        "num_tags": 10,
-        "dropout_rate": 0.5,
-        "emb_size": 312,
-    }
-    model = MyModel(config)
-    return model
-
-def GetInput():
+class Config(BaseConfig):
     batch_size = 128
+    epoch = 100
+    print_per_batch = 100
+    clip = 5
+    dropout_keep_prob = 0.5
+    lr = 0.0001
+    optimizer = 'adam'
+    zeros = False
+    lower = True
+
+    num_tags = None
+    lstm_dim = 200
     max_seq_len = 256
-    # Generate random input_ids, input_mask, segment_ids tensors matching expected shapes
-    # input_ids and segment_ids: integers in vocab range; mask: 0/1 indicating real tokens
-    input_ids = tf.random.uniform((batch_size, max_seq_len), minval=0, maxval=30000, dtype=tf.int32)
-    input_mask = tf.ones((batch_size, max_seq_len), dtype=tf.int32)  # assume all tokens valid
-    segment_ids = tf.zeros((batch_size, max_seq_len), dtype=tf.int32)  # single segment input
+    max_epoch = 100
+    steps_check = 100
 
-    # dropout rate scalar: here fixed to 0.5 for training; could also be a scalar tensor.
-    dropout = tf.constant(0.5, dtype=tf.float32)
 
-    return (input_ids, input_mask, segment_ids, dropout)
+class AlbertBiLstmCrf(object):
+    def __init__(self, config):
+        self.config = config
+        # 为模型添加占位符
+        self.input_ids = tf.placeholder(dtype=tf.int32, shape=[None, None], name="input_ids")
+        self.input_mask = tf.placeholder(dtype=tf.int32, shape=[None, None], name="input_mask")
+        self.segment_ids = tf.placeholder(dtype=tf.int32, shape=[None, None], name="segment_ids")
+        self.targets = tf.placeholder(dtype=tf.int32, shape=[None, None], name="Targets")
 
+        self.dropout = tf.placeholder(dtype=tf.float32, name="Dropout")
+        self.global_step = tf.Variable(0, trainable=False)
+        self.best_dev_f1 = tf.Variable(0.0, trainable=False)
+
+        self.initializer = initializers.xavier_initializer()
+        self.albert_bilstm_crf()
+
+    def albert_bilstm_crf(self):
+        # parameter
+        used = tf.sign(tf.abs(self.input_ids))
+        length = tf.reduce_sum(used, reduction_indices=1)
+        self.lengths = tf.cast(length, tf.int32)
+        self.batch_size = tf.shape(self.input_ids)[0]
+        self.num_steps = tf.shape(self.input_ids)[-1]
+
+        # albert embedding
+        embedding = self.bert_embedding()
+        # dropout
+        lstm_inputs = tf.nn.dropout(embedding, self.dropout)
+        # bi-lstm layer
+        lstm_outputs = self.biLSTM_layer(lstm_inputs, self.config.lstm_dim, self.lengths)
+        # logits for tags
+        self.logits = self.project_layer(lstm_outputs)
+        # loss of the model
+        self.loss = self.loss_layer(self.logits, self.lengths)
+
+        # bert模型参数初始化的地方
+        init_checkpoint = self.config.init_checkpoint
+        # 获取模型中所有的训练参数。
+        tvars = tf.trainable_variables()
+        # 加载BERT模型
+        (assignment_map, initialized_variable_names) = modeling.get_assignment_map_from_checkpoint(tvars, init_checkpoint)
+        tf.train.init_from_checkpoint(init_checkpoint, assignment_map)
+        # 打印加载模型的参数
+        train_vars = []
+        for var in tvars:
+            init_string = ""
+            if var.name in initialized_variable_names:
+                init_string = ", *INIT_FROM_CKPT*"
+            else:
+                train_vars.append(var)
+            # print("  name = %s, shape = %s%s", var.name, var.shape,init_string)
+
+        optimizer = self.config.optimizer
+        if optimizer == "adam":
+            self.opt = tf.train.AdamOptimizer(self.config.lr)
+        else:
+            raise KeyError
+        grads = tf.gradients(self.loss, train_vars)
+        (grads, _) = tf.clip_by_global_norm(grads, clip_norm=1.0)
+
+        self.train_op = self.opt.apply_gradients(zip(grads, train_vars), global_step=self.global_step)
+
+    def bert_embedding(self):
+        # load bert embedding
+        albert_config = modeling.AlbertConfig.from_json_file(self.config.bert_config_path)  # 配置文件地址。
+        model = modeling.AlbertModel(
+            config=albert_config,
+            is_training=True,
+            input_ids=self.input_ids,
+            input_mask=self.input_mask,
+            token_type_ids=self.segment_ids,
+            use_one_hot_embeddings=False)
+        embedding = model.get_sequence_output()
+        return embedding
+
+    def biLSTM_layer(self, lstm_inputs, lstm_dim, lengths, name=None):
+
+        #lstm_inputs: [batch_size, num_steps, emb_size] return：[batch_size, num_steps, 2*lstm_dim]
+
+        with tf.variable_scope("char_BiLSTM" if not name else name):
+            lstm_cell = {}
+            for direction in ["forward", "backward"]:
+                with tf.variable_scope(direction):
+                    lstm_cell[direction] = rnn.CoupledInputForgetGateLSTMCell(
+                        lstm_dim,
+                        use_peepholes=True,
+                        initializer=self.initializer,
+                        state_is_tuple=True)
+            outputs, final_states = tf.nn.bidirectional_dynamic_rnn(
+                lstm_cell["forward"],
+                lstm_cell["backward"],
+                lstm_inputs,
+                dtype=tf.float32,
+                sequence_length=lengths)
+        return tf.concat(outputs, axis=2)
+
+    def project_layer(self, lstm_outputs, name=None):
+        #lstm和logits之间的隐藏层
+        #lstm_outputs: [batch_size, num_steps, emb_size] return: [batch_size, num_steps, num_tags]
+        with tf.variable_scope("project" if not name else name):
+            with tf.variable_scope("hidden"):
+                W = tf.get_variable("W", shape=[self.config.lstm_dim * 2, self.config.lstm_dim],dtype=tf.float32, initializer=self.initializer)
+
+                b = tf.get_variable("b", shape=[self.config.lstm_dim], dtype=tf.float32,initializer=tf.zeros_initializer())
+                output = tf.reshape(lstm_outputs, shape=[-1, self.config.lstm_dim * 2])
+                hidden = tf.tanh(tf.nn.xw_plus_b(output, W, b))
+
+            # project to score of tags
+            with tf.variable_scope("logits"):
+                W = tf.get_variable("W", shape=[self.config.lstm_dim, self.config.num_tags],dtype=tf.float32, initializer=self.initializer)
+
+                b = tf.get_variable("b", shape=[self.config.num_tags], dtype=tf.float32,initializer=tf.zeros_initializer())
+
+                pred = tf.nn.xw_plus_b(hidden, W, b)
+
+            return tf.reshape(pred, [-1, self.num_steps, self.config.num_tags])
+
+    def loss_layer(self, project_logits, lengths, name=None):
+        #计算crf损失
+        with tf.variable_scope("crf_loss" if not name else name):
+            small = -1000.0
+            # pad logits for crf loss
+            start_logits = tf.concat([small * tf.ones(shape=[self.batch_size, 1, self.config.num_tags]),tf.zeros(shape=[self.batch_size, 1, 1])],axis=-1)
+            pad_logits = tf.cast(small * tf.ones([self.batch_size, self.num_steps, 1]), tf.float32)
+            logits = tf.concat([project_logits, pad_logits], axis=-1)
+            logits = tf.concat([start_logits, logits], axis=1)
+            targets = tf.concat([tf.cast(self.config.num_tags * tf.ones([self.batch_size, 1]), tf.int32), self.targets], axis=-1)
+
+            self.trans = tf.get_variable("transitions",shape=[self.config.num_tags + 1, self.config.num_tags + 1],initializer=self.initializer)
+            #对数似然
+            log_likelihood, self.trans = crf_log_likelihood(
+                inputs=logits,
+                tag_indices=targets,
+                transition_params=self.trans,
+                sequence_lengths=lengths + 1)
+            return tf.reduce_mean(-log_likelihood)

@@ -1,23 +1,14 @@
-# torch.rand(B, 3, 224, 224, dtype=torch.float32)  # Assumed input shape for a typical image model
-import torch
-import torch.nn as nn
+py
+import torch.utils.data
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Placeholder model structure (since no model details provided in the issue)
-        self.conv = nn.Conv2d(3, 16, kernel_size=3, padding=1)
-        self.relu = nn.ReLU()
-        self.pool = nn.MaxPool2d(2, 2)
+class MyException(Exception):
+    def __init__(self, msg, arg1, arg2):
+        super().__init__(msg)
 
-    def forward(self, x):
-        return self.pool(self.relu(self.conv(x)))
+class MyDataset(torch.utils.data.IterableDataset):
+    def __iter__(self):
+        raise MyException("MyError", 1, 2)
 
-def my_model_function():
-    # Returns an instance of MyModel with default initialization
-    return MyModel()
-
-def GetInput():
-    # Returns a random input tensor matching the assumed input shape
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
-
+if __name__ == '__main__':
+    dl = torch.utils.data.DataLoader(MyDataset(), num_workers=1)
+    list(iter(dl))

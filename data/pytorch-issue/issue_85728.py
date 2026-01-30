@@ -1,15 +1,33 @@
-# torch.rand(B, 1, dtype=torch.float32)
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return x  # Model outputs raw values (not constrained to [0,1])
+import torch
 
-def my_model_function():
-    return MyModel()
+try:
+    x = torch.tensor([-1.0]).cuda()
+    y = torch.tensor([2.0]).cuda()
+    loss = torch.nn.BCELoss().cuda()
+    output = loss(x, y) # Causes CUDA internal assertion failure
+except Exception as e:
+    print("init: exception caught: {}".format(e))
+else:
+    print("init: no exception")
 
-def GetInput():
-    # Generate input tensor with values outside [0,1] to trigger the described issue
-    return torch.rand(1, 1, dtype=torch.float32) * 3 - 1  # Random values in [-1, 2]
+for i in range(10):
+    try:
+        a = torch.tensor([-1.0]).cuda()
+        b = torch.tensor([2.0]).cuda()
+        c = a + b # Raises CUDA exception again
+    except Exception as e:
+        print("{}: exception caught: {}".format(i, e))
+    else:
+        print("{}: no exception".format(i))
 
+try:
+    x = torch.tensor([-1.0]).cuda()
+    y = torch.tensor([2.0]).cuda()
+    loss = torch.nn.BCELoss().cuda()
+    output = loss(x, y) # Causes CUDA internal assertion failure
+except Exception as e:
+    print("init: exception caught: {}".format(e))
+else:
+    print("init: no exception")

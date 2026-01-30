@@ -1,25 +1,18 @@
-# tf.random.uniform((B, 10), dtype=tf.float32)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
+
 import tensorflow as tf
+tf.enable_eager_execution()
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define the layers as per the issue's example Sequential model
-        # Input shape is (10,)
-        self.dense1 = tf.keras.layers.Dense(50, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(3, activation='sigmoid')
+model = tf.keras.Sequential()
+model.add(tf.keras.layers.Dense(50, input_shape=(10, )))
+model.add(tf.keras.layers.Activation('relu'))
+model.add(tf.keras.layers.Dense(3))
+model.add(tf.keras.layers.Activation('sigmoid'))
 
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        return x
+sgd = tf.keras.optimizers.SGD(lr=0.1, decay=0.000225, momentum=0.5)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # Assuming batch size 4 for example
-    return tf.random.uniform((4, 10), dtype=tf.float32)
-
+model.compile(optimizer=sgd,
+              loss='categorical_crossentropy',
+              metrics=['accuracy'])

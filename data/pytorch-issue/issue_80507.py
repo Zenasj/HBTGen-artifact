@@ -1,28 +1,6 @@
-# torch.rand(1, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # This is a placeholder model to demonstrate the issue
-        self.diff = torch.diff
+input = torch.tensor([1.0+1.0j], dtype=torch.complex128, requires_grad=True)
+torch.autograd.gradcheck(torch.diff, (input), check_forward_ad=True, check_backward_ad=False)
 
-    def forward(self, x):
-        return self.diff(x)
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.tensor([1.0], requires_grad=True)
-
-# Example usage:
-# model = my_model_function()
-# input = GetInput()
-# output = model(input)
-# Note: The actual bug is in the forward AD mechanism and not in the model itself.
-# The provided model and input are for demonstration purposes.
-
+# !this_view_meta->has_fw_view()INTERNAL ASSERT FAILED at "/opt/conda/conda-bld/pytorch_1646756402876/work/torch/csrc/autograd/autograd_meta.cpp":186, please report a bug to PyTorch. Expected the output of forward differentiable view operations to have the tangent have the same layout as primal

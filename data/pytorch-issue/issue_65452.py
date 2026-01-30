@@ -1,20 +1,30 @@
-# torch.rand(1, 2, 3, dtype=torch.float32) ← Add a comment line at the top with the inferred input shape
-
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+import torch
+
+class Model(torch.nn.Module):
     def __init__(self):
+# ERROR
         super().__init__()
 
     def forward(self, x):
         return x
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+input = torch.rand(1, 2, 3)
+model = Model()
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(1, 2, 3, dtype=torch.float32)
+print("# Test 1: directly executing model: " , end="")
+model(input)
+print("passed!")
 
+print("# Test 2: jit model: ", end="")
+torch.jit.script(model)
+print("passed!")
+
+def __init__(self):
+# ERROR
+        super().__init__()
+
+def __init__(self):
+# NO ERROR ANYMORE
+    super().__init__()

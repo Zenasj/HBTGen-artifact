@@ -1,73 +1,52 @@
-# tf.random.uniform((B, None), dtype=tf.int32) ← With B=32 as batch size, variable length sequences of integers (tokens)
+import math
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
 
+# coding: utf-8
+
+"""Minimal example script for an RNN issue within custom train loops."""
+
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    """Model combining Embedding, LSTM with masking, and Dense output, plus custom train_step with gradient stacking."""
 
-    def __init__(self):
-        super().__init__()
-        # Embedding with mask_zero=True to produce masking for padded tokens (0s)
-        self.embedding = tf.keras.layers.Embedding(input_dim=200, output_dim=128, mask_zero=True)
-        # LSTM layer that supports masking implicitly
-        self.lstm = tf.keras.layers.LSTM(128)
-        # Final classification dense layer with softmax for 2 classes
-        self.classifier = tf.keras.layers.Dense(2, activation='softmax')
-
-        # Use typical metrics for tracking during fit
-        self.loss_fn = tf.keras.losses.CategoricalCrossentropy()
-        self.accuracy = tf.keras.metrics.CategoricalAccuracy()
-    
-    def call(self, inputs, training=False):
-        # inputs shape: (batch_size, seq_len)
-        x = self.embedding(inputs)  # Shape: (batch_size, seq_len, 128), mask propagated automatically
-        x = self.lstm(x)            # Shape: (batch_size, 128)
-        out = self.classifier(x)    # Shape: (batch_size, 2)
-        return out
+class StackedModel(tf.keras.Model):
+    """Minimal gradient stacking example Model subclass."""
 
     def train_step(self, data):
-        """Custom training step that stacks gradients over 4 sub-batches using a tf.while_loop over tensors.
-
-        This mimics the gradient stacking gradient accumulation approach described in the issue.
-
-        Expected data: tuple (inputs, labels), inputs shape (batch, seq_len).
-        """
+        # NOTE: here we assume data is a single (x, y) tuple
+        #       in order to provide with a minimal example
         inputs, y_true = data
-        batch_size = tf.shape(inputs)[0]
-        quarter = batch_size // 4
-
-        # Get gradients on the first quarter
-        gradients = self._get_gradients(inputs[:quarter], y_true[:quarter])
-
-        # Function to process each quarter and accumulate gradients
-        def process_quarter(idx, grads_accum):
-            start = idx * quarter
-            end = (idx + 1) * quarter
-            grads_local = self._get_gradients(inputs[start:end], y_true[start:end])
-            # Add gradients elementwise
-            grads_accum = [self._add_gradients(a, b) for a, b in zip(grads_accum, grads_local)]
-            return idx + 1, grads_accum
-
-        # Iterate over 2nd to 4th quarter (indices 1 to 3 inclusive)
+        size = tf.shape(inputs)[0] // 4
+        # Compute gradients on the batch's first quarter.
+        gradients = self._get_gradients(inputs[:size], y_true[:size])
+        # Define a process to compute and stack gradients.
+        def process_quarter(idx, gradients):
+            """Compute gradients on a data sub-batch and stack them."""
+            grads_loc = self._get_gradients(
+                inputs[idx * size:(idx + 1) * size],
+                y_true[idx * size:(idx + 1) * size]
+            )
+            gradients = [
+                self._add_gradients(a, b) for a, b in zip(gradients, grads_loc)
+            ]
+            return tf.add(idx, 1), gradients
+        # Iteratively process the remaining data quarters using the former.
         _, gradients = tf.while_loop(
-            cond=lambda idx, _: idx < 4,
+            cond=lambda idx, _: tf.math.less(idx, 4),
             body=process_quarter,
             loop_vars=[tf.constant(1), gradients],
             parallel_iterations=1
         )
-
-        # Apply accumulated gradients
+        # Apply the aggregated gradients.
         grads_and_vars = zip(gradients, self.trainable_variables)
         self.optimizer.apply_gradients(grads_and_vars)
-
-        # Update and return metrics
-        y_pred = self(inputs, training=True)
-        self.compiled_loss(y_true, y_pred)
-        self.accuracy.update_state(y_true, y_pred)
-        return {'loss': self.compiled_loss.result(), 'categorical_accuracy': self.accuracy.result()}
+        # Return the current values of the loss and metrics.
+        return {m.name: m.result() for m in self.metrics}
 
     def _get_gradients(self, inputs, y_true):
-        """Utility to compute gradients on (inputs, y_true) batch."""
+        """Compute gradients for given (x, y) data."""
         with tf.GradientTape() as tape:
             y_pred = self(inputs, training=True)
             loss = self.compiled_loss(y_true, y_pred)
@@ -75,48 +54,79 @@ class MyModel(tf.keras.Model):
 
     @staticmethod
     def _add_gradients(grad_a, grad_b):
-        """Add two gradient objects, which can be Tensors or IndexedSlices."""
+        """Return the sum of two gradient objects (Tensor of IndexedSlices)."""
         if not isinstance(grad_b, type(grad_a)):
-            raise TypeError('Adding gradients with different types.')
+            raise TypeError("Trying to add objects of distinct types.")
         if isinstance(grad_a, tf.Tensor):
-            return grad_a + grad_b
+            return tf.add(grad_a, grad_b)
         if isinstance(grad_a, tf.IndexedSlices):
             values = tf.concat([grad_a.values, grad_b.values], axis=0)
             indices = tf.concat([grad_a.indices, grad_b.indices], axis=0)
             return tf.IndexedSlices(values, indices, grad_a.dense_shape)
-        # Fallback, just add directly if possible
-        return grad_a + grad_b
 
-def my_model_function():
-    """Factory to build the custom MyModel, ready for training with gradient stacking."""
-    model = MyModel()
-    # Compile the model with suitable optimizer and loss
-    model.compile(
-        optimizer=tf.keras.optimizers.Adam(),
-        loss=tf.keras.losses.CategoricalCrossentropy(),
-        metrics=[tf.keras.metrics.CategoricalAccuracy()]
+
+def build_example_model(run_eagerly, avoid_mask):
+    """Return a keras Model for binary classification of tokens sequences.
+
+    This model expects an input batch of tokens, with zero values
+    being treated as padding, and thus masked. An embedding layer
+    encodes the tokens into vectors in R^{128}, then a LSTM layer
+    produces sequence-wise vectors in R^{128}, which are finally
+    transformed into binary probabilities by a dense layer.
+    """
+    inputs = tf.keras.Input((None,), dtype=tf.int32)
+    emb = tf.keras.layers.Embedding(
+        input_dim=200,
+        output_dim=128,
+        mask_zero=True
     )
+    rnn = tf.keras.layers.LSTM(128)
+    out = tf.keras.layers.Dense(2, 'softmax')
+    embedding = emb(inputs)
+    if avoid_mask:
+        embedding = rnn(embedding, mask=None)
+    else:
+        embedding = rnn(embedding)  # mask is passed implicitly
+    model = StackedModel(inputs, out(embedding))
+    model.compile(loss='binary_crossentropy', run_eagerly=run_eagerly)
     return model
 
-def GetInput():
-    """Return a batch of padded token sequences (batch_size=32) with random token ids in [1, 199], padding with zeros.
 
-    Shape: (32, variable_length)
-    dtype: tf.int32
-    """
-    import numpy as np
+def build_example_dataset():
+    """Return a tf.data.Dataset of batched right-padded tokens sequences."""
+    # Define a random tokens sequences generator.
+    def generator():
+        """Yield sequences of 8 to 32 random ints in (1, 200(, plus a label."""
+        sizes = 8 + np.random.choice(24, size=640, replace=True)
+        for i in range(640):
+            seq = 1 + np.random.choice(199, size=sizes[i], replace=True)
+            lab = tf.one_hot(np.random.choice(2), depth=2)
+            yield (seq, lab)
+    # Set up and return a Dataset made of batches of 32 padded sequences.
+    dst = tf.data.Dataset.from_generator(
+        generator,
+        output_shapes=((None,), (2,)),
+        output_types=(tf.int32, tf.float32)
+    )
+    return dst.padded_batch(32, padded_shapes=((None,), (2,)))
 
-    batch_size = 32
-    # Generate sequences of length from 8 to 32 tokens
-    seq_lengths = np.random.randint(8, 33, size=batch_size)
-    max_len = seq_lengths.max()
 
-    # Prepare numpy array filled with zeros (padding token)
-    input_batch = np.zeros((batch_size, max_len), dtype=np.int32)
+def main():
+    """Minimal demonstration script."""
+    dst = build_example_dataset().repeat()
+    print('Running eagerly without masking at LSTM.')
+    model = build_example_model(run_eagerly=True, avoid_mask=True)
+    model.fit(dst, steps_per_epoch=20, epochs=3)
+    print('Running eagerly with masking at LSTM.')
+    model = build_example_model(run_eagerly=True, avoid_mask=False)
+    model.fit(dst, steps_per_epoch=20, epochs=3)
+    print('Running in graph mode without masking at LSTM.')
+    model = build_example_model(run_eagerly=False, avoid_mask=True)
+    model.fit(dst, steps_per_epoch=20, epochs=3)
+    print('Running in graph mode with masking at LSTM -- prepare for failure.')
+    model = build_example_model(run_eagerly=False, avoid_mask=False)
+    model.fit(dst, steps_per_epoch=20, epochs=3)
 
-    for i, length in enumerate(seq_lengths):
-        # Random tokens from 1 to 199 (0 is reserved for padding)
-        input_batch[i, :length] = np.random.randint(1, 200, size=length)
 
-    return tf.convert_to_tensor(input_batch, dtype=tf.int32)
-
+if __name__ == '__main__':
+    main()

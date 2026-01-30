@@ -1,20 +1,7 @@
-# Input is a tuple (torch.rand(()), torch.rand(6, 0, dtype=torch.float16))
+import random
+
 import torch
-from torch import nn
-
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-    
-    def forward(self, inputs):
-        a, b = inputs
-        return torch.inner(a, b)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    a = torch.rand(())
-    b = torch.rand(6, 0, dtype=torch.float16)
-    return (a, b)
-
+import numpy as np
+input = torch.tensor(27)
+other = torch.tensor(np.random.rand(6,0), dtype=torch.half)
+torch.inner(torch.tensor(27), torch.tensor(np.random.rand(6,0), dtype=torch.half))

@@ -1,10 +1,17 @@
-# torch.rand(1, 3, 64, 64, dtype=torch.float32) ← Add a comment line at the top with the inferred input shape
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+from torch._inductor import config
+import os
+config.fallback_random = True
+torch.set_grad_enabled(False)
+torch.manual_seed(0)
 
-class MyModel(nn.Module):
+
+
+class Model(torch.nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
+        super(Model, self).__init__()
         self.shrink = nn.Tanhshrink()
 
     def forward(self, x):
@@ -12,11 +19,26 @@ class MyModel(nn.Module):
         x = torch.atan2(x, x)
         return x
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(1, 3, 64, 64, dtype=torch.float32)
+model = Model()
 
+
+x = torch.randn(1, 3, 64, 64)
+
+inputs = [x]
+
+
+
+def run_test(model, inputs, backend):
+    if backend != "eager":
+        model = torch.compile(model, backend=backend)
+    torch.manual_seed(0)
+    output = model(*inputs)
+    return output
+
+
+output = run_test(model, inputs, 'eager')
+c_output = run_test(model, inputs, 'inductor')
+
+print(torch.allclose(output, c_output, 1e-3, 1e-3, equal_nan=True))
+print(torch.max(torch.abs(output - c_output)))

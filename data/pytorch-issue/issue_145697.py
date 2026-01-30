@@ -1,23 +1,44 @@
-# torch.rand(1, 3, 224, 224, dtype=torch.float32)  # Inferred input shape for SwinTransformerV2
-
 import torch
-import torch.nn as nn
+import torch._dynamo as torch_dynamo
 import torchvision.models as models
+import torch.ao.quantization.pt2e.duplicate_dq_pass
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.model = models.swin_v2_s(weights=True)
-        self.model.eval()
+from torch._inductor import config
 
-    def forward(self, x):
-        return self.model(x)
+config.freezing = True
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+@torch_dynamo.register_backend(name="tmp")
+def tmp_compile(gm, inputs, **kwargs):
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(1, 3, 224, 224, dtype=torch.float32)
+    # print("before const fold: \n", gm.graph)
+    # return gm
 
+    import torch._inductor.constant_folding
+    torch._inductor.constant_folding.constant_fold(gm)
+
+    # print("after const fold: \n", gm.graph)
+
+    return gm
+
+def load_model():
+    model = models.swin_v2_s(weights=True)
+    model.eval()
+    return model
+
+
+if __name__ == "__main__":
+    model = load_model()
+
+    x = torch.randn(1, 3, 224, 224)
+
+    x_cp = x.detach().clone()
+    import copy
+    model_cp = copy.deepcopy(model)
+    eager_out = model_cp(x_cp)
+
+    sm = torch.compile(model, backend="tmp")
+
+    with torch.inference_mode():
+        out = sm(x)
+
+    torch.testing.assert_close(eager_out, out, atol=1e-5, rtol=1e-5)

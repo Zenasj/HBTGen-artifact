@@ -1,53 +1,91 @@
-# tf.random.uniform((B, 1), dtype=tf.float32) ← input shape inferred from model input shape (1,)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Shared Dense Encoder
-        self.dense1 = tf.keras.layers.Dense(64, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(2, activation='sigmoid')
-        # Output layers extracting logits for two outputs with correct output shape (B, 1)
-        # This is the fix: after slicing the lambda to get each output,
-        # reshape to (B, 1) so accuracy metric works correctly.
-        self.out1_lambda = tf.keras.layers.Lambda(lambda x: x[..., 0])
-        self.out1_reshape = tf.keras.layers.Reshape((1,))
-        self.out2_lambda = tf.keras.layers.Lambda(lambda x: x[..., 1])
-        self.out2_reshape = tf.keras.layers.Reshape((1,))
+tf.keras.utils.set_random_seed(1)
 
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        out1 = self.out1_lambda(x)
-        out1 = self.out1_reshape(out1)
-        out2 = self.out2_lambda(x)
-        out2 = self.out2_reshape(out2)
-        return out1, out2
+# define the data
+x = np.random.random(1000)
+y1 = np.random.randint(0, 2, 1000)
+y2 = np.random.randint(0, 2, 1000)
 
-def my_model_function():
-    # Instantiate the model and return.
-    return MyModel()
+# define the model
+input = tf.keras.layers.Input(shape=(1,))
+model = tf.keras.layers.Dense(64, activation='relu')(input)
+model = tf.keras.layers.Dense(2, activation='sigmoid')(model)
+out1 = tf.keras.layers.Lambda(lambda x: x[..., 0], name='out1')(model)
+out2 = tf.keras.layers.Lambda(lambda x: x[..., 1], name='out2')(model)
+model = tf.keras.models.Model(input, [out1, out2])
 
-def GetInput():
-    # Generate a random input tensor with shape (batch_size=10, 1), dtype float32.
-    # Matches the model input shape.
-    return tf.random.uniform((10, 1), dtype=tf.float32)
+# configure losses and metrics for each output
+losses = {'out1': 'binary_crossentropy', 'out2': 'binary_crossentropy'}
+weights = {'out1': 1.0, 'out2': 1.0}
+metrics = {'out1': 'accuracy', 'out2': 'accuracy'}
+model.compile(loss=losses, loss_weights=weights, optimizer='adam', metrics=metrics)
 
-# ---
-# ### Explanation:
-# - The original problem was the mismatch in output shapes from the Lambda layer slicing: the output shape was (batch_size,) instead of (batch_size, 1).  
-# - This caused Keras' accuracy metric to behave incorrectly, treating outputs in a way that steps by batch count instead of sample count.
-# - The solution that the user confirmed was to apply a `tf.keras.layers.Reshape((1,))` on the sliced outputs so the shape matches `(batch, 1)`.
-# - This allows `accuracy` metric to compute correctly as fraction of total samples, consistent with expected behavior.
-# - The input shape is `(batch_size, 1)` matching the example from the issue.
-# - The two outputs are returned as a tuple `(out1, out2)` to matches the multiple output structure.
-# - The model uses the same Dense layers as the original example.
-# This satisfies all requirements:
-# - Single class named `MyModel(tf.keras.Model)`.
-# - `my_model_function()` returns an instance.
-# - `GetInput()` returns a valid input tensor.
-# - Includes fix insights in code comments.
-# - Compatible with TF 2.20.0 XLA compilation (no unsupported operations).
-# - No test or main blocks included.
-# Let me know if you want me to also provide compilation example or metric usage!
+# fit
+model.fit(x, [y1, y2], batch_size=10, epochs=10, verbose=2, validation_split=0.2)
+
+import numpy as np
+import tensorflow as tf
+
+tf.keras.utils.set_random_seed(45)
+
+# define the data
+x = np.random.random(1000)
+y1 = np.random.randint(0, 2, 1000)
+y2 = np.random.randint(0, 2, 1000)
+
+# define the models
+def model_lambda():
+    input = tf.keras.layers.Input(shape=(1,))
+    model = tf.keras.layers.Dense(64, activation='relu')(input)
+    model = tf.keras.layers.Dense(2, activation='sigmoid')(model)
+    out1 = tf.keras.layers.Lambda(lambda x: x[..., 0], name='out1')(model)
+    out2 = tf.keras.layers.Lambda(lambda x: x[..., 1], name='out2')(model)
+    model = tf.keras.models.Model(input, [out1, out2])
+    return model
+
+def model_dense():
+    input = tf.keras.layers.Input(shape=(1,))
+    model = tf.keras.layers.Dense(64, activation='relu')(input)
+    out1 = tf.keras.layers.Dense(1, activation='sigmoid', name='out1')(model)
+    out2 = tf.keras.layers.Dense(1, activation='sigmoid', name='out2')(model)
+    model = tf.keras.models.Model(input, [out1, out2])
+    return model
+
+for model_func, model_name in zip([model_lambda, model_dense], ['lambda model', 'dense model']):
+    # configure losses and metrics for each output
+    losses = {'out1': 'binary_crossentropy', 'out2': 'binary_crossentropy'}
+    weights = {'out1': 1.0, 'out2': 1.0}
+    metrics = {'out1': 'accuracy', 'out2': 'accuracy'}
+    model = model_func()
+    model.compile(loss=losses, loss_weights=weights, optimizer='adam', metrics=metrics)
+
+    # fit
+    history = model.fit(x, [y1, y2], batch_size=10, epochs=20, verbose=0, validation_split=0.2)
+
+    # analyse
+    print('----------', model_name, '----------')
+    out1, out2 = model.predict(x)
+    print('out1 shape:', out1.shape, ', out2 shape:', out2.shape)
+    for metric in ['out1_accuracy', 'out2_accuracy', 'val_out1_accuracy', 'val_out2_accuracy']:
+        accuracies = np.array(history.history[metric])
+        diffs = np.diff(np.sort(accuracies))
+        min_diff = np.min(diffs[diffs != 0])
+        print(metric, 'is out of', np.round(1 / min_diff))
+
+def model_lambda():
+    input = tf.keras.layers.Input(shape=(1,))
+    model = tf.keras.layers.Dense(64, activation='relu')(input)
+    model = tf.keras.layers.Dense(2, activation='sigmoid')(model)
+    out1 = tf.keras.layers.Lambda(lambda x: x[..., 0])(model)
+    out1 = tf.keras.layers.Reshape((1,), name='out1')(out1)
+    out2 = tf.keras.layers.Lambda(lambda x: x[..., 1])(model)
+    out2 = tf.keras.layers.Reshape((1,), name='out2')(out2)
+    model = tf.keras.models.Model(input, [out1, out2])
+    return model

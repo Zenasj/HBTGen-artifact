@@ -1,18 +1,29 @@
-# torch.rand(512, 1048576, dtype=torch.float32)
 import torch
-from torch import nn
+from triton.testing import do_bench
 
-class MyModel(nn.Module):
-    def __init__(self, dim=-1):
-        super().__init__()
-        self.dim = dim
+x = torch.randn(2**30, device='cuda')
 
-    def forward(self, x):
-        return x.sum(dim=self.dim)
+ms = do_bench(lambda: x.sum(dim=-1))
 
-def my_model_function():
-    return MyModel(dim=-1)
+bandwidth_gbyte = x.numel() * x.dtype.itemsize / (10**9)
 
-def GetInput():
-    return torch.rand(512, 1048576, dtype=torch.float32, device='cuda')
+time_s = ms / 1000
 
+bw_per_second = bandwidth_gbyte / time_s
+
+print(bw_per_second)
+
+import torch
+from triton.testing import do_bench
+
+x = torch.randn(2**9, 2**20, device='cuda')
+
+ms = do_bench(lambda: x.sum(dim=-1))
+
+bandwidth_gbyte = x.numel() * x.dtype.itemsize / (10**9)
+
+time_s = ms / 1000
+
+bw_per_second = bandwidth_gbyte / time_s
+
+print(bw_per_second)

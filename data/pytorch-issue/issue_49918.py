@@ -1,20 +1,20 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)
+import torch.nn as nn
 
-import torch
-from torch import nn
-
-class MyModel(nn.Module):
+class Model(nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
-        self.pool = nn.AdaptiveAvgPool2d((1, None))  # Triggers mypy error due to None in tuple
+        ...
+        self.pool = nn.AdaptiveAvgPool2d((1, None))
 
-    def forward(self, x):
-        return self.pool(x)
+    def forward(self, inputs):
+        # inputs: [B, C, H, W]
+        outputs = self.pool(inputs)
+        # outputs: [B, C, 1, W]
+        return outputs
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Example input with shape [2, 3, 5, 5] to match (B, C, H, W)
-    return torch.rand(2, 3, 5, 5, dtype=torch.float32)
-
+_size_any_opt_t = _scalar_or_tuple_any_t[Optional[int]]
+_size_1_opt_t = _scalar_or_tuple_1_t[Optional[int]]
+_size_2_opt_t = _scalar_or_tuple_2_t[Optional[int]]
+_size_3_opt_t = _scalar_or_tuple_3_t[Optional[int]]
+_size_4_opt_t = _scalar_or_tuple_4_t[Optional[int]]
+_size_5_opt_t = _scalar_or_tuple_5_t[Optional[int]]
+_size_6_opt_t = _scalar_or_tuple_6_t[Optional[int]]

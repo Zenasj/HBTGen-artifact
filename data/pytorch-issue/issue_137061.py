@@ -1,18 +1,22 @@
-# torch.rand(B, C, dtype=torch.float32)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-    
-    def forward(self, x):
-        return torch.sum(x ** 2)
+def sum_of_squares(x):
+    return torch.sum(x ** 2)
 
-def my_model_function():
-    return MyModel()
+@torch.compile(backend="eager", fullgraph=True, dynamic=True)
+def fn(batch_size, vector_length, func):
+    x = torch.randn(batch_size, vector_length)
+    vmapped_func = torch.vmap(func)
+    return vmapped_func(x)
 
-def GetInput():
-    # Using default shape from the first example (batch_size=5, vector_length=4)
-    return torch.randn(5, 4)
+batch_size = 5
+vector_length = 4
+print(fn(batch_size, vector_length, sum_of_squares))
 
+# Re-compile here as we add constant match guard to
+
+dynamic=True
+
+batch_size
+
+in_dims

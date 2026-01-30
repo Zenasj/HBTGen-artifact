@@ -1,68 +1,140 @@
-# tf.random.uniform((1, 10, 32, 32, 1), dtype=tf.float32) ← Inferred input shape: batch=1, time=10, height=32, width=32, channels=1
-import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        kernel_size = 3
-        nfilters_lstm = 16
-        
-        # ConvLSTM2D layer with channels_last, returning last output (no sequence)
-        self.convlstm2d = tf.keras.layers.ConvLSTM2D(
-            filters=nfilters_lstm,
-            kernel_size=(kernel_size, kernel_size),
-            padding='same',
-            data_format='channels_last',
-            activation='tanh',
-            recurrent_activation='hard_sigmoid',
-            return_sequences=False,
-            name='conv_lstm2d'
-        )
-        self.batchnorm = tf.keras.layers.BatchNormalization(name='batchnorm')
-        self.conv2d = tf.keras.layers.Conv2D(
-            filters=1,
-            kernel_size=kernel_size,
-            strides=(1, 1),
-            padding='same',
-            data_format='channels_last',
-            activation='relu',
-            name='conv2d_out'
-        )
-        
-    def call(self, inputs, training=False):
-        """
-        Args:
-            inputs: Tensor with shape (batch, time, height, width, channels), e.g. (1,10,32,32,1)
-        Returns:
-            Tensor with shape (batch, height, width, 1), e.g. (1,32,32,1)
-        """
-        x = self.convlstm2d(inputs, training=training)
-        x = self.batchnorm(x, training=training)
-        x = self.conv2d(x)
-        return x
+from keras.layers.wrappers import TimeDistributed
+from keras.layers import Dense,Flatten,Input,concatenate,Dot, Conv2D,Reshape, MaxPooling2D, UpSampling2D,Conv3DTranspose, ZeroPadding2D,Conv3D,Conv2DTranspose, BatchNormalization, Dropout
+from keras.layers import Conv2D, MaxPooling2D, Flatten, Input, LSTM, Dropout, Dense, Concatenate, TimeDistributed, Permute
+from keras.models import Model,Sequential
+from keras.layers.convolutional_recurrent import ConvLSTM2D
+from keras.callbacks import TensorBoard
+import keras.losses as losses
+import numpy as np
 
-def my_model_function():
-    """
-    Builds and returns an instance of MyModel.
+
+
+
+# create our model here
+kernel_size = 3
+nfilters_lstm = 16
+
+Nbatch=1
+Ntime=10
+Nx=32
+Ny=32
+Nchannel=1
+
+
+# define an input layer (Ntime, Nbatch, Nx, Ny, Nchannel)
+inputs = Input(name='x_input', dtype='float32',batch_shape=(Nbatch, Ntime, Nx, Ny, Nchannel)) 
+
+'''define model'''
+# convLSTM 1
+ConvLSTM_1= ConvLSTM2D(filters=nfilters_lstm , kernel_size=(kernel_size, kernel_size)
+                   , data_format='channels_last'
+                   , recurrent_activation='hard_sigmoid'
+                   , activation='tanh'
+                   , padding='same', return_sequences=False)(inputs)
+
+BatchNorm_1 = BatchNormalization()(ConvLSTM_1)
+
+# conv2D 
+Conv_1 = Conv2D(1, kernel_size, strides=(1, 1), padding='same', data_format='channels_last',  activation='relu')(BatchNorm_1)
     
-    Notes:
-    - The model here matches the structure from the issue: input with shape (1,10,32,32,1),
-      ConvLSTM2D layer with 16 filters and 3x3 kernel,
-      followed by BatchNormalization and a Conv2D producing 1 output channel with ReLU.
-    - This model is compatible with TF 2.20.0, and can be compiled with XLA jit_compile.
-    - For TFLite conversion involving ConvLSTM2D, note that TFLite may require using SELECT_TF_OPS.
-    """
-    model = MyModel()
-    # Build the model by calling on sample input to infer shapes
-    dummy_input = tf.random.uniform((1, 10, 32, 32, 1), dtype=tf.float32)
-    _ = model(dummy_input)
-    return model
+# define the output
+model = Model(inputs=inputs, outputs=Conv_1, name='Model ')
 
-def GetInput():
-    """
-    Returns a sample valid random input tensor for MyModel.
-    Shape: (batch=1, time=10, height=32, width=32, channels=1)
-    dtype: float32
-    """
-    return tf.random.uniform(shape=(1, 10, 32, 32, 1), dtype=tf.float32)
+model.compile(loss=losses.categorical_crossentropy,
+              optimizer='adam',
+              metrics=['accuracy'])
 
+
+model.save('test.hdf5')
+
+
+import tensorflow as tf
+MODEL_PATH = 'test.hdf5'
+model = tf.keras.models.load_model(MODEL_PATH)
+model.summary()
+converter = tf.lite.TFLiteConverter.from_keras_model_file(MODEL_PATH)
+converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS,
+                                       tf.lite.OpsSet.SELECT_TF_OPS]
+tflite_model = converter.convert()
+open("3x9.tflite", "wb").write(tflite_model)
+
+from keras.layers.wrappers import TimeDistributed
+from keras.layers import Dense,Flatten,Input,concatenate,Dot, Conv2D,Reshape, MaxPooling2D, UpSampling2D,Conv3DTranspose, ZeroPadding2D,Conv3D,Conv2DTranspose, BatchNormalization, Dropout
+from keras.layers import Conv2D, MaxPooling2D, Flatten, Input, LSTM, Dropout, Dense, Concatenate, TimeDistributed, Permute
+from keras.models import Model,Sequential
+from keras.layers.convolutional_recurrent import ConvLSTM2D
+from keras.callbacks import TensorBoard
+import keras.losses as losses
+import numpy as np
+
+
+
+
+# create our model here
+kernel_size = 3
+nfilters_lstm = 16
+
+Nbatch=1
+Ntime=10
+Nx=32
+Ny=32
+Nchannel=1
+
+
+# define an input layer (Ntime, Nbatch, Nx, Ny, Nchannel)
+inputs = Input(name='x_input', dtype='float32',batch_shape=(Nbatch, Ntime, Nx, Ny, Nchannel)) 
+
+'''define model'''
+# convLSTM 1
+ConvLSTM_1= ConvLSTM2D(filters=nfilters_lstm , kernel_size=(kernel_size, kernel_size)
+                   , data_format='channels_last'
+                   , recurrent_activation='hard_sigmoid'
+                   , activation='tanh'
+                   , padding='same', return_sequences=False)(inputs)
+
+BatchNorm_1 = BatchNormalization()(ConvLSTM_1)
+
+# conv2D 
+Conv_1 = Conv2D(1, kernel_size, strides=(1, 1), padding='same', data_format='channels_last',  activation='relu')(BatchNorm_1)
+    
+# define the output
+model = Model(inputs=inputs, outputs=Conv_1, name='Model ')
+
+model.compile(loss=losses.categorical_crossentropy,
+              optimizer='adam',
+              metrics=['accuracy'])
+
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS,
+                                       tf.lite.OpsSet.SELECT_TF_OPS]
+tflite_model = converter.convert()
+open("3x9.tflite", "wb").write(tflite_model)
+
+ConvLSTM2D
+
+#%% export tflite
+model = tf.keras.models.load_model('test.hdf5')
+model.summary()
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+#converter.experimental_new_converter=False
+converter.target_spec.supported_ops = [tf.lite.OpsSet.SELECT_TF_OPS, tf.lite.OpsSet.TFLITE_BUILTINS]
+tflite_model = converter.convert()
+open('converted_model'+str(Nx)+'_'+str(Ntime)+'_keras.tflite', 'wb').write(tflite_model)
+
+build.gradle
+
+build.gradle
+
+#%% export tflite
+Nx = 256
+Ntime = 30
+model = tf.keras.models.load_model('test.hdf5')
+model.summary()
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+converter.target_spec.supported_ops = [tf.lite.OpsSet.SELECT_TF_OPS, tf.lite.OpsSet.TFLITE_BUILTINS]
+tflite_model = converter.convert()
+open('converted_model'+str(Nx)+'_'+str(Ntime)+'_keras.tflite', 'wb').write(tflite_model)

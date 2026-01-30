@@ -1,31 +1,19 @@
-# torch.rand(sizes, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
-
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
+def test_dynamic_shape_topk_cpu():
+    print("Starting the test.................")
+    sizes = [5, 10, 15, 18, 16]
 
-    def forward(self, t):
+    def raw_function(t):
         k = t.shape[0] // 5
         out = torch.topk(t, k)
+        value0 = out[0]
         value1 = out[1]
         return value1
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+    compiled_function_training = torch.compile(raw_function, dynamic=True)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    sizes = [5, 10, 15, 18, 16]
-    s = sizes[torch.randint(0, len(sizes), (1,)).item()]
-    return torch.randn(s)
-
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
-# print("Output:", output)
-
+    for s in sizes:
+        t = torch.randn(s)
+        result_compile_train = compiled_function_training(t)
+        print("Output:", result_compile_train)

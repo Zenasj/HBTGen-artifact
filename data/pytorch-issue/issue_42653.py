@@ -1,45 +1,25 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Inferred input shape
+def torch_pool(inputs, target_size):
+      start_points = (torch.arange(target_size, dtype=torch.float32) * (inputs.size(-1) / target_size)).long()
+      end_points = ((torch.arange(target_size, dtype=torch.float32)+1) * (inputs.size(-1) / target_size)).ceil().long()
+      pooled = []
+      for idx in range(target_size):
+          pooled.append(torch.mean(inputs[:, :, start_points[idx]:end_points[idx]], dim=-1, keepdim=False))
+      pooled = torch.cat(pooled, -1)
+      return pooled
 
 import torch
+import torchvision
 import torch.nn as nn
-import numpy as np
 
-class AdaptiveAvgPool2dCustom(nn.Module):
-    def __init__(self, output_size):
-        super(AdaptiveAvgPool2dCustom, self).__init__()
-        self.output_size = np.array(output_size)
+model = torchvision.models.vgg11()
 
-    def forward(self, x: torch.Tensor):
-        stride_size = np.floor(np.array(x.shape[-2:]) / self.output_size).astype(np.int32)
-        kernel_size = np.array(x.shape[-2:]) - (self.output_size - 1) * stride_size
-        avg = nn.AvgPool2d(kernel_size=list(kernel_size), stride=list(stride_size))
-        x = avg(x)
-        return x
+input_shape = 224
+input_shape = 512
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
-        self.bn1 = nn.BatchNorm2d(64)
-        self.relu = nn.ReLU(inplace=True)
-        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-        self.adaptive_avg_pool = AdaptiveAvgPool2dCustom((1, 1))
-        self.fc = nn.Linear(64, 1000)
+x = torch.rand((1, 3, input_shape, input_shape))
 
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.relu(x)
-        x = self.maxpool(x)
-        x = self.adaptive_avg_pool(x)
-        x = x.view(x.size(0), -1)
-        x = self.fc(x)
-        return x
+y = model(x)
+print("Got test output okay!")
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    B, C, H, W = 1, 3, 224, 224  # Example input shape
-    return torch.rand(B, C, H, W, dtype=torch.float32)
-
+torch.onnx.export(model, x, "/tmp/model.onnx")
+print("Exported to ONNX")

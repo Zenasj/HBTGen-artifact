@@ -1,21 +1,25 @@
-# torch.rand(3, 4)  # Inferred input shape from example_inputs
-import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
+import torch
+from torch.testing._internal.custom_tensor import CustomTensorPlainOut
+
+class Foo(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.p1 = nn.Parameter(torch.ones(3, 4))
-        # Original p2 used CustomTensorPlainOut (two tensors), here replaced with standard tensor for reproducibility
-        self.p2 = nn.Parameter(torch.ones(3, 4))
+        self.p1 = torch.nn.Parameter(torch.ones(3, 4))
+        self.p2 = torch.nn.Parameter(
+            CustomTensorPlainOut(
+                torch.ones(3, 4),
+                torch.ones(3, 4),
+            )
+        )
 
     def forward(self, x):
         a = (2 * self.p1 + self.p2).sum()
         return x + a
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.randn(3, 4)
-
+model = Foo()
+example_inputs = (torch.randn(3, 4),)
+ep = torch.export.export(model, example_inputs, strict=False)
+ep.run_decompositions()
+ep.module()

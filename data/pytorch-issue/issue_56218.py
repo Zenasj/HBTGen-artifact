@@ -1,22 +1,32 @@
-# torch.rand(1, 3, 224, 224, dtype=torch.float32)  # Inferred input shape
-
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+input_tensor = torch.rand(1, 3, 224, 224)
+opset_version = 10
+
+# Dummy model
+
+class DummyModel(nn.Module):
+
     def __init__(self):
-        super(MyModel, self).__init__()
-        self.avg_pool2d = nn.AvgPool2d(kernel_size=(2, 2), stride=(2, 2), count_include_pad=False)
+
+        super(DummyModel, self).__init__()
+
+        self.avg_pool2d = nn.AvgPool2d(kernel_size=(2, 2), stride=(2, 2))
 
     def forward(self, x):
+
         x = self.avg_pool2d(x)
+
         return x
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
-
+dummy_model = DummyModel()
+dummy_model.eval()
+onnx_file_path = "dummy_model.onnx"
+torch.onnx.export(model=dummy_model,
+                    args=input_tensor,
+                    f=onnx_file_path,
+                    do_constant_folding=True,
+                    opset_version=opset_version,
+                    export_params=True,
+                    )

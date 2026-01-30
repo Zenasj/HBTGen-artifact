@@ -1,26 +1,75 @@
-# tf.random.uniform((10, 10), dtype=tf.float32) ← input shape inferred from the DataGenerator __getitem__ output
+import random
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
-import tensorflow as tf
+from tensorflow.keras.utils import Sequence
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Input, Dense
 import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define a simple dense network matching the example: input shape (10,), output shape (2)
-        self.dense1 = tf.keras.layers.Dense(10, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(2, activation='softmax')
+class DataGenerator(Sequence):
+    def __init__(self, batch_size = 512, shape = (10,)):
+        self.shape = shape
+        self.batch_size = batch_size
 
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        out = self.dense2(x)
-        return out
+    def on_epoch_end(self):
+        # do nothing
+        pass
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+    def __getitem__(self, idx):
+        print("[+] Idx: %d" % idx)
+        y = np.ones((10,2))
+        y[:,0] = 0
+        return np.random.random((10,10)), y
 
-def GetInput():
-    # Return a random input tensor of shape (batch_size=10, 10)
-    # Matching the DataGenerator __getitem__ usage: batch size 10, feature 10, float32 dtype
-    return tf.random.uniform((10, 10), dtype=tf.float32)
+    def __len__(self):
+        return 7
 
+inp = Input(shape = (10,), dtype = np.float)
+x = Dense(10, activation = 'relu')(inp)
+out = Dense(2, activation='softmax')(x)
+model = Model(inputs=inp, outputs= out)
+
+model.compile(loss = 'binary_crossentropy', optimizer = 'adam', metrics = ['accuracy'])
+
+generator = DataGenerator()
+
+model.fit_generator(generator, epochs = 2, shuffle = False, workers = 0)
+
+from tensorflow.keras.utils import Sequence
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Input, Dense
+import numpy as np
+
+class DataGenerator(Sequence):
+    def __init__(self, batch_size = 512, shape = (10,)):
+        self.shape = shape
+        self.batch_size = batch_size
+        self.first_epoch = True
+
+    def on_epoch_end(self):
+        # do nothing
+        pass
+
+    def __getitem__(self, idx):
+        print("[+] Idx: %d" % idx)
+        y = np.ones((10,2))
+        y[:,0] = 0
+        if self.first_epoch:
+               self.first_epoch = False
+               self.on_epoch_end()
+        return np.random.random((10,10)), y
+
+    def __len__(self):
+        return 7
+
+inp = Input(shape = (10,), dtype = np.float)
+x = Dense(10, activation = 'relu')(inp)
+out = Dense(2, activation='softmax')(x)
+model = Model(inputs=inp, outputs= out)
+
+model.compile(loss = 'binary_crossentropy', optimizer = 'adam', metrics = ['accuracy'])
+
+generator = DataGenerator()
+
+model.fit_generator(generator, epochs = 2, shuffle = False, workers = 0)

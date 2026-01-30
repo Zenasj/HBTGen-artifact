@@ -1,25 +1,21 @@
-# tf.random.uniform((10, 4), dtype=tf.float32) ← inferred input shape from repro example
+import random
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
-import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense
+from tensorflow.keras.optimizers import SGD
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Mimicking the Sequential model from the issue with two Dense layers:
-        self.dense1 = tf.keras.layers.Dense(3, input_shape=(4,))
-        self.dense2 = tf.keras.layers.Dense(1)
+import numpy as np
 
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        return x
+X = np.random.rand(10, 4)
+y = np.random.rand(10)
 
-def my_model_function():
-    # Return an instance of MyModel with no pretrained weights
-    return MyModel()
+model = Sequential()
+model.add(Dense(3, input_dim=4))
+model.add(Dense(1))
+model.compile(loss="mean_squared_error", optimizer=SGD(learning_rate=0.001))
+model.fit(X, y)   # raises TypeError!
 
-def GetInput():
-    # Create a random float tensor matching shape (10, 4), like the original repro
-    # This shape corresponds to batch size 10, 4-dimensional input features
-    return tf.random.uniform((10, 4), dtype=tf.float32)
-
+### Relevant log output

@@ -1,36 +1,45 @@
-# tf.random.uniform((B, H, W, C), dtype=tf.float32) 
-# Input is a tuple of 3 tensors (input_1, input_2, input_3) all with shape (batch_size, height, width, channels)
-# Assuming inputs are image-like tensors for Conv2D usage with 4 channels for example (B, 64, 64, 3)
-
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
+
+train_dir = config.TRAIN_DIR
+train_ds = tf.data.Dataset.list_files(str(train_dir / "*"))
+train_ds = (
+    train_ds.map(load_frames, num_parallel_calls=12)
+    .batch(batch_size)
+    .prefetch(buffer_size=batch_size)
+)
+
+model = MyModel()
+# Keep results for plotting
+train_loss_results = []
+optimizer = tf.keras.optimizers.Adam(learning_rate=0.0001)
+mse_loss_fn = tf.keras.losses.MeanSquaredError()
+for epoch in epochs:
+    epoch_loss_avg = tf.keras.metrics.Mean()
+    for inputs in train_ds:
+        with tf.GradientTape() as tape:
+            input_1, input_2, input_3 = inputs
+            predictions, warping_output = model(inputs, training=True)
+            rec_loss = mse_loss_fn(input_3, predictions)
+            
+        grads = tape.gradient(rec_loss, model.trainable_weights)
+        optimizer.apply_gradients(zip(grads, model.trainable_weights))
+        epoch_loss_avg(grads)  # Add current batch loss
+
+    train_loss_results.append(epoch_loss_avg.result())
+    if epoch % 50 == 0:
+        print("Epoch {:03d}: Loss: {:.3f}".format(epoch, epoch_loss_avg.result()))
 
 class MyModel(tf.keras.Model):
     def __init__(self, name="MyModel", **kwargs):
         super(MyModel, self).__init__(name=name, **kwargs)
-        # A simple convolutional layer as in the example
         self.conv = tf.keras.layers.Conv2D(
             filters=32, kernel_size=7, strides=1, padding="same"
         )
 
     def call(self, inputs, training=True, **kwargs):
-        # Inputs is expected to be a tuple/list of 3 tensors
         input_1, input_2, input_3 = inputs
-        
-        # Simple forward pass using only input_1 as per original example
         out = self.conv(input_1)
-        return out, None  # Returning tuple to mimic (predictions, warping_output)
-
-
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Generate a tuple of 3 inputs, each a random tensor matching expected input shape
-    # Assuming batch size = 4, image size 64x64, channels=3
-    B, H, W, C = 4, 64, 64, 3
-    input_1 = tf.random.uniform((B, H, W, C), dtype=tf.float32)
-    input_2 = tf.random.uniform((B, H, W, C), dtype=tf.float32)
-    input_3 = tf.random.uniform((B, H, W, C), dtype=tf.float32)
-    return (input_1, input_2, input_3)
-
+        return out

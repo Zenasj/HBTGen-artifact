@@ -1,29 +1,122 @@
-# tf.random.uniform((None, 28, 28), dtype=tf.float32) ← Inferred input shape for the model (batch size is dynamic)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
+import os
 import tensorflow as tf
+import gc # garbage collector
+import objgraph
+from memory_profiler import profile
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Build the model architecture identical to that in the issue:
-        # Flatten input (28, 28) -> Dense 128 relu -> Dropout 0.2 -> Dense 10 softmax
-        self.flatten = tf.keras.layers.Flatten(input_shape=(28, 28))
-        self.dense1 = tf.keras.layers.Dense(128, activation='relu')
-        self.dropout = tf.keras.layers.Dropout(0.2)
-        self.dense2 = tf.keras.layers.Dense(10, activation='softmax')
+def mem_stat():
+  objs = gc.get_objects()
+  print("total objects count", len(objs))
 
-    def call(self, inputs, training=False):
-        x = self.flatten(inputs)
-        x = self.dense1(x)
-        x = self.dropout(x, training=training)
-        return self.dense2(x)
+@profile
+def profile_own_model():
+    model = tf.keras.models.Sequential([
+        tf.keras.layers.Flatten(input_shape=(28, 28)),
+        tf.keras.layers.Dense(128, activation='relu'),
+        tf.keras.layers.Dropout(0.2),
+        tf.keras.layers.Dense(10, activation='softmax')
+    ])
+    # model.save('my_model')
+    tf.keras.backend.clear_session()
+    del model
+    gc.collect()
 
-def my_model_function():
-    # Return an instance of MyModel; no pretrained weights as none provided.
-    return MyModel()
+@profile
+def profile_load_model(path):
+    model = tf.keras.models.load_model(model_path, compile=False)
+    tf.keras.backend.clear_session()
+    del model
+    gc.collect()
 
-def GetInput():
-    # Return a random float32 tensor with shape (batch_size, 28, 28).
-    # Use batch size 1 as default for simplicity.
-    return tf.random.uniform((1, 28, 28), dtype=tf.float32)
 
+
+model_path = f'/my_model.hd5'
+print("load model in loops:")
+
+c = 1
+while True:
+    print("----------- iter", c)
+    profile_load_model(model_path)
+
+    print("mem stat after model creation:")
+    mem_stat()
+    objgraph.show_growth(limit=30)
+    c += 1
+
+import os
+import tensorflow as tf
+import gc # garbage collector
+import objgraph
+#from memory_profiler import profile
+
+def mem_stat():
+    objs = gc.get_objects()
+    print("total objects count", len(objs))
+
+#@profile
+def profile_own_model():
+    model = tf.keras.models.Sequential([
+        tf.keras.layers.Flatten(input_shape=(28, 28)),
+        tf.keras.layers.Dense(128, activation='relu'),
+        tf.keras.layers.Dropout(0.2),
+        tf.keras.layers.Dense(10, activation='softmax')
+    ])
+    # model.save('my_model')
+    tf.keras.backend.clear_session()
+    del model
+    gc.collect()
+
+#@profile
+def profile_load_model(path):
+    model = tf.keras.models.load_model(model_path, compile=False)
+    tf.keras.backend.clear_session()
+    del model
+    gc.collect()
+
+model_path = f'/my_model.hd5'
+print("load model in loops:")
+
+c = 1
+while True:
+    print("----------- iter", c)
+    profile_load_model(model_path)
+
+    print("mem stat after model creation:")
+    mem_stat()
+    objgraph.show_growth(limit=30)
+    c += 1
+
+import os
+import tensorflow as tf
+import gc # garbage collector
+
+def build_and_save_own_model():
+    model = tf.keras.models.Sequential([
+        tf.keras.layers.Flatten(input_shape=(28, 28)),
+        tf.keras.layers.Dense(128, activation='relu'),
+        tf.keras.layers.Dropout(0.2),
+        tf.keras.layers.Dense(10, activation='softmax')
+    ])
+    model.save('my_model')
+    tf.keras.backend.clear_session()
+    del model
+    gc.collect()
+
+def profile_load_model(path):
+    model = tf.keras.models.load_model(model_path, compile=False)
+    tf.keras.backend.clear_session()
+    del model
+    gc.collect()
+
+model_path = 'my_model'
+build_and_save_own_model()
+print("load model in loops:")
+c = 1
+while True:
+    print("----------- iter", c)
+    profile_load_model(model_path)
+    c += 1

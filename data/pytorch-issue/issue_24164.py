@@ -1,20 +1,24 @@
-# torch.rand(B, S, dtype=torch.float32)
-import torch
+import torch.nn as nn
+
 from torch import nn
 
-class MyModel(nn.Module):
+import torch
+
+
+class Model(nn.Module):
+
     def __init__(self):
         super().__init__()
 
-    def forward(self, a: torch.Tensor) -> torch.Tensor:
-        # [batch_size, sequence_length] → [batch_size, sequence_length]
+    def forward(self, a):
+        # type: (Tensor)
+
+        # [batch_size, sequence_length] →
+        # [batch_size, sequence_length]
         a = torch.nn.functional.relu(a)
         return a
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    # Example input with batch=2, sequence_length=5
-    return torch.rand(2, 5, dtype=torch.float32)
-
+if __name__ == "__main__":
+    model = Model()
+    model = torch.jit.script(model)

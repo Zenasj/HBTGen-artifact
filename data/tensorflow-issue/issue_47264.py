@@ -1,4 +1,22 @@
-# tf.random.uniform((B, H, W, C), dtype=...) ← No specific input shape given in the issue; input shape irrelevant here as this is a Layer subclass fix for variable tracking
+from tensorflow import keras
+from tensorflow.keras import layers
+
+module = tf.Module()
+module.submodule = tf.Module()
+module.submodule.var = tf.Variable(1.0)
+assert module.trainable_variables == (module.submodule.var,)  # as expected
+
+layer = tf.keras.layers.Layer()
+assert isinstance(layer, tf.Module)  # passes
+layer.sublayer = tf.keras.layers.Layer()
+layer.sublayer.var = tf.Variable(1.0)
+assert layer.trainable_variables == [layer.sublayer.var]  # acceptable
+
+layer = tf.keras.layers.Layer()
+layer.submodule = tf.Module()
+layer.submodule.var = tf.Variable(1.0)
+assert list(layer.trainable_variables) == [layer.submodule.var]  # FAILS
+
 import itertools
 from functools import wraps
 from typing import Any, Callable, Optional, Sequence
@@ -37,31 +55,27 @@ def extend_and_filter(
     return decorator
 
 
-class MyModel(tf.keras.layers.Layer):
+class TrackableLayer(tf.keras.layers.Layer):
     """
-    A tf.keras Layer subclass that properly tracks variables on sub-attributes
-    that are generic tf.Modules (not only sublayers). This resolves the
-    common issue where Keras layers only track variables from sub-Layers,
-    but not from arbitrary tf.Modules.
+    A tf.Layer that implements tracking of tf.Variables on the class's
+    attributes that are tf.Modules.
 
-    This implementation extends trainable_weights, non_trainable_weights,
-    trainable_variables, and variables properties by also including variables
-    that belong to any tf.Module found as attributes (or inside lists/tuples/dicts).
+    Currently, tf.Modules track the tf.Variables of their attributes that are
+    also tf.Modules.  Similarly, tf.Layers track the tf.Variables of their
+    attributes that are also tf.Layers.  However, despite the fact that
+    tf.Layer inherits from tf.Module, they cannot track the tf.Variables of
+    their attributes that are generic tf.Modules. This seems to be an issue
+    that the TensorFlow authors seem to want to fix in the future.
     """
 
     @property
     def _submodules(self) -> Sequence[tf.Module]:
-        """
-        Return a list of tf.Module instances that are attributes on the class.
-        This includes direct attributes that are tf.Modules, and also 
-        nested modules within lists, tuples, or dicts of attributes.
+        """Return a list of tf.Module instances that are attributes on the class. Note
+        this also include list or tuples of tf.Modules"""
 
-        Duplicates are removed while preserving order.
-        """
         submodules = []
 
         def get_nested_submodules(*objs: Any) -> None:
-            # Helper to recursively find tf.Module instances nested in containers
             for o in objs:
                 if isinstance(o, tf.Module):
                     submodules.append(o)
@@ -71,36 +85,27 @@ class MyModel(tf.keras.layers.Layer):
                 submodules.append(obj)
             elif isinstance(obj, (list, tuple)):
                 tf.nest.map_structure(get_nested_submodules, obj)
-            elif isinstance(obj, dict):
+            elif isinstance(obj, (dict,)):
                 tf.nest.map_structure(get_nested_submodules, obj.values())
 
-        # Remove duplicates and maintain order (Python 3.6+ dict preserves insertion order)
-        return list(dict.fromkeys(submodules))
+        return list(dict.fromkeys(submodules))  # remove duplicates, maintaining order (dict 3.6)
 
     def submodule_variables(self) -> Sequence[tf.Variable]:
-        """
-        Return flat iterable of variables from the attributes that are tf.Modules.
-        """
+        """Return flat iterable of variables from the attributes that are tf.Modules"""
         return list(itertools.chain(*[module.variables for module in self._submodules]))
 
     def submodule_trainable_variables(self) -> Sequence[tf.Variable]:
-        """
-        Return flat iterable of trainable variables from attributes that are tf.Modules.
-        """
+        """Return flat iterable of trainable variables from attributes that are tf.Modules"""
         return list(itertools.chain(*[module.trainable_variables for module in self._submodules]))
 
     def submodule_non_trainable_variables(self) -> Sequence[tf.Variable]:
-        """
-        Return flat iterable of non-trainable variables from attributes that are tf.Modules.
-        """
-        # gather all variables from submodules and filter those that are not trainable
+        """Return flat iterable of non trainable variables from attributes that are tf.Modules"""
         return [v for module in self._submodules for v in module.variables if not v.trainable]
 
     def _dedup_weights(self, weights):  # type: ignore
-        """
-        Deduplicate weights while maintaining order as much as possible.
-        Copied from the superclass to use locally.
-        """
+        """Deduplicate weights while maintaining order as much as possible."""
+        # copy this method from the super class
+        # to have it in the local class' namespace
         return super()._dedup_weights(weights)
 
     @property  # type: ignore
@@ -123,23 +128,7 @@ class MyModel(tf.keras.layers.Layer):
     def variables(self) -> Sequence[tf.Variable]:
         return super().variables
 
-
-def my_model_function():
-    """
-    Return an instance of the Trackable Layer (MyModel).
-    """
-    return MyModel()
-
-
-def GetInput():
-    """
-    Return a dummy tensor input for running MyModel.
-
-    Since MyModel is just a Layer subclass intended to fix variable tracking,
-    and no specific call() method or input shape is defined in the issue,
-    assume a generic input shape of (1, 1) float32 tensor.
-
-    Users can adapt this accordingly for their use case.
-    """
-    return tf.random.uniform((1, 1), dtype=tf.float32)
-
+layer = TrackableLayer()
+layer.submodule = tf.Module()
+layer.submodule.var = tf.Variable(1.0)
+assert list(layer.trainable_variables) == [layer.submodule.var]  # now passes

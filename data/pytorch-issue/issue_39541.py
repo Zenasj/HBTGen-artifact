@@ -1,21 +1,34 @@
-# torch.rand(1000, 1000, dtype=torch.float32, device='cuda:0')
-import torch
-from torch import nn
+3
+import itertools as it
+import torch as t
+import torch.multiprocessing as mp
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Empty module to mirror the issue's context where the model isn't the focus
-        # (The original code's "infer" function does minimal processing)
-    
-    def forward(self, x):
-        return x  # Pass-through to simulate processing without altering the input tensor
+def infer(id, tensor):
+    print(id)
+    print(tensor)
+    # del tensor immediately doesn't solve the problem
+    del tensor
 
-def my_model_function():
-    # Returns an instance of MyModel with default initialization
-    return MyModel()
+def main():
+    # some global tensor
+    g_tensor = t.full([1000, 1000], 2, device="cuda:0")
+    g_tensor.share_memory_()
 
-def GetInput():
-    # Returns a CUDA tensor matching the input shape expected by MyModel
-    return torch.full([1000, 1000], 2, dtype=torch.float32, device="cuda:0")
+    ctx = mp.get_context("spawn")
+    pool = ctx.Pool(2)
+    for i in range(10000000):
+        print("start")
+        pool.starmap(infer, zip(range(5), it.repeat(g_tensor)))
 
+        # cpu tensors work just fine
+        # for cuda tensors:
+        # if I delete the global tensor, reassign it with a new cuda tensor
+        # or if I use a tensor created dynamically in each iteration
+        # the program freezes after 2 iterations.
+        # Comment out the following lines and everything will work fine.
+        del g_tensor
+        g_tensor = t.full([1000, 1000], 2, device="cuda:0")
+        g_tensor.share_memory_()
+
+if __name__ == "__main__":
+    main()

@@ -1,15 +1,18 @@
-# Two tensors of shape (2, 3, 4), dtype=torch.float32
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        x, y = inputs
-        return torch.pow(x, y)
+z = torch.pow(x, y)
 
-def my_model_function():
-    return MyModel()
+aten.pow.Scalar,
+aten.pow.Tensor_Scalar,
+aten.pow.Tensor_Tensor,
 
-def GetInput():
-    return (torch.rand(2, 3, 4, dtype=torch.float32), torch.rand(2, 3, 4, dtype=torch.float32))
+torch.pow(x, y, out=z)
 
+aten.pow.Scalar_out,
+aten.pow.Tensor_Scalar_out,
+aten.pow.Tensor_Tensor_out,
+
+x.pow_(y)
+
+aten.pow_.Scalar,
+aten.pow_.Tensor,

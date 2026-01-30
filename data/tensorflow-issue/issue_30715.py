@@ -1,33 +1,51 @@
-# tf.random.uniform((B, T, 512), dtype=tf.float32) ← Input batch of sequences with variable length T and feature size 512
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
+class MyModel(tf.keras.layers.Layer):
+
     def __init__(self):
         super(MyModel, self).__init__()
-        # Stack 12 LSTMCells inside one RNN layer as in the original issue code
         cell = tf.keras.layers.StackedRNNCells(
-            [tf.keras.layers.LSTMCell(512) for _ in range(12)]
-        )
+            [tf.keras.layers.LSTMCell(512) for _ in range(12)])
         self.rnn = tf.keras.layers.RNN(cell)
-    
-    def call(self, inputs, training=False):
-        # inputs shape expected: (batch_size, time_steps, 512)
-        # Runs stacked LSTMCells over input sequences
-        return self.rnn(inputs, training=training)
 
-def my_model_function():
-    # Return an instance of MyModel with default initialization
-    return MyModel()
+    def call(self, inputs):
+        return self.rnn(inputs)
 
-def GetInput():
-    # Return a random tensor with variable sequence length matching expected input shape
-    # Based on the dataset generation in the issue, sequence length (time_steps) varies up to 80
-    batch_size = 64  # typical batch size from example
-    max_time_steps = 80
-    feature_dim = 512
+dataset = tf.data.Dataset.from_tensor_slices(
+    tf.random.uniform([10000], minval=1, maxval=80, dtype=tf.int32))
+dataset = dataset.shuffle(10000)
+dataset = dataset.map(lambda t: tf.zeros([t, 512]))
+dataset = dataset.padded_batch(
+    64, padded_shapes=tf.compat.v1.data.get_output_shapes(dataset))
+dataset = dataset.repeat()
+dataset = dataset.prefetch(1)
 
-    # Using max sequence length for simplicity, since tf.RNN can handle padded sequences
-    # The values are uniform floats between 0 and 1
-    return tf.random.uniform((batch_size, max_time_steps, feature_dim), dtype=tf.float32)
+devices = ["/gpu:0", "/gpu:1", "/gpu:2"]
+strategy = tf.distribute.MirroredStrategy(devices=devices)
 
+with strategy.scope():
+    dataset = strategy.experimental_distribute_dataset(dataset)
+    model = MyModel()
+    optimizer = tf.keras.optimizers.Adam()
+
+def step(inputs):
+    outputs = model(inputs)
+    loss = tf.keras.losses.MeanSquaredError(reduction=tf.keras.losses.Reduction.SUM)(
+        tf.zeros_like(outputs), outputs)
+    variables = model.trainable_variables
+    gradients = optimizer.get_gradients(loss, variables)
+    optimizer.apply_gradients(zip(gradients, variables))
+    return loss
+
+@tf.function
+def train():
+    with strategy.scope():
+        for inputs in dataset:
+            loss = strategy.experimental_run_v2(step, args=(inputs,))
+
+train()

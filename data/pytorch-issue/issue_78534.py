@@ -1,17 +1,7 @@
-# torch.rand(2, dtype=torch.float32)
 import torch
-from torch import nn
+from torchdistx import deferred_init
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        
-    def forward(self, x):
-        return torch.unsqueeze(x, 0)
+m = deferred_init.deferred_init(lambda: torch.unsqueeze(torch.empty(2), 0))
+print(m)
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(2)
-
+tensor(..., size=(1, 2), fake=True)

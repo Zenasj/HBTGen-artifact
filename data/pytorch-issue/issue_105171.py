@@ -1,26 +1,5 @@
-# torch.rand(B, C, H, W, dtype=...)  # The input shape is not explicitly provided, so we assume a generic shape (B, C, H, W) for the model input.
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Assuming a simple linear model for demonstration purposes
-        self.linear = nn.Linear(10, 3)
-    
-    def forward(self, x):
-        return self.linear(x)
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # Assuming the input shape is (B, 10) for a batch size B
-    B = 2  # Example batch size
-    return torch.randn(B, 10, requires_grad=True)
 
 def run_grad_cam(input, images, model, output, targets, label_index_to_name):
     """
@@ -38,16 +17,35 @@ def run_grad_cam(input, images, model, output, targets, label_index_to_name):
     argmax_values = output.max(dim=-1, keepdim=True)[1]
     model.zero_grad(set_to_none=True)
     print(output, argmax_values)
-    ans = torch.gather(output, -1, argmax_values)
-    ans.register_hook(lambda grad: print("Gradients:", grad))
-    ans.backward(gradient=torch.ones_like(argmax_values))  # This line stops python
+    torch.gather(output, -1, argmax_values).backward(gradient=torch.ones_like(argmax_values)) #This line stops python
 
-# Example usage
-if __name__ == "__main__":
-    model = my_model_function()
-    input = GetInput()
-    images = input.detach().clone()
-    output = model(input)
-    targets = torch.tensor([0, 2])
-    run_grad_cam(input, images, model, output, targets, None)
+model = nn.Linear(10, 3)
+input = torch.randn(2, 10, requires_grad=True)
+images = input.detach().clone()
+output = model(input)
+targets = torch.tensor([0, 2])
 
+run_grad_cam(input, images, model, output, targets, None)
+
+import torch
+from torch.utils._python_dispatch import TorchDispatchMode
+from torch.autograd import detect_anomaly
+
+class MyMode(TorchDispatchMode):
+    def __torch_dispatch__(self, func, types, args, kwargs=None):
+        node = torch._C._current_autograd_node()
+        print(f"Running {func} from within {node}")
+        if node is not None:
+            print("The Node was created at:")
+            print("\n  ".join(node.metadata["traceback_"]))
+        return func(*args, **kwargs or {})
+
+
+with MyMode(), detect_anomaly():
+    print("FW")
+    a = torch.rand(10, requires_grad=True) 
+    b = a.mul(2)
+    b = b.div(3)
+    b = b.sum()
+    print("BW")
+    b.backward()

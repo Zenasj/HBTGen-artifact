@@ -1,23 +1,27 @@
-# tf.random.uniform((1, 300, 300, 3), dtype=tf.float32) ← inferred input shape from issue example
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
+import os
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+
+class Net(tf.keras.Model):
+    def __init__(self) -> None:
         super().__init__()
-        # Single Conv2D layer similar to the user's dummy_net example with 6 filters, kernel size 3
-        self.conv = tf.keras.layers.Conv2D(6, kernel_size=3)
-
+        self.conv = tf.keras.layers.Conv2D(6,3)
+    
     def call(self, x):
         x = self.conv(x)
         return x
 
-def my_model_function():
-    # Return an instance of MyModel with the default Conv2D weights initialization
-    return MyModel()
+import tensorflow as tf
+import dummy_net
 
-def GetInput():
-    # Generate a random tensor matching the input shape used in the original issue (batch=1, 300x300, 3 channels)
-    # The dtype is float32 as typical for Conv2D inputs
-    return tf.random.uniform((1, 300, 300, 3), dtype=tf.float32)
-
+inp = tf.random.uniform([1,300,300,3])
+model = dummy_net.Net()
+tf.profiler.experimental.start('./dummy_infer_logs')
+y = model(inp)
+tf.profiler.experimental.stop()
+tf.debugging.set_log_device_placement(True)

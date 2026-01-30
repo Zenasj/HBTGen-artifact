@@ -1,41 +1,26 @@
-# torch.rand(1, 1, dtype=torch.float32)  # Dummy input for testing
-import torch
+import torch.nn as nn
+
 from torch import nn
 
 class MyMixin:
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.mixin_initialized = True  # Flag to track mixin initialization
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        print("MyMixin.__init__")
 
-class CorrectOrder(MyMixin, nn.Module):
-    """Mixin-first class where __init__ properly calls super()"""
+class MyModuleWithMixinBefore(MyMixin, nn.Module):
     def __init__(self):
         super().__init__()
+        print("MyModuleWithMixinBefore.__init__")
 
-class IncorrectOrder(nn.Module, MyMixin):
-    """Module-first class where __init__ skips mixin initialization"""
+class MyModuleWithMixinAfter(nn.Module, MyMixin):
     def __init__(self):
         super().__init__()
+        print("MyModuleWithMixinAfter.__init__")
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Create instances of both problematic and working patterns
-        self.correct = CorrectOrder()
-        self.incorrect = IncorrectOrder()
-        
-        # Capture initialization state comparison
-        correct_flag = hasattr(self.correct, 'mixin_initialized')
-        incorrect_flag = hasattr(self.incorrect, 'mixin_initialized')
-        self.difference = correct_flag and not incorrect_flag  # True indicates the problem exists
+module1 = MyModuleWithMixinBefore()
+print(*(f" - {i.__module__}.{i.__name__}" for i in MyModuleWithMixinBefore.__mro__), sep="\n")
 
-    def forward(self, x):
-        """Return comparison result as tensor"""
-        return torch.tensor([self.difference], dtype=torch.bool)
+print()
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(1, 1, dtype=torch.float32)
-
+module2 = MyModuleWithMixinAfter()
+print(*(f" - {i.__module__}.{i.__name__}" for i in MyModuleWithMixinAfter.__mro__), sep="\n")

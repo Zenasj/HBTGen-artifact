@@ -1,33 +1,34 @@
-# tf.random.uniform((B, 28, 28), dtype=tf.float32) ← inferred input shape from MNIST dataset in the issue
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
+#from tensorflow.keras.utils import multi_gpu_model
+from tensorflow.python.keras.utils.multi_gpu_utils import multi_gpu_model
+tf.debugging.set_log_device_placement(True)
+mirrored_strategy = tf.distribute.MirroredStrategy(devices=["GPU:0", "GPU:1"])
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(128, activation='relu')
-        self.batchnorm = tf.keras.layers.BatchNormalization(renorm=False)
-        self.dropout = tf.keras.layers.Dropout(0.2)
-        self.dense2 = tf.keras.layers.Dense(10)
-        
-    def call(self, inputs, training=False):
-        x = self.flatten(inputs)
-        x = self.dense1(x)
-        x = self.batchnorm(x, training=training)
-        x = self.dropout(x, training=training)
-        logits = self.dense2(x)
-        return logits
+mnist = tf.keras.datasets.mnist
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+(x_train, y_train), (x_test, y_test) = mnist.load_data()
+x_train, x_test = x_train / 255.0, x_test / 255.0
 
-def GetInput():
-    # Return a batch of random MNIST-like inputs (28x28 grayscale images)
-    # Assuming batch size of 32 for example
-    batch_size = 32
-    # Normalized input as the original code does x_train, x_test = x / 255.0
-    # Here we generate random floats between 0 and 1 to simulate normalized inputs
-    return tf.random.uniform((batch_size, 28, 28), minval=0, maxval=1, dtype=tf.float32)
+with mirrored_strategy.scope():
+    model = tf.keras.models.Sequential([
+      tf.keras.layers.Flatten(input_shape=(28, 28)),
+      tf.keras.layers.Dense(128, activation='relu'),
+      tf.keras.layers.BatchNormalization(renorm=False),
+      tf.keras.layers.Dropout(0.2),
+      tf.keras.layers.Dense(10)
+    ])
 
+    loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+
+
+    model.compile(optimizer='adam',
+              loss=loss_fn,
+              metrics=['accuracy'])
+
+model.fit(x_train, y_train, epochs=5)
+
+model.evaluate(x_test,  y_test, verbose=2)

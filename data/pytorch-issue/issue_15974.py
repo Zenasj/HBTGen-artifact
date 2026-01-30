@@ -1,23 +1,33 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)
 import torch
-from torch import nn
+import time
+import torch.multiprocessing as mp
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Create CUDA event with interprocess=True to match the issue's context
-        self.event = torch.cuda.Event(enable_timing=False, interprocess=True)
-    
-    def forward(self, x):
-        # Record event on current stream during forward pass
-        stream = torch.cuda.current_stream()
-        stream.record_event(self.event)
-        return x  # Pass-through for compilation compatibility
 
-def my_model_function():
-    return MyModel()
+def target(event):
+    print('worker sleeping')
+    time.sleep(1)
+    print('worker: event', event)
+    print('worker: target = ', event.query())
+    time.sleep(1)
+    print('worker: target now = ', event.query())
 
-def GetInput():
-    # Generate random input tensor with common shape
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
 
+def main():
+    torch.cuda.synchronize()
+    e0 = torch.cuda.Event(enable_timing=False, interprocess=True)
+    s = torch.cuda.current_stream()
+
+    p = mp.Process(target=target, args=(e0,))
+    p.start()
+
+    torch.cuda._sleep(500000000)  # spin for about 500 ms
+    s.record_event(e0)
+    print('main: ', e0.query())
+
+    p.join()
+    print('main:', e0.query())
+
+
+if __name__ == '__main__':
+    mp.set_start_method('spawn')
+    main()

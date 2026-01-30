@@ -1,38 +1,69 @@
-# tf.random.uniform((BATCH_SIZE, 28, 28, 1), dtype=tf.float32)
+from tensorflow import keras
+from tensorflow.keras import layers
+
 import tensorflow as tf
+import tensorflow_datasets as tfds
+from absl import logging
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define the model like the "make_model" in the provided snippet
-        self.conv = tf.keras.layers.Conv2D(
-            32, 3, activation='relu',
-            kernel_regularizer=tf.keras.regularizers.l2(0.02),
-            input_shape=(28, 28, 1))
-        self.pool = tf.keras.layers.MaxPooling2D()
-        self.flatten = tf.keras.layers.Flatten()
-        self.dropout = tf.keras.layers.Dropout(0.1)
-        self.dense1 = tf.keras.layers.Dense(64, activation='relu')
-        self.batchnorm = tf.keras.layers.BatchNormalization()
-        self.dense2 = tf.keras.layers.Dense(10, activation='softmax')
-    
-    def call(self, inputs, training=False):
-        x = self.conv(inputs)
-        x = self.pool(x)
-        x = self.flatten(x)
-        x = self.dropout(x, training=training)
-        x = self.dense1(x)
-        x = self.batchnorm(x, training=training)
-        x = self.dense2(x)
-        return x
+logging.set_verbosity(logging.INFO)
+# Define the estimator's input_fn
+STEPS_PER_EPOCH = 5
+#BUFFER_SIZE = 10 # Use a much larger value for real code. 
+BATCH_SIZE = 64
+NUM_EPOCHS = 5
 
-def my_model_function():
-    # Return an instance of MyModel; weights are uninitialized here
-    return MyModel()
 
-def GetInput():
-    # Return a random tensor simulating a batch of grayscale 28x28 images
-    # Match batch size from the code snippet: 64
+def input_fn():
+    datasets, ds_info = tfds.load(name='mnist', with_info=True, as_supervised=True)
+    mnist_train, mnist_test = datasets['train'], datasets['test']
+
+    BUFFER_SIZE = 10000
     BATCH_SIZE = 64
-    return tf.random.uniform((BATCH_SIZE, 28, 28, 1), dtype=tf.float32)
 
+    def scale(image, label):
+        image = tf.cast(image, tf.float32)
+        image /= 255
+    
+        return image, label[..., tf.newaxis]
+
+    train_data = mnist_train.map(scale).shuffle(BUFFER_SIZE).batch(BATCH_SIZE)
+    return train_data.repeat()
+
+
+def make_model():
+    return tf.keras.Sequential([
+        tf.keras.layers.Conv2D(32, 3, activation='relu',
+                               kernel_regularizer=tf.keras.regularizers.l2(0.02),
+                               input_shape=(28, 28, 1)),
+        tf.keras.layers.MaxPooling2D(),
+        tf.keras.layers.Flatten(),
+        tf.keras.layers.Dropout(0.1),
+        tf.keras.layers.Dense(64, activation='relu'),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Dense(10, activation='softmax')
+    ])
+
+model = make_model()
+
+model.compile(optimizer='adam',
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
+
+print(model.summary())
+
+training_dataset=input_fn()
+
+print("train")
+model.fit(training_dataset,
+          steps_per_epoch=5,
+          epochs=10,
+          verbose = 1)
+
+print("evaluate")
+model.evaluate(training_dataset,
+              steps=1)
+
+print("predict on batch")
+model.predict_on_batch(training_dataset)
+
+model.predict_on_batch(training_dataset)

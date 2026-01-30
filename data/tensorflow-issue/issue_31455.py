@@ -1,38 +1,45 @@
-# tf.random.uniform((B, 1), dtype=tf.float32) for each of two inputs
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
+tf.enable_eager_execution()
+print(tf.__version__)
+from tensorflow.keras.layers import Input, Dense, Lambda
+from tensorflow.keras.models import Model
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Two inputs, each (None, 1) float32, that get concatenated to (None, 2)
-        self.concat = tf.keras.layers.Lambda(lambda inputs: tf.concat(inputs, axis=-1))
-        self.dense = tf.keras.layers.Dense(3)
-        # Instead of creating Lambda layers inside a loop (which captures late-binding variables),
-        # we create fixed lambda layers for each output slice, to avoid the bug described in the issue.
-        self.output_slices = [
-            tf.keras.layers.Lambda(lambda outputs, i=i: outputs[..., i], name=f'output_{i}')
-            for i in range(3)
-        ]
+in0 = Input(shape=(1,), dtype="float32", name='my_input_0')
+in1 = Input(shape=(1,), dtype="float32", name='my_input_1')
+concatted = Lambda(lambda inputs: tf.concat(inputs, axis=-1))([in0,in1])
 
-    def call(self, inputs, training=False):
-        # inputs: list or tuple of two tensors, each (B,1)
-        x = self.concat(inputs)
-        x = self.dense(x)
-        # Return list of outputs, each slicing a different last-dim channel of dense output
-        outputs = [slice_layer(x) for slice_layer in self.output_slices]
-        return outputs
+outputs = Dense(3)(concatted)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+#------------- way 1 (does not work)-----------------
 
-def GetInput():
-    # Returns a list of two tensors, each with shape (batch_size=2, 1)
-    # Matching the shape expected by MyModel
-    # Matching the example input in the issue, but can be random floats instead
-    batch_size = 2
-    input0 = tf.random.uniform((batch_size, 1), minval=-1, maxval=1, dtype=tf.float32)
-    input1 = tf.random.uniform((batch_size, 1), minval=-1, maxval=1, dtype=tf.float32)
-    return [input0, input1]
+# outs = [Lambda(lambda outputs: outputs[...,i], name=f'output_{i}')(outputs) for i in range(3)]
 
+#------------- way 2 (does not work)-----------------
+
+outs = []
+for i in range(3):
+  outs.append(Lambda(lambda outputs: outputs[...,i], name=f'output_{i}')(outputs))
+
+#------------- way 3 (does work)-----------------
+
+# out0 = Lambda(lambda outputs: outputs[...,0], name='my_output_0')(post_process)
+# out1 = Lambda(lambda outputs: outputs[...,1], name='my_output_1')(post_process)
+# out2 = Lambda(lambda outputs: outputs[...,2], name='my_output_2')(post_process)
+# outs=[out0, out1, out2]
+
+#----------------------------
+
+my_model = Model(inputs=[in0,in1], outputs=outs)
+tf.keras.backend.learning_phase = 0
+
+my_model.predict([np.array([[.5],[.3]]), np.array([[-.1],[.2]])])
+
+tf.saved_model.save(my_model, './mymodel')
+reloaded = tf.saved_model.load_v2('./mymodel')
+sig = reloaded.signatures['serving_default']
+sig(my_input_0=tf.constant(np.array([[.5],[.3]]), dtype=tf.float32), my_input_1=tf.constant(np.array([[-.1],[.2]]), dtype=tf.float32))

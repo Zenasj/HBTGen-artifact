@@ -1,45 +1,38 @@
-# torch.rand(B, C, H, W, dtype=...)  # Add a comment line at the top with the inferred input shape
-
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.fc1 = nn.Linear(10, 5)
-        self.fc2 = nn.Linear(5, 1)
+param.storage().resize_(all_gather_size)
+param.copy_(all_gather_buffer)
+out = aten.matmul(param, param)
 
-    def forward(self, x):
-        x = torch.relu(self.fc1(x))
-        x = self.fc2(x)
-        return x
+out = aten.matmul(all_gather_buffer, all_gather_buffer)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+def forward(self, primals_1, primals_2):
+    _foreach_copy = torch.ops.aten._foreach_copy.default([primals_1], [primals_2]);  primals_2 = None
+    getitem = _foreach_copy[0];  _foreach_copy = None
+    mm = torch.ops.aten.mm.default(getitem, getitem);  getitem = None
+    t_1 = torch.ops.aten.t.default(primals_1);  primals_1 = None
+    return [mm, t_1]
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    batch_size = 32
-    input_dim = 10
-    return torch.rand(batch_size, input_dim, dtype=torch.float32)
+def forward(l_fn_weight, synthetic_local_tmp_0_, inp):
+    cat = torch.cat([l_fn_weight, l_fn_weight], 0)
+    tracable_create_parameter = torch__dynamo_create_parameter_op_tracable_create_parameter(cat, synthetic_local_tmp_0_)
+    result = torch._C._nn.linear(inp, tracable_create_parameter, None)
 
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
+def forward(zero_sized_param):
+    inductor_resize_storage_(zero_sized_param, all_gather_size)
+    zero_sized_param.copy_(all_gather_buffer)
+    torch._C._nn.linear(input, zero_sized_param.T)
+    ...
 
-# The provided GitHub issue is a detailed discussion about functionalizing storage resizing in PyTorch, particularly in the context of FSDP (Fully Sharded Data Parallel) and AOT (Ahead-of-Time) compilation. The issue does not contain any specific model or code that needs to be extracted and converted into a single Python file. Instead, it focuses on the internal changes and tests related to the functionalization of `resize_` operations.
-# Given the nature of the issue, there is no direct model or function to extract. However, I can provide a simplified example of a model and its input generation that could be used in a similar context. This example will include a simple neural network and a function to generate a random input tensor.
-# Here is the generated code:
-# ### Explanation:
-# 1. **MyModel Class**:
-#    - A simple feedforward neural network with two fully connected layers.
-#    - The first layer (`fc1`) has 10 input features and 5 output features.
-#    - The second layer (`fc2`) has 5 input features and 1 output feature.
-#    - The `forward` method applies ReLU activation after the first layer and returns the output of the second layer.
-# 2. **my_model_function**:
-#    - Returns an instance of `MyModel`.
-# 3. **GetInput Function**:
-#    - Generates a random tensor with a batch size of 32 and 10 input features, which matches the input expected by `MyModel`.
-# This example provides a basic structure that can be expanded or modified to fit more complex use cases, such as those discussed in the GitHub issue.
+def f(dummy_param, param_shard):
+    allgather = all_gather(param_shard)
+    dummy_param.set_(allgather)
+    dummy_param_view = dummy_param.view(dummy_param.shape)
+    ...
+    dummy_param_view.storage_resize_(0)
+
+y = torch.nn.Parameter(x)  # create an nn.Parameter in the graph
+y.mul_(2)  # mutate it
+
+assert n.args[0] in placeholders

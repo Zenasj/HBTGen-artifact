@@ -1,27 +1,18 @@
-# torch.rand(B, 3, 32, 32, dtype=torch.float32)  # Assumed input shape for a typical CNN
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Simple CNN architecture to demonstrate device/backend compatibility
-        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1)
-        self.pool = nn.MaxPool2d(2, 2)
-        self.fc = nn.Linear(16 * 16 * 16, 10)  # Adjusted for MaxPool downsampling
+# 1 add device parameter
+def all_gather_object(object_list, obj, group=None, device=None):
+    current_device = device or _get_pg_device(group)
 
-    def forward(self, x):
-        x = self.pool(F.relu(self.conv1(x)))
-        x = x.view(-1, 16 * 16 * 16)
-        return self.fc(x)
+# 2 Add judgment for custom backend
+def barrier(group=GroupMember.WORLD, async_op=False, device_ids=None):
+    if device_ids is not None:
+        if (get_backend(group) != Backend.NCCL) or (get_backend(group) in Backend._plugins) :
+            raise RuntimeError(
+                "Function argument device_ids not supported "
+                "for the selected backend {}".format(get_backend(group))
+            )
 
-def my_model_function():
-    # Returns a model instance with dummy initialization
-    model = MyModel()
-    return model
-
-def GetInput():
-    # Generates a random input tensor matching the expected shape
-    return torch.rand(4, 3, 32, 32, dtype=torch.float32)  # Batch size 4, 3 channels, 32x32
-
+# 3 add judgment for custom device
+if not torch.cuda.is_available() or not custom_device_is_available:
+    raise ValueError("Subgroups can only be created when CUDA or custom device is available")

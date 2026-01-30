@@ -1,37 +1,23 @@
-# tf.random.uniform((B, 192, 192, 3), dtype=tf.float32)  ← Input shape inferred from MobileNetV2 input
-
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Pretrained MobileNetV2 without top layers
-        self.mobile_net = tf.keras.applications.MobileNetV2(
-            input_shape=(192, 192, 3),
-            include_top=False,
-            weights='imagenet'
-        )
-        # Following the example structure: GlobalAveragePooling2D + Dense(5)
-        self.global_avg_pool = tf.keras.layers.GlobalAveragePooling2D(name='global_average_pooling2d')
-        self.dense = tf.keras.layers.Dense(5, name='dense')
+inputs=tf.keras.layers.Input([6,6,1280])
+x=tf.keras.layers.GlobalAveragePooling2D(
+    name='global_average_pooling2d_0')(inputs)
+y=tf.keras.layers.Dense(5,name='dense_0')(x)
+model_0 = tf.keras.Model(inputs,y,name='model_0')
 
-    def call(self, inputs, training=False):
-        # Pass input through MobileNetV2 backbone
-        x = self.mobile_net(inputs, training=training)
-        # Then through global average pooling
-        x = self.global_avg_pool(x)
-        # Then to dense layer for final output
-        x = self.dense(x)
-        return x
+mobile_net = tf.keras.applications.MobileNetV2(
+    input_shape=(192,192,3),
+    include_top=False,
+    weights='imagenet')
+assert mobile_net.output_shape==(None, 6, 6, 1280)
+y1=model_0.get_layer('global_average_pooling2d_0')(mobile_net.output)
+y2=model_0.get_layer('dense_0')(y1)
+model_1 = tf.keras.Model(mobile_net.input,y2,name='assembled_model')
 
 
-def my_model_function():
-    # Return a new instance of MyModel
-    return MyModel()
-
-
-def GetInput():
-    # Return a random tensor input that matches MobileNetV2's expected input shape
-    # Use batch size of 1 as a default
-    return tf.random.uniform(shape=(1, 192, 192, 3), dtype=tf.float32)
-
+tmp=tf.keras.Model(model_1.input,model_1.layers[-3].output) # successfully
+tmp=tf.keras.Model(model_1.input,model_1.layers[-2].output) # failed
+tmp=tf.keras.Model(model_1.input,model_1.layers[-1].output) # failed

@@ -1,41 +1,47 @@
-# tf.random.uniform((32, 10, 3), dtype=tf.float32), tf.random.uniform((32, 5, 10), dtype=tf.float32)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
+
 import tensorflow as tf
+import numpy as np
 
 class Chooser(tf.keras.layers.Layer):
     @tf.function
     def call(self, options_input, choices_input_logits):
-        # Apply softmax along axis=2 as in original example
         choices = tf.nn.softmax(choices_input_logits, axis=2)
-        # Perform batch matrix multiplication: (batch, 5, 10) x (batch, 10, 3) -> (batch, 5, 3)
+
         result = tf.linalg.matmul(choices, options_input)
         return result
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        self.chooser = Chooser()
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense = tf.keras.layers.Dense(1)
+def get_model():
+    options_input = tf.keras.layers.Input(shape=(10,3), name="options")
+    choices_input = tf.keras.layers.Input(shape=(5,10), name="choices")
 
-    @tf.function
-    def call(self, inputs):
-        # inputs is tuple/list of two tensors: (options_input, choices_input)
-        options_input, choices_input = inputs
-        x = self.chooser(options_input, choices_input)
-        x = self.flatten(x)
-        x = self.dense(x)
-        return x
+    net = Chooser()(options_input, choices_input)
+    net = tf.keras.layers.Flatten()(net)
+    net = tf.keras.layers.Dense(1)(net)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+    return tf.keras.Model([options_input, choices_input], net)
 
-def GetInput():
-    # Return a tuple with random tensors matching inputs:
-    # options_input shape: (batch, 10, 3)
-    # choices_input shape: (batch, 5, 10)
-    batch_size = 32
-    options = tf.random.uniform((batch_size, 10, 3), dtype=tf.float32, minval=-1.0, maxval=1.0)
-    choices_logits = tf.random.uniform((batch_size, 5, 10), dtype=tf.float32, minval=0.0, maxval=1.0)
-    return (options, choices_logits)
+model = get_model()
+model.compile(
+    optimizer=tf.keras.optimizers.Adam(0.001),
+    loss=tf.keras.losses.MeanAbsoluteError(),
+)
 
+def batch_gen():
+    while True:
+        o = np.random.uniform(low=-1.0, high=1.0, size=(10, 3))
+        c = np.random.uniform(low=0.0, high=1.0, size=(5, 10))
+
+        y = 1
+
+        yield {"options": o, "choices": c}, y
+
+dataset = tf.data.Dataset.from_generator(batch_gen, output_types=({"options": tf.float32, "choices": tf.float32}, tf.float32))
+dataset = dataset.batch(32)
+
+model.fit(dataset, steps_per_epoch=100, epochs=1)
+
+### Relevant log output

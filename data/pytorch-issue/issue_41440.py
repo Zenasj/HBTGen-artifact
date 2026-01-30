@@ -1,7 +1,6 @@
-# torch.rand(1, 3, dtype=torch.float)
-import torch
-from torch import nn
+import torch.nn as nn
 
+import torch
 class CustomFunction(torch.autograd.Function):
     @staticmethod
     def symbolic(g, input):
@@ -9,14 +8,10 @@ class CustomFunction(torch.autograd.Function):
     @staticmethod
     def forward(ctx, input):
         return input, input
-
-class MyModel(nn.Module):
+class Custom(torch.nn.Module):
     def forward(self, input):
         return CustomFunction.apply(input)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(1, 3)
-
+print ('torch.__version__', torch.__version__)
+model = Custom()
+batch = torch.FloatTensor(1, 3)
+torch.onnx.export(model, batch, "test.onnx", verbose=True)

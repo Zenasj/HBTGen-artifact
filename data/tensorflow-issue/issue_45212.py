@@ -1,52 +1,29 @@
-# tf.random.uniform((B, 32, 32, 3), dtype=tf.float32) ← CIFAR-10 image shape (batch size B is dynamic)
+from tensorflow import keras
 
+import os
+os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+
+import os
 import tensorflow as tf
+from tensorflow.keras import datasets, layers, models
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Build the CNN model similar to TensorFlow CNN Tutorial for CIFAR-10
-        
-        # Conv2D(32, 3x3), relu activation, input shape (32, 32, 3)
-        self.conv1 = tf.keras.layers.Conv2D(32, (3, 3), activation='relu')
-        self.pool1 = tf.keras.layers.MaxPooling2D((2, 2))
-        
-        # Conv2D(64, 3x3), relu activation
-        self.conv2 = tf.keras.layers.Conv2D(64, (3, 3), activation='relu')
-        self.pool2 = tf.keras.layers.MaxPooling2D((2, 2))
-        
-        # Conv2D(64, 3x3), relu activation
-        self.conv3 = tf.keras.layers.Conv2D(64, (3, 3), activation='relu')
-        
-        # Flatten layer
-        self.flatten = tf.keras.layers.Flatten()
-        
-        # Dense 64 units, relu activation
-        self.dense1 = tf.keras.layers.Dense(64, activation='relu')
-        
-        # Output Dense layer with 10 units (logits for CIFAR-10 classes)
-        self.dense_out = tf.keras.layers.Dense(10)
+(train_images, train_labels), (test_images, test_labels) = datasets.cifar10.load_data()
 
-    def call(self, inputs, training=False):
-        x = self.conv1(inputs)
-        x = self.pool1(x)
-        x = self.conv2(x)
-        x = self.pool2(x)
-        x = self.conv3(x)
-        x = self.flatten(x)
-        x = self.dense1(x)
-        logits = self.dense_out(x)
-        return logits
+train_images, test_images = train_images / 255.0, test_images / 255.0
 
+model = models.Sequential()
+model.add(layers.Conv2D(32, (3, 3), activation='relu', input_shape=(32, 32, 3)))
+model.add(layers.MaxPooling2D((2, 2)))
+model.add(layers.Conv2D(64, (3, 3), activation='relu'))
+model.add(layers.MaxPooling2D((2, 2)))
+model.add(layers.Conv2D(64, (3, 3), activation='relu'))
+model.add(layers.Flatten())
+model.add(layers.Dense(64, activation='relu'))
+model.add(layers.Dense(10))
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+model.compile(optimizer='adam',
+              loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+              metrics=['accuracy'])
 
-
-def GetInput():
-    # Return a random tensor matching CIFAR-10 input shape:
-    # 32x32 RGB images, batch size 1 for testing.
-    # Using float32 in range [0, 1] like original input preprocessing.
-    return tf.random.uniform((1, 32, 32, 3), minval=0, maxval=1, dtype=tf.float32)
-
+history = model.fit(train_images, train_labels, epochs=10, 
+                    validation_data=(test_images, test_labels))

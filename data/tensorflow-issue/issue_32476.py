@@ -1,37 +1,43 @@
-# tf.random.uniform((B, 1), dtype=tf.float32) ← Input shape inferred from Input layer batch_shape=(None, 1)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Example is a dynamic custom layer that outputs a shape (None, 2) regardless of input shape (None, 1)
-        # It simply returns the inputs in call, but compute_output_shape forces output shape to (None, 2)
-        class Example(tf.keras.layers.Layer):
-            def __init__(self, **kwargs):
-                kwargs["dynamic"] = True
-                super(Example, self).__init__(**kwargs)
-
-            def call(self, inputs):
-                # No change: just forward input
-                return inputs
-
-            def compute_output_shape(self, input_shape):
-                # Important: Must return a tf.TensorShape to avoid the issue described in the original bug report
-                return tf.TensorShape([None, 2])
-
-        self.example_layer = Example()
+class Example(tf.keras.layers.Layer):
+    def __init__(self, **kwargs):
+        kwargs["dynamic"] = True
+        super(Example, self).__init__(**kwargs)
 
     def call(self, inputs):
-        return self.example_layer(inputs)
+        return inputs
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+    def compute_output_shape(self, input_shape):
+        return [(None, 2)]
 
-def GetInput():
-    # Return a random input tensor with shape (batch_size, 1) matching Input layer's batch_shape of (None, 1)
-    # Using float32 as typical default dtype for Keras inputs
-    batch_size = 4  # arbitrary non-None batch size for testing
-    return tf.random.uniform((batch_size, 1), dtype=tf.float32)
+inp = tf.keras.layers.Input(batch_shape=(None, 1))
+comp = Example()(inp)
 
+model = tf.keras.models.Model(inputs=[inp], outputs=[comp])
+model.summary()
+
+import tensorflow as tf
+import numpy as np
+
+class Example(tf.keras.layers.Layer):
+    def __init__(self, **kwargs):
+        kwargs["dynamic"] = True
+        super(Example, self).__init__(**kwargs)
+
+    def call(self, inputs):
+        return inputs
+
+    def compute_output_shape(self, input_shape):
+        return tf.TensorShape([None, 2])
+
+inp = tf.keras.layers.Input(batch_shape=(None, 1))
+comp = Example()(inp)
+
+model = tf.keras.models.Model(inputs=[inp], outputs=[comp])
+model.summary()

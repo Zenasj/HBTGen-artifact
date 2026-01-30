@@ -1,20 +1,26 @@
-# torch.rand(10, dtype=torch.float32) ← Add a comment line at the top with the inferred input shape
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+class Example(nn.Module):
     def __init__(self, return_duplicate):
-        super(MyModel, self).__init__()
+        super(Example, self).__init__()
         self.return_duplicate = return_duplicate
 
     def forward(self, x):
-        return x if not self.return_duplicate else (2 * x, x)
+        return x if not self.return_duplicate else 2*x,x
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel(return_duplicate=False)
+n = Example(False)
+x = torch.randn(10)
+y = n(x)
+print(x)
+print(y)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(10)
+tensor([-0.62339205, -0.99053943,  1.29613805, -0.02801818, -1.50209475,
+         0.26496911, -1.35937905,  0.03782356,  0.15036489,  1.21293926])
+(tensor([-0.62339205, -0.99053943,  1.29613805, -0.02801818, -1.50209475,
+         0.26496911, -1.35937905,  0.03782356,  0.15036489,  1.21293926]), tensor([-0.62339205, -0.99053943,  1.29613805, -0.02801818, -1.50209475,
+         0.26496911, -1.35937905,  0.03782356,  0.15036489,  1.21293926]))
 
+self.return_duplicate
+
+x,x

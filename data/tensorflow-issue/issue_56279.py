@@ -1,23 +1,21 @@
-# tf.random.uniform((B, 1), dtype=tf.float32) ← input shape inferred from Dense layer input_shape=(1,)
+from tensorflow.keras import layers
+
+'''
+Environment setup
+>> conda create -n test_tf -c conda-forge python=3.9.12 tensorflow=2.8.0 cudnn=8.2.1.32
+>> export CUDA_VISIBLE_DEVICES=""
+'''
+import os
+os.environ['CUDA_VISIBLE_DEVICES'] = "0"
 
 import tensorflow as tf
+from tensorflow import keras
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Simple model matching the reported model:
-        # A single Dense layer with 1 output unit, input_shape=(1,)
-        self.dense = tf.keras.layers.Dense(1, input_shape=(1,))
+def main():
+    print('GPUs:', tf.config.list_physical_devices('GPU'))
+    with tf.distribute.MirroredStrategy().scope():
+        model = tf.keras.Sequential([tf.keras.layers.Dense(1, input_shape=(1,))])
+    print('Output shape:', model.output_shape)
 
-    def call(self, inputs):
-        return self.dense(inputs)
-
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Generate random input tensor matching shape (batch_size, 1)
-    # Use batch size 8 as a reasonable default
-    return tf.random.uniform((8, 1), dtype=tf.float32)
-
+if __name__ == '__main__':
+    main()

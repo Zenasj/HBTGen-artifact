@@ -1,28 +1,69 @@
-# torch.rand(31, dtype=torch.bool)
-import torch
-from torch import nn
+kwargs = {}
+inputs = (tensor([False, False,  True,  True, False,  True, False,  True, False, False,
+         True, False, False, False, False, False,  True,  True,  True,  True,
+         True,  True,  True,  True, False, False, False, False,  True,  True,
+         True]),)
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Cast input to float and unsqueeze dimensions
-        x = x.float()
-        x = x.unsqueeze(-1)  # Shape becomes [31, 1]
-        x = x.unsqueeze(0)   # Shape becomes [1, 31, 1]
-        
-        # Apply FFT along the second dimension (axis=1)
-        fft_result = torch.fft.fft(x, dim=1)
-        
-        # Convert complex to real/imaginary tensor and squeeze dimensions
-        fft_real_imag = torch.view_as_real(fft_result)  # Shape [1, 31, 1, 2]
-        after_squeeze0 = fft_real_imag.squeeze(0)       # Shape [31, 1, 2]
-        final = after_squeeze0.squeeze(1)               # Final shape [31, 2]
-        
-        return final
+expected = tensor([[16.0000,  0.0000],
+        [-0.2369,  2.6590],
+        [ 0.7336, -4.9670],
+        [ 2.2093,  2.9865],
+        [-0.7166,  1.0928],
+        [-3.0614,  3.0015],
+        [-1.8945, -0.9677],
+        [-2.1538,  0.2513],
+        [-2.2432,  1.3978],
+        [-0.3429,  1.9494],
+        [-0.6495, -1.5423],
+        [-0.6005,  2.2398],
+        [ 2.2639,  2.6430],
+        [ 1.7609,  0.2033],
+        [-1.3829, -2.3365],
+        [-1.6854, -0.0311],
+        [-1.6854,  0.0311],
+        [-1.3829,  2.3365],
+        [ 1.7609, -0.2033],
+        [ 2.2639, -2.6430],
+        [-0.6005, -2.2398],
+        [-0.6495,  1.5423],
+        [-0.3429, -1.9494],
+        [-2.2432, -1.3978],
+        [-2.1538, -0.2513],
+        [-1.8945,  0.9677],
+        [-3.0614, -3.0015],
+        [-0.7166, -1.0928],
+        [ 2.2093, -2.9865],
+        [ 0.7336,  4.9670],
+        [-0.2369, -2.6590]])
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Generate random boolean tensor of shape [31]
-    return torch.randint(0, 2, (31,), dtype=torch.bool)
-
+actual = tensor([[ 1.6000e+01, -9.1791e-06],
+        [-2.3695e-01,  2.6590e+00],
+        [ 7.3355e-01, -4.9670e+00],
+        [ 2.2093e+00,  2.9865e+00],
+        [-7.1663e-01,  1.0928e+00],
+        [-3.0614e+00,  3.0015e+00],
+        [-1.8946e+00, -9.6773e-01],
+        [-2.1538e+00,  2.5126e-01],
+        [-2.2432e+00,  1.3978e+00],
+        [-3.4294e-01,  1.9494e+00],
+        [-6.4946e-01, -1.5423e+00],
+        [-6.0044e-01,  2.2398e+00],
+        [ 2.2639e+00,  2.6430e+00],
+        [ 1.7609e+00,  2.0326e-01],
+        [-1.3829e+00, -2.3365e+00],
+        [-1.6854e+00, -3.1130e-02],
+        [-1.6854e+00,  3.1161e-02],
+        [-1.3829e+00,  2.3365e+00],
+        [ 1.7609e+00, -2.0327e-01],
+        [ 2.2639e+00, -2.6430e+00],
+        [-6.0047e-01, -2.2398e+00],
+        [-6.4945e-01,  1.5423e+00],
+        [-3.4294e-01, -1.9494e+00],
+        [-2.2432e+00, -1.3978e+00],
+        [-2.1538e+00, -2.5129e-01],
+        [-1.8945e+00,  9.6773e-01],
+        [-3.0615e+00, -3.0015e+00],
+        [-7.1663e-01, -1.0928e+00],
+        [ 2.2093e+00, -2.9865e+00],
+        [ 7.3354e-01,  4.9670e+00],
+        [-2.3695e-01, -2.6589e+00]])

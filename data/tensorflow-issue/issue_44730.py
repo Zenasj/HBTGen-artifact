@@ -1,8 +1,11 @@
-# tf.random.uniform((BATCH_SIZE, MAX_LEN), dtype=tf.int32), and dict of tf.string lists for meta inputs
+from tensorflow import keras
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
-from tensorflow.keras import layers, Model, Input
-from transformers import TFDistilBertModel, DistilBertTokenizer
+import tensorflow.keras as keras
+from tensorflow.keras import Input, Model, layers
+from transformers import DistilBertTokenizer, TFDistilBertModel
+
 
 MAX_LEN = 20
 
@@ -31,136 +34,148 @@ DIM = {
 }
 
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
+# BERT branch
+tf_model = TFDistilBertModel.from_pretrained("distilbert-base-uncased", name="tfbert")
 
-        # Load DistilBert pretrained model
-        self.bert_model = TFDistilBertModel.from_pretrained("distilbert-base-uncased", name="tfbert")
-
-        # Meta branch layers: for each column, build a lookup + embedding + pooling
-        self.string_lookups = {}
-        self.embeddings = {}
-        self.global_pools = {}
-        for key in VOCAB:
-            vocab_list = VOCAB[key]
-            vocab_size = len(vocab_list)
-            embed_dim = DIM[key]
-
-            # String lookup layer with mask token "PAD" and 1 OOV index for unknown
-            self.string_lookups[key] = layers.StringLookup(
-                vocabulary=vocab_list,
-                num_oov_indices=1,
-                mask_token="PAD",
-                output_mode='int',
-                name="lookup_" + key,
-            )
-
-            # Embedding layer including PAD + NA tokens
-            self.embeddings[key] = layers.Embedding(
-                input_dim=vocab_size + 2,  # +2 for PAD and NA tokens
-                output_dim=embed_dim,
-                mask_zero=True,
-                name="embedding_" + key,
-            )
-
-            self.global_pools[key] = layers.GlobalAveragePooling1D(name="poolembedding_" + key)
-
-        # Dense layers after concatenation
-        self.concat_meta = layers.Concatenate(name="concatenate_meta")
-        self.concat_all = layers.Concatenate(name="concatenate_all")
-        self.dense1 = layers.Dense(128, activation="relu", name="dense")
-        self.class_output = layers.Dense(4, name="class_output")
-
-    def call(self, inputs, training=False):
-        # inputs: dict with keys for bert inputs and meta inputs
-        # Expected keys:
-        # For BERT branch: "input_ids", "attention_mask" (int32 tensors shape (batch, MAX_LEN))
-        # For meta branch: STRING features, each shape (batch, variable length sequence)
-
-        # BERT branch forward
-        input_ids = inputs["input_ids"]
-        attention_mask = inputs["attention_mask"]
-
-        # DistilBERT model returns sequence_output; we take CLS token embedding as [0] index along seq dim
-        bert_outputs = self.bert_model(input_ids, attention_mask=attention_mask, training=training)
-        sequence_output = bert_outputs.last_hidden_state  # shape (batch, seq_len, hidden_size)
-        cls_embedding = sequence_output[:, 0, :]  # shape (batch, hidden_size)
-
-        # Meta branch forward
-        meta_embeddings = []
-        for key in VOCAB:
-            x = inputs[key]  # string tensor (batch, seq_len_meta)
-            # String lookup converts string tokens to int indices
-            x_i = self.string_lookups[key](x)
-            # Embedding for tokens
-            x_e = self.embeddings[key](x_i)
-            # Pool along sequence dimension (variable length)
-            x_p = self.global_pools[key](x_e)
-            meta_embeddings.append(x_p)
-
-        meta_concat = self.concat_meta(meta_embeddings)
-
-        # Combine branches
-        combined = self.concat_all([cls_embedding, meta_concat])
-        x = self.dense1(combined)
-        logits = self.class_output(x)
-
-        return logits
+input_ids = Input(shape=(MAX_LEN,), dtype=tf.int32, name="input_ids")
+attention_mask = Input(shape=(MAX_LEN,), dtype=tf.int32, name="attention_mask")
 
 
-def my_model_function():
-    # Return an instance of MyModel
-    model = MyModel()
-    # Compile the model with appropriate loss and optimizer,
-    # matching the original example for classification
-    model.compile(
-        optimizer=tf.keras.optimizers.RMSprop(1e-3),
-        loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+embedding = tf_model(input_ids, attention_mask=attention_mask)[0][:, 0]
+
+bert_input = {"input_ids": input_ids, "attention_mask": attention_mask}
+model_bert = Model(inputs=[bert_input], outputs=[embedding])
+
+
+# meta branch
+meta_inputs = {}
+meta_prepocs = []
+
+for key in VOCAB:
+    inputs = Input(shape=(None,), dtype=tf.string, name=key)
+    meta_inputs[key] = inputs
+
+    vocab_list = VOCAB[key]
+    vocab_size = len(vocab_list)
+    embed_dim = DIM[key]
+
+    x = layers.experimental.preprocessing.StringLookup(
+        vocabulary=vocab_list, num_oov_indices=1, mask_token="PAD", name="lookup_" + key
+    )(inputs)
+
+    x = layers.Embedding(
+        input_dim=vocab_size + 2,  # 2 = PAD + NA
+        output_dim=embed_dim,
+        mask_zero=True,
+        name="embedding_" + key,
+    )(x)
+
+    x = layers.GlobalAveragePooling1D(
+        data_format="channels_last", name="poolembedding_" + key
+    )(x)
+
+    meta_prepocs.append(x)
+
+meta_output = layers.concatenate(meta_prepocs, name="concatenate_meta")
+model_meta = Model(meta_inputs, meta_output)
+
+
+# combining branches
+combined = layers.concatenate(
+    [model_bert.output, model_meta.output], name="concatenate_all"
+)
+ouput = layers.Dense(128, activation="relu", name="dense")(combined)
+ouput = layers.Dense(4, name="class_output")(ouput)
+model = Model(inputs=[model_bert.input, model_meta.input], outputs=ouput)
+
+model.compile(
+    optimizer=keras.optimizers.RMSprop(1e-3),
+    loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+)
+
+# input meta
+dict_meta = {
+    "Organization": [
+        ["BNS", "NA"],
+        ["ECB", "PAD"],
+        ["NA", "PAD"],
+        ["NA", "PAD"],
+        ["NA", "PAD"],
+    ],
+    "Sector": [
+        ["BANK", "PAD", "PAD"],
+        ["ASS", "PAD", "NA"],
+        ["MARKET", "NA", "NA"],
+        ["NA", "PAD", "NA"],
+        ["NA", "PAD", "NA"],
+    ],
+    "Content_type": [
+        ["NOTES", "PAD"],
+        ["PAPER", "UNK"],
+        ["LAW", "PAD"],
+        ["LAW", "PAD"],
+        ["LAW", "NOTES"],
+    ],
+    "Geography": [
+        ["UK", "FR"],
+        ["DE", "CH"],
+        ["US", "ES"],
+        ["ES", "PAD"],
+        ["NA", "PAD"],
+    ],
+    "Themes": [["A", "B"], ["B", "C"], ["C", "PAD"], ["C", "PAD"], ["G", "PAD"]],
+}
+
+# input text
+list_text = [
+    "Trump in denial over election defeat as Biden gears up to fight Covid",
+    "Feds seize $1 billion in bitcoins they say were stolen from Silk Road",
+    "Kevin de Bruyne misses penalty as Manchester City and Liverpool draw",
+    "United States nears 10 million coronavirus cases",
+    "Fiji resort offers the ultimate in social distancing",
+]
+
+tokenizer = DistilBertTokenizer.from_pretrained("distilbert-base-uncased")
+params = {
+    "max_length": MAX_LEN,
+    "padding": "max_length",
+    "truncation": True,
+}
+tokenized = tokenizer(list_text, **params)
+dict_text = tokenized.data
+
+#input label
+label = [[1], [0], [1], [0], [1]]
+
+ds_meta = tf.data.Dataset.from_tensor_slices((dict_meta))
+ds_meta = ds_meta.batch(5)
+example_meta = next(iter(ds_meta))
+
+ds_text = tf.data.Dataset.from_tensor_slices((dict_text))
+ds_text = ds_text.batch(5)
+example_text = next(iter(ds_text))
+
+ds_label = tf.data.Dataset.from_tensor_slices((label))
+ds_label = ds_label.batch(5)
+example_label = next(iter(ds_label))
+
+model.fit([example_text, example_meta], example_label)
+
+ds = tf.data.Dataset.from_tensor_slices(
+    (
+        {
+            "attention_mask": dict_text["attention_mask"],
+            "input_ids": dict_text["input_ids"],
+            "Content_type": dict_meta["Organization"],
+            "Geography": dict_meta["Geography"],
+            "Organization": dict_meta["Organization"],
+            "Sector": dict_meta["Sector"],
+            "Themes": dict_meta["Themes"],
+        },
+        {"class_output": label},
     )
-    return model
+)
 
 
-def GetInput():
-    """
-    Returns a dict input compatible with MyModel.call().
-    Shapes:
-    - input_ids: (batch, MAX_LEN) int32 tensor of token ids (random within vocab size)
-    - attention_mask: (batch, MAX_LEN) int32 tensor (ones or random 0/1)
-    - For each meta feature column: (batch, variable_length) tf.string tensor
-    We use batch size 5 as in original example, and variable meta sequence lengths.
-    """
-
-    batch_size = 5
-
-    # Create random int32 token ids in DistilBERT vocab size (30522)
-    # In practice tokenizer encodes real tokens, but here random is OK for testing
-    vocab_size_bert = 30522
-    input_ids = tf.random.uniform(
-        (batch_size, MAX_LEN), minval=0, maxval=vocab_size_bert, dtype=tf.int32
-    )
-    # attention_mask: 1s
-    attention_mask = tf.ones((batch_size, MAX_LEN), dtype=tf.int32)
-
-    # For meta features: simulate batches of sequences of strings with vocab from VOCAB keys,
-    # each with some padding "PAD" and "NA" possible.
-    dict_meta = {}
-    for key in VOCAB:
-        vocab_list = VOCAB[key] + ["PAD", "NA"]
-        # simulate sequence length for that feature (random 1 to 3)
-        seq_len = 3
-        # generate batch_size sequences of strings from vocab_list
-        import numpy as np
-
-        # Random selection of strings from vocab including PAD and NA
-        np.random.seed(0)  # for reproducibility
-        samples = np.random.choice(vocab_list, size=(batch_size, seq_len))
-        # Convert to tf.string tensor
-        dict_meta[key] = tf.constant(samples)
-
-    # Package inputs in a single dict as expected by MyModel
-    inputs = {"input_ids": input_ids, "attention_mask": attention_mask}
-    inputs.update(dict_meta)
-
-    return inputs
-
+ds = ds.batch(5)
+model.fit(ds, epochs=1)

@@ -1,27 +1,111 @@
-# torch.rand(B, H, W, C_in, dtype=torch.float32)  # e.g., (64*1024, 7, 7, 2)
+import torch.nn as nn
+
+import os
+os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+
+import numpy as np
 import torch
 from torch import nn
 
-class MyModel(nn.Module):
+class Model(nn.Module):
+
     def __init__(self, channels=16):
         super().__init__()
+
         layers = [nn.Conv2d(2, channels, 3, 1, 1)]
-        for _ in range(16):
+        for l in range(16):
             layers.append(nn.Conv2d(channels, channels, 3, 1, 1))
         layers.append(nn.Conv2d(channels, 1, 1))
+
         self.layers = nn.ModuleList(layers)
 
     def forward(self, obs):
         x = obs.permute(0, 3, 1, 2)
-        for layer in self.layers:
-            x = layer(x)
+
+        for l in self.layers:
+            x = l(x)
+
         return x.flatten(1).log_softmax(-1)
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    batch = 64 * 1024
+def run():
+    batch = 64*1024
     width = 7
-    return torch.rand((batch, width, width, 2), dtype=torch.float32, device='cuda')
+    device = 'cuda'
 
+    network = Model().to(device)
+    opt = torch.optim.Adam(network.parameters(), amsgrad=True)
+    scaler = torch.cuda.amp.GradScaler()
+
+    obs = torch.zeros((batch, width, width, 2), device=device)
+    yhat = -torch.ones((batch, width**2), device=device)
+    
+    mask = torch.ones((batch,), device=device).bool()
+
+    while True:
+        with torch.cuda.amp.autocast():
+            y = network(obs)
+            loss = -(yhat.exp()*y).sum(axis=-1)[mask].mean()
+
+        opt.zero_grad()
+        scaler.scale(loss).backward()
+        scaler.step(opt)
+        scaler.update()
+        print('Stepped')
+
+if __name__ == '__main__':
+    run()
+
+import os
+os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+
+import numpy as np
+import torch
+from torch import nn
+
+class Model(nn.Module):
+
+    def __init__(self, channels=16):
+        super().__init__()
+
+        layers = [nn.Conv2d(2, channels, 3, 1, 1)]
+        for l in range(16):
+            layers.append(nn.Conv2d(channels, channels, 3, 1, 1))
+        layers.append(nn.Conv2d(channels, 1, 1))
+
+        self.layers = nn.ModuleList(layers)
+
+    def forward(self, obs):
+        x = obs.permute(0, 3, 1, 2)
+
+        for l in self.layers:
+            x = l(x)
+
+        return x.flatten(1).log_softmax(-1)
+
+def run():
+    batch = 64*1024
+    width = 9
+    device = 'cuda'
+
+    network = Model().to(device)
+    opt = torch.optim.Adam(network.parameters(), amsgrad=True)
+    scaler = torch.cuda.amp.GradScaler()
+
+    obs = torch.zeros((batch, width, width, 2), device=device)
+    yhat = -torch.ones((batch, width**2), device=device)
+    
+    mask = torch.ones((batch,), device=device).bool()
+
+    while True:
+        with torch.cuda.amp.autocast():
+            y = network(obs)
+            loss = -(yhat.exp()*y).sum(axis=-1)[mask].mean()
+
+        opt.zero_grad()
+        scaler.scale(loss).backward()
+        scaler.step(opt)
+        scaler.update()
+        print('Stepped')
+
+if __name__ == '__main__':
+    run()

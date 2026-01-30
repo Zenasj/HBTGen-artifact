@@ -1,46 +1,34 @@
-# tf.random.uniform((None, 28, 28), dtype=tf.float32) ← Input shape inferred from MNIST dataset loading in original example
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
 import tensorflow_probability as tfp
 from tensorflow_probability import distributions as tfd
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # KL divergence function scaled by dataset size (used for Bayesian layers)
-        self.num_train = 60000  # MNIST train dataset size, inferred from code
-        self.kl_divergence_function = lambda q, p, _: tfd.kl_divergence(q, p) / tf.cast(self.num_train, tf.float32)
+(x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
 
-        # Flatten the (28, 28) input image to vector
-        self.flatten = tf.keras.layers.Flatten()
+x_train = x_train.astype('float32')/255.
+x_test = x_test.astype('float32')/255.
 
-        # Bayesian Dense layer with Flipout estimator (from tfp)
-        self.dense_flipout = tfp.layers.DenseFlipout(
-            10,
-            kernel_divergence_fn=self.kl_divergence_function,
-            activation=tf.nn.softmax
-        )
+kl_divergence_function = (lambda q, p, _: tfd.kl_divergence(q, p) /
+                          tf.cast(x_train.shape[0], dtype=tf.float32))
 
-    def call(self, inputs, training=False):
-        x = self.flatten(inputs)
-        # Apply DenseFlipout with softmax activation
-        x = self.dense_flipout(x, training=training)
-        return x
+model = tf.keras.Sequential([
+    tf.keras.layers.Flatten(),
+    tfp.layers.DenseFlipout(
+        10, kernel_divergence_fn=kl_divergence_function,
+        activation=tf.nn.softmax
+    ),
+])
 
+optimizer = tf.keras.optimizers.Adam(lr=0.001)
+model.compile(optimizer, loss='sparse_categorical_crossentropy')
+model.fit(x_train, y_train, validation_data=(x_test, y_test), epochs=3)
 
-def my_model_function():
-    # Return an instance of MyModel, no special initialization needed
-    return MyModel()
+tflite_converter = tf.lite.TFLiteConverter.from_keras_model(model)
+tflite_converter.allow_custom_ops = True
+tflite_model = tflite_converter.convert()
 
-
-def GetInput():
-    # Return a random tensor input that matches the model expected input shape.
-    # Original input shape: MNIST images 28x28 (grayscale, no channel dimension)
-    # Use batch size 1 as example
-    batch_size = 1
-    height = 28
-    width = 28
-    dtype = tf.float32
-    # Values in range [0,1], float32 matching original preprocessed input
-    return tf.random.uniform((batch_size, height, width), 0.0, 1.0, dtype=dtype)
-
+tflite_interpreter = tf.lite.Interpreter(model_content=tflite_model)
+tflite_interpreter.allocate_tensors()

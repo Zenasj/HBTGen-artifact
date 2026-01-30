@@ -1,22 +1,16 @@
-# torch.rand(4, dtype=torch.float32), torch.tensor(12.0, dtype=torch.float32)  # input x and scalar a
-import torch
 import math
-from torch import nn
+import torch
 
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        x, a = inputs
-        a_val = a.item()
-        b = math.floor(a_val + 0.5)
-        b_rad = math.radians(a_val)
-        b_total = b_rad + b
-        return x + b_total
 
-def my_model_function():
-    return MyModel()
+def func(x, a):
+    b = math.floor(a + 0.5)
+    b = math.radians(a) + b
+    y = x + b
+    return y
 
-def GetInput():
-    x = torch.rand(4, dtype=torch.float32)
-    a = torch.tensor(12.0, dtype=torch.float32)
-    return (x, a)
 
+cfunc = torch.compile(func, dynamic=True, fullgraph=True, backend="eager")
+x = torch.tensor([0, 1, 2, 3], dtype=torch.float32)
+a = 12
+
+out = cfunc(x, a)

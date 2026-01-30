@@ -1,53 +1,66 @@
-# torch.rand(seq_len, batch_size, 29, dtype=torch.float32)
+import random
+
+import torch.nn as nn
+from numpy import prod
+
+dim = 29
+layers = 5
+use_bias = True
+
+bigru = nn.GRU(dim, dim, layers, bidirectional=True, bias=use_bias)
+bigru_params = sum(prod(p.size()) for p in bigru.parameters())
+
+bigru_docs = 2*layers*(dim*dim + dim*dim +    # Wir, Whr in docs
+                       use_bias*(dim + dim) + # bir, bhr in docs
+                       dim*dim + dim*dim +    # Wiz, Whz in docs
+                       use_bias*(dim + dim) + # biz, bhz in docs
+                       dim*dim + dim*dim +    # Win, Whn in docs
+                       use_bias*(dim + dim))  # bin, bnn in docs
+                       
+gru = nn.GRU(dim, dim, layers, bidirectional=False, bias=use_bias)
+gru_stacked_params = 2 * sum(prod(p.size()) for p in gru.parameters())
+
+print('\n'.join([
+    'BiGRU Params: {:d}'.format(bigru_params),
+    'Expected BiGRU Params: {:d}'.format(bigru_docs),
+    'Stacked GRU Params: {:d}'.format(gru_stacked_params)]))
+
 import torch
 import torch.nn as nn
+from numpy import prod
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.bigru = nn.GRU(input_size=29, hidden_size=29, num_layers=3, bidirectional=True, bias=True)
-    
-    def forward(self, x):
-        # Save original reverse weights for layers 0 and 1
-        saved_weights = []
-        for i in range(2):  # layers 0 and 1 (since num_layers=3)
-            ih = getattr(self.bigru, f'weight_ih_l{i}_reverse').data
-            hh = getattr(self.bigru, f'weight_hh_l{i}_reverse').data
-            saved_weights.append( (ih.clone(), hh.clone()) )
-        
-        # Compute prefill output
-        out_prefill, _ = self.bigru(x)
-        
-        # Modify reverse weights to 100 for layers 0 and 1
-        for i in range(2):
-            layer = i
-            getattr(self.bigru, f'weight_ih_l{layer}_reverse').data.fill_(100.)
-            getattr(self.bigru, f'weight_hh_l{layer}_reverse').data.fill_(100.)
-        
-        # Compute postfill output
-        out_postfill, _ = self.bigru(x)
-        
-        # Restore original weights
-        for i in range(2):
-            ih_orig, hh_orig = saved_weights[i]
-            getattr(self.bigru, f'weight_ih_l{i}_reverse').data.copy_(ih_orig)
-            getattr(self.bigru, f'weight_hh_l{i}_reverse').data.copy_(hh_orig)
-        
-        # Reshape outputs to separate directions
-        out_prefill = out_prefill.view(x.size(0), x.size(1), 2, 29)
-        out_postfill = out_postfill.view(x.size(0), x.size(1), 2, 29)
-        
-        # Calculate difference for forward direction (index 0)
-        diff = (out_prefill[:, :, 0, :] - out_postfill[:, :, 0, :]).abs().mean()
-        
-        return diff > 1e-5  # returns a boolean indicating significant difference
+torch.random.manual_seed(2718)
 
-def my_model_function():
-    return MyModel()
+dim = 29
+layers = 3
+use_bias = True
+bigru = nn.GRU(dim, dim, layers, bidirectional=True, bias=use_bias)
 
-def GetInput():
-    seq_len = 5
-    batch_size = 7
-    dim = 29
-    return torch.rand(seq_len, batch_size, dim, dtype=torch.float32)
+seq_len = 5
+batch_size = 7
+ntokens = 11
 
+emb = nn.Embedding(ntokens, dim)
+
+tokens = torch.randint(low=0, high=ntokens-1, size=(seq_len, batch_size))
+tokens_emb = emb(tokens)
+
+out_prefill, _ = bigru(tokens_emb)
+out_prefill = out_prefill.view(seq_len, batch_size, 2, dim)
+
+bigru.weight_ih_l0_reverse.data.fill_(100.)
+bigru.weight_hh_l0_reverse.data.fill_(100.)
+bigru.weight_ih_l1_reverse.data.fill_(100.)
+bigru.weight_hh_l1_reverse.data.fill_(100.)
+
+out_postfill, _ = bigru(tokens_emb)
+out_postfill = out_postfill.view(seq_len, batch_size, 2, dim)
+
+lr_diff = (out_prefill[:, :, 0, :] -
+           out_postfill[:, :, 0, :])
+
+rl_diff = (out_prefill[:, :, 1, :] -
+           out_postfill[:, :, 1, :])
+
+print('Forward Mean Abs Diff: {:.3f}'.format(lr_diff.mean().item()))
+print('Backward Mean Abs Diff: {:.3f}'.format(rl_diff.mean().item()))

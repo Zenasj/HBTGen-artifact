@@ -1,71 +1,124 @@
-# tf.random.uniform((B, 4, 84, 84), dtype=tf.uint8) ← Input shape and type inferred from Atari DQN example (WINDOW_LENGTH=4, IMAGE 84x84)
+import random
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
+from __future__ import division
+
+from PIL import Image
+import numpy as np
+import gym
+
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Activation, Flatten, Convolution2D, Permute
+from tensorflow.keras.optimizers import Adam
+import keras.backend as K
+
+from rl.agents.dqn import DQNAgent
+from rl.policy import LinearAnnealedPolicy, BoltzmannQPolicy, EpsGreedyQPolicy
+from rl.memory import SequentialMemory
+from rl.core import Processor
+from rl.callbacks import FileLogger, ModelIntervalCheckpoint, Visualizer
+
+import matplotlib.pyplot as plt
+
+INPUT_SHAPE = (84, 84)
+WINDOW_LENGTH = 4
+
+env_name = 'SpaceInvaders-v0'
+env = gym.make(env_name)
+
+np.random.seed(123)
+env.seed(123)
+nb_actions = env.action_space.n
+
+import numpy as np
 import tensorflow as tf
-from tensorflow.keras import Model
-from tensorflow.keras.layers import Input, Permute, Conv2D, Flatten, Dense
+from tensorflow import keras
+from tensorflow.keras.layers import Flatten, LeakyReLU, Input, Dense, Dropout, Conv2D, Conv2DTranspose, BatchNormalization, MaxPooling2D, Activation, concatenate, Add
 
-# The number of actions for the Atari environment, from the example (SpaceInvaders-v0)
-nb_actions = 6  # Common for SpaceInvaders-v0, inferred from gym environment
-
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Following the create_q_model architecture from the issue, adapted as keras.Model subclass layers:
-        
-        # Input shape expected: (WINDOW_LENGTH=4, 84, 84)
-        # We'll implement as a call method expecting inputs shaped (batch, 4, 84, 84)
-        # The original model permutes input from (4, 84, 84) -> (84, 84, 4),
-        # but the example permutes with (3,2,1), basically inputs (4,84,84) → permute axes to (84,84,4)
-        # We'll replicate that.
-        
-        self.permute = Permute((3, 2, 1))  # Reorder input dims
-
-        self.conv1 = Conv2D(32, kernel_size=8, strides=4, activation='relu')
-        self.conv2 = Conv2D(64, kernel_size=4, strides=2, activation='relu')
-        self.conv3 = Conv2D(64, kernel_size=3, strides=1, activation='relu')
-
-        self.flatten = Flatten()
-        self.dense1 = Dense(256, activation=None)  # No explicit activation after dense in example before final layer
-        self.dense2 = Dense(nb_actions, activation='linear')  # Outputs Q-values per action
-
-    def call(self, inputs, training=False):
-        """
-        Forward pass of the model.
-
-        inputs: tf.Tensor of shape (batch, WINDOW_LENGTH=4, 84, 84), dtype uint8 or float32 normalized
-        returns: tf.Tensor of shape (batch, nb_actions), Q-values
-        """
-        # Expect uint8 input (raw pixel frames), convert to float32 normalized [0,1]
-        if inputs.dtype != tf.float32:
-            x = tf.cast(inputs, tf.float32) / 255.0
-        else:
-            x = inputs
-
-        x = self.permute(x)  # Reorder dims to (batch, 84, 84, 4) for Conv2D
-
-        x = self.conv1(x)
-        x = self.conv2(x)
-        x = self.conv3(x)
-
-        x = self.flatten(x)
-        x = self.dense1(x)
-        q_values = self.dense2(x)
-        return q_values
-
-
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-
-def GetInput():
-    # Batch size 1, WINDOW_LENGTH (time frames) =4, height=84, width=84, single channel grayscale as uint8 pixel frames
-    # Shape inferred from Atari example input (WINDOW_LENGTH, 84, 84)
-    # Use uint8 to simulate raw pixel input, consistent with AtariProcessor output
-    import tensorflow as tf
-    B = 1
+def create_q_model():
+    INPUT_SHAPE = (84, 84)
     WINDOW_LENGTH = 4
-    H, W = 84, 84
-    # Input shape: (B, WINDOW_LENGTH, H, W), dtype uint8
-    return tf.random.uniform(shape=(B, WINDOW_LENGTH, H, W), minval=0, maxval=256, dtype=tf.int32).astype(tf.uint8)
+    inputs = Input(shape=(WINDOW_LENGTH,) + INPUT_SHAPE)
+    layer0 = Permute((3,2,1))(inputs)
 
+    layer = Conv2D(32, (8,8), strides=(4,4), activation="relu")(layer0)
+    layer = Conv2D(64, (4,4), strides=(2,2), activation="relu")(layer)
+    layer = Conv2D(64, (3,3), strides=(1,1), activation="relu")(layer)
+
+    x = Flatten()(layer)
+    x = Dense(256)(x)
+    x = Dense(nb_actions, activation = 'linear')(x)
+
+    return keras.Model(inputs=inputs, outputs=x)
+
+model = create_q_model()
+model.summary()
+
+import cv2
+
+class AtariProcessor(Processor):
+
+    def process_observation(self, observation):
+        assert observation.ndim == 3  # (height, width, channel)
+        img = Image.fromarray(observation)
+        img = img.resize(INPUT_SHAPE).convert('L')
+        processed_observation = np.array(img)
+        assert processed_observation.shape == INPUT_SHAPE
+        return processed_observation.astype('uint8')
+
+    def process_state_batch(self, batch):
+        processed_batch = batch.astype('float32') / 255.
+        return processed_batch
+
+    def process_reward(self, reward):
+        return np.clip(reward, -1., 1.)
+
+from rl.callbacks import Callback
+
+
+import os
+from rl.callbacks import Callback
+
+from tensorflow.keras.optimizers import SGD, RMSprop
+
+memory = SequentialMemory(limit=1000000, window_length=WINDOW_LENGTH)
+processor = AtariProcessor()
+
+exploration_steps = 150000
+policy = LinearAnnealedPolicy(EpsGreedyQPolicy(),
+                              attr='eps',
+                              value_max=1.,
+                              value_min=.05,
+                              value_test=.01,
+                              nb_steps=exploration_steps)
+
+dqn = DQNAgent(model=model,
+               nb_actions=nb_actions,
+               policy=policy,
+               memory=memory,
+               processor=processor,
+               nb_steps_warmup=5000,
+               enable_double_dqn = True,
+               enable_dueling_network = True,
+               dueling_type = 'avg',
+               gamma=.99,
+               target_model_update=1e-03,
+               delta_clip=1.,
+               batch_size=32,
+               train_interval=4)
+
+learning_rate = 2.5e-3
+
+dqn.compile(RMSprop(lr=learning_rate), metrics=['mae'])
+
+weights_filename = 'dqn_{}_weights.h5f'.format(env_name)
+checkpoint_weights_filename = 'dqn_' + env_name + '_weights_{step}.h5f'
+log_filename = 'dqn_{}_log.json'.format(env_name)
+callbacks = [FileLogger(log_filename, interval=10000)]
+
+dqn.fit(env, callbacks=callbacks, nb_steps=100, log_interval=10000, visualize=False, verbose=2) # Intended low nb_steps
+
+dqn.save_weights(weights_filename, overwrite=True)
+dqn.save_weights("another", overwrite=True) #This line fails!!

@@ -1,20 +1,21 @@
-# torch.rand(B, C, dtype=torch.float32)  # Input shape (Batch, Channels), B >= 2 to avoid batchnorm error
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.bn = nn.BatchNorm1d(3)  # Matches the example's channel count (3)
+import torch
 
+class Foo(torch.nn.Module):
+    def __init__(self):
+        super(Foo, self).__init__()
+        self.bn = torch.nn.BatchNorm1d(3)
+    
     def forward(self, x):
         return self.bn(x)
 
-def my_model_function():
-    # Returns an instance of MyModel with default initialization
-    return MyModel()
+def main():
+    x1 = torch.ones(1,3)
+    x2 = torch.ones(2,3)
+    model = Foo()
+    y = model(x1) # this line will fail to run 
+    y = model(x2) # this line can run without error
 
-def GetInput():
-    # Returns a random tensor of shape (2, 3) to avoid batch size 1 error
-    return torch.rand(2, 3, dtype=torch.float32)
-
+if __name__ == '__main__':
+    main()

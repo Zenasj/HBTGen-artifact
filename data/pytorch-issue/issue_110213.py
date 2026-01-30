@@ -1,33 +1,30 @@
-# torch.rand(1, 1, 3, 4, dtype=torch.float32)  # Example input shape for q (similar for k and v)
-import torch
-from torch import nn
 import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        q, k, v, mask = inputs
-        with torch.backends.cuda.sdp_kernel(enable_math=True, enable_flash=False, enable_mem_efficient=False):
-            out_math = F.scaled_dot_product_attention(q, k, v, mask, is_causal=False)
-        
-        with torch.backends.cuda.sdp_kernel(enable_math=False, enable_flash=True, enable_mem_efficient=True):
-            out_fused = F.scaled_dot_product_attention(q, k, v, mask, is_causal=False)
-        
-        # Return True if fused output has NaN and math does not
-        fused_has_nan = torch.isnan(out_fused).any()
-        math_has_nan = torch.isnan(out_math).any()
-        return fused_has_nan and not math_has_nan
+import torch
+from transformers import FalconModel
+from torch.nn import functional as F
 
-def my_model_function():
-    return MyModel()
+torch.manual_seed(0)
 
-def GetInput():
-    B, H, seq_len, head_dim = 1, 1, 3, 4
-    q = torch.randn(B, H, seq_len, head_dim, dtype=torch.float32)
-    k = torch.randn(B, H, seq_len, head_dim, dtype=torch.float32)
-    v = torch.randn(B, H, seq_len, head_dim, dtype=torch.float32)
+a = 3
+b = 4
+
+q = torch.randn(size=(1, 1, a, b))
+k = torch.randn(size=(1, 1, a, b))
+v = torch.randn(size=(1, 1, a, b))
+
+def check(q, k, v, device):
+
+    q = q.to(device)
+    k = k.to(device)
+    v = v.to(device)
+
     neg_value = torch.finfo(q.dtype).min
-    mask = torch.tensor([[[[neg_value, neg_value, neg_value],
-                          [1.0, 1.0, 1.0],
-                          [1.0, 1.0, 1.0]]]], dtype=q.dtype)
-    return (q, k, v, mask)
+    mask = [[neg_value, neg_value, neg_value], [1.0, 1.0, 1.0], [1.0, 1.0, 1.0]]
+    mask = torch.tensor([[mask]]).to(device)
 
+    o = F.scaled_dot_product_attention(q, k, v, mask, 0.0, is_causal=False)
+    print(o)
+
+check(q, k, v, "cpu")
+check(q, k, v, "cuda")

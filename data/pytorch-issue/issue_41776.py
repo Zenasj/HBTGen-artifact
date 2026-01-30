@@ -1,15 +1,15 @@
-# torch.rand(14, 7, dtype=torch.float32)  # Valid input shape from geqrf output
+import random
+
 import torch
-from torch import nn
+import numpy as np
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        qr, tau = torch.geqrf(x)
-        return torch.orgqr(qr, tau)
+input = torch.tensor(np.random.rand(14,7))
+input2 = torch.tensor(np.random.rand(12,6))
+torch.orgqr(input, input2)
 
-def my_model_function():
-    return MyModel()
+import torch
+import numpy as np
 
-def GetInput():
-    return torch.rand(14, 7, dtype=torch.float32)
-
+input = torch.tensor(np.random.rand(14,7))
+input2 = torch.tensor(np.random.rand(12,16)) # changed here
+torch.orgqr(input, input2)

@@ -1,21 +1,10 @@
-# torch.rand(1, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
-
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.prod = torch.prod
+t = torch.tensor([0.4901], requires_grad=True)
+# Works
+t.prod(0).backward()
 
-    def forward(self, x):
-        return self.prod(x, dim=0)
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(1, requires_grad=True, dtype=torch.float32)
-
+t = torch.tensor([0.], requires_grad=True)
+# RuntimeError: Function ProdBackward1 returned an invalid gradient at
+# index 0 - got [] but expected shape compatible with [1]
+t.prod(0).backward()

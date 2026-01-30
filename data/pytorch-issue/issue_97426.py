@@ -1,60 +1,28 @@
 import torch
-import torch.nn as nn
 
-# torch.rand(B, C, L, dtype=torch.float)  # Input shape inferred as (7, 3, 20)
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Residual blocks with group norm (as per error context)
-        self.groups = nn.Sequential(
-            # First group of Res1dDownSample modules
-            nn.Sequential(
-                nn.Conv1d(3, 64, kernel_size=3, padding=1),
-                nn.GroupNorm(8, 64),  # 8 groups (example based on logs)
-                nn.ReLU(),
-                nn.Conv1d(64, 64, kernel_size=3, padding=1),
-                nn.GroupNorm(8, 64),
-            ),
-            # Second group with downsampling
-            nn.Sequential(
-                nn.Conv1d(64, 128, kernel_size=3, stride=2, padding=1),
-                nn.GroupNorm(16, 128),
-                nn.ReLU(),
-                nn.Conv1d(128, 128, kernel_size=3, padding=1),
-                nn.GroupNorm(16, 128),
-            ),
-        )
-        # Lateral layers (from 'lateral' modules in logs)
-        self.lateral = nn.ModuleList([
-            nn.Sequential(
-                nn.Conv1d(128, 64, kernel_size=1),
-                nn.GroupNorm(32, 64),
-            ),
-            nn.Sequential(
-                nn.Conv1d(64, 32, kernel_size=1),
-                nn.GroupNorm(16, 32),
-            ),
-        ])
-        # Output layers
-        self.output = nn.Sequential(
-            nn.Conv1d(32, 128, kernel_size=3, padding=1),
-            nn.GroupNorm(32, 128),
-            nn.ReLU(),
-            nn.Conv1d(128, 256, kernel_size=1),
-        )
+def export_onnx_model(model: Net, input_data: Tuple[Any], export_name: str):
+    input_names = [
+        "actors",
+        "actor_idcs",
+        "actor_ctrs",
+        "g_graph",
+        "g_ctrs",
+        "g_idcs",
+        "g_feats",
+        "g_turn",
+        "g_control",
+        "g_intersect",
+        "g_left",
+        "g_right",
+    ]
+    output_names = ["output1"]
 
-    def forward(self, x):
-        x = self.groups(x)
-        for layer in self.lateral:
-            x = layer(x)
-        return self.output(x)
-
-def my_model_function():
-    # Initialize model with example parameters (weights inferred from logs)
-    model = MyModel()
-    return model
-
-def GetInput():
-    # Generate input matching (B=7, C=3, L=20) from error logs
-    return torch.rand(7, 3, 20, dtype=torch.float)
-
+    torch.onnx.export(
+        model.cuda(),
+        input_data,
+        f"{export_name}.onnx",
+        input_names=input_names,
+        output_names=output_names,
+        verbose=True,
+        opset_version=9,
+    )

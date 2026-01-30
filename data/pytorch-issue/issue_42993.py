@@ -1,11 +1,11 @@
-# torch.rand(B, 1, H, 2, dtype=torch.float32)
+import onnxruntime
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+class dummyNet(nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
-        self.n = nn.Conv2d(1, 35, 1)
+        super(dummyNet, self).__init__()
+        self.n =  nn.Conv2d(1, 35, 1)
 
     def forward(self, x):
         x = self.n(x)
@@ -14,9 +14,19 @@ class MyModel(nn.Module):
         x = x.flatten(3, 4)
         return x
 
-def my_model_function():
-    return MyModel()
+n = dummyNet()
+x = torch.randn(1,1,1024,2)
+ort_x = torch.randn(1,1,4096,2).numpy()
 
-def GetInput():
-    return torch.randn(1, 1, 1024, 2)
+torch.onnx.export(n,
+                             (x,),
+                             "d.onnx",
+                             opset_version=12,
+                             input_names=['in'],
+                             output_names=['out'],
+                             dynamic_axes={'in': [0, 2], 'out': [0,2]})
 
+ort_session = onnxruntime.InferenceSession("d.onnx")
+ort_inputs = {}
+ort_inputs[ort_session.get_inputs()[0].name] = ort_x
+ort_outs = ort_session.run(None, ort_inputs)

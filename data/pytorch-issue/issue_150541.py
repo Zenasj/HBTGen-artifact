@@ -1,20 +1,17 @@
-# torch.rand(1024, 512, dtype=torch.float), torch.rand(512, 1, dtype=torch.float)
 import torch
-from torch import nn
+import timeit
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-    
-    def forward(self, inputs):
-        x, y = inputs
-        return torch.mm(x, y)
+def bench_mm(f, x, y):
+    from torch.utils.benchmark import Timer
+    return Timer(stmt="f(x, y); torch.mps.synchronize()",
+                 globals={"x": x, "y": y, "f": f},
+                  language="python", timer=timeit.default_timer).blocked_autorange()
 
-def my_model_function():
-    return MyModel()
+x = torch.rand(1024, 512, device='mps')
+y = torch.rand(512, 1, device='mps')
 
-def GetInput():
-    x = torch.rand(1024, 512)
-    y = torch.rand(512, 1)
-    return (x, y)
+mm_c = torch.compile(torch.mm, options={"coordinate_descent_tuning": False})
+mm_c_cdt = torch.compile(torch.mm, options={"coordinate_descent_tuning": True})
 
+print(f"Compiled torch.mm perf (with cdt disabled) for 1024x512 and  512x1 matrices are {bench_mm(mm_c, x, y).median}")
+print(f"Compiled torch.mm perf (with cdt enabled) for 1024x512 and  512x1 matrices are {bench_mm(mm_c_cdt, x, y).median}")

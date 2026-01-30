@@ -1,76 +1,92 @@
-# tf.random.uniform((B, 10), dtype=tf.int32) ← inferred input shape for input_ids and attention_mask: (batch_size, 10)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
 
-# Based on the issue description and examples, this code reconstructs a typical model 
-# that uses two integer tensor inputs of shape (None, 10), named 'input_ids' and 'attention_mask',
-# then passes them to a language model (huggingface transformers TFAutoModel),
-# then applies a TimeDistributed Dense classifier producing outputs shaped (None, 10, num_classes).
 
-# Key issue faced in the original problem was saved model failing on inference because of
-# the saved signature expecting additional arguments (training=True/False) but
-# the loaded model call did not match signatures.
+############# Create a model using TF and the popular transformers NLP package ###########
 
-# This causes ValueError around function signatures for saved and loaded model calls.
+class TagModelCreator:
 
-# To fix this we write a subclassed tf.keras.Model that accepts the inputs as a tuple of two tensors
-# plus a 'training' boolean keyword argument with default False,
-# which aligns with the signature expected by the original Transformer models.
+    def __init__(self, language_model):
+        self.language_model = language_model
 
-# Also, implement call with signatures accepting 'training' argument so saving/loading works robustly.
+    def create(self, num_classes, max_seq_len, get_token_type_ids=False):
 
-class MyModel(tf.keras.Model):
-    def __init__(self, num_classes=2, max_seq_len=10):
-        super().__init__()
-        self.num_classes = num_classes
-        self.max_seq_len = max_seq_len
+        input_modules = []
+        
+        input_modules.append(tf.keras.layers.Input(shape=(max_seq_len), dtype='int32', name='input_ids'))
+        input_modules.append(tf.keras.layers.Input(shape=(max_seq_len), dtype="int32", name='attention_mask'))
 
-        # Define inputs as placeholders here inside __init__ purely for shape reference
-        # Actual inputs given at call, so these Input layers won't be used functionally.
-        self.input_ids = tf.keras.layers.Input(shape=(self.max_seq_len,), dtype=tf.int32, name='input_ids')
-        self.attention_mask = tf.keras.layers.Input(shape=(self.max_seq_len,), dtype=tf.int32, name='attention_mask')
+        lang_layer = self.language_model(input_modules)
+        linear_layer = tf.keras.layers.TimeDistributed(tf.keras.layers.Dense(num_classes, name='classifier'))(lang_layer[0])
+        model = tf.keras.Model(inputs=input_modules, outputs=linear_layer)
 
-        # Load a huggingface transformer language model inside the keras model
-        # Note: Huggingface models must be passed inputs as a dict or tuple of tensors accordingly.
-        from transformers import TFAutoModel
+        return model
 
-        self.language_model = TFAutoModel.from_pretrained("bert-base-uncased")
+from transformers import TFAutoModel
 
-        # TimeDistributed Dense layer as classifier on top of language model outputs
-        self.classifier = tf.keras.layers.TimeDistributed(
-            tf.keras.layers.Dense(self.num_classes, name='classifier')
-        )
+model_name = "bert-base-uncased"
+language_model = TFAutoModel.from_pretrained(model_name)
+tagging_model_creator = TagModelCreator(language_model)
+arbitrary_class_num = 2
+arbitrary_sequence_length = 10
+tagging_model = tagging_model_creator.create(arbitrary_class_num, arbitrary_sequence_length)
 
-    # Call method accepts tuple of inputs (input_ids, attention_mask) and training bool
-    def call(self, inputs, training=False):
-        # inputs comes as tuple of (input_ids, attention_mask)
-        # Huggingface TFAutoModel expects dict or list inputs with named parameters
-        input_ids, attention_mask = inputs
 
-        # Forward pass through transformer model with inputs and training flag
-        # The model returns a tuple where first element is sequence output (batch_size, seq_len, hidden_size)
-        lang_outputs = self.language_model(input_ids=input_ids,
-                                           attention_mask=attention_mask,
-                                           training=training)
-        seq_output = lang_outputs[0]  # sequence output
 
-        # Pass sequence output to classifier
-        logits = self.classifier(seq_output)
 
-        return logits
+######### Create some spoof data to see how the model handles the data ####################
 
-def my_model_function():
-    # Return an instance of MyModel with default params matching input shapes from issue
-    return MyModel(num_classes=2, max_seq_len=10)
+def data_generator():
+    yield (([0]*arbitrary_sequence_length, [1]*arbitrary_sequence_length))
 
-def GetInput():
-    # Return input tuple matching expected input to MyModel.call()
-    # Note: as per issue, inputs are int32 tensors of shape (batch_size, 10)
-    batch_size = 1  # example batch size for test input
-    max_seq_len = 10
+input_types = ((tf.int32, tf.int32))
+input_shape = ((tf.TensorShape([None]), tf.TensorShape([None])))
 
-    input_ids = tf.random.uniform(shape=(batch_size, max_seq_len), maxval=10000, dtype=tf.int32)
-    attention_mask = tf.ones(shape=(batch_size, max_seq_len), dtype=tf.int32)
+tf_dataset = tf.data.Dataset.from_generator(data_generator, input_types, input_shape).batch(7)
 
-    return (input_ids, attention_mask)
 
+
+
+
+
+######### Use the spoof data on the model, to confirm that it does inference on the data without errors########
+
+for example_input in tf_dataset:
+    test_output = tagging_model(example_input)
+    break
+
+print(test_output)
+print("Inference is done correctly BEFORE re-loading the model")
+
+
+
+
+
+
+######## Save and reload the model #################
+
+tf.keras.models.save_model(model=tagging_model,
+                                       filepath="test_model_save.tf",
+                                       save_format="tf",
+                                       include_optimizer=True
+                                      )
+
+reloaded_model = tf.keras.models.load_model(filepath="test_model_save.tf")
+
+
+
+
+
+
+####### Try to repeat the inference as above #########
+for example_input in tf_dataset:
+    test_output = reloaded_model(example_input)
+    break
+
+import sklearn
+import sys
+from sklearn.pipeline import Pipeline, FeatureUnion
+from Transformers import TextTransformer

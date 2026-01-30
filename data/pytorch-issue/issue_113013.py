@@ -1,21 +1,17 @@
-# torch.rand(3, 3, 3, dtype=torch.float64) ← Add a comment line at the top with the inferred input shape
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        x = torch.adaptive_avg_pool1d(input=x, output_size=2)
-        x = torch.argmax(input=x)
-        return x
+def forward(x):        
+    x = torch.adaptive_avg_pool1d(input=x, output_size=2)
+    x = torch.argmax(input=x)
+    return x
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+x = torch.rand([3, 3, 3], dtype=torch.float64)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand([3, 3, 3], dtype=torch.float64)
+# Eager execution
+eager = forward(x)
 
+# Compiled execution
+comp = torch.compile(forward, mode='max-autotune-no-cudagraphs', fullgraph=True, dynamic=True)(x)
+
+# Comparing the results
+print(torch.allclose(eager.to('cpu'), comp.to('cpu'), rtol=1e-3, atol=1e-3, equal_nan=True))

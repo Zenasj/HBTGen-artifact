@@ -1,49 +1,125 @@
-# torch.rand(B, C, H, W, dtype=...)  # Add a comment line at the top with the inferred input shape
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3, stride=1, padding=1)
-        self.relu = nn.ReLU()
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
-        self.fc1 = nn.Linear(16 * 16 * 16, 128)
-        self.fc2 = nn.Linear(128, 10)
+def _write_ninja_file_to_build_library(path,
+                                       name,
+                                       sources,
+                                       extra_cflags,
+                                       extra_cuda_cflags,
+                                       extra_ldflags,
+                                       extra_include_paths,
+                                       with_cuda) -> None:
+    extra_cflags = [flag.strip() for flag in extra_cflags]
+    extra_cuda_cflags = [flag.strip() for flag in extra_cuda_cflags]
+    extra_ldflags = [flag.strip() for flag in extra_ldflags]
+    extra_include_paths = [flag.strip() for flag in extra_include_paths]
 
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.relu(x)
-        x = self.pool(x)
-        x = x.view(-1, 16 * 16 * 16)
-        x = self.fc1(x)
-        x = self.relu(x)
-        x = self.fc2(x)
-        return x
+    # Turn into absolute paths so we can emit them into the ninja build
+    # file wherever it is.
+    user_includes = [os.path.abspath(file) for file in extra_include_paths]
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+    # include_paths() gives us the location of torch/extension.h
+    system_includes = include_paths(with_cuda)
+    # sysconfig.get_paths()['include'] gives us the location of Python.h
+    system_includes.append(sysconfig.get_paths()['include'])
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # Assuming input shape: (batch_size, channels, height, width)
-    batch_size = 4
-    channels = 3
-    height = 32
-    width = 32
-    input_tensor = torch.rand(batch_size, channels, height, width, dtype=torch.float32)
-    return input_tensor
+    # Windows does not understand `-isystem`.
+    if IS_WINDOWS:
+        user_includes += system_includes
+        system_includes.clear()
 
-# The issue you provided is related to an installation problem with PyTorch on Windows 10, specifically an `AttributeError` when trying to build and develop a project. The error was caused by having multiple installations of PyTorch (both via `conda` and `pip`), which led to conflicts.
-# Since the issue does not contain any specific model or code that needs to be extracted, I will generate a simple example of a PyTorch model and its input generation function. This example will be a basic convolutional neural network (CNN) for image classification, as it is a common use case for PyTorch.
-# Here is the complete Python code file:
-# ### Explanation:
-# 1. **MyModel Class**:
-#    - A simple CNN with one convolutional layer, ReLU activation, max pooling, and two fully connected layers.
-#    - The input shape is assumed to be `(batch_size, 3, 32, 32)` for RGB images of size 32x32.
-# 2. **my_model_function**:
-#    - Returns an instance of `MyModel`.
-# 3. **GetInput Function**:
-#    - Generates a random tensor with the shape `(batch_size, channels, height, width)` to match the input expected by `MyModel`.
-# This code can be used as a starting point for more complex models and input data. If you have specific requirements or a different model structure, please provide more details.
+    common_cflags = [f'-DTORCH_EXTENSION_NAME={name}']
+    common_cflags.append('-DTORCH_API_INCLUDE_EXTENSION_H')
+
+    # Note [Pybind11 ABI constants]
+    #
+    # Pybind11 before 2.4 used to build an ABI strings using the following pattern:
+    # f"__pybind11_internals_v{PYBIND11_INTERNALS_VERSION}{PYBIND11_INTERNALS_KIND}{PYBIND11_BUILD_TYPE}__"
+    # Since 2.4 compier type, stdlib and build abi parameters are also encoded like this:
+    # f"__pybind11_internals_v{PYBIND11_INTERNALS_VERSION}{PYBIND11_INTERNALS_KIND}{PYBIND11_COMPILER_TYPE}{PYBIND11_STDLIB}{PYBIND11_BUILD_ABI}{PYBIND11_BUILD_TYPE}__"
+    #
+    # This was done in order to further narrow down the chances of compiler ABI incompatibility
+    # that can cause a hard to debug segfaults.
+    # For PyTorch extensions we want to relax those restrictions and pass compiler, stdlib and abi properties
+    # captured during PyTorch native library compilation in torch/csrc/Module.cpp
+
+    for pname in ["COMPILER_TYPE", "STDLIB", "BUILD_ABI"]:
+        pval = getattr(torch._C, f"_PYBIND11_{pname}")
+        if pval is not None and not IS_WINDOWS:
+            common_cflags.append(f'-DPYBIND11_{pname}=\\"{pval}\\"')
+
+    common_cflags += [f'-I{include}' for include in user_includes]
+    common_cflags += [f'-isystem {include}' for include in system_includes]
+
+    common_cflags += ['-D_GLIBCXX_USE_CXX11_ABI=' + str(int(torch._C._GLIBCXX_USE_CXX11_ABI))]
+
+    if IS_WINDOWS:
+        cflags = common_cflags + COMMON_MSVC_FLAGS + extra_cflags
+        from distutils.spawn import _nt_quote_args  # type: ignore
+        cflags = _nt_quote_args(cflags)
+    else:
+        cflags = common_cflags + ['-fPIC', '-std=c++14'] + extra_cflags
+
+    if with_cuda and IS_HIP_EXTENSION:
+        cuda_flags = ['-DWITH_HIP'] + cflags + COMMON_HIP_FLAGS + COMMON_HIPCC_FLAGS
+        cuda_flags += extra_cuda_cflags
+        cuda_flags += _get_rocm_arch_flags(cuda_flags)
+        sources = [s if not _is_cuda_file(s) else
+                   os.path.abspath(os.path.join(
+                       path, get_hip_file_path(os.path.relpath(s, path))))
+                   for s in sources]
+    elif with_cuda:
+        cuda_flags = common_cflags + COMMON_NVCC_FLAGS + _get_cuda_arch_flags()
+        if IS_WINDOWS:
+            for flag in COMMON_MSVC_FLAGS:
+                cuda_flags = ['-Xcompiler', flag] + cuda_flags
+            for ignore_warning in MSVC_IGNORE_CUDAFE_WARNINGS:
+                cuda_flags = ['-Xcudafe', '--diag_suppress=' + ignore_warning] + cuda_flags
+            cuda_flags = _nt_quote_args(cuda_flags)
+            cuda_flags += _nt_quote_args(extra_cuda_cflags)
+        else:
+            cuda_flags += ['--compiler-options', "'-fPIC'"]
+            cuda_flags += extra_cuda_cflags
+            if not any(flag.startswith('-std=') for flag in cuda_flags):
+                cuda_flags.append('-std=c++14')
+            if os.getenv("CC") is not None:
+                cuda_flags = ['-ccbin', os.getenv("CC")] + cuda_flags
+    else:
+        cuda_flags = None
+
+    def object_file_path(source_file: str) -> str:
+        # '/path/to/file.cpp' -> 'file'
+        file_name = os.path.splitext(os.path.basename(source_file))[0]
+        if _is_cuda_file(source_file) and with_cuda:
+            # Use a different object filename in case a C++ and CUDA file have
+            # the same filename but different extension (.cpp vs. .cu).
+            target = f'{file_name}.cuda.o'
+        else:
+            target = f'{file_name}.o'
+        return target
+
+    objects = [object_file_path(src) for src in sources]
+
+    if IS_WINDOWS:
+        ldflags = ['/DLL'] + extra_ldflags
+    else:
+        ldflags = ['-shared'] + extra_ldflags
+    # The darwin linker needs explicit consent to ignore unresolved symbols.
+    if sys.platform.startswith('darwin'):
+        ldflags.append('-undefined dynamic_lookup')
+    elif IS_WINDOWS:
+        ldflags = _nt_quote_args(ldflags)
+
+    ext = 'pyd' if IS_WINDOWS else 'so'
+    library_target = f'{name}.{ext}'
+
+    _write_ninja_file(
+        path=path,
+        cflags=cflags,
+        post_cflags=None,
+        cuda_cflags=cuda_flags,
+        cuda_post_cflags=None,
+        sources=sources,
+        objects=objects,
+        ldflags=ldflags,
+        library_target=library_target,
+        with_cuda=with_cuda)

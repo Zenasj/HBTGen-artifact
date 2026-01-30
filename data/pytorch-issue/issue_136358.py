@@ -1,21 +1,22 @@
-# torch.rand(B, 1, 1, 1, dtype=torch.float32)  # Inferred input shape based on the repro example
 import torch
-from torch import nn
 
 class IdentityFunction(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x):
+
         class Node():
             pass
 
         a = Node()
         b = Node()
+        # Induce a reference cycle
         a.b = b
-        b.a = a  # Induce reference cycle
+        b.a = a
 
         s = torch.zeros(1,)
         s._attrs = {"key": "value"}
-        a.s = s  # Tensor is part of the cycle
+        # If the tensor is not part of ref cycle, then it is ok
+        a.s = s  # Comment this line and it works fine.
         ctx.save_for_backward(s)
         return x
 
@@ -23,13 +24,50 @@ class IdentityFunction(torch.autograd.Function):
     def backward(ctx, grad_output):
         return grad_output
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return IdentityFunction.apply(x)
+t = torch.ones(1, device='cpu', requires_grad=True)
 
-def my_model_function():
-    return MyModel()
+y = IdentityFunction.apply(t)
 
-def GetInput():
-    return torch.rand(1, 1, 1, 1, requires_grad=True, dtype=torch.float32)
+print(y.grad_fn.saved_tensors[0]._attrs)
+import gc
 
+print(gc.collect())
+print(y.grad_fn.saved_tensors[0])  # This is ok
+print(y.grad_fn.saved_tensors[0]._attrs)  # This fails
+
+import torch
+
+class IdentityFunction(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, x):
+
+        class Node():
+            pass
+
+        a = Node()
+        b = Node()
+        # Induce a reference cycle
+        a.b = b
+        b.a = a
+
+        s = torch.zeros(1,)
+        s._attrs = {"key": "value"}
+        # If the tensor is not part of ref cycle, then it is ok
+        a.s = s  # Comment this line and it works fine.
+        ctx.save_for_backward(s)
+        return x
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        return grad_output
+
+t = torch.ones(1, device='cpu', requires_grad=True)
+
+y = IdentityFunction.apply(t)
+
+print(y.grad_fn.saved_tensors[0]._attrs)
+import gc
+
+print(gc.collect())
+print(y.grad_fn.saved_tensors[0])  # This is ok
+print(y.grad_fn.saved_tensors[0]._attrs)  # This fails

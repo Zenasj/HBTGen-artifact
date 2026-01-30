@@ -1,8 +1,8 @@
-# torch.rand(10, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
 import torch
 import torch.nn as nn
+from torch._dynamo.utils import CompileProfiler
 
-class MyModel(nn.Module):
+class SimpleDropout(nn.Module):
     def __init__(self):
         super().__init__()
         self.dropout = nn.Dropout(0.5)
@@ -10,12 +10,14 @@ class MyModel(nn.Module):
     
     def forward(self, x):
         return self.dropout(self.linear(x))
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(10, dtype=torch.float32)
-
+    
+model = SimpleDropout()
+x = torch.randn(10)
+with CompileProfiler() as p:
+    model = torch.compile(model, backend=p)
+    for _ in range(4):
+        model.eval()
+        model(x)
+        model.train()
+        model(x)
+    print(p.report())

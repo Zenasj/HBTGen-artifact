@@ -1,35 +1,88 @@
-# torch.rand(B, 25, 15, dtype=torch.float32)
-import torch
+import torch.nn as nn
+import random
+
 import numpy as np
+import torch
 from torch import nn
-import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.conv = nn.Conv1d(25, 64, 7, stride=2, padding=0)
-    
-    def forward(self, x):
-        return self.conv(x)
+d_in = 25
+d_out = 64
+k = 7
+B = 2
+L = 10
 
-def my_model_function():
-    model = MyModel()
-    np.random.seed(1034)  # Replicate the seed from the original code
-    d_in, d_out, k = 25, 64, 7
-    # Generate weights and bias as per original code
-    w_np = np.random.random((k, d_in, d_out)).astype('float32')
-    b_np = np.random.random((d_out,)).astype('float32')
-    # Permute weight dimensions to (out_channels, in_channels, kernel_size)
-    w = torch.as_tensor(w_np.transpose(2, 1, 0))
-    b = torch.as_tensor(b_np)
-    model.conv.weight = nn.Parameter(w)
-    model.conv.bias = nn.Parameter(b)
-    return model
+conv = nn.Conv1d(d_in, d_out, k, stride=2, padding=0)
+pad = nn.ConstantPad1d((2, 3), 0)
+np.random.seed(1034)
+X = np.random.random((B, L, d_in))
+X = torch.as_tensor(X).transpose(-1, -2)
+X = pad(X)
+w = np.random.random((k, d_in, d_out))
+w = w.astype('float32')
+b = np.random.random((d_out, ))
 
-def GetInput():
-    B, L, d_in = 2, 10, 25
-    original_input = torch.rand(B, L, d_in)
-    x = original_input.transpose(-1, -2)  # Shape becomes (B, 25, 10)
-    padded_x = F.pad(x, (2, 3), mode='constant', value=0)  # Pad to (B, 25, 15)
-    return padded_x
+w = torch.as_tensor(w).permute(2, 1, 0).float()
+b = torch.as_tensor(b).float()
 
+conv.weight = nn.Parameter(w)
+conv.bias = nn.Parameter(b)
+
+out1 = conv(X.float()).detach().numpy()
+w1 = conv.weight.detach().numpy()
+out2 = conv.double()(X).detach().numpy()
+w2 = conv.weight.detach().numpy()
+out3 = conv.float()(X.float()).detach().numpy()
+w3 = conv.weight.detach().numpy()
+print('w == w1?')
+print(np.allclose(w.detach().numpy(), w1))
+print('w1 == w2?')
+print(np.allclose(w1, w2))
+print('w2 == w3?')
+print(np.allclose(w2, w3))
+print('out1 == out2?')
+print(np.allclose(out1, out2, atol=1e-6))
+print('out2 == out3?')
+print(np.allclose(out2, out3, atol=1e-6))
+
+import numpy as np
+import torch
+from torch import nn
+
+d_in = 25
+d_out = 64
+k = 7
+B = 2
+L = 10
+
+conv = nn.Conv1d(d_in, d_out, k, stride=2, padding=0)
+pad = nn.ConstantPad1d((2, 3), 0)
+np.random.seed(1034)
+X = np.random.random((B, L, d_in))
+X = torch.as_tensor(X).transpose(-1, -2).cuda()
+X = pad(X)
+w = np.random.random((k, d_in, d_out))
+w = w.astype('float32')
+b = np.random.random((d_out, ))
+
+w = torch.as_tensor(w).permute(2, 1, 0).float().cuda()
+b = torch.as_tensor(b).float().cuda()
+
+conv.weight = nn.Parameter(w)
+conv.bias = nn.Parameter(b)
+
+out1 = conv(X.float()).detach().cpu().numpy()
+w1 = conv.weight.detach().cpu().numpy()
+out2 = conv.double()(X).detach().cpu().numpy()
+w2 = conv.weight.detach().cpu().numpy()
+out3 = conv.float()(X.float()).detach().cpu().numpy()
+w3 = conv.weight.detach().cpu().numpy()
+print('w == w1?')
+print(np.allclose(w.detach().cpu().numpy(), w1))
+print('w1 == w2?')
+print(np.allclose(w1, w2))
+print('w2 == w3?')
+print(np.allclose(w2, w3))
+print('out1 == out2?')
+print(np.allclose(out1, out2, atol=1e-6))
+print('out2 == out3?')
+print(np.allclose(out2, out3, atol=1e-6))

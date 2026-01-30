@@ -1,40 +1,29 @@
-# tf.random.uniform((16, 5), dtype=tf.float32) ← input shape derived from usage in example with batch size 16 and feature size 5
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Dense layer with 20 units, ReLU activation, input_shape inferred as (5,)
-        self.dense = tf.keras.layers.Dense(20, activation='relu')
 
-    def call(self, inputs, *args, **kwargs):
-        # Forward pass:
-        # 1. Apply dense layer to input tensor of shape (batch_size, 5)
-        x = self.dense(inputs)
-        
-        # 2. Gather rows indexed by ind = [[0],[1],[2]] from dimension 0
-        # This corresponds to selecting the first 3 rows from batch dimension
-        ind = [[0], [1], [2]]
-        x = tf.gather_nd(x, ind)
-        # After gather_nd, x shape is (3, 20)
-        
-        # 3. Gather rows indexed by ind = [[0],[1]] from the new x
-        # This further selects first two rows from the result above
-        ind = [[0], [1]]
-        x = tf.gather_nd(x, ind)
-        # Result shape is (2, 20)
-        
-        return x
+class DebugModel(tf.keras.Model):
+  def __init__(self):
+    super(DebugModel, self).__init__()
+    self.dense = tf.keras.layers.Dense(20, activation='relu', input_shape=(5,))
 
+  def __call__(self, input, *args, **kwargs):
+    x = self.dense(input)
+    ind = [[0], [1], [2]]
+    x = tf.gather_nd(x, ind)
+    ind = [[0], [1]]
+    x = tf.gather_nd(x, ind)
+    return x
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+my_model = DebugModel()
 
-
-def GetInput():
-    # Return a random input tensor compatible with MyModel
-    # Batch size of 16, feature size of 5, float32 dtype
-    return tf.random.uniform((16, 5), dtype=tf.float32)
-
+my_optim = tf.keras.optimizers.Adam(1e-3)
+with tf.GradientTape() as tape:
+  out = my_model(tf.random.uniform((16,5)))
+  my_loss = -tf.reduce_mean(out)
+  grads = tape.gradient(my_loss, my_model.trainable_weights)
+  my_optim.apply_gradients(zip(grads, my_model.trainable_weights))

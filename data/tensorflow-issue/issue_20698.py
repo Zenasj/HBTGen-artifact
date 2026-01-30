@@ -1,48 +1,59 @@
-# tf.random.uniform((B, 1, 1), dtype=tf.float32) x2 inputs for LSTM branches, output scalar sigmoid
+import random
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
+import numpy as np
 import tensorflow as tf
+from tensorflow import keras
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define the two inputs each are (None, 1, 1)
-        # Two LSTM branches with 40 units each
-        self.lstm1 = tf.keras.layers.LSTM(40, return_sequences=False, name="lstm_input_x")
-        self.lstm2 = tf.keras.layers.LSTM(40, return_sequences=False, name="lstm_input_y")
-        # Concatenate and a dense output with sigmoid activation
-        self.concat = tf.keras.layers.Concatenate(axis=-1)
-        self.dense = tf.keras.layers.Dense(1, activation="sigmoid")
+data_a = np.array([300, 455, 350, 560, 700, 800, 200, 250], dtype=np.float32)
+labels = np.array([455, 350, 560, 700, 800, 200, 250, 300], dtype=np.float32)
+data_b = np.array([200, 255, 350, 470, 600, 300, 344, 322], dtype=np.float32)
+data_a = np.reshape(data_a, (8, 1, 1))
+data_b = np.reshape(data_b, (8, 1, 1))
 
-    def call(self, inputs, training=False):
-        # inputs is expected to be either a list/tuple or dict with keys 'input_x' and 'input_y'
-        # Accept dict or list input for flexibility
-        if isinstance(inputs, dict):
-            x = inputs['input_x']
-            y = inputs['input_y']
-        else:
-            x, y = inputs
+x = keras.layers.Input(shape=(1, 1), name='input_x')
+y = keras.layers.Input(shape=(1, 1), name='input_y')
+admi = keras.layers.LSTM(40, return_sequences=False)(x)
+pla = keras.layers.LSTM(40, return_sequences=False)(y)
+out = keras.layers.concatenate([admi, pla], axis=-1)
+output = keras.layers.Dense(1, activation='sigmoid')(out)
+model = keras.models.Model(inputs=[x, y], outputs=output)
+model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 
-        admi = self.lstm1(x, training=training)
-        pla = self.lstm2(y, training=training)
-        out = self.concat([admi, pla])
-        output = self.dense(out)
-        return output
+model.fit([data_a, data_b], labels, batch_size=2, epochs=10)
+model.fit({'input_x': data_a, 'input_y': data_b}, labels, batch_size=2, epochs=10)
 
-def my_model_function():
-    model = MyModel()
-    # Build the model by calling it with dummy data to create weights
-    dummy_input = GetInput()
-    model(dummy_input)
-    # Compile with Adam optimizer and binary crossentropy loss as per example
-    model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-    return model
+dataset = tf.data.Dataset.from_tensor_slices(({'input_x': data_a, 'input_y': data_b}, labels)).batch(2).repeat()
+model.fit(dataset, epochs=10, steps_per_epoch=4)
 
-def GetInput():
-    # Provide an input matching the expected input shapes: two tensors each of shape (batch, 1, 1)
-    # Batch size: chosen arbitrary, e.g., 2 to match common batching in example
-    batch_size = 2
-    x = tf.random.uniform((batch_size, 1, 1), dtype=tf.float32)
-    y = tf.random.uniform((batch_size, 1, 1), dtype=tf.float32)
-    # Return as dict since model supports dict inputs (also will work with list)
-    return {'input_x': x, 'input_y': y}
+def generator():
+    while True:
+        for i in np.random.permutation(8):
+            yield {'input_x': data_a[i], 'input_y': data_b[i]}, labels[i]
 
+dataset = tf.data.Dataset.from_generator(generator, ({'input_x': tf.float32, 'input_y': tf.float32}, tf.float32)).batch(2)
+model.fit(dataset, epochs=10, steps_per_epoch=4)
+
+dataset = tf.data.Dataset.from_tensor_slices(((data_a, data_b), labels)).batch(2).repeat()
+model.fit(dataset, epochs=10, steps_per_epoch=4)
+
+def generator():
+    while True:
+        for i in np.random.permutation(8):
+            yield (data_a[i], data_b[i]), labels[i]
+
+dataset = tf.data.Dataset.from_generator(generator, ((tf.float32, tf.float32), tf.float32)).batch(2)
+model.fit(dataset, epochs=10, steps_per_epoch=4)
+
+xy_ds = (
+        tf.data.Dataset.zip((audio_ds, label_ds))
+            .batch(
+            batch_size=batch_size,
+            # drop_remainder=True if is_training else False
+            )
+        .repeat(repeat)
+        .prefetch(tf.contrib.data.AUTOTUNE)
+    )
+
+model = Model(inputs=[input1, input2], outputs=predictions)

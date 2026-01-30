@@ -1,35 +1,37 @@
-# tf.random.uniform((B, 28, 28, 1), dtype=tf.float32)
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # The original model uses Conv2D -> MaxPooling2D -> BatchNormalization -> Flatten -> Dense -> Dense
-        # This model replicates that architecture exactly.
-        self.conv = tf.keras.layers.Conv2D(32, 3, activation='relu', input_shape=(28, 28, 1))
-        self.pool = tf.keras.layers.MaxPooling2D()
-        self.bn = tf.keras.layers.BatchNormalization()
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(64, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(10)  # logits output
+with strategy.scope():
+  model = tf.keras.Sequential([
+      tf.keras.layers.Conv2D(32, 3, activation='relu', input_shape=(28, 28, 1)),
+      tf.keras.layers.MaxPooling2D(),
+      tf.keras.layers.BatchNormalization(),
+      tf.keras.layers.Flatten(),
+      tf.keras.layers.Dense(64, activation='relu'),
+      tf.keras.layers.Dense(10)
+  ])
 
-    def call(self, inputs, training=False):
-        # Explicitly pass training to batch normalization
-        x = self.conv(inputs)
-        x = self.pool(x)
-        x = self.bn(x, training=training)  # BN behaves differently in train vs eval
-        x = self.flatten(x)
-        x = self.dense1(x)
-        x = self.dense2(x)
-        return x
+  model.compile(loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+                optimizer=tf.keras.optimizers.Adam(),
+                metrics=['accuracy'])
 
-def my_model_function():
-    # Return an instance of MyModel for usage.
-    return MyModel()
+strategy = tf.distribute.MirroredStrategy()
+print('Number of devices: {}'.format(strategy.num_replicas_in_sync))
 
-def GetInput():
-    # Returns a batch of random float32 tensors shaped (batch_size, 28, 28, 1)
-    # Random uniform in [0,1) to simulate grayscale images for MNIST-like images
-    batch_size = 32  # assume typical batch size, can be changed as needed
-    return tf.random.uniform((batch_size, 28, 28, 1), dtype=tf.float32)
+eval_loss, eval_acc = model.evaluate(eval_dataset)
 
+print('Eval loss: {}, Eval Accuracy: {}'.format(eval_loss, eval_acc))
+
+path = 'saved_model/'
+model.save(path, save_format='tf')
+with strategy.scope():
+  replicated_model = tf.keras.models.load_model(path)
+  replicated_model.compile(loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+                           optimizer=tf.keras.optimizers.Adam(),
+                           metrics=['accuracy'])
+
+  eval_loss, eval_acc = replicated_model.evaluate(eval_dataset)
+  print ('Eval loss: {}, Eval Accuracy: {}'.format(eval_loss, eval_acc))

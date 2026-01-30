@@ -1,24 +1,23 @@
-# tf.random.uniform((B,), dtype=tf.float32) ← Inferred input shape is a 1D tensor with variable batch size
+from tensorflow import keras
+from tensorflow.keras import models
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
+class TestModel(tf.keras.models.Model):
+  @tf.function
+  def test(self, x):
+    return x
 
-    @tf.function
-    def call(self, x):
-        # The original example is essentially identity:
-        # returning the input as is.
-        return x
+test_model = TestModel()
+signatures = [test_model.test.get_concrete_function(tf.TensorSpec([None], tf.float32))]
 
-def my_model_function():
-    # Return an instance of MyModel with no additional initialization required
-    return MyModel()
+converter = tf.lite.TFLiteConverter.from_concrete_functions(signatures, test_model)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS]
+tflite_model = converter.convert()
 
-def GetInput():
-    # Return a 1D float32 tensor of variable batch size (including empty) to match the input spec
-    # Using shape (0,) to illustrate empty tensor edge case noted in the issue
-    # Users may try different sizes as needed
-    return tf.random.uniform((0,), dtype=tf.float32)
+interpreter = tf.lite.Interpreter(model_content=tflite_model)
+interpreter.allocate_tensors()
 
+# This raises "ValueError: Cannot set tensor: Tensor is unallocated. Try calling allocate_tensors() first"
+result = interpreter.get_signature_runner()(x=tf.zeros([0], tf.float32))

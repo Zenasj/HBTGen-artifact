@@ -1,116 +1,167 @@
-# tf.random.uniform((1, 512, 64, 7), dtype=tf.float32) ← Assumed batch size 1 for input shape (512,64,7)
+from tensorflow import keras
+from tensorflow.keras import layers
 
+# from tensorflow import math
 import tensorflow as tf
-from tensorflow.keras.layers import Conv2D, BatchNormalization, UpSampling2D, MaxPool2D
-from tensorflow.keras.activations import selu, sigmoid
+import keras
+# from tensorflow.keras import Model
+from keras import Model, Input
+from keras.layers import (Concatenate, Lambda, UpSampling2D, MaxPool2D,
+                          ZeroPadding2D, Conv2D, BatchNormalization)
+from keras.activations import selu as SeLU
+from keras.activations import sigmoid as Sigmoid
 
-# Custom layers and blocks rewritten to be compatible with TF 2.20 and for correct functional behavior
+
+# from utils.utils import compose
 
 
-class up_conv(tf.keras.Model):
+# def gelu_(X):
+#     return 0.5 * X * (1.0 + math.tanh(0.7978845608028654 * (X + 0.044715 * math.pow(X, 3))))
+#
+#
+# def snake_(X, beta):
+#     return X + (1 / beta) * math.square(math.sin(beta * X))
+#
+#
+# class GELU(Model):
+#     '''
+#     Gaussian Error Linear Unit (GELU), an alternative of ReLU
+#
+#     Y = GELU()(X)
+#
+#     ----------
+#     Hendrycks, D. and Gimpel, K., 2016. Gaussian error linear units (gelus). arXiv preprint arXiv:1606.08415.
+#
+#     Usage: use it as a tf.keras.Model
+#
+#
+#     '''
+#
+#     def __init__(self, trainable=False, **kwargs):
+#         super(GELU, self).__init__(**kwargs)
+#         self.supports_masking = True
+#         self.trainable = trainable
+#
+#     def build(self, input_shape):
+#         super(GELU, self).build(input_shape)
+#
+#     def call(self, inputs, mask=None):
+#         return gelu_(inputs)
+#
+#     def get_config(self):
+#         config = {'trainable': self.trainable}
+#         base_config = super(GELU, self).get_config()
+#         return dict(list(base_config.items()) + list(config.items()))
+#
+#     def compute_output_shape(self, input_shape):
+#         return input_shape
+
+
+class up_conv(Model):
     """
-    Up Convolution Block: Upsamples and applies Conv+BatchNorm+SELU activation.
+    Up Convolution Block
     """
 
     def __init__(self, out_ch):
-        super().__init__()
-        self.up = tf.keras.Sequential([
-            UpSampling2D(size=(2, 2)),
-            Conv2D(out_ch, kernel_size=3, strides=1, padding='same', use_bias=True),
-            BatchNormalization(momentum=0.97)
-        ])
+        super(up_conv, self).__init__()
+        self.up = keras.Sequential()
+        self.up.add(UpSampling2D(size=(2, 2)))
+        self.up.add(Conv2D(out_ch, kernel_size=3, strides=1, padding='same', use_bias=True))
+        self.up.add(BatchNormalization(momentum=0.97))
 
-    def call(self, x):
+    def call(self, x, **kwargs):
         x = self.up(x)
-        x = selu(x)
+        x = SeLU(x)
         return x
 
 
-class Recurrent_block(tf.keras.Model):
+class Recurrent_block(Model):
     """
-    Recurrent Block with iterations of Conv + BatchNorm + SELU.
+    Recurrent Block for R2Unet_CNN
     """
 
     def __init__(self, out_ch, t=2):
-        super().__init__()
+        super(Recurrent_block, self).__init__()
+
         self.t = t
         self.out_ch = out_ch
-        self.conv = tf.keras.Sequential([
-            Conv2D(out_ch, kernel_size=3, strides=1, padding='same', use_bias=True),
-            BatchNormalization(momentum=0.97)
-        ])
+        self.conv = keras.Sequential()
+        self.conv.add(Conv2D(out_ch, kernel_size=3, strides=1, padding='same', use_bias=True))
+        self.conv.add(BatchNormalization(momentum=0.97))
 
-    def call(self, x):
+    def call(self, x, **kwargs):
         for i in range(self.t):
             if i == 0:
-                x1 = self.conv(x)
-            x1 = self.conv(x + x1)
-            x1 = selu(x1)
-        return x1
+                x = self.conv(x)
+            out = self.conv(x + x)
+            out = SeLU(out)
+        return out
 
 
-class Attention_block(tf.keras.Model):
+class Attention_block(Model):
     """
-    Attention block that calculates attention map and scales input features.
+    Attention Block
     """
 
     def __init__(self, F_int):
-        super().__init__()
+        super(Attention_block, self).__init__()
 
-        self.W_g = tf.keras.Sequential([
-            Conv2D(F_int, kernel_size=1, strides=1, padding="same", use_bias=True),
-            BatchNormalization(momentum=0.97)
-        ])
+        self.W_g = keras.Sequential()
+        self.W_g.add(Conv2D(F_int, kernel_size=1, strides=1, padding="same", use_bias=True)),
+        self.W_g.add(BatchNormalization(momentum=0.97))
 
-        self.W_x = tf.keras.Sequential([
-            Conv2D(F_int, kernel_size=1, strides=1, padding="same", use_bias=True),
-            BatchNormalization(momentum=0.97)
-        ])
+        self.W_x = keras.Sequential()
+        self.W_x.add(Conv2D(F_int, kernel_size=1, strides=1, padding="same", use_bias=True))
+        self.W_x.add(BatchNormalization(momentum=0.97))
 
-        self.psi = tf.keras.Sequential([
-            Conv2D(1, kernel_size=1, strides=1, padding="same", use_bias=True),
-            BatchNormalization(momentum=0.97)
-        ])
+        self.psi = keras.Sequential()
+        self.psi.add(Conv2D(1, kernel_size=1, strides=1, padding="same", use_bias=True)),
+        self.psi.add(BatchNormalization(momentum=0.97))
 
-    def call(self, inputs):
+    def call(self, inputs, **kwargs):
         g, x = inputs
         g1 = self.W_g(g)
         x1 = self.W_x(x)
-        psi = selu(g1 + x1)
+        psi = SeLU(g1 + x1)
         psi = self.psi(psi)
-        psi = sigmoid(psi)
+        psi = Sigmoid(psi)
         out = x * psi
         return out
 
 
-class RRCNN_block(tf.keras.Model):
+class RRCNN_block(Model):
     """
-    Recurrent Residual CNN block consisting of a 1x1 Conv and two Recurrent_blocks,
-    with residual connection.
+    Recurrent Residual Convolutional Neural Network Block
     """
 
     def __init__(self, out_ch, t=2):
-        super().__init__()
+        super(RRCNN_block, self).__init__()
+
         self.Conv = Conv2D(out_ch, kernel_size=1, strides=1, padding="same")
+        # self.RCNN = compose(
+        #     Recurrent_block(out_ch, t=t),
+        #     Recurrent_block(out_ch, t=t)
+        # )
         self.RCNN1 = Recurrent_block(out_ch, t=t)
         self.RCNN2 = Recurrent_block(out_ch, t=t)
 
-    def call(self, x):
+    def call(self, x, **kwargs):
         x1 = self.Conv(x)
+        # x2 = self.RCNN(x1)
         x2 = self.RCNN1(x1)
         x2 = self.RCNN2(x2)
         out = x1 + x2
         return out
 
 
-class MyModel(tf.keras.Model):
+class R2AttU_Net(Model):
     """
-    Residual Recurrent Convolutional Neural Network with Attention U-Net architecture.
-    Adapted from R2AttU_Net, matching original input shape (512,64,7).
+    Residual Recuurent Block with attention Unet
+    Implementation : https://github.com/LeeJunHyun/Image_Segmentation
     """
 
     def __init__(self, out_ch=1, t=2):
-        super().__init__()
+        super(R2AttU_Net, self).__init__()
 
         n1 = 64
         filters = [n1, n1 * 2, n1 * 4, n1 * 8, n1 * 16]
@@ -139,13 +190,12 @@ class MyModel(tf.keras.Model):
         self.Up_RRCNN3 = RRCNN_block(filters[1], t=t)
 
         self.Up2 = up_conv(filters[0])
-        self.Att2 = Attention_block(F_int=32)  # As in original code
+        self.Att2 = Attention_block(F_int=32)
         self.Up_RRCNN2 = RRCNN_block(filters[0], t=t)
 
         self.Conv = Conv2D(out_ch, kernel_size=1, strides=1, padding="same")
 
-    def call(self, x):
-        # Encoder path
+    def call(self, x, **kwargs):
         e1 = self.RRCNN1(x)
 
         e2 = self.Maxpool1(e1)
@@ -160,39 +210,42 @@ class MyModel(tf.keras.Model):
         e5 = self.Maxpool4(e4)
         e5 = self.RRCNN5(e5)
 
-        # Decoder path with attention and upsampling
         d5 = self.Up5(e5)
-        e4_att = self.Att5([d5, e4])
-        d5 = tf.concat([e4_att, d5], axis=-1)
+        # print("d5.shape:{}, e4.shape{}".format(d5.shape, e4.shape))
+        e4 = self.Att5([d5, e4])
+        d5 = tf.concat((e4, d5), axis=-1)
         d5 = self.Up_RRCNN5(d5)
 
         d4 = self.Up4(d5)
-        e3_att = self.Att4([d4, e3])
-        d4 = tf.concat([e3_att, d4], axis=-1)
+        # print("d4.shape:{}, e3.shape{}".format(d4.shape, e3.shape))
+        e3 = self.Att4([d4, e3])
+        d4 = tf.concat((e3, d4), axis=-1)
         d4 = self.Up_RRCNN4(d4)
 
         d3 = self.Up3(d4)
-        e2_att = self.Att3([d3, e2])
-        d3 = tf.concat([e2_att, d3], axis=-1)
+        e2 = self.Att3([d3, e2])
+        d3 = tf.concat((e2, d3), axis=-1)
         d3 = self.Up_RRCNN3(d3)
 
         d2 = self.Up2(d3)
-        e1_att = self.Att2([d2, e1])
-        d2 = tf.concat([e1_att, d2], axis=-1)
+        e1 = self.Att2([d2, e1])
+        d2 = tf.concat((e1, d2), axis=-1)
         d2 = self.Up_RRCNN2(d2)
 
         out = self.Conv(d2)
+
         return out
 
 
-def my_model_function():
-    # Instantiate MyModel with default out channels=1, recurrence depth=2
-    return MyModel()
-
-
-def GetInput():
-    # Create a random input tensor matching input shape used in original model:
-    # [batch_size, height=512, width=64, channels=7]
-    # Using batch size = 1 for example.
-    return tf.random.uniform((1, 512, 64, 7), dtype=tf.float32)
-
+if __name__ == '__main__':
+    inputs1 = Input([512, 64, 7])
+    inputs2 = Input([None, None, 1])
+    # x1 = up_conv(1, 3)(inputs)
+    # print(x1)
+    # x2 = Attention_block(3, )(inputs1, inputs2)
+    # print(x2)
+    # x3 = RRCNN_block(3)(inputs1)
+    # print(x3)
+    deep_t = 2
+    x3 = R2AttU_Net(1, deep_t)(inputs1)
+    print(x3)

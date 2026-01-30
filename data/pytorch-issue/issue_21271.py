@@ -1,22 +1,29 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Inferred input shape: (batch_size, channels, height, width)
+import torch.nn as nn
+import random
 
 import torch
-import torch.nn as nn
+from torch import nn
+import numpy as np
+import onnx
+import onnxruntime as rt
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.prelu = nn.PReLU(16)
-    
-    def forward(self, x):
-        return self.prelu(x)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+shape = (2, 16, 96, 96)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    shape = (2, 16, 96, 96)  # (batch_size, channels, height, width)
-    return torch.randn(*shape, dtype=torch.float32)
+def generate_model():
+    net = nn.PReLU(16)
+    model_name = 'only_relu.onnx'
+    dummy_input = torch.randn(*shape)
+    torch.onnx.export(net, dummy_input, model_name, input_names=['input'], output_names=['output'])
+    model = onnx.load(model_name)
+    return model
 
+
+def forward(model, inputs):
+    sess = rt.InferenceSession(model.SerializeToString())
+    outputs = [x.name for x in sess.get_outputs()]
+    res = dict(zip(outputs, sess.run(outputs, inputs)))
+    return res
+
+
+forward(generate_model(), {'input': np.random.rand(*shape).astype(np.float32)})

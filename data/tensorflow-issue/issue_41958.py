@@ -1,43 +1,45 @@
-# tf.random.uniform((B, 784), dtype=tf.float32)  # Input shape inferred: batch size B, flattened 28x28 images
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
+import numpy as np
 import tensorflow as tf
+from tensorflow import keras
+from sklearn.metrics import accuracy_score
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Reconstructing the original sequential model structure as per issue description
-        self.dense1 = tf.keras.layers.Dense(512, activation='relu', input_shape=(784,))
-        self.dropout = tf.keras.layers.Dropout(0.2)
-        self.dense2 = tf.keras.layers.Dense(10)  # logits output
+(train_images, train_labels),(test_images, test_labels) = tf.keras.datasets.mnist.load_data()
+train_labels = train_labels[:1000]
+test_labels = test_labels[:1000]
+train_images = train_images[:1000].reshape(-1, 28 * 28) / 255.0
+test_images = test_images[:1000].reshape(-1, 28 * 28) / 255.0
 
-        # Note: The model uses SparseCategoricalCrossentropy(from_logits=True) as loss,
-        # so no activation on output layer.
-
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.dropout(x, training=training)
-        x = self.dense2(x)
-        return x
-
-def my_model_function():
-    # Return an instance of MyModel
-    
-    model = MyModel()
-    
-    # Compile model exactly as in original example but with fixed metric:
-    # As noted in the issue comments, 'accuracy' metric causes wrong metric after loading.
-    # Instead, use 'sparse_categorical_accuracy' metric to avoid the bug.
-    model.compile(
-        optimizer='adam',
-        loss=tf.losses.SparseCategoricalCrossentropy(from_logits=True),
-        metrics=[tf.keras.metrics.SparseCategoricalAccuracy()]  # correct metric specification
-    )
+def create_model():
+    model = tf.keras.models.Sequential([
+        keras.layers.Dense(512, activation='relu', input_shape=(784,)),
+        keras.layers.Dropout(0.2),
+        keras.layers.Dense(10)
+    ])
+    model.compile(optimizer='adam',
+                  loss=tf.losses.SparseCategoricalCrossentropy(from_logits=True),
+                  metrics=['accuracy'])
     return model
 
-def GetInput():
-    # Return a random tensor input matching model expectation: (batch_size, 784)
-    # Using batch size 32 as example
-    batch_size = 32
-    # Values normalized similarly to MNIST: scaled between 0 and 1
-    return tf.random.uniform((batch_size, 784), minval=0, maxval=1, dtype=tf.float32)
+# Create first model
+model = create_model()
+model.fit(train_images, train_labels, epochs=5)
 
+model.save('saved_model/my_model')
+
+# Create second model (load the saved model)
+new_model = tf.keras.models.load_model('saved_model/my_model')
+
+# First model's results
+loss1, acc1 = model.evaluate(test_images, test_labels)
+accuracy_score1 = accuracy_score(test_labels, np.argmax(model.predict(test_images), axis=1))
+# loss1, acc1 = [0.4392167329788208, 0.8629999756813049]
+# accuracy_score1 = 0.863
+
+# Second model's results
+loss2, acc2 = new_model.evaluate(test_images, test_labels)                           
+accuracy_score2 = accuracy_score(test_labels, np.argmax(new_model.predict(test_images), axis=1))
+# loss2, acc2 = [0.4392167329788208, 0.0860000029206276] <- THIS!!!
+# accuracy_score2 = 0.863

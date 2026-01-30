@@ -1,33 +1,29 @@
-# torch.rand(B, 3, 224, 224, dtype=torch.float32)  # Assuming standard image input
-import torch
-import torch.nn as nn
+import os
+from flask import Flask, render_template, Response
+import multiprocessing as mp
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Placeholder for Detectron2 model structure (since exact architecture is not provided)
-        # Simulate a simple CNN structure for demonstration
-        self.model = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2),
-            nn.Conv2d(64, 128, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.AdaptiveAvgPool2d((1,1)),
-            nn.Flatten(),
-            nn.Linear(128, 10)
-        )
-    
-    def forward(self, x):
-        return self.model(x)
+app = Flask(__name__)
 
-def my_model_function():
-    # Return an instance with model and comparison logic (if required)
-    # Since the original issue doesn't specify comparison models, return a single model
-    return MyModel()
+@app.route('/video_feed1')
+def video_feed1():
+    return Response(gen(segPrediction()),
+                    mimetype='multipart/x-mixed-replace; boundary=frame')
 
-def GetInput():
-    # Generate a random input tensor matching the expected shape (B, C, H, W)
-    batch_size = 2  # Matches "processes=2" in the issue's Flask setup
-    return torch.rand(batch_size, 3, 224, 224, dtype=torch.float32).cuda()
+if __name__ == "__main__":
+    mp.set_start_method('spawn',force=True)
+    app.run(host='0.0.0.0', threaded=False, processes=2)
 
+import os
+from flask import Flask, render_template, Response
+import multiprocessing as mp
+mp.set_start_method('spawn',force=True)
+
+app = Flask(__name__)
+
+@app.route('/video_feed1')
+def video_feed1():
+    return Response(gen(segPrediction()),
+                    mimetype='multipart/x-mixed-replace; boundary=frame')
+
+if __name__ == "__main__":
+    app.run(host='0.0.0.0', threaded=False, processes=2)

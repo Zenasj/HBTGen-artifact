@@ -1,40 +1,49 @@
-# torch.rand(1, dtype=torch.float32)  # Inferred input shape from the provided code
-
-import torch
 import torch.nn as nn
 
-class Inner(nn.Module):
+import torch
+
+class Inner(torch.nn.Module):
     def forward(self, x):
-        if x > 0:
+        if x > 0 :  
             return x
         else:
-            return x * x
+            return x*x
 
-class Outer(nn.Module):
-    def __init__(self):
+class Outer(torch.nn.Module):
+    def __init__(self):   
         super().__init__()
-        self.inner = torch.jit.script(Inner())
+        i = Inner()
+        self.inner = torch.jit.script(i)
 
-    def forward(self, x):
+    def forward(self, x):   
         return self.inner(x)
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.outer = Outer()
+x = torch.zeros(1)
+o=Outer()
+o.eval()
+m = torch.jit.trace_module(o, { 'forward' : (x)})
+# borisf: passes if you comment this line out                                                                                                                                                        
+m = torch.jit.optimize_for_inference(torch.jit.freeze(m))
 
-    def forward(self, x):
-        return self.outer(x)
+torch.onnx.export(m, (x,), 'test.onnx')
 
-def my_model_function():
-    model = MyModel()
-    model.eval()
-    traced_model = torch.jit.trace_module(model, {'forward': (torch.zeros(1, dtype=torch.float32),)})
-    optimized_model = torch.jit.optimize_for_inference(torch.jit.freeze(traced_model))
-    # Workaround for the issue: explicitly set the training attribute
-    optimized_model.training = False
-    return optimized_model
+import torch
 
-def GetInput():
-    return torch.zeros(1, dtype=torch.float32)
+# loading your TorchScript
+model = torch.jit.load("model.pt")
 
+# converting the model to ONNX
+dummy_input = ...
+torch.onnx.export(model, dummy_input, "model.onnx")
+
+import torch
+
+# loading your TorchScript
+model = torch.jit.load("model.pt")
+
+# ADD THIS LINE
+model.training = False
+
+# converting the model to ONNX
+dummy_input = ...
+torch.onnx.export(model, dummy_input, "model.onnx")

@@ -1,28 +1,25 @@
-# torch.rand(13, 192, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
+import torch.nn as nn
+
+import torch
+from torch.func import grad
+
+def f(x):
+    return (0.5 * x**2).sum()
+
+
+x = torch.randn(10)
+
+f(x) # This works
+print(torch.allclose(grad(f)(x), x)) # This works
+
+fjit = torch.compile(grad(f))
+fjit(x) # Error, see below
 
 import torch
 from torch import nn
-from torch.func import grad, functional_call
+from torch.func import grad
 from torch._dynamo import allow_in_graph
 from functools import wraps
-
-class MyModel(nn.Module):
-    def __init__(self, dim=192):
-        super().__init__()
-        self.W = nn.Parameter(torch.empty((int(4 * dim), dim)))
-        nn.init.normal_(self.W)
-
-    def forward(self, x):
-        hid = torch.einsum("...d,yd->...y", x, self.W)
-        return hid.sum()
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn((13, 192))
 
 def traceable(f):
     f = allow_in_graph(f)
@@ -33,18 +30,20 @@ def traceable(f):
 
     return wrapper
 
-def functionalized_forward(model, x):
-    params = {name: param for name, param in model.named_parameters()}
-    buffers = {name: buffer for name, buffer in model.named_buffers()}
-    return functional_call(model, (params, buffers), (x,))
+class NetworkF(nn.Module):
+    def __init__(self, dim=192):
+        super().__init__()
+        self.W = nn.Parameter(torch.empty((int(4*dim), dim)))
+        nn.init.normal_(self.W)
+    
+    def forward(self, x):
+        hid = torch.einsum("...d,yd->...y", x, self.W)
+        return hid.sum()
+    
+f = NetworkF()
+x = torch.randn((13,192))
 
-def compiled_grad(model, x):
-    f = lambda x: functionalized_forward(model, x)
-    fjit = torch.compile(traceable(grad(f)))
-    return fjit(x)
-
-# Example usage:
-# model = my_model_function()
-# x = GetInput()
-# result = compiled_grad(model, x)
-
+f(x) # Works
+grad(f)(x) # Works
+traceable(grad(f))(x) # Works
+torch.compile(traceable(grad(f)))(x) # BREAKS, details below

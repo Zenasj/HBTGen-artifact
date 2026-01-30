@@ -1,60 +1,71 @@
-# tf.random.uniform((B, 64), dtype=tf.int32) ← Inputs are three tensors: source (64 int32 tokens), target (64 int32 tokens), relationship (1 int32 token)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Embedding layers for source and target sequences
-        self.embedding_source = tf.keras.layers.Embedding(input_dim=512, output_dim=512, input_length=64)
-        self.embedding_target = tf.keras.layers.Embedding(input_dim=512, output_dim=512, input_length=64)
-
-        # Custom layer that defines a trainable kernel weight but returns first input as output
-        # This mimics the original CustomModel layer behavior
-        self.custom_layer = CustomModel()
-
-    def call(self, inputs):
-        source, target, relationship = inputs
-        emb_source = self.embedding_source(source)        # Shape: (batch_size, 64, 512)
-        emb_target = self.embedding_target(target)        # Shape: (batch_size, 64, 512)
-
-        # Pass embeddings along with relationship input to the custom layer
-        # Note: based on original bug report, order of inputs matters; using source embedding, target embedding, then relationship
-        output = self.custom_layer([emb_source, emb_target, relationship])
-        return output
-
 class CustomModel(tf.keras.layers.Layer):
-    def __init__(self):
+    #this class is for source sequence
+    def __init__(self,):
         super(CustomModel, self).__init__()
 
     def build(self, input_shape):
-        # The kernel shape: (32, 512, 512) from original snippet
-        # Note: this is a dummy trainable weight not used in call (as per original)
-        self.kernel = self.add_weight(
-            shape=(32, 512, 512),
-            initializer=tf.keras.initializers.glorot_uniform(seed=1),
-            trainable=True,
-            name="kernel"
-        )
-
+        self.kernel = self.add_weight(shape=(32, 512, 512),
+                                      initializer=tf.keras.initializers.glorot_uniform(seed=1),
+                                      trainable=True) #dumb
     def call(self, inputs):
-        # According to the original bug report model, just return the first input (embedding source)
         return inputs[0]
 
-def my_model_function():
-    # Instantiate the MyModel instance
-    return MyModel()
+def main():
+    def create_model(source_vocab, target_vocab, relationship_vocab):
+        source = tf.keras.layers.Input(dtype='int32', shape=(64,), name='source')
+        target = tf.keras.layers.Input(dtype='int32', shape=(64,), name='target')
+        relationship = tf.keras.layers.Input(dtype='int32', shape=(1,), name='relationship')
+        embedding_source = tf.keras.layers.Embedding(512, 512, input_length=64)(source)
+        embedding_target = tf.keras.layers.Embedding(512, 512, input_length=64)(target)
+        final_layer = CustomModel()([relationship, embedding_source, embedding_target])
+        model = tf.keras.models.Model(inputs=[source, target, relationship], outputs=final_layer)
+        return model
+    model = create_model(1000, 1000, 500)
+    print(model.summary())
 
-def GetInput():
-    # Generate a tuple of three inputs matching the model inputs:
-    # source: int32 tensor shape (batch_size, 64)
-    # target: int32 tensor shape (batch_size, 64)
-    # relationship: int32 tensor shape (batch_size, 1)
-    batch_size = 8  # reasonable default batch size for input example
-    
-    source = tf.random.uniform(shape=(batch_size, 64), minval=0, maxval=512, dtype=tf.int32)
-    target = tf.random.uniform(shape=(batch_size, 64), minval=0, maxval=512, dtype=tf.int32)
-    relationship = tf.random.uniform(shape=(batch_size, 1), minval=0, maxval=512, dtype=tf.int32)
+if __name__ == '__main__':
+    main()
 
-    return (source, target, relationship)
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
 
+import tensorflow as tf
+
+class CustomModel(tf.keras.layers.Layer):
+    #this class is for source sequence
+    def __init__(self,):
+        super(CustomModel, self).__init__()
+
+    def build(self, input_shape):
+        self.kernel = self.add_weight(shape=(32, 512, 512),
+                                      initializer=tf.keras.initializers.glorot_uniform(seed=1),
+                                      trainable=True) #dumb
+    def call(self, inputs):
+        return inputs[0]
+
+def main():
+    def create_model(source_vocab, target_vocab, relationship_vocab):
+        source = tf.keras.layers.Input(dtype='int32', shape=(64,), name='source')
+        target = tf.keras.layers.Input(dtype='int32', shape=(64,), name='target')
+        relationship = tf.keras.layers.Input(dtype='int32', shape=(1,), name='relationship')
+        embedding_source = tf.keras.layers.Embedding(512, 512, input_length=64)(source)
+        embedding_target = tf.keras.layers.Embedding(512, 512, input_length=64)(target)
+        final_layer = CustomModel()([embedding_source, embedding_target, relationship])
+        model = tf.keras.models.Model(inputs=[source, target, relationship], outputs=final_layer)
+        return model
+    model = create_model(1000, 1000, 500)
+    print(model.summary())
+
+if __name__ == '__main__':
+    main()

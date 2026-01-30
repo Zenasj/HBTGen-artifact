@@ -1,46 +1,37 @@
-# tf.random.uniform((80, 28, 28, 1), dtype=tf.float32)  # inferred input shape and dtype from Fashion MNIST preprocessing
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
-import tensorflow as tf
+batch_size = 80
+epochs = 171
+num_classes = 10
+import os
+save_dir = 'model'
+model_name = 'model.h5'
+import keras as keras
+(x_train, y_train), (x_test, y_test) = keras.datasets.fashion_mnist.load_data()
+img_rows, img_cols = x_train.shape[1], x_train.shape[2]
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Layers from the Sequential model described
-        # ThresholdedReLU with theta=0.3514439122821289
-        self.thresh_relu = tf.keras.layers.ThresholdedReLU(theta=0.3514439122821289)
-        # LeakyReLU with alpha=0.4855740853866919
-        self.leaky_relu = tf.keras.layers.LeakyReLU(alpha=0.4855740853866919)
-        # AveragePooling2D with (1,2) pool size, padding same
-        self.avg_pool = tf.keras.layers.AveragePooling2D(pool_size=(1, 2), padding='same')
-        # Flatten layer
-        self.flatten = tf.keras.layers.Flatten()
-        # Dense layer with num_classes=10 and softsign activation
-        # Note: softsign is a nonlinear activation smooth alternative to tanh
-        self.dense = tf.keras.layers.Dense(10, activation='softsign')
+x_train = x_train.reshape(x_train.shape[0], img_rows, img_cols, 1)
+x_test = x_test.reshape(x_test.shape[0], img_rows, img_cols, 1)
+input_shape = (img_rows, img_cols, 1)
+x_train = x_train.astype('float32')
+x_test = x_test.astype('float32')
+x_train /= 255
+x_test /= 255
+y_train = keras.utils.to_categorical(y_train, num_classes)
+y_test = keras.utils.to_categorical(y_test, num_classes)
 
-    @tf.function(jit_compile=True)
-    def call(self, inputs, training=False):
-        x = self.thresh_relu(inputs)
-        x = self.leaky_relu(x)
-        x = self.avg_pool(x)
-        x = self.flatten(x)
-        x = self.dense(x)
-        return x
+import keras as keras
+model = keras.models.Sequential()
+model.add(keras.layers.ThresholdedReLU(theta=0.3514439122821289))
+model.add(keras.layers.LeakyReLU(alpha=0.4855740853866919))
+model.add(keras.layers.AveragePooling2D(pool_size = (1, 2), padding='same'))
 
-def my_model_function():
-    # Return an instance of MyModel
-    model = MyModel()
-    # Since the original model is trained externally and saved,
-    # here we return an untrained model instance.
-    # Loading weights would require the saved file, omitted here per instructions.
-    return model
+model.add(keras.layers.Flatten())
+model.add(keras.layers.Dense(num_classes, activation='softsign'))
+model.compile(loss=keras.losses.categorical_crossentropy,optimizer=keras.optimizers.Adadelta(), metrics=['accuracy'])
+model.fit(x_train, y_train, batch_size=batch_size, epochs=epochs, verbose=1, validation_data=(x_test, y_test))
 
-def GetInput():
-    # Return a random tensor matching the input expected by the model
-    # The original dataset shape is (batch_size=80, height=28, width=28, channels=1),
-    # and dtype float32 normalized [0,1]
-    # We'll produce a random tensor with values in [0,1] range (like normalized images)
-    batch_size = 80
-    height, width, channels = 28, 28, 1
-    return tf.random.uniform((batch_size, height, width, channels), minval=0.0, maxval=1.0, dtype=tf.float32)
-
+model_path = os.path.join(save_dir, model_name)
+model.save(model_path)

@@ -1,10 +1,14 @@
-# torch.rand(B, 5, dtype=torch.complex64)  # Inferred input shape (batch_size, 5 features, complex64)
 import torch
+x = torch.rand(1, 5, dtype=torch.cfloat)
+torch.matmul(x, x.T)
+
+import torch
+import torch.nn.functional as F
 import torch.nn as nn
 import math
 
 class ComplexLinear(nn.Module):
-    def __init__(self, in_features, out_features, bias=True):
+    def __init__(self, in_features, out_features, bias = True):
         super(ComplexLinear, self).__init__()
         self.in_features = in_features
         self.out_features = out_features
@@ -23,24 +27,26 @@ class ComplexLinear(nn.Module):
             nn.init.uniform_(self.bias, -bound, bound)
 
     def forward(self, input):
-        return torch.nn.functional.linear(input, self.weight, self.bias)
+        return F.linear(input, self.weight, self.bias)
 
     def extra_repr(self):
         return 'in_features={}, out_features={}, bias={}'.format(
             self.in_features, self.out_features, self.bias is not None
         )
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.layer = ComplexLinear(5, 5)  # Matches the example's input/output dimensions
+layer = ComplexLinear(5, 5)
+x = torch.rand(1, 5, dtype=torch.cfloat)
+layer(x)
 
-    def forward(self, x):
-        return self.layer(x)
+def mse_loss(input, target):
+  return (input - target).abs().square().mean()
 
-def my_model_function():
-    return MyModel()  # Returns initialized MyModel instance
-
-def GetInput():
-    return torch.rand(1, 5, dtype=torch.complex64)  # Matches model's input requirements
-
+model = ComplexLinear(5, 5).cuda()
+optimizer = torch.optim.Adam(model.parameters())
+x = torch.rand(10, 5, dtype=torch.complex64).cuda()
+x_out = model(x)
+loss = F.mse_loss(x_out, x)
+optimizer.zero_grad()
+loss.backward()
+optimizer.step()
+print(float(loss))

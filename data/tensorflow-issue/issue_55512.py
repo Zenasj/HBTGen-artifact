@@ -1,31 +1,45 @@
-# tf.random.uniform((B, 5, 5, 3), dtype=tf.float32)
+from tensorflow import keras
+from tensorflow.keras import layers
+
+import os
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Following the example, the model consists of:
-        # Input shape: (None, 5, 5, 3)
-        # Conv2D with 32 filters, kernel 3x3, stride 2, padding "same"
-        # followed by BatchNormalization
-        self.conv = tf.keras.layers.Conv2D(
-            filters=32, kernel_size=3, strides=2, padding="same")
-        self.bn = tf.keras.layers.BatchNormalization()
+def create_model():
+    inputs = tf.keras.Input(shape=[5, 5, 3])
+    x = tf.keras.layers.Conv2D(32, 3, strides=2, padding="same")(inputs)
+    x = tf.keras.layers.BatchNormalization()(x)
+    model = tf.keras.Model(inputs, x)
+    return model
 
-    def call(self, inputs, training=False):
-        x = self.conv(inputs)
-        x = self.bn(x, training=training)
-        return x
 
-def my_model_function():
-    # Returns a MyModel instance with default initialization
-    # This matches the original Keras model structure in the issue.
-    return MyModel()
+model = create_model()
 
-def GetInput():
-    # Generate input tensors shaped (batch, height=5, width=5, channels=3)
-    # The exact batch size is not specified in the original code.
-    # For typing and practical testing, we use batch size = 1.
-    # dtype float32 as per typical Keras inputs.
-    return tf.random.uniform(shape=(1, 5, 5, 3), dtype=tf.float32)
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+converter.experimental_new_converter = True
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.target_spec.supported_types = [tf.float16]
 
+tflite_model1 = converter.convert()
+
+tflite_model2 = converter.convert()
+
+with open("model1.tflite", "wb") as f:
+    f.write(tflite_model1)
+
+with open("model2.tflite", "wb") as f:
+    f.write(tflite_model2)
+
+print(os.system("diff model1.tflite model2.tflite"))
+
+
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+converter.experimental_new_converter = True
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.target_spec.supported_types = [tf.float16]
+
+tflite_model3 = converter.convert()
+
+with open("model3.tflite", "wb") as f:
+    f.write(tflite_model3)
+
+print(os.system("diff model1.tflite model3.tflite"))

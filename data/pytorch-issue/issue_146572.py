@@ -1,22 +1,17 @@
-# torch.rand(1, 4, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
-
 import torch
-import torch.nn as nn
+import pdb
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Define a simple model for demonstration purposes
-        self.linear = nn.Linear(4, 1)
+class _OpenRegNewOne:
+    pass
 
-    def forward(self, x):
-        return self.linear(x)
+torch.utils.rename_privateuse1_backend("new_one")
+torch._register_device_module('new_one', _OpenRegNewOne())
+unsupported_dtype = [torch.quint8, torch.quint4x2, torch.quint2x4, torch.qint32, torch.qint8]
+torch.utils.generate_methods_for_privateuse1_backend(for_tensor=True, for_module=True, for_storage=True,
+                                                     unsupported_dtype=unsupported_dtype)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+a1 = torch.Tensor(3,4).to("new_one")
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(1, 4, dtype=torch.float32)
+a1 = torch.Tensor(3,4).to("new_one")
 
+a1 = torch.Tensor(1,2).to('new_one')

@@ -1,43 +1,41 @@
-# tf.random.uniform((B, T), dtype=tf.int32) ← Input shape is (batch_size, variable_seq_len) integer token IDs for embedding lookup
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
+
+import os
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Embedding for vocab size 6, embedding dim 64
-        self.embedding = tf.keras.layers.Embedding(input_dim=6, output_dim=64, mask_zero=True)
-        # Bidirectional LSTM with return_sequences=True (fixed based on issue context)
-        lstm = tf.keras.layers.LSTM(64, return_sequences=True)
-        self.bidir_lstm = tf.keras.layers.Bidirectional(lstm)
-        # Dense output layer producing single logit value
-        self.dense = tf.keras.layers.Dense(1)
+resolver = tf.distribute.cluster_resolver.TPUClusterResolver(tpu=os.environ["TPU_NAME"])
+tf.config.experimental_connect_to_cluster(resolver)
+tf.tpu.experimental.initialize_tpu_system(resolver)
+strategy = tf.distribute.TPUStrategy(resolver)
 
-    def call(self, inputs, training=None):
-        """
-        inputs: Tensor of shape (batch_size, seq_len), dtype int32 or int64
-        Returns tensor with shape (batch_size, 1) as logit prediction.
-        """
-        x = self.embedding(inputs)     # (B, T, 64)
-        x = self.bidir_lstm(x)         # (B, T, 128) since bidirectional doubles units
-        # Use last timestep output for prediction
-        x = self.dense(x[:, -1, :])    # (B, 1)
-        return x
+class TestModel(tf.keras.Model):
+  def __init__(self):
+    super().__init__()
 
-def my_model_function():
-    """
-    Initializes and returns an instance of MyModel.
-    """
-    return MyModel()
+    self.embedding = tf.keras.layers.Embedding(input_dim=6, output_dim=64)
+    self.pad_masking = tf.keras.layers.Masking(0, name="masking")
+    lstm = tf.keras.layers.LSTM(64, return_sequences=True)
+    self.lstm = tf.keras.layers.Bidirectional(lstm)
+    self.dense = tf.keras.layers.Dense(1)
 
-def GetInput():
-    """
-    Returns a random input tensor compatible with MyModel.
-    Shape: (batch_size=2, seq_len=5) with integer values in [1,5].
-    tf.keras.layers.Embedding uses input_dim=6 (0 reserved for mask).
-    """
-    batch_size = 2
-    seq_len = 5
-    # Random integers from 1 to 5 inclusive, avoiding 0 since it's mask token
-    input_tensor = tf.random.uniform(shape=(batch_size, seq_len), minval=1, maxval=6, dtype=tf.int32)
-    return input_tensor
+  def call(self, input, training=None):
+    output = self.embedding(input)
+    output = self.pad_masking(output)
+    output = self.lstm(output)
+    output = self.dense(output[:, -1, :])
+    return output
 
+with strategy.scope():
+  x = tf.data.Dataset.from_tensor_slices([tf.constant([1,2,3,4,5]), tf.constant([1,2,3,4,5]), tf.constant([1,2,3,4,5])])
+  y = tf.data.Dataset.from_tensor_slices([[1],[2],[3]])
+  dataset = tf.data.Dataset.zip((x,y)).repeat().batch(2)
+
+  model = TestModel()
+  model(tf.keras.Input([None]))
+
+  model.compile(loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
+                optimizer=tf.keras.optimizers.Adam(1e-4),
+                metrics=['accuracy'])
+  model.fit(dataset, epochs=10, steps_per_epoch=10)

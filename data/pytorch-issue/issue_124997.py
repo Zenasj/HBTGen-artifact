@@ -1,25 +1,14 @@
-# torch.randint(30522, (128, 512), dtype=torch.long)
 import torch
-from torch import nn
+from transformers import BertModel
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Mimic BERT's embedding layer (vocab_size=30522, hidden_size=768)
-        self.embedding = nn.Embedding(30522, 768)
-        # Add a simple layer to make the model executable
-        self.linear = nn.Linear(768, 768)
+model = BertModel.from_pretrained("bert-base-uncased")
+model.eval()
 
-    def forward(self, input_ids):
-        # Simple forward pass for demonstration
-        x = self.embedding(input_ids)
-        return self.linear(x)
+vocab_size = model.config.vocab_size
+batch_size = 128
+seq_length = 512
+data = torch.randint(vocab_size, size=[batch_size, seq_length])
+model = torch.compile(model)
 
-def my_model_function():
-    # Initialize a dummy BERT-like model
-    return MyModel()
-
-def GetInput():
-    # Generate input tensor matching BERT's expected input shape and dtype
-    return torch.randint(30522, (128, 512), dtype=torch.long)
-
+with torch.no_grad():
+    model(data)

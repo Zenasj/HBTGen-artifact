@@ -1,14 +1,7 @@
-# torch.rand(3, dtype=torch.float32)
+from torch.fx.experimental.proxy_tensor import make_fx
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return torch.empty_like(x)
+def f(x):
+    return torch.empty_like(x)
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(3, dtype=torch.float32)
-
+print(make_fx(f)(torch.randn(3)))

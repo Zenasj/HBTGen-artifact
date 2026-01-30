@@ -1,17 +1,24 @@
-# Input is a tuple of two tensors each of shape (1, 1, 1, 5), dtype=torch.float32
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        a, b = x
-        return a * b
+def pack_hook(x):
+    return x
 
-def my_model_function():
-    return MyModel()
+def unpack_hook(x):
+    print("unpacking")
+    return x
 
-def GetInput():
-    a = torch.rand(1, 1, 1, 5, dtype=torch.float32, requires_grad=True)
-    b = torch.rand(1, 1, 1, 5, dtype=torch.float32, requires_grad=True)
-    return (a, b)
+a = torch.ones(5, requires_grad=True)
+b = torch.ones(5, requires_grad=True) * 2
 
+def f(a, b):
+    return a * b
+
+opt_f = torch.compile(backend="aot_eager")(f)
+
+print("# eager")
+with torch.autograd.graph.saved_tensors_hooks(pack_hook, unpack_hook):
+    y = f(a, b)
+
+print("# compile")
+with torch.autograd.graph.saved_tensors_hooks(pack_hook, unpack_hook):
+    y = opt_f(a, b)

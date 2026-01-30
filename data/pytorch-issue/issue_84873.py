@@ -1,20 +1,13 @@
-# torch.rand(3)
 import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
+class Model(nn.Module):
     def __init__(self):
         super().__init__()
     
     def f(self, x):
         return x
     
-    def forward(self, x):
-        return self.f(x)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(3)
-
+module = Model()
+traced_module = torch.jit.trace_module(module, {"f": torch.randn(3)})
+torch.jit.freeze(traced_module.eval(), preserved_attrs=["f"])

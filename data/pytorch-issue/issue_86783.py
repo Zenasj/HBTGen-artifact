@@ -1,21 +1,27 @@
-# torch.rand(1, 3, 32, 32, dtype=torch.float32)  # Inferred input shape
-
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv2d = nn.Conv2d(3, 1, 1)
+import cv2
+import torch
 
-    def forward(self, x):
-        return self.conv2d(x)
+def main():
+    conv2d = torch.nn.Conv2d(3, 1, 1).cuda()
+    input = torch.ones((1, 3, 32, 32)).cuda()
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+    conv2d.eval()
+    with torch.no_grad():
+        conv2d(input)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(1, 3, 32, 32, dtype=torch.float32).cuda()
+    print('after forward')
+    cv2.waitKey(5000)
 
+    conv2d.cpu()
+    input.cpu()
+    del conv2d, input
+    torch.cuda.empty_cache()
+
+    print('free memory')
+    cv2.waitKey(5000)
+    return
+
+if __name__ == "__main__":
+    main()

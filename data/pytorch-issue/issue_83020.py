@@ -1,30 +1,14 @@
-# torch.rand(B, H, dtype=torch.float32)  # Input shape is (batch, audio_length)
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Mimic Wav2Vec2ForCTC structure where 'conv' is part of feature_extractor
-        self.feature_extractor = nn.Sequential(
-            nn.Conv1d(in_channels=1, out_channels=512, kernel_size=10, stride=5),
-            nn.ReLU(),
-            nn.Conv1d(512, 512, kernel_size=3, stride=2),
-            nn.ReLU()
-        )
-        self.encoder = nn.Linear(512, 256)  # Simplified encoder layer
+from transformers import Wav2Vec2ForCTC, Wav2Vec2Tokenizer
+tokenizer = Wav2Vec2Tokenizer.from_pretrained("facebook/wav2vec2-base-960h")
+model = Wav2Vec2ForCTC.from_pretrained("facebook/wav2vec2-base-960h")
+input_values = tokenizer(audio, return_tensors = "pt").input_values
 
-    def forward(self, x):
-        # Input x is (batch, audio_length)
-        x = x.unsqueeze(1)  # Add channel dimension for Conv1d
-        x = self.feature_extractor(x)
-        x = self.encoder(x.mean(dim=-1))  # Simplified pooling and encoding
-        return x
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Random audio input of shape (batch, audio_length)
-    return torch.rand(1, 16000)  # Example input length of 16kHz 1-second audio
-
+model.eval()
+model.qconfig = torch.quantization.get_default_qconfig('fbgemm')
+model_fp32_fused = torch.quantization.fuse_modules(model, [['conv', 'relu']],inplace=True)
+model_fp32_prepared = torch.quantization.prepare(model_fp32_fused)
+model_fp32_prepared(input_values)
+model_int8 = torch.quantization.convert(model_fp32_prepared)
+res = model_int8(input_values)

@@ -1,25 +1,44 @@
-# torch.rand(B, 3, 1024, 1024, dtype=torch.bfloat16)
+from sam2.build_sam import build_sam2
+from sam2.sam2_image_predictor import SAM2ImagePredictor
+
+from torch.export import Dim
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Placeholder for SAM2 image encoder structure (actual architecture inferred)
-        self.encoder = nn.Identity()  # Replace with actual model components if known
+sam2_checkpoint = "./checkpoints/sam2.1_hiera_large.pt"
+model_cfg = "configs/sam2.1/sam2.1_hiera_l.yaml"
+device="cuda"
 
-    def forward(self, x):
-        # Simulate forward pass (actual implementation details inferred)
-        return self.encoder(x)
+sam2_model = build_sam2(model_cfg, sam2_checkpoint, device=device)
 
-def my_model_function():
-    # Create model instance with bfloat16 precision (as in original code)
-    model = MyModel()
-    model = model.bfloat16()  # Matches the .bfloat16() call in the user's code
-    return model
+predictor = SAM2ImagePredictor(sam2_model)
 
-def GetInput():
-    # Generate random input matching expected shape (batch size can vary)
-    batch_size = 5  # Example value; dynamic shape handled at export time
-    return torch.rand(batch_size, 3, 1024, 1024, dtype=torch.bfloat16)
+def export_to_torchep(model, name, img_size=1024):
+    "Save the model to pytorch ExportedProgram format."
 
+    dummy_batch =  torch.randn(5, 3, img_size, img_size).to("cuda").type(torch.bfloat16)
+
+    # dynamic shapes for model export
+    batch_size = Dim("batch", min=2, max=20)
+    #height = Dim("height", min=2, max=2048)
+    #width = Dim("width", min=2, max=2048)
+    dynamic_shapes = {
+        "sample": {0: batch_size},
+    }
+
+    # Export the model to pytorch ExportedProgram format
+    ep = torch.export.export(
+        model.eval(),
+        (dummy_batch,),
+        dynamic_shapes=dynamic_shapes,
+        strict=True,
+    )
+
+    # Save the exported model
+    torch.export.save(ep, f"checkpoints/compiled/{name}")
+    print(
+        f"Model exported to pytorch ExportedProgram format: checkpoints/compiled/{name}"  # noqa: E501
+    )
+
+    return ep
+
+export_to_torchep(predictor.model.image_encoder.bfloat16(), "sam2.1_hiera_large_exported")

@@ -1,96 +1,108 @@
-# tf.random.uniform((B, ) ...) ← This dataset code example uses text file input, so no direct tensor input shape is defined.
+def delete_end_dots(input_file_name, output_file):
+    with open(input_file_name, "r", encoding="utf-8") as input_f, open(output_file, "w+", encoding="utf-8") as out_f:
+        for line in input_f:
+            line = line.strip()
+            splitted = line.split(" ")
+            if splitted[-1] == '.':
+                splitted = splitted[:-1]
+            line = " ".join(splitted)
+            print(line, file=out_f)
 
-import tensorflow as tf
-import tensorflow.io.gfile as gfile
+
+delete_end_dots("sample-corpus-asl-en.asl.txt", "asl_processed.txt")
+delete_end_dots("sample-corpus-asl-en.en.txt", "english_processed.txt")
+
+"""aslg_dataset dataset."""
+
+import sys
+print("started on kernel {}".format(print(sys.executable)))
+
 import tensorflow_datasets as tfds
 import re
+import tensorflow.io.gfile as gfile
+
+# TODO(aslg_dataset): Markdown description  that will appear on the catalog page.
+_DESCRIPTION = """
+## ASLG-SMT Dataset 
+## by Achraf Othman and Mohamed Jemni
+This dataset has 87706 sentences, in both english and American Sign Language, glossed.
+We added some processing compared to the original dataset: punctuation is split from the words for english (some sentences did not apply this rule).
+we also assert that each word is separated from anything else, for both (e.g. 123word becomes 123 word).
+We finally delete any duplicate spaces. 
+"""
+
+# TODO(aslg_dataset): BibTeX citation
+_CITATION = """@INPROCEEDINGS{8336054,
+author={A. {Othman} and M. {Jemni}},
+booktitle={2017 6th International Conference on Information and Communication Technology and Accessibility (ICTA)},
+title={An XML-gloss annotation system for sign language processing},
+year={2017},
+volume={},
+number={},
+pages={1-7},
+doi={10.1109/ICTA.2017.8336054}}
+"""
 
 
-class MyModel(tf.keras.Model):
-    """
-    Adapted from the ASLG-SMT Dataset Builder logic.
-    This model serves as a placeholder demonstrating:
-    - Reading UTF-8 text files via GFile with 'latin-1' fallback decoding
-    - Basic preprocessing of English and American Sign Language glossed sentences.
-    
-    Since the original issue and code revolve around reading and processing text files for dataset creation,
-    this MyModel reads and cleans the text lines from two expected files, and yields paired processed strings.
-    
-    Note:
-        This is designed as a tf.keras.Model for the sake of the task structure,
-        but in practice this kind of data ingestion and preprocessing is better suited 
-        in a tf.data pipeline or a custom tfds dataset builder class.
-    """
+class AslgDataset(tfds.core.GeneratorBasedBuilder):
+  """DatasetBuilder for aslg_dataset dataset."""
 
-    def __init__(self):
-        super().__init__()
+  VERSION = tfds.core.Version('1.0.0')
+  RELEASE_NOTES = {
+      '1.0.0': 'Initial release.',
+  }
 
-    def call(self, inputs):
-        """
-        Accepts no inputs, returns a tf.Tensor of string pairs (english, asl).
-        
-        To adhere to TF model conventions and enable usage with tf.function,
-        inputs argument expected but ignored.
-        """
+  def _info(self) -> tfds.core.DatasetInfo:
+    """Returns the dataset metadata."""
+    # TODO(aslg_dataset): Specifies the tfds.core.DatasetInfo object
+    return tfds.core.DatasetInfo(
+        builder=self,
+        description=_DESCRIPTION,
+        features=tfds.features.FeaturesDict({
+            # These are the features of your dataset like images, labels ...
+            'input_text': tfds.features.Text(),
+            'output_text': tfds.features.Text(),
+        }),
+        # If there's a common (input, target) tuple from the
+        # features, specify them here. They'll be used if
+        # `as_supervised=True` in `builder.as_dataset`.
+        supervised_keys=None,  # Set to `None` to disable
+        citation=_CITATION,
+    )
 
-        # We will read files, decode with 'utf-8' first, fallback to 'latin-1' for problematic chars.
-        # Returns a tensor of shape (N, 2) where each row is [english_sentence, asl_sentence]
+  def _split_generators(self, _):
+    """Returns SplitGenerators."""
+    # TODO(aslg_dataset): Downloads the data and defines the splits
+    # path = dl_manager.download_and_extract('https://todo-data-url')
 
-        def read_file_lines(filename):
-            try:
-                # Try reading as utf-8
-                with gfile.GFile(filename, 'r', encoding='utf-8') as f:
-                    lines = f.read().splitlines()
-            except UnicodeDecodeError:
-                # Fallback: read raw bytes, decode with latin-1 which won't error but may map bytes differently
-                with gfile.GFile(filename, 'rb') as f:
-                    raw_bytes = f.read()
-                lines = raw_bytes.decode('latin-1').splitlines()
-            return [line.strip() for line in lines if line.strip()]
+    # TODO(aslg_dataset): Returns the Dict[split names, Iterator[Key, Example]]
+    return {
+        # 'train': self._generate_examples(path / 'train_imgs'),
+        'train': self._generate_examples()
+    }
 
-        # Read and preprocess English and ASL sentences from files
-        english_lines = read_file_lines('english_processed_utf8.txt')
-        asl_lines = read_file_lines('asl_processed_utf8.txt')
+  def _generate_examples(self):
+    """Yields examples.
+    File encoding is utf-8-sig"""
+    english = gfile.GFile('english_processed_utf8.txt', 'rb').read() ## I tried to open the file, and then use readlines, but it produces the same error
+    asl = gfile.GFile('asl_processed_utf8.txt', 'rb').read() ## '_utf8' in the file name describes the same file as without, except it was saved with an utf-8 encoding instead of utf-8-sig. The exact same behaviour occurs with both files (with and without '_utf8')
+    # with open('english_processed.txt', encoding='utf-8-sig') as english_f, open('asl_processed.txt', encoding='utf-8-sig') as asl_f:
+    english = [eng for eng in english.split('\n') if eng]
+    asl = [a for a in asl.split('\n') if a]
+    for i, sentences in enumerate(zip(english, asl)):
+      eng_sen, asl_sen = self._clean_sentences(*sentences)
+      yield i, {
+        'input_text': eng_sen.strip(),
+        'output_text': asl_sen.strip()
+      }
 
-        # To handle any length mismatch gracefully, zip to shortest length
-        n = min(len(english_lines), len(asl_lines))
+  @staticmethod
+  def _clean_sentences(eng_sen, asl_sen):
+    eng = eng_sen.replace("!", " ! ").replace(".", " . ").replace(",", " , ")
+    eng = re.sub(r'([\-\'a-zA-ZÀ-ÖØ-öø-ÿ]+)', r' \1 ', eng)
+    eng = re.sub(r' +', ' ', eng)
 
-        eng_cleaned = []
-        asl_cleaned = []
+    asl = re.sub(r'([0-9]+(?:[.][0-9]*)?)', r' \1 ', asl_sen)
+    asl = re.sub(r' +', ' ', asl)
 
-        for i in range(n):
-            eng, asl = self._clean_sentences(english_lines[i], asl_lines[i])
-            eng_cleaned.append(eng)
-            asl_cleaned.append(asl)
-
-        # Convert to tf.Tensor of shape (n, 2) with dtype=tf.string
-        paired = tf.stack([tf.constant(eng_cleaned), tf.constant(asl_cleaned)], axis=1)
-        return paired
-
-    @staticmethod
-    def _clean_sentences(eng_sen, asl_sen):
-        # For English: split punctuation, separate words, collapse spaces
-        eng = eng_sen.replace("!", " ! ").replace(".", " . ").replace(",", " , ")
-        eng = re.sub(r'([\-\'a-zA-ZÀ-ÖØ-öø-ÿ]+)', r' \1 ', eng)
-        eng = re.sub(r' +', ' ', eng)
-
-        # For ASL: separate numbers, collapse spaces
-        asl = re.sub(r'([0-9]+(?:[.][0-9]*)?)', r' \1 ', asl_sen)
-        asl = re.sub(r' +', ' ', asl)
-
-        return eng.strip(), asl.strip()
-
-
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-
-def GetInput():
-    """
-    Since MyModel's call ignores input (reads from files directly),
-    we return a dummy tensor to satisfy signature.
-    """
-    # Return a dummy float tensor of shape (1,) - arbitrary, not actually used by model in this case.
-    return tf.random.uniform((1,), dtype=tf.float32)
-
+    return eng, asl

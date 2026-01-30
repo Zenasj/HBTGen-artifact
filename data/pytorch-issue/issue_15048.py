@@ -1,22 +1,26 @@
-# torch.rand(1, 32, dtype=torch.float32)  # Inferred input shape
-
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+
+class Block(torch.jit.ScriptModule):
     def __init__(self, dim):
         super().__init__()
+
         self.linear = nn.Linear(dim, dim)
         self.relu = nn.ReLU()
 
+    @torch.jit.script_method
     def forward(self, x):
-        return self.relu((self.linear(x) + x) / 2.0)
+        # x = x + self.linear(x)
+        # x = x / 2.
+        # return self.relu(x)
+        return self.relu((self.linear(x) + x) / 2.)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel(32)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(1, 32, dtype=torch.float32)
+m = Block(32)
+x = torch.randn(1, 32)
+print('cpu:', m(x))
 
+m.cuda()
+x = x.cuda()
+print('gpu:', m(x))

@@ -1,24 +1,13 @@
-# torch.rand(B, 10, dtype=torch.float32)  # Input shape inferred as (batch, features)
+from multiprocessing import Process
+
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # This torch.device(0) call triggers CUDA initialization in the main process
-        # leading to potential CUDA fork issues in subprocesses (as described in the issue)
-        self.device = torch.device(0)  
-        self.fc = nn.Linear(10, 5)  # Example layer
+torch.device(0) # Note that torch.device('cuda') or torch.device('cuda:0') do not trigger the issue
 
-    def forward(self, x):
-        # Forward pass moves input to CUDA device (triggering subprocess errors if initialized improperly)
-        return self.fc(x.to(self.device))
+def cuda_init():
+    torch.Tensor([0]).cuda()
 
-def my_model_function():
-    # Returns a model instance with problematic CUDA initialization in __init__
-    return MyModel()
-
-def GetInput():
-    # Generates a random input tensor matching the expected shape (B=1, features=10)
-    return torch.rand(1, 10, dtype=torch.float32)
-
+p = Process(target=cuda_init)
+p.start()
+p.join()
+assert p.exitcode == 0

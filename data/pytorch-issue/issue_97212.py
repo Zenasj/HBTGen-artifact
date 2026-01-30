@@ -1,50 +1,45 @@
-# torch.rand(B, C, H, W, dtype=...)  # Add a comment line at the top with the inferred input shape
+import weakref
 import torch
-import torch.nn as nn
+import torch.autograd.forward_ad as fwAD
+import gc
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.linear = nn.Linear(1, 1)
+def scope():
+  saved_tensors = []
+  class A(torch.autograd.Function):
+      @staticmethod
+      def forward(x):
+          return x
 
-    def forward(self, x):
-        return self.linear(x)
+      @staticmethod
+      def setup_context(ctx, inputs, output):
+          ctx.mark_dirty(inputs[0])
+          ctx.save_for_backward(output)
+          saved_tensors.append(output)
 
-class CustomFunction(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, x):
-        ctx.mark_dirty(x)
-        ctx.save_for_backward(x)
-        return x
+      @staticmethod
+      def backward(ctx, grad_output):
+          return grad_output
 
-    @staticmethod
-    def setup_context(ctx, inputs, output):
-        ctx.save_for_backward(output)
+      @staticmethod
+      def jvp(ctx, x_t):
+          x_t.add_(0)
+          return x_t
 
-    @staticmethod
-    def backward(ctx, grad_output):
-        return grad_output
+  a = torch.tensor(2., device="cpu", requires_grad=True).clone()
+  a_t = torch.tensor(2., device="cpu", requires_grad=True).clone()
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+  with fwAD.dual_level():
+      a_dual = fwAD.make_dual(a, a_t)
+      A.apply(a_dual)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(1, 1, requires_grad=True)
+  class Test():
+      pass
+  test = Test()
+  ref = weakref.ref(test)
+  saved_tensors[0].grad_fn.metadata["test"] = test
 
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
-# custom_output = CustomFunction.apply(output)
+  return ref
 
-# Based on the provided GitHub issue, it seems that the main focus is on an autograd function and its behavior with `setup_context`. The issue discusses a memory leak and a BC-breaking change. However, there is no specific model or complete code provided in the issue. 
-# To generate a complete Python code file that fits the given structure and constraints, I will infer a simple model and an autograd function that demonstrates the use of `setup_context` and the potential memory leak scenario. 
-# Here is the generated code:
-# ### Explanation:
-# 1. **MyModel**: A simple linear model with a single linear layer.
-# 2. **CustomFunction**: An autograd function that demonstrates the use of `setup_context` and `save_for_backward`.
-# 3. **my_model_function**: Returns an instance of `MyModel`.
-# 4. **GetInput**: Generates a random tensor input that matches the input expected by `MyModel`.
-# This code is designed to be a minimal example that aligns with the discussion in the GitHub issue. The `CustomFunction` is included to demonstrate the potential memory leak scenario and the use of `setup_context`.
+ref = scope()
+gc.collect()
+print(ref())

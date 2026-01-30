@@ -1,62 +1,67 @@
-# tf.random.uniform((10, 5), minval=0, maxval=1000, dtype=tf.int64)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
+
+import shutil
+
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        EMBD_INPUT_DIM = 1000
-        EMBD_OUTPUT_DIM = 64
-        
-        # Instead of relying on embedding checkpoint restore which breaks portability,
-        # we initialize the embeddings manually here.
-        # This mimics the original EmbeddingColumn with pre-trained embeddings,
-        # but fully managed within this SavedModel.
-        self.embeddings = tf.Variable(
-            initial_value=tf.keras.initializers.GlorotNormal()(shape=(EMBD_INPUT_DIM, EMBD_OUTPUT_DIM)),
-            trainable=True,
-            name='embedding_weights'
-        )
-        
-        # A simple dense layer to produce final output, as in original model
-        self.dense = tf.keras.layers.Dense(1, name='out')
-        
-        # We replicate the behavior of the EmbeddingColumn + DenseFeatures with a custom embedding lookup
-        # This is to avoid dependence on external ckpt files.
-    
-    def call(self, inputs):
-        # Inputs: a dict { 'id': tf.Tensor of shape (batch, None), dtype int64 }
-        ids = inputs['id']  # shape (batch, variable length)
-        
-        # Lookup embedding vectors for each id
-        # Clip ids to max bucket to avoid invalid indices
-        clipped_ids = tf.clip_by_value(ids, 0, tf.shape(self.embeddings)[0] - 1)
-        
-        embedded = tf.nn.embedding_lookup(params=self.embeddings, ids=clipped_ids)
-        # embedded shape: (batch, id_len, embedding_dim)
-        
-        # Pool embeddings along id dimension - original DenseFeatures collapses variable length dimension by sum or mean.
-        # The original was built on DenseFeatures with embedding_column, which sums embeddings by default.
-        pooled = tf.reduce_sum(embedded, axis=1)  # shape (batch, embedding_dim)
-        
-        out = self.dense(pooled)  # shape (batch, 1)
-        return out
+# build and checkpoint mock pre-trained embeddings
+EMBD_INPUT_DIM = 1000
+EMBD_OUTPUT_DIM = 64
 
-def my_model_function():
-    # Return an instance of MyModel with freshly initialized embeddings.
-    return MyModel()
+mock_pretrained_embd = tf.Variable(tf.initializers.GlorotNormal()(shape=(EMBD_INPUT_DIM, EMBD_OUTPUT_DIM)), trainable=True)
 
-def GetInput():
-    # Generate a random input dict compatible with MyModel:
-    # {"id": tf.Tensor of shape (batch, id_len), int64 values in [0, 999]}
-    B = 10  # test batch size
-    id_len = 5  # test sequence length per example
-    EMBD_INPUT_DIM = 1000
-    
-    input_ids = tf.random.uniform(
-        shape=(B, id_len),
-        minval=0,
-        maxval=EMBD_INPUT_DIM,
-        dtype=tf.int64
-    )
-    return {'id': input_ids}
+ckpt = tf.train.Checkpoint(embeddings=mock_pretrained_embd)
+ckpt.write('ckpt/mock_embd_ckpt')
 
+# build keras.Model using EmbeddingColumn in DenseFeatures layer
+embd_column = tf.feature_column.embedding_column(
+    tf.feature_column.categorical_column_with_identity(key='id', num_buckets=EMBD_INPUT_DIM),
+    dimension=EMBD_OUTPUT_DIM,
+    ckpt_to_load_from='ckpt/mock_embd_ckpt',
+    tensor_name_in_ckpt='embeddings/.ATTRIBUTES/VARIABLE_VALUE',
+    trainable=True
+)
+features_layer = tf.keras.layers.DenseFeatures([embd_column])
+
+x = {'id': tf.keras.Input(shape=(None,), dtype=tf.int64, name='id')}
+y = features_layer(x)
+y = tf.keras.layers.Dense(1, name='out')(y)
+model = tf.keras.Model(inputs=x, outputs=y)
+model.compile(loss=tf.keras.losses.BinaryCrossentropy(), optimizer=tf.keras.optimizers.Adam())
+
+# fit model on mock data to have embeddings updated
+TRAIN_BATCH = 64
+
+id_len = np.random.randint(low=0, high=15)
+x = {'id': tf.convert_to_tensor(np.random.randint(low=0, high=EMBD_OUTPUT_DIM+1, size=(TRAIN_BATCH, id_len)))}
+y = tf.convert_to_tensor(np.random.randint(low=0, high=2, size=(TRAIN_BATCH, 1)), tf.float32)
+
+for i in range(100):
+  model.train_on_batch(x=x, y=y)
+
+# export model
+model.save('mock_model')
+
+# re-construct keras.Model & SavedModel and invoke on mock data
+TEST_INPUT_BATCH = 10
+TEST_INPUT_ID_LEN = 5
+
+test_inputs = {'id': tf.random.uniform((TEST_INPUT_BATCH, TEST_INPUT_ID_LEN), minval=0, maxval=EMBD_INPUT_DIM, dtype=tf.int64)}
+
+loaded_keras_model = tf.keras.models.load_model('mock_model')
+loaded_keras_model(test_inputs)
+
+loaded_model = tf.saved_model.load('mock_model')
+serving_default_fn = loaded_model.signatures['serving_default']
+serving_default_fn(**test_inputs)
+
+# remove original embeddings checkpoint and try invoking on mock data again
+shutil.rmtree('ckpt')
+
+loaded_keras_model(test_inputs)
+serving_default_fn(**test_inputs)

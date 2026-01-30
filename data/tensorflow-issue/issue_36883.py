@@ -1,134 +1,126 @@
-# tf.random.uniform((B, 4), dtype=tf.float32)  ← Input shape is (batch_size, 4)
+import numpy as np
+import math
+import random
+from tensorflow import keras
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
+from __future__ import absolute_import, division, print_function, unicode_literals
+from tensorflow.keras import initializers
+from tensorflow.keras import layers
+from tensorflow.keras.models import load_model
+from tensorflow.keras.layers import Input, Dense
+from tensorflow.python.keras import backend as K
+from tensorflow.python.keras.utils import tf_utils
+from tensorflow.keras.layers import LeakyReLU
 import tensorflow as tf
-from tensorflow.keras import layers, initializers
+import tensorflow as tf
+import tensorflow.keras
+from tensorflow.keras.callbacks import *
+from tensorflow.keras.losses import mse
+
+### create a custom layer
 
 class CustomBatchNormalization(layers.Layer):
-    def __init__(self, momentum=0.99, epsilon=1e-3,
-                 beta_initializer='zeros',
-                 gamma_initializer='ones',
-                 moving_mean_initializer='zeros',
-                 moving_range_initializer='ones',
-                 **kwargs):
+    def __init__(self, momentum=0.99, epsilon=1e-3,beta_initializer='zeros',
+                 gamma_initializer='ones', moving_mean_initializer='zeros',
+                 moving_range_initializer='ones',**kwargs):
         super(CustomBatchNormalization, self).__init__(**kwargs)
         self.supports_masking = True
         self.momentum = momentum
         self.epsilon = epsilon
-
-        # Initializers for weights and moving stats
         self.beta_initializer = initializers.get(beta_initializer)
         self.gamma_initializer = initializers.get(gamma_initializer)
         self.moving_mean_initializer = initializers.get(moving_mean_initializer)
-        self.moving_range_initializer = initializers.get(moving_range_initializer)
+        self.moving_range_initializer = (
+            initializers.get(moving_range_initializer))
 
-    def build(self, input_shape):
+    
+    def build(self,input_shape):
         dim = input_shape[-1]
         shape = (dim,)
-
-        self.gamma = self.add_weight(
-            shape=shape,
-            name='gamma',
-            initializer=self.gamma_initializer,
-            trainable=True
-        )
-        self.beta = self.add_weight(
-            shape=shape,
-            name='beta',
-            initializer=self.beta_initializer,
-            trainable=True
-        )
-
+        self.gamma = self.add_weight(shape=shape,
+                             name='gamma',
+                             initializer=self.gamma_initializer,trainable=True)
+        self.beta = self.add_weight(shape=shape,
+                            name='beta',
+                            initializer=self.beta_initializer,
+                                   trainable=True)
+        
         self.moving_mean = self.add_weight(
             shape=shape,
             name='moving_mean',
             initializer=self.moving_mean_initializer,
-            trainable=False
-        )
-
+            trainable=False)
+        
         self.moving_range = self.add_weight(
             shape=shape,
             name='moving_range',
             initializer=self.moving_range_initializer,
-            trainable=False
-        )
-        super(CustomBatchNormalization, self).build(input_shape)
+            trainable=False)
 
-    def call(self, inputs, training=None):
-        # Use the "training" argument to switch behavior
 
-        if training is False:
-            # Inference mode: use moving mean and moving_range
-            scaled = (inputs - self.moving_mean) / (self.moving_range + self.epsilon)
-            return self.gamma * scaled + self.beta
 
-        # Training mode: compute batch statistics
-        mean = tf.math.reduce_mean(inputs, axis=0)
-        maxr = tf.math.reduce_max(inputs, axis=0)
-        minr = tf.math.reduce_min(inputs, axis=0)
-
-        range_diff = maxr - minr
-
-        # Update moving averages
-        self.moving_mean.assign(self.moving_mean * self.momentum + (1 - self.momentum) * mean)
-        self.moving_range.assign(self.moving_range * self.momentum + (1 - self.momentum) * range_diff)
-
-        scaled = (inputs - mean) / (range_diff + self.epsilon)
-        return self.gamma * scaled + self.beta
-
+    def call(self, inputs,training=None):
+        input_shape = inputs.shape
+        
+        if training == False:
+            scaled = (inputs-self.moving_mean)/(self.moving_range+self.epsilon)
+            return self.gamma*scaled + self.beta
+        
+        mean = tf.math.reduce_mean(inputs,axis=0)
+        maxr = tf.math.reduce_max(inputs,axis=0)
+        minr = tf.math.reduce_min(inputs,axis=0)
+        
+        range_diff = tf.math.subtract(maxr,minr)
+        self.moving_mean = tf.math.add(self.momentum*self.moving_mean, (1-self.momentum)*mean)
+        self.moving_range = tf.math.add(self.momentum*self.moving_range,(1-self.momentum)*range_diff)
+        scaled = tf.math.divide(tf.math.subtract(inputs,mean),(range_diff+self.epsilon))
+        return tf.math.add(tf.math.multiply(self.gamma,scaled),self.beta)
+    
     def get_config(self):
         config = {
             'momentum': self.momentum,
             'epsilon': self.epsilon,
             'beta_initializer': initializers.serialize(self.beta_initializer),
             'gamma_initializer': initializers.serialize(self.gamma_initializer),
-            'moving_mean_initializer': initializers.serialize(self.moving_mean_initializer),
-            'moving_range_initializer': initializers.serialize(self.moving_range_initializer)
+            'moving_mean_initializer':
+                initializers.serialize(self.moving_mean_initializer),
+            'moving_range_initializer':
+                initializers.serialize(self.moving_range_initializer)
         }
         base_config = super(CustomBatchNormalization, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
-
+    
     def compute_output_shape(self, input_shape):
         return input_shape
 
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
+### create your model
+inp = Input(shape=(4,))
+batch_norm_1 = CustomBatchNormalization(dynamic=True)(inp)
+densout = Dense(24, activation='linear')(batch_norm_1)
+densout = LeakyReLU(alpha=0.3)(densout)
+batch_norm_2 = CustomBatchNormalization(dynamic=True)(densout)
+densout = Dense(128, activation='linear')(batch_norm_2)
+densout = LeakyReLU(alpha=0.3)(densout)
+batch_norm_out = CustomBatchNormalization(dynamic=True)(densout)
+out = Dense(5, activation='linear')(batch_norm_out)
+test_nw = tf.keras.models.Model(inp, out)
 
-        # Create layers matching the model described
-        self.custom_bn1 = CustomBatchNormalization()
-        self.dense1 = layers.Dense(24, activation='linear')
-        self.leaky_relu1 = layers.LeakyReLU(alpha=0.3)
+##compile it
+test_nw.compile(tf.keras.optimizers.Adam(), loss=mse,experimental_run_tf_function=False)
 
-        self.custom_bn2 = CustomBatchNormalization()
-        self.dense2 = layers.Dense(128, activation='linear')
-        self.leaky_relu2 = layers.LeakyReLU(alpha=0.3)
+path_HDF5 = 'PATH_TO_SAVE_THIS_MODEL'
+earlyStopping = EarlyStopping(monitor='val_loss', patience=10, verbose=0, mode='min')
+mcp_save_RH = ModelCheckpoint(path_HDF5,save_best_only=True, monitor='val_loss', mode='min')
 
-        self.custom_bn3 = CustomBatchNormalization()
-        self.out_dense = layers.Dense(5, activation='linear')
+X = np.random.randn(4,4)
+y = np.random.randn(4,5)
+X_val = np.random.randn(4,4)
+y_val = np.random.randn(4,5)
+test_nw.fit(X,y,batch_size=4, epochs=10,validation_data = (X_val,y_val),callbacks=[earlyStopping, mcp_save_RH] )
 
-    def call(self, inputs, training=None):
-        x = self.custom_bn1(inputs, training=training)
-        x = self.dense1(x)
-        x = self.leaky_relu1(x)
-        x = self.custom_bn2(x, training=training)
-        x = self.dense2(x)
-        x = self.leaky_relu2(x)
-        x = self.custom_bn3(x, training=training)
-        outputs = self.out_dense(x)
-        return outputs
-
-
-def my_model_function():
-    model = MyModel()
-    # Build the model with a dummy input to create weights (optional)
-    dummy_input = tf.zeros((1, 4))
-    model(dummy_input, training=False)  # build call to create variables
-    return model
-
-
-def GetInput():
-    # Returns a random input tensor compatible with MyModel input shape (batch, 4)
-    # Assumption: batch size 4 for example
-    return tf.random.uniform((4, 4), dtype=tf.float32)
-
+######## Now restart the kernel and load the model
+dict_lay = {'CustomBatchNormalization':CustomBatchNormalization}
+mod = load_model(path_HDF5,custom_objects=dict_lay)

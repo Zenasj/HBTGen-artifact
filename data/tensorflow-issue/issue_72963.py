@@ -1,24 +1,28 @@
-# tf.random.normal((1, 5), dtype=tf.float32) ← inferred input shape from SHAPE=(1, 5)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
+import numpy as np
 
-class MyModel(tf.keras.Model):
+SHAPE = (1, 5)
+
+class TestModel(tf.Module):
     def __init__(self):
         super().__init__()
-        # Define a single dense layer with output size 10 as per the original code
         self.dense_layer = tf.keras.layers.Dense(10)
-        
-    @tf.function(input_signature=[tf.TensorSpec(shape=(1, 5), dtype=tf.float32)])
-    def call(self, x):
-        # Forward pass through the dense layer
+
+    @tf.function(input_signature=[tf.TensorSpec(shape=SHAPE, dtype=tf.float32)])
+    def run(self, x):
         return self.dense_layer(x)
 
 
-def my_model_function():
-    # Instantiate and return MyModel
-    return MyModel()
+module = TestModel()
+sample_input = tf.random.normal(SHAPE, dtype=tf.float32)
+module.run(sample_input)
 
-def GetInput():
-    # Generate a random normal tensor with shape (1, 5) and dtype float32 matching the model's input
-    return tf.random.normal((1, 5), dtype=tf.float32)
+np.save('sample_input.npy', sample_input.numpy())
+tf.saved_model.save(module, "test_model")
 
+# # To reproduce, run the following:
+# python test.py && saved_model_cli run --dir test_model --tag_set serve --signature_def serving_default --inputs 'x=sample_input.npy'

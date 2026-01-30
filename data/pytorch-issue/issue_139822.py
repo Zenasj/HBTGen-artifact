@@ -1,26 +1,19 @@
-# torch.rand(B, C, H, W, dtype=...)  # The input shape is not explicitly provided, but the model expects a tensor of shape (batch_size, 10)
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.model = nn.Sequential(
-            nn.Linear(10, 10),
-            nn.ReLU(),
-            nn.Linear(10, 1)
-        )
+import torch
 
-    def forward(self, x):
-        return self.model(x)
+def test_fn():
+  try:
+      model = torch.nn.Sequential(
+          torch.nn.Linear(10, 10), torch.nn.ReLU(), torch.nn.Linear(10, 1)
+      )
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+      x = torch.randn(32, 10)
+      y = model(x)
+      return True
+  except Exception as e:
+      print(f"Model test failed: {str(e)}")
+      return False
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    batch_size = 32
-    input_features = 10
-    return torch.randn(batch_size, input_features)
-
+comp = torch.compile(options={"fx_graph_remote_cache": False})(test_fn)
+comp()

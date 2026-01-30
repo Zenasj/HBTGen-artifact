@@ -1,37 +1,54 @@
-# tf.random.uniform((B, 3), dtype=tf.float32) ← Input shape inferred from keras.Input((3,)) in the issue
+from tensorflow.keras import layers
 
 import tensorflow as tf
 
-class MyLayer(tf.keras.layers.Layer):
+import numpy as np
+from tensorflow.python.ops import math_ops
+from tensorflow.python import keras
+
+class MyLayer(keras.layers.Layer):
+
     def call(self, inputs, training=None):
-        # Custom behavior: add loss only during training.
-        # Note: in TF1.x, the `training` parameter may not be properly passed by model.fit.
-        # In TF2.x or with run_eagerly=True, this branch is triggered as expected.
-        if training:
-            self.add_loss(tf.reduce_sum(inputs))
+        # Expecting training to be set
+        if training is not None:
+            self.add_loss(math_ops.reduce_sum(inputs))
+
         return inputs
 
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Use the custom layer that conditionally adds loss when training
-        self.mylayer = MyLayer()
+inputs = keras.Input((3,))
+layer = MyLayer()
+outputs = layer(inputs)
+model = keras.Model(inputs, outputs)
+model.compile('sgd', 'mse', run_eagerly=False)
+loss = model.fit(np.ones((2, 3)), np.ones((2, 3)))
+
+print(loss.history)
+
+import tensorflow as tf
+tf.enable_eager_execution()
+
+import numpy as np
+from tensorflow.python.ops import math_ops
+from tensorflow.python import keras
+
+class MyLayer(keras.layers.Layer):
 
     def call(self, inputs, training=None):
-        # Forward input through custom layer with training param passed
-        # This enables conditional loss addition during training vs inference
-        x = self.mylayer(inputs, training=training)
-        return x
+        # Expecting training to be set
+        if training is not None:
+            self.add_loss(math_ops.reduce_sum(inputs))
+
+        return inputs
 
 
-def my_model_function():
-    # Return an instance of MyModel; no weights to load
-    return MyModel()
+inputs = keras.Input((3,))
+layer = MyLayer()
+outputs = layer(inputs)
+model = keras.Model(inputs, outputs)
+model.compile('sgd', 'mse', run_eagerly=True)
+loss = model.fit(np.ones((2, 3)), np.ones((2, 3)))
 
+print(loss.history)
 
-def GetInput():
-    # Return a random tensor input matching Model's expected input shape: (Batch, 3)
-    # Batch size chosen as 2 to match original test
-    return tf.random.uniform((2, 3), dtype=tf.float32)
-
+# Print out is "6" as training branch works.

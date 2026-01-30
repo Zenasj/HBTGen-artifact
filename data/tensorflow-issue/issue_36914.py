@@ -1,51 +1,35 @@
-# tf.random.uniform((B, n_timestep, 6), dtype=tf.float32)  # Assumed input shape for Conv1D model from issue
-
+import numpy as np
+import random
 import tensorflow as tf
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Conv1D, Dropout, Flatten, Dense
 
-class MyModel(tf.keras.Model):
-    def __init__(self, n_timestep=10, num_classes=3):
-        """
-        Reconstructed model based on the description in the issue:
-        - 2 Conv1D layers with 32 filters, kernel size 3, relu activation
-        - Dropout 0.5
-        - Flatten
-        - Dense 100 relu
-        - Dense num_classes softmax
-        
-        The input_shape is (n_timestep, 6) with 6 channels/features per timestep,
-        consistent with the user's input shape in the issues.
-        
-        The issue suggests MaxPooling1D causes problems in TFLite micro on ESP32,
-        so this version excludes pooling, which they confirmed works.
-        """
-        super().__init__()
-        self.model = Sequential([
-            Conv1D(filters=32, kernel_size=3, activation='relu', input_shape=(n_timestep, 6)),
-            Conv1D(filters=32, kernel_size=3, activation='relu'),
-            Dropout(0.5),
-            # MaxPooling1D(pool_size=2),  # Omitted due to issues in microcontroller inference
-            Flatten(),
-            Dense(100, activation='relu'),
-            Dense(num_classes, activation='softmax')
-        ])
-    
-    def call(self, inputs, training=False):
-        # Delegate call to internal Keras Sequential model
-        return self.model(inputs, training=training)
+#Converting a simple model.
+model = Sequential()
+model.add(Conv1D(filters=64, kernel_size=3, activation='relu', input_shape=(10,6)))
+model.add(Conv1D(filters=64, kernel_size=3, activation='relu'))
+model.add(Dropout(0.5))
+model.add(MaxPooling1D(pool_size=2))
+model.add(Flatten())
+model.add(Dense(100, activation='relu'))
+model.add(Dense(y_train.shape[1], activation='softmax'))
+model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+model.fit(X_train, y_train, epochs=5, batch_size=32, verbose=2)
 
+converter = lite.TFLiteConverter.from_keras_model(model)
 
-def my_model_function():
-    # Return an instance with default timestep=10 and 3 classes as per example
-    return MyModel(n_timestep=10, num_classes=3)
+#The problem is caused by the following line
+converter.optimizations = [lite.Optimize.DEFAULT]
 
+tfmodel = converter.convert()
+open(PATH+'/model.tflite',"wb").write(tfmodel)
 
-def GetInput():
-    # Generate a random input tensor matching (batch_size=1, n_timestep=10, features=6)
-    # Using float32 as input dtype since the TFLite example uses float inputs for compatibility testing
-    n_timestep = 10
-    batch_size = 1
-    input_channels = 6
-    return tf.random.uniform((batch_size, n_timestep, input_channels), dtype=tf.float32)
+interpreter = tf.lite.Interpreter(model_path=PATH+"/model.tflite")
+interpreter.allocate_tensors()
 
+input_details = interpreter.get_input_details()
+output_details = interpreter.get_output_details()
+
+input_shape = input_details[0]['shape']
+input_data = np.array(np.random.random_sample(input_shape), dtype=np.float32)
+
+interpreter.set_tensor(input_details[0]['index'], input_data)
+interpreter.invoke()

@@ -1,25 +1,23 @@
-# torch.rand(10, dtype=torch.float32)
 import torch
-from torch import nn
+S = 10
+x = torch.rand(S) # float
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        # Create Long tensor and perform assignment (truncates values)
-        y_long = torch.zeros_like(x, dtype=torch.long)
-        y_long[:] = x[:]  # Truncates float values to integers
-        y_long_float = y_long.to(torch.float)
-        
-        # Compute difference between original and truncated values
-        difference = x - y_long_float
-        return difference
+y = torch.zeros(S) # float
+y[:] = x[:] # float assignment works correctly
+print(y.tolist())
 
-def my_model_function():
-    return MyModel()
+y = torch.zeros(S, dtype=torch.long) # long
+y[:] = x[:] # assignment from long tensor to float tensor silently fails.
+print(y.tolist())
 
-def GetInput():
-    # Returns a 1D tensor of 10 elements matching the example's input shape
-    return torch.rand(10)
+import torch
+S = 10
+x = torch.rand(S) * 10 # float
 
+y = torch.zeros(S) # float
+y[:] = x[:] # float assignment works correctly
+print(y.tolist()) #e.g. [9.241122245788574, 6.167181968688965, 7.978866100311279, ...]
+
+y = torch.zeros(S, dtype=torch.long) # long
+y[:] = x[:]
+print(y.tolist())  # e.g. [9, 6, 7, 9, 5, 7, 0, 0, 4, 6]

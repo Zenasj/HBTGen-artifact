@@ -1,24 +1,61 @@
-# tf.random.uniform((B, 1), dtype=tf.float32)  ← Input shape inferred from toy_dataset inputs: tf.range(10.)[:, None]
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
+
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # A simple linear layer with 5 outputs, matching the original Net Dense(5)
-        self.l1 = tf.keras.layers.Dense(5)
+class Net(tf.keras.Model):
+  """A simple linear model."""
 
-    def call(self, x):
-        # Forward pass: linear layer on input x
-        return self.l1(x)
+  def __init__(self):
+    super(Net, self).__init__()
+    self.l1 = tf.keras.layers.Dense(5)
 
-def my_model_function():
-    # Return an instance of MyModel (same as the original Net model)
-    return MyModel()
+  def call(self, x):
+    return self.l1(x)
+  
+def toy_dataset():
+  inputs = tf.range(10.)[:, None]
+  labels = inputs * 5. + tf.range(5.)[None, :]
 
-def GetInput():
-    # Return a random input tensor matching the expected input shape by MyModel
-    # Original input shape is (batch_size, 1), toy_dataset used batches of size 2 in example
-    batch_size = 2
-    # Using uniform random floats similar to tf.range input but random for generality
-    return tf.random.uniform((batch_size, 1), dtype=tf.float32)
+  dataset = tf.data.Dataset.from_tensor_slices(
+    dict(x=inputs, y=labels)).repeat()
+  dataset = dataset.shuffle(4).batch(2)
+  return dataset
 
+net = Net()
+
+def train_step(net, example, optimizer):
+  """Trains `net` on `example` using `optimizer`."""
+  with tf.GradientTape() as tape:
+    output = net(example['x'])
+    loss = tf.reduce_mean(tf.abs(output - example['y']))
+  variables = net.trainable_variables
+  gradients = tape.gradient(loss, variables)
+  optimizer.apply_gradients(zip(gradients, variables))
+  return loss
+  
+
+opt = tf.keras.optimizers.Adam(0.1)
+dataset = toy_dataset()
+iterator = iter(dataset)
+ckpt = tf.train.Checkpoint(step=tf.Variable(1), optimizer=opt, net=net, iterator=iterator)
+manager = tf.train.CheckpointManager(ckpt, './tf_ckpts', max_to_keep=3)
+
+def train_and_checkpoint(net, manager):
+  ckpt.restore(manager.latest_checkpoint)
+  if manager.latest_checkpoint:
+    print("Restored from {}".format(manager.latest_checkpoint))
+  else:
+    print("Initializing from scratch.")
+
+  for _ in range(50):
+    example = next(iterator)
+    loss = train_step(net, example, opt)
+    ckpt.step.assign_add(1)
+    if int(ckpt.step) % 10 == 0:
+      save_path = manager.save()
+      print("Saved checkpoint for step {}: {}".format(int(ckpt.step), save_path))
+      print("loss {:1.2f}".format(loss.numpy()))
+      
+train_and_checkpoint(net, manager)

@@ -1,17 +1,47 @@
-# torch.rand(2, 3, 4), torch.rand(2, 6, 4) ← Input tensors B and A
 import torch
-from torch import nn
+import numpy as np
 
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        B, A = inputs  # B shape: (2,3,4), A shape: (2,6,4)
-        return torch.einsum("noq,npq->nop", B, A)
+A = torch.tensor([[[0.1000, 0.1000, 0.1000, 0.1000],
+         [0.1000, 0.1000, 0.1000, 0.1000],
+         [0.2000, 0.2000, 0.2000, 0.2000],
+         [0.2000, 0.2000, 0.2000, 0.2000],
+         [0.3000, 0.3000, 0.3000, 0.3000],
+         [0.3000, 0.3000, 0.3000, 0.3000]],
+        [[0.1000, 0.1000, 0.1000, 0.1000],
+         [0.1000, 0.1000, 0.1000, 0.1000],
+         [0.2000, 0.2000, 0.2000, 0.2000],
+         [0.2000, 0.2000, 0.2000, 0.2000],
+         [0.3000, 0.3000, 0.3000, 0.3000],
+         [0.3000, 0.3000, 0.3000, 0.3000]]])
+print(A); print(A.shape)
 
-def my_model_function():
-    return MyModel()
+B = torch.tensor([[[ 0.0220,  0.0275, -0.0471, -0.0067],
+         [-0.0039, -0.0336,  0.0682,  0.0491],
+         [ 0.0243, -0.0246, -0.0425, -0.0074]],
+        [[ 0.0220,  0.0275, -0.0471, -0.0067],
+         [-0.0039, -0.0336,  0.0682,  0.0491],
+         [ 0.0243, -0.0246, -0.0425, -0.0074]]])
+print(B); print(B.shape)
 
-def GetInput():
-    B = torch.rand(2, 3, 4)
-    A = torch.rand(2, 6, 4)
-    return (B, A)  # Returns tuple (B, A) matching the einsum equation's input requirements
+torch_res = torch.einsum("noq,npq->nop", B, A)
+print(torch_res); print(torch_res.shape)
 
+tensor([[[-4.3000e-04, -4.3000e-04, -8.6000e-04, -8.6000e-04, -1.2900e-03,
+          -1.2900e-03],
+         [ 7.9800e-03,  7.9800e-03,  1.5960e-02,  1.5960e-02,  2.3940e-02,
+           2.3940e-02],
+         [-5.0200e-03, -5.0200e-03, -1.0040e-02, -1.0040e-02, -1.5060e-02,
+          -1.5060e-02]],
+
+        [[ 0.0000e+00,  0.0000e+00,  0.0000e+00,  0.0000e+00,  0.0000e+00,
+           0.0000e+00],
+         [ 0.0000e+00,  0.0000e+00,  0.0000e+00,  0.0000e+00,  0.0000e+00,
+           0.0000e+00],
+         [ 9.1835e-41,  0.0000e+00,  0.0000e+00,  0.0000e+00,  0.0000e+00,
+           0.0000e+00]]])
+torch.Size([2, 3, 6])
+
+numpy_res = np.einsum("noq,npq->nop", B, A)
+print(numpy_res); print(numpy_res.shape)
+
+tensor(1.8626e-09)

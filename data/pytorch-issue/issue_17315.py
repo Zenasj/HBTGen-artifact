@@ -1,38 +1,93 @@
-# torch.rand(5, requires_grad=True)  # Inferred input shape from the issue
+import torch
+
+
+def extract(V):
+    def hook(grad):
+        V.grad = grad
+    return hook
+
+X = torch.ones(5, requires_grad=True)
+V = X.pow(3)
+Y = V.sum()
+
+V.register_hook(extract(V))
+Y.backward()
+
+print('X.grad:', X.grad)
+print('V.grad:', V.grad)
 
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.register_backward_hook(self.backward_hook)
 
-    def forward(self, x):
-        return x.pow(3).sum()
-
-    def backward_hook(self, module, grad_input, grad_output):
-        V = module.input
-        V.grad = grad_output[0]
+def extract_and_grad(V):
+    def hook(grad):
+        V.grad = grad
         V.grad.requires_grad_(True)
-        with torch.enable_grad():
-            U = V.grad.pow(2).sum()
+        print('V.grad:', V.grad)
+        U = V.grad.pow(2).sum()
+        print('U:', U)
         try:
-            dU_dV_grad, = torch.autograd.grad(U, V.grad, create_graph=True)
+            dU_dV_grad = torch.autograd.grad(U, V.grad)
             print('V.grad.grad:', dU_dV_grad)
         except RuntimeError as err:
             print(err)
+    return hook
 
-def my_model_function():
-    return MyModel()
+X = torch.ones(5, requires_grad=True)
+V = X.pow(3)
+Y = V.sum()
 
-def GetInput():
-    return torch.ones(5, requires_grad=True)
+V.register_hook(extract_and_grad(V))
+Y.backward()
 
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
-# output.backward()
-# This will trigger the backward hook and print the gradient of the gradient.
+import torch
 
+
+def extract_and_grad_v2(V):
+    def hook(grad):
+        V.grad = grad
+        V.grad.requires_grad_(True)
+        print('V.grad:', V.grad)
+        
+        with torch.enable_grad():
+            U = V.grad.pow(2).sum()
+            print('U:', U)
+        try:
+            dU_dV_grad, = torch.autograd.grad(U, V.grad)
+            print('V.grad.grad:', dU_dV_grad)
+        except RuntimeError as err:
+            print(err)
+    return hook
+
+X = torch.ones(5, requires_grad=True)
+V = X.pow(3)
+Y = V.sum()
+
+V.register_hook(extract_and_grad_v2(V))
+Y.backward()
+
+import torch
+
+
+def extract(V):
+    def hook(grad):
+        V.grad = grad
+    return hook
+
+X = torch.ones(5, requires_grad=True)
+V = X.pow(3)
+Y = V.sum()
+
+V.register_hook(extract(V))
+Y.backward()
+
+V.grad.requires_grad_(True)
+print('X.grad:', X.grad)
+print('V.grad:', V.grad)
+U = V.grad.pow(2).sum()
+print('U:', U)
+try:
+    dU_dV_grad, = torch.autograd.grad(U, V.grad)
+    print('V.grad.grad:', dU_dV_grad)
+except RuntimeError as err:
+    print(err)

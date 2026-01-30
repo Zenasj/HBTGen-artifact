@@ -1,49 +1,63 @@
-# torch.rand(1, 64, 62, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+class mynet(nn.Module):
+    def __init__(self):
+        super(mynet, self).__init__()
+    def forward(self, x):
+
+        #return F.avg_pool2d(x, (480, 640))  # this is ok
+
+        return F.avg_pool2d(x, x.size()[2:])
+                # RuntimeError: ONNX symbolic expected a constant value in the trace
+
+        #return F.adaptive_avg_pool2d(x, (1, 1))  # this is ok
+
+net = mynet()
+x = torch.randn(1, 3, 480, 640)
+
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+net = net.to(device)
+x = x.to(device)
+
+out = net(x)
+print('out.size ', out.size()) #(1, 3, 1, 1)
+
+torch.onnx.export(net, x, "test.onnx", verbose=True)
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class VggishConvBlock(nn.Module):
-    def __init__(self, in_channels, out_channels):
-        super(VggishConvBlock, self).__init__()
-        self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
-        self.conv2 = nn.Conv2d(in_channels=out_channels, out_channels=out_channels, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
-        self.bn1 = nn.BatchNorm2d(out_channels)
-        self.bn2 = nn.BatchNorm2d(out_channels)
-
+class mynet(nn.Module):
+    def __init__(self):
+        super(mynet, self).__init__()
     def forward(self, x):
-        x = F.relu(self.bn1(self.conv1(x)))
-        x = F.relu(self.bn2(self.conv2(x)))
-        x = F.max_pool2d(x, kernel_size=(2, 2), stride=(2, 2))
-        return x
+        n, c, h, w = x.size()
+        x = F.adaptive_avg_pool2d(x, (1, 1))
 
-class MyModel(nn.Module):
-    def __init__(self, classes_num):
-        super(MyModel, self).__init__()
-        self.conv_block1 = VggishConvBlock(in_channels=1, out_channels=64)
-        self.conv_block2 = VggishConvBlock(in_channels=64, out_channels=128)
-        self.conv_block3 = VggishConvBlock(in_channels=128, out_channels=256)
-        self.conv_block4 = VggishConvBlock(in_channels=256, out_channels=512)
-        self.fc_final = nn.Linear(512, classes_num, bias=True)
+        #return F.interpolate(x, (h, w), mode='bilinear', align_corners=False)
+                                # RuntimeError: ONNX symbolic expected a constant value in the trace
 
-    def forward(self, input):
-        (_, seq_len, mel_bins) = input.shape
-        x = input.view(-1, 1, seq_len, mel_bins)
-        x = self.conv_block1(x)
-        x = self.conv_block2(x)
-        x = self.conv_block3(x)
-        x = self.conv_block4(x)
-        x = F.max_pool2d(x, kernel_size=x.shape[2:])
-        x = x.view(x.shape[0:2])
-        x = F.log_softmax(self.fc_final(x), dim=-1)
-        return x
+        return F.interpolate(x, (480, 640), mode='bilinear', align_corners=False) # this is ok
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel(classes_num=41)
+        #return F.interpolate(x, (h, w), mode='bilinear', align_corners=True)
+                                # RuntimeError: ONNX symbolic expected a constant value in the trace
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.FloatTensor(1, 64, 62)
+        #return F.interpolate(x, (480, 640), mode='bilinear', align_corners=True)
+                                # UserWarning: ONNX export failed on upsample_bilinear2d because align_corners == True not supported
+                                # RuntimeError: ONNX export failed: Couldn't export operator aten::upsample_bilinear2d
 
+
+net = mynet()
+x = torch.randn(1, 3, 480, 640)
+
+device = torch.device("cuda:0")
+net = net.to(device)
+x = x.to(device)
+
+out = net(x)
+print('out.size ', out.size()) #(1, 3, 480, 640)
+
+torch.onnx.export(net, x, "test.onnx", verbose=True)

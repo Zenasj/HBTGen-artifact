@@ -1,19 +1,17 @@
-# torch.rand(1, 2, 7, 7, dtype=torch.double)
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        B = x.shape[0]
-        samples = x.new(B, 2, 2).uniform_()
-        return F.fractional_max_pool2d(
-            x, kernel_size=(2, 2), output_size=(3, 3), _random_samples=samples
-        )
+import torch
+from torch.autograd import gradcheck
 
-def my_model_function():
-    return MyModel()
+torch.set_default_dtype(torch.double)
 
-def GetInput():
-    return torch.randn(1, 2, 7, 7, dtype=torch.double, requires_grad=True)
+device='cuda'
 
+x = torch.randn(2, 7, 7, requires_grad=True, device=device)
+samples = x.new(1, 2, 2).uniform_()
+
+def fn(x):
+    return torch.nn.functional.fractional_max_pool2d(
+                x, (2, 2), output_size=(3, 3), _random_samples=samples)
+
+gradcheck(fn, [x])

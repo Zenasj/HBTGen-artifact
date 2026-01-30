@@ -1,15 +1,11 @@
-# torch.rand((), dtype=torch.uint8, device='cuda')
 import torch
-from torch import nn
+def forward():
+    x = torch.tensor(5, device='cuda', dtype=torch.uint8)
+    y = torch.neg(x)
+    return x < y
+print(forward())
+fn_compiled = torch.compile(forward)
+print(fn_compiled())
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        y = torch.neg(x)
-        return x < y
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.tensor(5, device='cuda', dtype=torch.uint8)
-
+tensor(True, device='cuda:0')
+tensor(False, device='cuda:0')

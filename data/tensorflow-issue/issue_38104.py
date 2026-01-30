@@ -1,35 +1,59 @@
-# tf.random.uniform((B, 28, 28, 1), dtype=tf.float32)
 import tensorflow as tf
+from tensorflow.keras import layers
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Model definition matches the original MNIST CNN from the issue
-        self.reshape = tf.keras.layers.Reshape(target_shape=(28, 28, 1))
-        self.conv2d = tf.keras.layers.Conv2D(filters=12, kernel_size=(3, 3), activation=tf.nn.relu)
-        self.maxpool = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense = tf.keras.layers.Dense(10, activation=tf.nn.softmax)
+import logging
+logging.getLogger("tensorflow").setLevel(logging.DEBUG)
 
-    def call(self, inputs, training=False):
-        # Forward pass matching the sequential model from the issue
-        x = self.reshape(inputs)
-        x = self.conv2d(x)
-        x = self.maxpool(x)
-        x = self.flatten(x)
-        x = self.dense(x)
-        return x
+try:
+  # %tensorflow_version only exists in Colab.
+  import tensorflow.compat.v2 as tf
+except Exception:
+  pass
+tf.enable_v2_behavior()
 
-def my_model_function():
-    # Return a fresh MyModel instance.
-    # No pretrained weights are provided; user would need to train separately.
-    return MyModel()
+from tensorflow import keras
+import numpy as np
+import pathlib
 
-def GetInput():
-    # The model expects input shape (batch_size, 28, 28) with float values normalized [0,1].
-    # According to the MNIST dataset shape used in the issue, batch input can be (B, 28, 28).
-    # Use batch size 1 here as an example.
-    input_shape = (1, 28, 28)
-    # Generate random float32 input normalized between 0 and 1
-    return tf.random.uniform(input_shape, minval=0, maxval=1, dtype=tf.float32)
+# Load MNIST dataset
+mnist = keras.datasets.mnist
+(train_images, train_labels), (test_images, test_labels) = mnist.load_data()
 
+# Normalize the input image so that each pixel value is between 0 to 1.
+train_images = train_images / 255.0
+test_images = test_images / 255.0
+
+# Define the model architecture
+model = keras.Sequential([
+  keras.layers.InputLayer(input_shape=(28, 28)),
+  keras.layers.Reshape(target_shape=(28, 28, 1)),
+  keras.layers.Conv2D(filters=12, kernel_size=(3, 3), activation=tf.nn.relu),
+  keras.layers.MaxPooling2D(pool_size=(2, 2)),
+  keras.layers.Flatten(),
+  keras.layers.Dense(10, activation=tf.nn.softmax)
+])
+
+# Train the digit classification model
+model.compile(optimizer='adam',
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
+model.fit(
+  train_images,
+  train_labels,
+  epochs=1,
+  validation_data=(test_images, test_labels)
+)
+
+#　只做了格式转换
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+tflite_model = converter.convert()
+tflite_models_dir = pathlib.Path("./mnist_tflite_models/")
+tflite_models_dir.mkdir(exist_ok=True, parents=True)
+tflite_model_file = tflite_models_dir/"mnist_model.tflite"
+tflite_model_file.write_bytes(tflite_model)
+
+# 把weights转换成int8  实际测试出来只有全连接层的weights转成了int8
+converter.optimizations = [tf.lite.Optimize.OPTIMIZE_FOR_SIZE]
+tflite_quant_model = converter.convert()
+tflite_model_quant_file = tflite_models_dir/"mnist_model_quant.tflite"
+tflite_model_quant_file.write_bytes(tflite_quant_model)

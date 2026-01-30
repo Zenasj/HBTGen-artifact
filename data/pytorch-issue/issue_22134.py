@@ -1,6 +1,7 @@
-# torch.rand(1, 3, dtype=torch.float32) ← Add a comment line at the top with the inferred input shape
-import torch
 import torch.nn as nn
+
+import torch
+
 
 class CustomFunction(torch.autograd.Function):
     @staticmethod
@@ -11,19 +12,12 @@ class CustomFunction(torch.autograd.Function):
     def forward(ctx, input):
         return input, input
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.custom = CustomFunction.apply
+    
+class Custom(torch.nn.Module):
 
     def forward(self, input):
-        return self.custom(input)
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(1, 3, dtype=torch.float32)
-
+        return CustomFunction.apply(input)
+    
+model = Custom()
+batch = torch.FloatTensor(1, 3)
+torch.onnx.export(model, batch, "test.onnx", verbose=True)

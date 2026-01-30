@@ -1,45 +1,69 @@
-# tf.random.uniform((B, 4, 4, 3), dtype=tf.float32) ← input shape inferred from original model input
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Upsampling layer: Conv2DTranspose that upsamples 4x4x3 input to 8x8x3 output
-        self.conv_transpose = tf.keras.layers.Conv2DTranspose(
-            filters=3, kernel_size=4, strides=2, padding='same')
+def Model():
+    
+    x = tf.keras.layers.Input((4,4,3)) # 4x4 image with 3 channels
+    y = tf.keras.layers.Conv2DTranspose(3, 4, 2, padding='same') (x) # Creates a 8x8 images with 3 channels by upsampling with stride 2
+    
+    linear = tf.keras.layers.Dense(8*8*3) (x) # Linear transformation of the input
+    linear = tf.keras.layers.Reshape([8, 8, 3]) (linear) # Reshapes the output of the linear transformation to the same shape as the upsampled image
+    y = tf.keras.layers.Add() ([y, linear]) # adds them together
+    
+    return tf.keras.models.Model(inputs=x, outputs=y)
 
-        # Flatten layer before Dense is required to avoid reshape errors in skip connection
-        self.flatten = tf.keras.layers.Flatten()
+# model
+model = Model()
 
-        # Dense layer outputting 8*8*3 features to be reshaped as 8x8x3
-        self.dense = tf.keras.layers.Dense(8 * 8 * 3)
+# input data
+array_range = np.random.randn(128, 4, 4,  3).astype(np.float32)
+dataset = tf.data.Dataset.from_tensor_slices(array_range).batch(8)
+iterator = dataset.make_one_shot_iterator()
+next_element = iterator.get_next()
+dataset_output = model(next_element)
 
-        # Reshape layer to convert dense output to (8,8,3)
-        self.reshape = tf.keras.layers.Reshape([8, 8, 3])
+# session
+sess = tf.Session()
+sess.run(tf.global_variables_initializer())
 
-        # Add layer to sum conv_transpose output and linear skip output
-        self.add = tf.keras.layers.Add()
+# evaluate
+print(sess.run(dataset_output))
+print(sess.run(dataset_output))
 
-    @tf.function(jit_compile=True)
-    def call(self, inputs):
-        # inputs: [B, 4, 4, 3]
-        # Apply Conv2DTranspose to upsample
-        y = self.conv_transpose(inputs)  # shape [B, 8, 8, 3]
+import tensorflow as tf
+import numpy as np
 
-        # Flatten then Dense then Reshape branch for skip connection
-        linear = self.flatten(inputs)     # shape [B, 4*4*3=48]
-        linear = self.dense(linear)       # shape [B, 8*8*3=192]
-        linear = self.reshape(linear)     # shape [B, 8, 8, 3]
+def Model():
+    
+    x = tf.keras.layers.Input((4,4,3)) # 4x4 image with 3 channels
+    y = tf.keras.layers.Conv2DTranspose(3, 4, 2, padding='same') (x) # Creates a 8x8 images with 3 channels by upsampling with stride 2
+    
+    linear = tf.keras.layers.Flatten() (x)
+    linear = tf.keras.layers.Dense(8*8*3) (linear) # Linear transformation of the input
+    linear = tf.keras.layers.Reshape([8, 8, 3]) (linear) # Reshapes the output of the linear transformation to the same shape as the upsampled image
+    y = tf.keras.layers.Add() ([y, linear]) # adds them together
+    
+    return tf.keras.models.Model(inputs=x, outputs=y)
 
-        # Add the two tensors elementwise
-        out = self.add([y, linear])       # shape [B, 8, 8, 3]
-        return out
+# model
+model = Model()
 
-def my_model_function():
-    return MyModel()
+# input data
+array_range = np.random.randn(128, 4, 4,  3).astype(np.float32)
+dataset = tf.data.Dataset.from_tensor_slices(array_range).batch(8)
+iterator = dataset.make_one_shot_iterator()
+next_element = iterator.get_next()
+dataset_output = model(next_element)
 
-def GetInput():
-    # Generate a random float32 tensor with shape (batch=8, 4,4,3) matching model input
-    return tf.random.uniform(shape=(8, 4, 4, 3), dtype=tf.float32)
+# session
+sess = tf.Session()
+sess.run(tf.global_variables_initializer())
 
+# evaluate
+print(sess.run(dataset_output))
+print(sess.run(dataset_output))

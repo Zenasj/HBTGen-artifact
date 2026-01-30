@@ -1,24 +1,28 @@
-# torch.rand(B, C, H, W, dtype=...)  # Inferred input shape: (1, 3, 3, 3)
+py
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.net = nn.Sequential(
-            nn.InstanceNorm2d(3),
-            nn.ReLU(True),
-            nn.MaxPool2d(2)
-        )
+net = nn.Sequential(
+  nn.InstanceNorm2d(1),
+  nn.ReLU(True)
+)
 
-    def forward(self, x):
-        return self.net(x)
+x = torch.randn(1, 1, 1, 1, requires_grad=True)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+g, = torch.autograd.grad(net(x).pow(2), [x], create_graph=True)
+torch.autograd.grad(g.sum(), [x])
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(1, 3, 3, 3, requires_grad=True)
+py
+import torch
+import torch.nn as nn
 
+net = nn.Sequential(
+  nn.InstanceNorm2d(3),
+  nn.ReLU(True),
+  nn.MaxPool2d(2)
+)
+
+x = torch.randn(1, 3, 3, 3, requires_grad=True)
+
+g, = torch.autograd.grad(net(x).sum(), [x], create_graph=True)
+torch.autograd.grad(g.sum(), [x])

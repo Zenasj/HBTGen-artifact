@@ -1,31 +1,37 @@
-# tf.random.uniform((B,), dtype=tf.float32) ← The input shape is [batch_size], scalar inputs per batch
+import random
+from tensorflow import keras
+from tensorflow.keras import optimizers
 
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Here we create a simple model that just reduces sum of scalar inputs
-        # This replicates the ToyModel behavior from the issue.
-        # No layers needed since the model just sums scalar inputs.
-    
-    def call(self, inputs):
-        # inputs shape expected: [batch_size] (scalar per batch element)
-        # Just return the sum over batch for demonstration
-        # We use tf.reduce_sum to output a scalar per batch (or single scalar)
-        # This simple operation exposes the input shape in call for debugging
-        tf.print("Input shape is", tf.shape(inputs))
-        return tf.reduce_sum(inputs, axis=-1)
+class ToyModel(tf.keras.Model):
+  def call(self, inputs):
+    # Inputs are scalar, so we should only have a batch dimesion.
+    print("Input shape is {}".format(inputs.shape))
+    return tf.reduce_sum(inputs)
 
-def my_model_function():
-    # Instantiate and return the MyModel model
-    # No weights or initialization needed beyond constructor here
-    return MyModel()
+toy_model = ToyModel()
+optimizer = tf.keras.optimizers.Adam(learning_rate=1e-3)
+loss = tf.keras.losses.MeanSquaredError()
 
-def GetInput():
-    # Return a batch of scalar inputs consistent with MyModel expectations
-    # For example, batch size 8, scalar inputs per batch element (shape [8])
-    batch_size = 8
-    # Generate a random float32 tensor of shape [batch_size]
-    return tf.random.uniform((batch_size,), dtype=tf.float32)
+data_size = 10
+data_inputs = np.float32(np.random.randn(data_size))
+data_outputs = np.float32(np.random.randn(data_size))
+dataset = tf.data.Dataset.from_tensor_slices(
+    (data_inputs, data_outputs)).batch(data_size)
 
+# Train iteratively
+iterator = iter(dataset)
+inputs, outputs = iterator.next()
+with tf.GradientTape() as tape:
+  predictions = toy_model(inputs)
+  loss_value = loss(outputs, predictions)
+grads = tape.gradient(loss_value, toy_model.trainable_weights)
+optimizer.apply_gradients(zip(grads, toy_model.trainable_weights))
+# Input shape is [batch_size]
+
+# Now, try training with fit() instead
+toy_model.compile(optimizer=optimizer, loss=loss)
+toy_model.fit(dataset, epochs=1)  
+# Input shape is [batch_size, 1]

@@ -1,27 +1,30 @@
 import torch
-from torch import nn
-
-# torch.rand(1, 1, 1, 1, dtype=torch.float32)  # Inferred input shape (B=1, C=1, H=1, W=1)
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.sub = SubModule()  # Encapsulates the submodule from the issue example
-
-    def forward(self, x):
-        return self.sub()  # Forward pass delegates to submodule
+import torch.nn as nn
 
 class SubModule(nn.Module):
     def __init__(self):
         super(SubModule, self).__init__()
-        self.a = 1  # Preservable attribute per the issue's example
-        self.b = 2  # Non-preserved attribute by default
+        self.a = 1
+        self.b = 2
 
     def forward(self):
-        return torch.tensor(self.a + self.b, dtype=torch.float32)  # Returns sum as a tensor
+        return self.a + self.b
 
-def my_model_function():
-    return MyModel()  # Returns the fused model structure
+class Module(nn.Module):
+    def __init__(self):
+        super(Module, self).__init__()
+        self.sub = SubModule()
 
-def GetInput():
-    return torch.rand(1, 1, 1, 1, dtype=torch.float32)  # Matches the inferred input shape
+    def forward(self):
+        return self.sub()
 
+mod = torch.jit.script(Module())
+mod.eval()
+frozen_mod = torch.jit.freeze(mod, preserved_attrs = ['sub.a'])
+
+mod.sub   # OK
+mod.sub.a # OK
+mod.sub.b # Error, not preserved
+mod()     # = 3
+mod.sub.a = 0
+mod()     # = 2

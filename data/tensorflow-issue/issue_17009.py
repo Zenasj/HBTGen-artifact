@@ -1,82 +1,142 @@
-# tf.random.uniform((15, 8, 150), dtype=tf.float32) ← inferred input shape from placeholders and cudnn_gru calls
-
 import tensorflow as tf
 
-# Assumptions:
-# - The original issue and examples revolve around using tf.contrib.cudnn_rnn.CudnnGRU layers,
-#   sometimes in control flow (tf.while_loop or tf.cond), which cause internal errors.
-# - There were two similar cudnn GRU models demonstrated, one with num_units=150, the other num_units=149,
-#   used conditionally.
-# - We fuse these two models into a single MyModel class, holding both submodules,
-#   running both on the input tensor, then comparing their outputs by shape and content.
-# - Since the cudnn GRU API may differ in TF2, we keep it in TF1 style using tf.contrib where possible,
-#   assuming compatibility with TF 2.20.0 XLA compilation for example.
-# - Input shape: [seq_len=15, batch_size=8, feature_dim=150], consistent with placeholders.
+gru_fw = tf.contrib.cudnn_rnn.CudnnGRU(num_layers=1, num_units=150, input_size=500)
+gru_fw_1 = tf.contrib.cudnn_rnn.CudnnGRU(num_layers=1, num_units=150, input_size=1800)
+e = tf.random_uniform([gru_fw.params_size()], -0.1, 0.1)
+f = tf.random_uniform([gru_fw.params_size()], -0.1, 0.1)
+g = tf.zeros([1, 4, 150])
+h = tf.zeros([1, 4, 150])
+zeros_i = tf.zeros([4, 150])
 
-class MyModel(tf.keras.Model):
+class cudnn_gru:
+	def __init__(self, num_layers, num_units, batch_size, input_size, keep_prob=1.0, is_train=None, scope=None):
+		self.num_layers = num_layers
+		self.grus = []
+		self.params = []
+		self.inits = []
+		self.dropout_mask = []
+		for layer in range(num_layers):
+			input_size_ = input_size if layer == 0 else 2 * num_units
+			gru_fw = tf.contrib.cudnn_rnn.CudnnGRU(
+				num_layers=1, num_units=num_units, input_size=input_size_)
+			gru_bw = tf.contrib.cudnn_rnn.CudnnGRU(
+				num_layers=1, num_units=num_units, input_size=input_size_)
+			with tf.variable_scope('CUDNN_GRU', reuse=tf.AUTO_REUSE):
+				param_fw = tf.get_variable("param_fw",initializer=e,validate_shape=False)
+				param_bw = tf.get_variable("param_bw",initializer=f,validate_shape=False)
+				init_fw = tf.get_variable("init_fw", initializer=g)
+				init_bw = tf.get_variable("init_bw", initializer=h)
+	def __call__(self, inputs, seq_len, keep_prob=1.0, is_train=None, concat_layers=True):
+		outputs = [tf.transpose(inputs, [1, 0, 2])]
+		for layer in range(self.num_layers):
+			gru_fw, gru_bw = self.grus[layer]
+			param_fw, param_bw = self.params[layer]
+			init_fw, init_bw = self.inits[layer]
+			mask_fw, mask_bw = self.dropout_mask[layer]
+			with tf.variable_scope("fw"):
+				out_fw, _ = gru_fw(outputs[-1] * mask_fw, init_fw, param_fw)
+			with tf.variable_scope("bw"):
+				inputs_bw = tf.reverse_sequence(
+					outputs[-1] * mask_bw, seq_lengths=seq_len, seq_dim=0, batch_dim=1)
+				out_bw, _ = gru_bw(inputs_bw, init_bw, param_bw)
+				out_bw = tf.reverse_sequence(
+					out_bw, seq_lengths=seq_len, seq_dim=0, batch_dim=1)
+			outputs.append(tf.concat([out_fw, out_bw], axis=2))
+		if concat_layers:
+			res = tf.concat(outputs[1:], axis=2)
+		else:
+			res = outputs[-1]
+		res = tf.transpose(res, [1, 0, 2])
+		return res
+
+class native_gru:
+	def __init__(self, num_layers, num_units, batch_size, input_size, keep_prob=1.0, is_train=None, scope="native_gru"):
+		self.num_layers = num_layers
+		self.grus = []
+		self.inits = []
+		self.dropout_mask = []
+		self.scope = scope
+		for layer in range(num_layers):
+			input_size_ = input_size if layer == 0 else 2 * num_units
+			gru_fw = tf.contrib.rnn.GRUCell(num_units)
+			gru_bw = tf.contrib.rnn.GRUCell(num_units)
+			with tf.variable_scope('native_GRU', reuse=tf.AUTO_REUSE):
+
+				init_fw = tf.get_variable("init_fw", initializer=zeros_i)
+				init_bw = tf.get_variable("init_bw", initializer=zeros_i)
+				
+			#init_fw = tf.Variable(tf.zeros([batch_size, num_units]))
+			#init_bw = tf.Variable(tf.zeros([batch_size, num_units]))
+			mask_fw = dropout(tf.ones([batch_size, 1, input_size_], dtype=tf.float32),
+							  keep_prob=keep_prob, is_train=is_train, mode=None)
+			mask_bw = dropout(tf.ones([batch_size, 1, input_size_], dtype=tf.float32),
+							  keep_prob=keep_prob, is_train=is_train, mode=None)
+			self.grus.append((gru_fw, gru_bw, ))
+			self.inits.append((init_fw, init_bw, ))
+			self.dropout_mask.append((mask_fw, mask_bw, ))
+
+	def __call__(self, inputs, seq_len, keep_prob=1.0, is_train=None, concat_layers=True):
+		outputs = [inputs]
+		with tf.variable_scope(self.scope):
+			for layer in range(self.num_layers):
+				gru_fw, gru_bw = self.grus[layer]
+				init_fw, init_bw = self.inits[layer]
+				mask_fw, mask_bw = self.dropout_mask[layer]
+				with tf.variable_scope("fw_{}".format(layer)):
+					out_fw, _ = tf.nn.dynamic_rnn(
+						gru_fw, outputs[-1] * mask_fw, seq_len, initial_state=init_fw, dtype=tf.float32)
+				with tf.variable_scope("bw_{}".format(layer)):
+					inputs_bw = tf.reverse_sequence(
+						outputs[-1] * mask_bw, seq_lengths=seq_len, seq_dim=1, batch_dim=0)
+					out_bw, _ = tf.nn.dynamic_rnn(
+						gru_fw, inputs_bw, seq_len, initial_state=init_bw, dtype=tf.float32)
+					out_bw = tf.reverse_sequence(
+						out_bw, seq_lengths=seq_len, seq_dim=1, batch_dim=0)
+				outputs.append(tf.concat([out_fw, out_bw], axis=2))
+		if concat_layers:
+			res = tf.concat(outputs[1:], axis=2)
+		else:
+			res = outputs[-1]
+		return res
+
+import tensorflow as tf
+max_para = tf.placeholder(tf.int32)
+num_units = 150
+inputs = tf.placeholder(tf.float32,shape=[15,8,num_units])
+class cudnn_gru:
     def __init__(self):
-        super().__init__()
-        self.num_units1 = 150
-        self.num_units2 = 149
-        
-        # The cudnn GRU instances, one with 150 units, one with 149 units
-        # Using tf.contrib.cudnn_rnn.CudnnGRU as in the issue, with one layer each.
-        self.gru1 = tf.contrib.cudnn_rnn.CudnnGRU(num_layers=1, num_units=self.num_units1, input_size=self.num_units1)
-        self.gru2 = tf.contrib.cudnn_rnn.CudnnGRU(num_layers=1, num_units=self.num_units2, input_size=self.num_units1)
+        self.gru_fw = tf.contrib.cudnn_rnn.CudnnGRU(1, num_units, 
+            kernel_initializer=tf.random_normal_initializer(stddev=0.1))
+        with tf.variable_scope('CUDNN_GRU', reuse=tf.AUTO_REUSE):
+            self.init_fw = tf.get_variable("init_fw",shape=[1, 8, num_units],initializer=
+                tf.zeros_initializer())
+            self.init_bw = tf.get_variable("init_bw",shape=[1, 8, num_units],initializer=
+                tf.zeros_initializer())
+    def __call__(self,inputs):
+        out_fw, _ = self.gru_fw(inputs, initial_state=(self.init_fw,))
 
-        # Variables for initial states for both models, per example code, shape [1, batch_size, num_units]
-        # Use tf.Variable instead of tf.get_variable for better TF2 compatibility.
-        # 1 = num_layers, 8 = batch_size (fixed), num_units as per model
-        batch_size = 8
-        self.init_fw_1 = tf.Variable(tf.zeros([1, batch_size, self.num_units1]), trainable=False, name='init_fw_1')
-        self.init_fw_2 = tf.Variable(tf.zeros([1, batch_size, self.num_units2]), trainable=False, name='init_fw_2')
-        
-    def call(self, inputs):
-        '''
-        inputs: tf.Tensor of shape [seq_len, batch_size, feature_dim=150], dtype=tf.float32
-        Returns:
-            A dictionary with outputs and comparison result (bool tensor).
-        '''
-        # Run both cudnn GRU models on the same inputs
-        # According to TF1 cudnn GRU API:
-        # output, output_h = gru(inputs, initial_state)
-        out1, _ = self.gru1(inputs, initial_state=self.init_fw_1)
-        out2, _ = self.gru2(inputs, initial_state=self.init_fw_2)
-        
-        # Since units differ (150 vs 149), shapes differ along last dim:
-        # out1 shape: [seq_len, batch_size, 150]
-        # out2 shape: [seq_len, batch_size, 149]
-        # For comparison, truncate or pad smaller dim to equalize or just compare shape mismatch.
-        # Here, for demonstration, compare shapes (expected different), then compare truncated slices.
+class cudnn_gru2:
+    def __init__(self):
+        self.gru_fw = tf.contrib.cudnn_rnn.CudnnGRU(1, num_units-1, 
+            kernel_initializer=tf.random_normal_initializer(stddev=0.1))
+        with tf.variable_scope('CUDNN_GRU', reuse=tf.AUTO_REUSE):
+            self.init_fw = tf.get_variable("init_fw",shape=[1, 8, num_units],initializer=
+                tf.zeros_initializer())
+            self.init_bw = tf.get_variable("init_bw",shape=[1, 8, num_units],initializer=
+                tf.zeros_initializer())
+    def __call__(self,inputs):
+        out_fw, _ = self.gru_fw(inputs, initial_state=(self.init_fw,))
 
-        min_units = min(out1.shape[-1], out2.shape[-1])
-        
-        out1_trunc = out1[:, :, :min_units]
-        out2_trunc = out2[:, :, :min_units]
+def get_output():
+    gru = cudnn_gru()
+    out = gru(inputs)
+    return tf.constant(1)
 
-        # Compute elementwise difference
-        diff = tf.abs(out1_trunc - out2_trunc)
+def get_output2():
+    gru = cudnn_gru2()
+    out = gru(inputs)
+    return tf.constant(2)
 
-        # Define a tolerance to consider outputs nearly equal
-        tol = 1e-5
-        outputs_equal = tf.reduce_all(diff < tol)
-
-        # Return a dictionary (or tuple) of results
-        # For simplicity, output dictionary with original outputs and bool comparison
-        return {
-            'output1': out1,
-            'output2': out2,
-            'outputs_equal': outputs_equal,
-            'outputs_diff': diff
-        }
-
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input matching expected shape of MyModel
-    # Shape: [seq_len=15, batch_size=8, feature_dim=150], float32
-    # Use uniform distribution as per original snippets
-    return tf.random.uniform(shape=[15, 8, 150], dtype=tf.float32)
-
+for i in range(3):
+    i_ = tf.constant(i)
+    out = tf.cond(i_<max_para,get_output,get_output2)

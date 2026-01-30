@@ -1,23 +1,17 @@
-# torch.rand(N, dtype=torch.float32)
 import torch
-from torch import nn
+import timeit
+timeit.timeit('torch.randn(10000).repeat_interleave(100, -1)', 'import torch', number=100)
+timeit.timeit('torch.randn(10000)[..., None].expand(-1, 100).flatten(-2, -1)', 'import torch', number=100)
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        
-    def forward(self, x):
-        # Method 1: repeat_interleave
-        out1 = x.repeat_interleave(100, dim=-1)
-        # Method 2: expand and flatten
-        expanded = x.unsqueeze(-1).expand(-1, 100)
-        out2 = expanded.flatten(-2, -1)
-        # Return 1.0 if outputs are close, else 0.0
-        return torch.tensor(torch.allclose(out1, out2, atol=1e-7), dtype=torch.float32)
+0.37211750000000166
+0.10460659999995414
 
-def my_model_function():
-    return MyModel()
+self.erb_indices = torch.tensor([
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 5, 5, 7, 7, 8, 
+    10, 12, 13, 15, 18, 20, 24, 28, 31, 37, 42, 50, 56, 67
+])
+gains = torch.randn(32)
 
-def GetInput():
-    return torch.rand(10000)
+gains = torch.repeat_interleave(gains, self.erb_indices)
 
+gains = torch.cat([x.repeat(num_x) for x, num_x in zip(gains, self.erb_indices)])

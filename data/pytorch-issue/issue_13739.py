@@ -1,20 +1,29 @@
-# torch.rand(1, 1, 1, 1, dtype=torch.float32)  # Dummy input shape (issue's check() doesn't use inputs)
+import os
+import time
+
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Reproduces the sparse tensor creation that caused deadlock in forked processes
-        indices = torch.LongTensor([[0, 1, 1], [2, 0, 2]])
-        values = torch.FloatTensor([3, 4, 5])
-        tensor = torch.sparse_coo_tensor(indices, values, torch.Size([2, 4]))
-        return x  # Dummy output to satisfy module structure
 
-def my_model_function():
-    # Returns the model instance that triggers the bug scenario
-    return MyModel()
+def check():
+    indices = torch.LongTensor([[0, 1, 1], [2, 0, 2]])
+    values = torch.FloatTensor([3, 4, 5])
+    tensor = torch.sparse_coo_tensor(indices, values, torch.Size([2,4]))
 
-def GetInput():
-    # Returns dummy input matching expected shape (unused by model's forward)
-    return torch.rand(1, 1, 1, 1, dtype=torch.float32)
 
+def main():
+    check()  # Note: this line is required to reproduce behavior!
+    pid = os.fork()
+    if pid:
+        print(f"Starting check pid: {pid}")
+        check()
+        print(f"Done check pid: {pid}")
+        time.sleep(10)
+    else:
+        print(f"Starting check pid: {pid}")
+        check()
+        print(f"Done check pid: {pid}")
+        time.sleep(10)
+
+
+if __name__ == '__main__':
+    main()

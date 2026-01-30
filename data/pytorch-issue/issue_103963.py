@@ -1,34 +1,35 @@
-# torch.rand(B, 1, H, W, device='cuda')  # B=1, H=8, W=8
-import torch
 import torch.nn as nn
+
+import torch
 import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.register_buffer('q', torch.rand(1, 1, 8, 8, device='cuda'))
-        self.register_buffer('k', torch.rand(1, 1, 8, 8, device='cuda'))
-        self.register_buffer('v', torch.rand(1, 1, 8, 8, device='cuda'))
-    
-    def forward(self, mask):
-        float_mask = mask.float()
-        bool_mask = mask.bool()
-        out_float = F.scaled_dot_product_attention(self.q, self.k, self.v, float_mask)
-        out_bool = F.scaled_dot_product_attention(self.q, self.k, self.v, bool_mask)
-        # Check for differences including NaN propagation
-        diff = torch.any(
-            (out_float != out_bool) | (out_float.isnan() ^ out_bool.isnan())
-        )
-        return diff  # Returns True if outputs differ (including NaNs)
+torch.manual_seed(13)
 
-def my_model_function():
-    return MyModel()
+q = torch.rand(1, 1, 8, 8, device='cuda')
+k = torch.rand(1, 1, 8, 8, device='cuda')
+v = torch.rand(1, 1, 8, 8, device='cuda')
 
-def GetInput():
-    B, H, W = 1, 8, 8
-    mask = torch.rand(B, 1, H, W, device='cuda')
-    mask[..., 4:, :] = 0
-    mask[..., :, 4:] = 0
-    mask[..., 4:, 4:] = 0
-    return mask
+attn_mask = torch.rand(1, 1, 8, 8, device='cuda')
+# make only attn_mask[..., :4, :4] nonzero
+attn_mask[..., 4:, :] = 0
+attn_mask[..., :, 4:] = 0
+attn_mask[..., 4:, 4:] = 0
 
+def run(attn_mask):
+    return F.scaled_dot_product_attention(q, k, v, attn_mask)
+
+print(run(attn_mask))
+print()
+print(run(attn_mask.to(torch.bool).to(torch.float)))
+print()
+print(run(attn_mask.to(torch.bool)))
+
+In [14]: x = torch.tensor([-float('inf')] * 3)
+
+In [15]: x.softmax(-1)
+Out[15]: tensor([nan, nan, nan])
+
+In [16]: x[0] = 1
+
+In [17]: x.softmax(-1)
+Out[17]: tensor([1., 0., 0.])

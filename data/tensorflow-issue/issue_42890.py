@@ -1,53 +1,72 @@
-# tf.random.uniform((B, 28, 28, 1), dtype=tf.float32)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
+#!pip install tensorflow==2.2.0
 import tensorflow as tf
+import os
+import PIL
+import numpy as np
+import matplotlib.pyplot as plt
+import tensorflow_datasets as tfds
+import tensorflow_hub as hub
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Reconstructing the original sequential layers as submodules
-        self.conv1 = tf.keras.layers.Conv2D(filters=64, kernel_size=3, padding='same', activation='relu', input_shape=(28,28,1))
-        self.maxpool1 = tf.keras.layers.MaxPooling2D(pool_size=2)
-        self.dropout1 = tf.keras.layers.Dropout(0.2)
-        
-        self.conv2 = tf.keras.layers.Conv2D(filters=32, kernel_size=2, padding='same', activation='relu')
-        self.maxpool2 = tf.keras.layers.MaxPooling2D(pool_size=2)
-        self.dropout2 = tf.keras.layers.Dropout(0.2)
-        
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(256, activation='relu')
-        self.dropout3 = tf.keras.layers.Dropout(0.2)
-        self.logits = tf.keras.layers.Dense(10)  # output layer, logits
-        
-    def call(self, inputs, training=False):
-        x = self.conv1(inputs)
-        x = self.maxpool1(x)
-        x = self.dropout1(x, training=training)
-        
-        x = self.conv2(x)
-        x = self.maxpool2(x)
-        x = self.dropout2(x, training=training)
-        
-        x = self.flatten(x)
-        x = self.dense1(x)
-        x = self.dropout3(x, training=training)
-        
-        x = self.logits(x)  # logits without softmax due to from_logits=True in loss
-        return x
+from tensorflow.keras.models import Sequential
 
-def my_model_function():
-    """
-    Returns an instance of MyModel.
-    This model needs to be compiled after creation with:
-        model.compile(optimizer='adam',
-                      loss=tf.losses.SparseCategoricalCrossentropy(from_logits=True),
-                      metrics=['sparse_categorical_accuracy'])
-    Note: Use 'sparse_categorical_accuracy' explicitly to avoid accuracy mismatch bug present in TF 2.3.0.
-    """
-    return MyModel()
+from tensorflow.keras.layers import Dense, Conv2D, Flatten, Dropout, MaxPooling2D
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
 
-def GetInput():
-    # Generate a random batch of 32 grayscale images 28x28 with 1 channel, dtype float32 in [0,1]
-    B = 32
-    return tf.random.uniform((B, 28, 28, 1), dtype=tf.float32)
+import keras_preprocessing
+from keras_preprocessing import image
 
+from tensorflow.python.keras.utils.version_utils import training
+from tensorflow.keras.optimizers import RMSprop
+
+print(tf.__version__)
+
+(train_images, train_labels), (test_images, test_labels) = tf.keras.datasets.mnist.load_data()
+
+x_trainf = train_images.astype('float32') / 255.0
+x_testf = test_images.astype('float32') / 255.0
+
+x_train_r = x_trainf.reshape(x_trainf.shape[0], 28, 28, 1)
+x_test_r = x_testf.reshape(x_testf.shape[0], 28, 28, 1)
+
+model = tf.keras.Sequential()
+model.add(tf.keras.layers.Conv2D(filters=64, kernel_size=3, padding='same', activation='relu', input_shape=(28,28,1))) 
+model.add(tf.keras.layers.MaxPooling2D(pool_size=2))
+model.add(tf.keras.layers.Dropout(0.2))
+model.add(tf.keras.layers.Conv2D(filters=32, kernel_size=2, padding='same', activation='relu'))
+model.add(tf.keras.layers.MaxPooling2D(pool_size=2))
+model.add(tf.keras.layers.Dropout(0.2))
+model.add(tf.keras.layers.Flatten())
+model.add(tf.keras.layers.Dense(256, activation='relu'))
+model.add(tf.keras.layers.Dropout(0.2))
+model.add(tf.keras.layers.Dense(10))
+
+model.compile(optimizer='adam',
+              loss=tf.losses.SparseCategoricalCrossentropy(from_logits=True),
+              metrics=['accuracy'])
+
+model.fit(x_train_r, 
+          train_labels, batch_size=32,  
+          epochs=10,
+          validation_data=(x_test_r,test_labels))
+
+model.evaluate(x_test_r,test_labels)
+
+model.save('/tmp/loaddatamnist.h5')
+
+loadedmodel=tf.keras.models.load_model('/tmp/loaddatamnist.h5')
+loadedmodel.evaluate(x_test_r,test_labels)
+
+loadedmodel=tf.keras.models.load_model('/tmp/test.h5')
+loadedmodel.compile(optimizer='adam',
+              loss=tf.losses.SparseCategoricalCrossentropy(from_logits=True),
+              metrics=['accuracy'])
+loadedmodel.evaluate(x_test_r,test_labels)
+
+model.compile(optimizer='adam',
+              loss=tf.losses.SparseCategoricalCrossentropy(from_logits=True),
+              metrics=['sparse_categorical_accuracy'])

@@ -1,30 +1,16 @@
-# torch.rand(B, 4, dtype=torch.float32)
 import torch
 import torch.nn as nn
 
-class SomeModule(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.param = nn.Parameter(torch.rand(4, 4))
+self.modlist = torch.nn.ModuleList([SomeModule()] * self.num_mods)
 
-    def forward(self, x):
-        return torch.mm(x, self.param)
+self.enc0 = nn.Sequential(self.resnet.conv1, self.resnet.bn1, self.resnet.relu, self.resnet.maxpool)
+self.enc1 = self.resnet.layer1
+self.enc2 = self.resnet.layer2
+self.enc3 = self.resnet.layer3
+self.enc4 = self.resnet.layer4
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.num_mods = 3
-        # Fix: Create distinct instances instead of shallow copies
-        self.modlist = nn.ModuleList([SomeModule() for _ in range(self.num_mods)])
+from copy import deepcopy
 
-    def forward(self, x):
-        for i in range(self.num_mods):
-            x = self.modlist[i](x)
-        return x
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(5, 4, dtype=torch.float32)
-
+self.enc0 = nn.Sequential(deepcopy(self.resnet.conv1), deepcopy(self.resnet.bn1), deepcopy(self.resnet.relu), deepcopy(self.resnet.maxpool))
+self.enc1 = deepcopy(self.resnet.layer1)
+...

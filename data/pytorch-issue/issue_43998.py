@@ -1,21 +1,22 @@
-# torch.rand(B, 3, 224, 224, dtype=torch.float)
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.fc = nn.Linear(3 * 224 * 224, 1024)  # Simplified ResNet-like output layer
-    
-    def forward(self, x):
-        # Flattens input tensor for linear layer
-        x = x.view(x.size(0), -1)
-        return self.fc(x)
+def accuracy(output, target, topk=(1,)):
+    """Computes the accuracy over the k top predictions for the specified values of k"""
+    with torch.no_grad():
+        maxk = max(topk)
+        batch_size = target.size(0)
 
-def my_model_function():
-    return MyModel()
+        _, pred = output.topk(maxk, 1, True, True)
+        pred = pred.t()
+        correct = pred.eq(target.view(1, -1).expand_as(pred))
 
-def GetInput():
-    # Batch size 128 as in the test case
-    return torch.randn(128, 3, 224, 224, dtype=torch.float)
+        res = []
+        for k in topk:
+            correct_k = correct[:k].view(-1).float().sum(0, keepdim=True)
+            res.append(correct_k.mul_(100.0 / batch_size))
+        return res
 
+bs =128
+output = torch.randn(bs, 1024)
+target = torch.randint(1024, (bs,))
+accuracy(output, target, topk=(1,5))

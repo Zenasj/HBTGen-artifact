@@ -1,33 +1,44 @@
-# torch.rand(1, 17, 64, 64, dtype=torch.float32)
-import torch
+import torch.nn as nn
+
 import cv2
+import torch
 import torch.nn.functional as F
 
-class MyModel(torch.nn.Module):
-    def forward(self, x):
-        # PyTorch bicubic interpolation
-        pt_x = x.float()
-        pt_result = F.interpolate(pt_x, size=(247, 111), mode='bicubic', align_corners=False)
-        
-        # OpenCV bicubic interpolation
-        b, c, h, w = x.shape
-        cv_results = []
-        for i in range(b):
-            # Convert to numpy and process OpenCV
-            img = x[i].permute(1, 2, 0).cpu().numpy()  # (H, W, C)
-            resized = cv2.resize(img, (111, 247), interpolation=cv2.INTER_CUBIC)  # (247, 111, C)
-            resized_tensor = torch.from_numpy(resized).permute(2, 0, 1).float()  # (C, 247, 111)
-            cv_results.append(resized_tensor.to(x.device))
-        cv_result = torch.stack(cv_results)
-        
-        # Compute maximum absolute difference
-        diff = pt_result - cv_result
-        max_abs_diff = diff.abs().max()
-        return max_abs_diff
+SIZE_HW = (247, 111)
+SIZE_WH = (111, 247)
 
-def my_model_function():
-    return MyModel()
+t = torch.rand(1, 17, 64, 64)
 
-def GetInput():
-    return torch.rand(1, 17, 64, 64, dtype=torch.float32)
 
+pt_result = F.interpolate(t, size=SIZE_HW, mode="bicubic", align_corners=True)
+cv_result = torch.from_numpy(cv2.resize(t.squeeze(0).permute(1, 2, 0).numpy(), SIZE_WH, interpolation=cv2.INTER_CUBIC)).permute(2, 0, 1).unsqueeze(0)
+
+
+print("max abs diff:", (pt_result - cv_result).abs().max())
+print("max rel diff:", ((1 - pt_result) / cv_result).abs().max())
+print("MSE:", ((pt_result - cv_result) ** 2).mean())
+
+import cv2
+import torch
+import torch.nn.functional as F
+
+SIZE_HW = (247, 111)
+SIZE_WH = (111, 247)
+
+t = torch.randint(0,255, (1, 17, 64, 64)).to(torch.uint8)
+
+pt_result = torch.clamp(F.interpolate(t.float(), size=SIZE_HW, mode="bicubic", align_corners=False), 0, 255).to(torch.uint8)
+cv_result = torch.from_numpy(cv2.resize(t.squeeze(0).permute(1, 2, 0).numpy(), SIZE_WH, interpolation=cv2.INTER_CUBIC)).permute(2, 0, 1).unsqueeze(0)
+
+
+
+print("max abs diff:", (pt_result.float() - cv_result.float()).abs().max())
+print("MSE:", ((pt_result.float() - cv_result.float()) ** 2).mean())
+
+t = t/255.0
+
+pt_result = torch.clamp(F.interpolate(t.float(), size=SIZE_HW, mode="bicubic", align_corners=False), 0, 1)
+cv_result = torch.from_numpy(cv2.resize(t.squeeze(0).permute(1, 2, 0).numpy(), SIZE_WH, interpolation=cv2.INTER_CUBIC)).permute(2, 0, 1).unsqueeze(0)
+
+print("max abs diff:", (pt_result.float() - cv_result.float()).abs().max())
+print("MSE:", ((pt_result.float() - cv_result.float()) ** 2).mean())

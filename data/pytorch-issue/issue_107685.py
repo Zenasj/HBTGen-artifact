@@ -1,14 +1,21 @@
-# torch.rand(B, C, dtype=torch.float32)  # Input shape inferred from original code example
+import torch.nn as nn
+
 import torch
 from torch import nn
 
-class MyModel(nn.Module):
+
+class Model(nn.Module):
     def forward(self, x):
-        return torch.nn.functional.glu(x, dim=1)
+        x = nn.functional.glu(x, dim=1)
+        return x
 
-def my_model_function():
-    return MyModel()
+model = Model()
+model.eval()
+x = torch.rand(1024, 512)
 
-def GetInput():
-    return torch.rand(1024, 512, dtype=torch.float32)
-
+torch.onnx.export(
+    model, (x,),
+    "model.onnx",
+    verbose=False,
+    opset_version=18,
+)

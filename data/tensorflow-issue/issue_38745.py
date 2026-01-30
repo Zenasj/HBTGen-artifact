@@ -1,29 +1,35 @@
-# tf.random.uniform((B, H, W, C), dtype=...)  ← Input shape and dtype unknown from the issue, so assuming one-dimensional float input for demonstration
-
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import models
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Simple example model to illustrate loading weights and saving/loading
-        # The actual architecture was not provided in the issue; we infer a minimal model
-        self.dense1 = tf.keras.layers.Dense(64, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(10, activation='softmax')
+# this works
+def build_model():
+    ...
+    return tf.keras.Model()
 
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        return self.dense2(x)
+model1 = tf.keras.models.load_model("path/to/checkpoint.tf")
 
+model2 = build_model()
+model2.load_weights("path/to/weights.tf")
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+model3 = build_model()
+model3.load_weights("path/to/checkpoint.tf")
 
+# this works
+new_model = build_model()
+new_model.load_weights("path/to/checkpoint.tf/variables/variables")
 
-def GetInput():
-    # Since input shape is not specified in the issue, assume a batch of vectors of dimension 32
-    # dtype float32 is common for model inputs
-    batch_size = 8
-    input_dim = 32
-    return tf.random.uniform((batch_size, input_dim), dtype=tf.float32)
+def build_model():
+    ...
 
+path = "path/to/checkpoint.tf"
+callbacks = [tf.keras.callbacks.ModelCheckpoint(path, save_weights_only=False)]
+model = build_model()
+model.fit(..., callbacks=callbacks)
+
+# now I can either load the whole model
+new_model = tf.keras.models.load_model(path)
+
+# or I can only load the weights
+another_new_model = build_model()
+another_new_model = another_new_model.load_weights(path)

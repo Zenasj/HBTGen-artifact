@@ -1,35 +1,28 @@
-# tf.random.uniform((1, 96, 112, 3), dtype=tf.float32) ← inferred input shape based on the ResNet50 snippet with input_shape=[96,112,3]
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
+base_model = tf.keras.applications.ResNet50(
+    include_top=False, weights='imagenet',
+    input_shape=[96,112,3])
+
+x = base_model.output
+x = tf.keras.layers.Flatten()(x)
+x = tf.keras.layers.Dense(128, use_bias=True, name='Bottleneck')(x)
+   
+model = tf.keras.models.Model( base_model.input, x )
+
+tf.compat.v1.lite.converter.from_frozen_graph()
 
 import tensorflow as tf
+tf.__version__
+# 2.3.2
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Load base ResNet50 model without top layer and pretrained ImageNet weights
-        # input_shape matches the reported input shape used in the issue (96,112,3)
-        self.base_model = tf.keras.applications.ResNet50(
-            include_top=False,
-            weights='imagenet',
-            input_shape=(96, 112, 3)
-        )
-        self.flatten = tf.keras.layers.Flatten()
-        # Bottleneck dense layer with 128 units and bias enabled, named 'Bottleneck'
-        self.bottleneck = tf.keras.layers.Dense(128, use_bias=True, name='Bottleneck')
+graph_def_file = "resface36_L2Norm128_at_epoch_168.pb"
+converter = tf.compat.v1.lite.TFLiteConverter.from_frozen_graph(graph_def_file,
+                                              ["input"],
+                                              ["resface36/Bottleneck/BiasAdd"],
+                                              input_shapes={'input': [1, 96, 112, 3]})
+tflite_model = converter.convert()
 
-    def call(self, inputs, training=False):
-        x = self.base_model(inputs, training=training)
-        x = self.flatten(x)
-        x = self.bottleneck(x)
-        return x
-
-
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input with shape [1, 96, 112, 3] matching the expected input shape
-    # Using uniform random data here as a placeholder since the original input was a zero matrix but random data 
-    # better tests full graph execution and avoids constant folding differences.
-    return tf.random.uniform((1, 96, 112, 3), dtype=tf.float32)
-
+open("resface36_L2Norm128_at_epoch_168.tflite", "wb").write(tflite_model)

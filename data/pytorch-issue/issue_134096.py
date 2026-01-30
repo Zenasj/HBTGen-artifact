@@ -1,20 +1,14 @@
 import torch
-import torch.nn as nn
 
-# torch.rand(B, C, H, W, dtype=torch.float32)
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.avg_pool = nn.AvgPool2d(kernel_size=2, stride=2, padding=0)
-
-    def forward(self, x):
-        return self.avg_pool(x)
-
-def my_model_function():
-    # Returns a model instance using the overridden avg_pool2d operator
-    return MyModel()
-
-def GetInput():
-    # Returns a random tensor compatible with RISC-V's avg_pool2d implementation
-    return torch.rand(1, 3, 32, 32, dtype=torch.float32)
-
+#0  futex_wait (private=0, expected=2, futex_word=0x5adf58) at ../sysdeps/nptl/futex-internal.h:146
+#1  __GI___lll_lock_wait (futex=futex@entry=0x5adf58, private=0) at ./nptl/lowlevellock.c:49
+#2  0x0000003ff7e139f0 in lll_mutex_lock_optimized (mutex=0x5adf58) at ./nptl/pthread_mutex_lock.c:48
+#3  ___pthread_mutex_lock (mutex=0x5adf58) at ./nptl/pthread_mutex_lock.c:93
+#4  0x0000003ff0e1ac00 in c10::SingleElementType<(c10::TypeKind)6, c10::ListType>::equals(c10::Type const&) const () from /home/debian/my_venv/torch1/lib/python3.11/site-packages/torch/lib/libtorch_cpu.so
+#5  0x0000003ff1043236 in c10::findSchemaDifferences[abi:cxx11](c10::FunctionSchema const&, c10::FunctionSchema const&) () from /home/debian/my_venv/torch1/lib/python3.11/site-packages/torch/lib/libtorch_cpu.so
+#6  0x0000003ff1008472 in c10::impl::(anonymous namespace)::checkSchema(c10::OperatorName const&, c10::FunctionSchema const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, c10::KernelFunction const&, c10::FunctionSchema const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) () from /home/debian/my_venv/torch1/lib/python3.11/site-packages/torch/lib/libtorch_cpu.so
+#7  0x0000003ff100cea4 in c10::impl::OperatorEntry::registerKernel(c10::Dispatcher const&, std::optional<c10::DispatchKey>, c10::KernelFunction, std::optional<c10::impl::CppSignature>, std::unique_ptr<c10::FunctionSchema, std::default_delete<c10::FunctionSchema> >, std::__cxx11::basih.so                                                                                                                                               cpu.so
+#12 0x0000003fece593a2 in torch::detail::TorchLibraryInit::TorchLibraryInit(torch::Library::Kind, void (*)(torch::Library&), char const*, std::opti:impl::CppSignature>, std::unique_ptr<c10::FunctionSchema, std::default_delete<c10::FunctionSchema> >, std::__cxx11::basic_string<char, sonal<c10::DispatchKey>, char const*, unsigned int) () from /home/debian/pro/xtorch/build/libxtorch.so
+#13 0x0000003fece525aa in __static_initialization_and_destruction_0(int, int) () from /home/debian/pro/xtorch/build/libxtorch.so                   lib/python3.11/site-packages/torch/lib/libtorch_cpu.so
+#14 0x0000003fece525e6 in _GLOBAL__sub_I_AveragePool.cpp () from /home/debian/pro/xtorch/build/libxtorch.so                                        rayRef<long>, c10::ArrayRef<long>, c10::ArrayRef<long>, bool, bool, std::optional<long>, at::Tensor&), &torch_xtorch::cpu::shl_avg_pool2d
+#15 0x0000003ff7fdfe9e in call_init (env=0x302fc60, argv=0x3ffffff2e8, argc=2, l=<optimized out>) at ./elf/dl-init.c:74

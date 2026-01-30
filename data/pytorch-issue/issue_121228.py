@@ -1,9 +1,10 @@
-# torch.rand(3, 4, dtype=torch.float32)  # Inferred input shape
-
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+py
+import torch
+
+class Model(torch.nn.Module):
+
     def __init__(self, dim):
         super().__init__()
         self.dim = dim
@@ -14,11 +15,18 @@ class MyModel(nn.Module):
         v3 = torch.stack([v1[0], v2], dim=self.dim)
         return v3
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel(1)
+func = Model(1).to('cpu')
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(3, 4, dtype=torch.float32)
+x = torch.arange(12).view(3, 4).float()
 
+with torch.no_grad():
+    print(func(x.clone()))
+    # tensor([[0., 1.],
+    #     [4., 5.],
+    #     [8., 9.]])
+
+    func1 = torch.compile(func)
+    print(func1(x.clone()))
+    # tensor([[ 0.,  1.,  2.,  3.],
+    #     [ 4.,  5.,  6.,  7.],
+    #     [ 8.,  9., 10., 11.]])

@@ -1,52 +1,60 @@
-# torch.rand(B*N, 4, dtype=torch.float32)  # Assuming 3 (xyz) + 1 (radius) channels
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self, in_channels=4, hidden=64):
-        super().__init__()
-        self.enc1 = nn.Sequential(nn.Linear(in_channels, hidden), nn.ReLU())
-        self.enc2 = nn.Sequential(nn.Linear(hidden, hidden*2), nn.ReLU())
-        self.enc3 = nn.Sequential(nn.Linear(hidden*2, hidden*4), nn.ReLU())
-        self.enc4 = nn.Sequential(nn.Linear(hidden*4, hidden*8), nn.ReLU())
-        self.enc5 = nn.Sequential(nn.Linear(hidden*8, hidden*16), nn.ReLU())
+def data_transorm(input):
+    b,n,c = input.shape
+    input = input.reshape(b*n,c)
+    offset = [(i+1)*n for i in range(b)]
+    return [input[:,:3].contiguous(),input[:,3].unsqueeze(-1).contiguous(),torch.IntTensor(offset)]
 
-        self.dec5 = nn.Sequential(nn.Linear(hidden*16, hidden*8), nn.ReLU())
-        self.dec4 = nn.Sequential(nn.Linear(hidden*8, hidden*4), nn.ReLU())
-        self.dec3 = nn.Sequential(nn.Linear(hidden*4, hidden*2), nn.ReLU())
-        self.dec2 = nn.Sequential(nn.Linear(hidden*2, hidden), nn.ReLU())
-        self.dec1 = nn.Sequential(nn.Linear(hidden, hidden), nn.ReLU())
-        self.cls = nn.Linear(hidden, 10)  # Placeholder output size
+input_xyz,input_r,offset = data_transorm(input)
+input_xyz = Variable(input_xyz,requires_grad=True)
+input_r = Variable(input_r,requires_grad=True)
+logits = model([input_xyz,input_r,offset])
+loss = criterion(logits, target.squeeze())
+loss.backward()
 
-    def forward(self, pc):
-        n, c = pc.shape
-        p0 = pc[:, :3].contiguous()  # XYZ coordinates
-        x0 = pc  # Full input features
-        o0 = torch.tensor([n], dtype=torch.int32).cuda()  # Batch offset (assuming single batch)
+def forward(self, pxo):
+        p0, x0, o0 = pxo  # (n, 3), (n, c), (b)
+        x0 = p0 if self.c == 3 else torch.cat((p0, x0), 1)
+        p1, x1, o1 = self.enc1([p0, x0, o0])
+        p2, x2, o2 = self.enc2([p1, x1, o1])
+        p3, x3, o3 = self.enc3([p2, x2, o2])
+        p4, x4, o4 = self.enc4([p3, x3, o3])
+        p5, x5, o5 = self.enc5([p4, x4, o4])
+        x5 = self.dec5[1:]([p5, self.dec5[0]([p5, x5, o5]), o5])[1]
+        x4 = self.dec4[1:]([p4, self.dec4[0]([p4, x4, o4], [p5, x5, o5]), o4])[1]
+        x3 = self.dec3[1:]([p3, self.dec3[0]([p3, x3, o3], [p4, x4, o4]), o3])[1]
+        x2 = self.dec2[1:]([p2, self.dec2[0]([p2, x2, o2], [p3, x3, o3]), o2])[1]
+        x1 = self.dec1[1:]([p1, self.dec1[0]([p1, x1, o1], [p2, x2, o2]), o1])[1]
+        x = self.cls(x1)
 
-        # Encoder pathway
-        x1 = self.enc1(x0)
-        x2 = self.enc2(x1)
-        x3 = self.enc3(x2)
-        x4 = self.enc4(x3)
-        x5 = self.enc5(x4)
-
-        # Decoder pathway with skip connections
-        x5_dec = self.dec5(x5)
-        x4_dec = self.dec4(x5_dec + x4)
-        x3_dec = self.dec3(x4_dec + x3)
-        x2_dec = self.dec2(x3_dec + x2)
-        x1_dec = self.dec1(x2_dec + x1)
-        x = self.cls(x1_dec)
-
+        b = o0.shape[0]
+        n,c = x.shape
+        x = x.reshape(b,n//b,c)
         return x
 
-def my_model_function():
-    return MyModel()
+input = Variable(input_xyz,requires_grad=True)
+logits = model(input)
+loss = criterion(logits, target.squeeze())
+loss.backward()
 
-def GetInput():
-    B = 2  # Batch size
-    N = 1024  # Points per batch
-    C = 4  # 3 (xyz) + 1 (radius)
-    return torch.rand(B*N, C, dtype=torch.float32).cuda()  # Match CUDA usage in original code
+def forward(self, pc):
+        n,c = pc.shape
+        p0, x0, o0 = pc[...,:3].clone().contiguous(),pc,torch.IntTensor([n]).cuda() # (n, 3), (n, c), (b)
+        # x0 = p0 if self.c == 3 else torch.cat((p0, x0), 1)
+        p1, x1, o1 = self.enc1([p0, x0, o0])
+        p2, x2, o2 = self.enc2([p1, x1, o1])
+        p3, x3, o3 = self.enc3([p2, x2, o2])
+        p4, x4, o4 = self.enc4([p3, x3, o3])
+        p5, x5, o5 = self.enc5([p4, x4, o4])
+        x5 = self.dec5[1:]([p5, self.dec5[0]([p5, x5, o5]), o5])[1]
+        x4 = self.dec4[1:]([p4, self.dec4[0]([p4, x4, o4], [p5, x5, o5]), o4])[1]
+        x3 = self.dec3[1:]([p3, self.dec3[0]([p3, x3, o3], [p4, x4, o4]), o3])[1]
+        x2 = self.dec2[1:]([p2, self.dec2[0]([p2, x2, o2], [p3, x3, o3]), o2])[1]
+        x1 = self.dec1[1:]([p1, self.dec1[0]([p1, x1, o1], [p2, x2, o2]), o1])[1]
+        x = self.cls(x1)
 
+        # b = o0.shape[0]
+        # n,c = x.shape
+        # x = x.reshape(b,n//b,c)
+        return x

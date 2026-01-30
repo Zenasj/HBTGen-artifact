@@ -1,21 +1,19 @@
-# torch.rand(1, 3, 224, 224, dtype=torch.float32)
+import torch.nn as nn
+
 import torch
 from torchvision import models
 
-class MyModel(torch.nn.Module):
+class MyModule(torch.nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
-        self.submodule = models.resnet50()  # Submodule causing the issue when cloned after JIT serialization
-
+        super(MyModule, self).__init__()
+        self.submodule = models.resnet50()
     def forward(self, x):
         return self.submodule(x)
 
-def my_model_function():
-    # Return the model in eval mode as in the original issue's reproduction steps
-    model = MyModel()
-    model.eval()
-    return model
-
-def GetInput():
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
-
+my_module = MyModule()
+my_module.eval()
+x = torch.rand(1, 3, 224, 224)
+traced_cell = torch.jit.trace(my_module, x)
+traced_cell.save('my_module.pth')
+loaded_model = torch.jit.load('my_module.pth')
+loaded_model.copy()

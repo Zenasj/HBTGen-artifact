@@ -1,45 +1,40 @@
-# tf.random.uniform((B, 4), minval=1, maxval=366856, dtype=tf.int64)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+
+# list available GPUS, make sure you have at least two
+gpus = tf.config.experimental.list_logical_devices('GPU')
+assert len(gpus) >= 2
+# place the embedding layer on the first GPU
+with tf.device(gpus[0]):
+    embedded = tf.keras.layers.Embedding(input_dim, output_dim)(inputs)
+# place the rest of the model on the second GPU
+with tf.device(gpus[1]):
+    output = some_layers_stack(embedded)
+
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Based on the issue's example model architecture:
-        # Embedding with very large vocab 366856 tokens
-        # Embedding output dims chosen carefully due to memory:
-        # We'll choose 100 as a safe embedding dimension from discussions.
-        self.embedding = tf.keras.layers.Embedding(
-            input_dim=366856, output_dim=100, input_length=4)
-        # Bidirectional LSTM with 256 units:
-        self.bi_lstm = tf.keras.layers.Bidirectional(
-            tf.keras.layers.LSTM(
-                256,
-                dropout=0.5,
-                recurrent_dropout=0.5,
-                kernel_regularizer=tf.keras.regularizers.L2(0.001)))
-        # Dense layer 128 units with relu activation:
-        self.dense1 = tf.keras.layers.Dense(128, activation='relu')
-        # Final output dense with softmax activation over large output vocabulary:
-        # The output vocab size in one example is huge 685731
-        # We pick that size as it was in the example.
-        self.output_dense = tf.keras.layers.Dense(685731, activation='softmax')
+model = tf.keras.Sequential([
+    tf.keras.layers.Embedding(input_dim=366856, output_dim=1000, input_length=4),
+    tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(1000)),
+    tf.keras.layers.Dense(500, activation='relu'),
+    tf.keras.layers.Dense(64, activation='softmax')
+])
+model.compile('adam', 'sparse_categorical_crossentropy', ['sparse_categorical_accuracy'])
 
-    def call(self, inputs, training=False):
-        x = self.embedding(inputs)           # (B, 4, 100)
-        x = self.bi_lstm(x, training=training)     # (B, 512) because bidirectional 256*2
-        x = self.dense1(x)                   # (B, 128)
-        output = self.output_dense(x)        # (B, 685731) probabilities
-        return output
+mock_inputs = tf.random.uniform((64, 4), 1, 366856, tf.int64)
+mock_target = tf.random.uniform((64, 1), 0, 64, tf.int64)
 
-def my_model_function():
-    # Return an instance of MyModel; weights are randomly initialized.
-    return MyModel()
+model.fit(mock_inputs, mock_target, batch_size=32, epochs=5)
 
-def GetInput():
-    # Return input tensor shape (batch_size, 4)
-    # Values are integer token IDs from [1, 366855]
-    batch_size = 64  # Typical batch size from examples
-    # The input length is 4, per embedding input_length=4
-    return tf.random.uniform(
-        (batch_size, 4), minval=1, maxval=366856, dtype=tf.int64)
+class SharedKernelSoftmax(tf.keras.layers.Layer):
+    def __init__(self, kernel, bias_initializer='zeros'):
+        self.kernel = kernel
+        self.bias = self.add_weight(
+            name='bias', shape=(tf.shape(kernel)[1],), dtype=kernel.dtype,
+            initializer=bias_initializer
+        )
 
+    def call(self, inputs, **kwargs):
+        output = tf.keras.backend.dot(inputs, self.kernel) + self.bias
+        return tf.nn.softmax(output, axis=-1)

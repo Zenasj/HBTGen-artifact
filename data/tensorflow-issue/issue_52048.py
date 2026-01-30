@@ -1,23 +1,27 @@
-# tf.random.uniform((1, 300, 300, 3), dtype=tf.float32)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
+import os
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+
+class Net(tf.keras.Model):
+    def __init__(self) -> None:
         super().__init__()
-        # Single Conv2D layer as per issue's dummy_net.py example
-        self.conv = tf.keras.layers.Conv2D(filters=6, kernel_size=3)
-
+        self.conv = tf.keras.layers.Conv2D(6,3)
+    
     def call(self, x):
-        # Simple forward pass through single Conv2D layer
-        return self.conv(x)
+        x = self.conv(x)
+        return x
 
-def my_model_function():
-    # Instantiate and return the model instance
-    return MyModel()
+import tensorflow as tf
+import dummy_net
 
-def GetInput():
-    # Return a random input tensor matching model's expected input shape
-    # Shape: batch size = 1, height = 300, width = 300, channels = 3 (e.g. RGB image)
-    return tf.random.uniform(shape=(1, 300, 300, 3), dtype=tf.float32)
-
+inp = tf.random.uniform([1,300,300,3])
+model = dummy_net.Net()
+tf.profiler.experimental.start('./dummy_infer_logs')
+y = model(inp)
+tf.profiler.experimental.stop()
+tf.debugging.set_log_device_placement(True)

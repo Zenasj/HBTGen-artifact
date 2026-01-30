@@ -1,42 +1,38 @@
-# tf.random.uniform((B, input_dim)) ← Assuming input shape is (batch_size, input_dim) based on usual ROC callback context
-
-import tensorflow as tf
 import numpy as np
-from sklearn.metrics import roc_auc_score
+import tensorflow as tf
+from tensorflow import keras
 
-class MyModel(tf.keras.Model):
-    def __init__(self, base_model):
-        super().__init__()
-        # The base_model is the user's main model; we wrap it here to enable integrated usage
-        self.base_model = base_model
+class RocCallback(Callback):
+    def __init__(self , dataset_val):
+        self.x = dataset_val
+        self.y =  np.concatenate([np.array(x[1]) for x in list(dataset_val)]).reshape(-1)
+    def on_train_begin(self, logs={}):
+        return
 
-    @tf.function
-    def call(self, inputs, training=False):
-        # Forward inputs through the base model
-        # We assume base_model returns predictions compatible with roc_auc_score usage
-        return self.base_model(inputs, training=training)
+    def on_train_end(self, logs={}):
+        return
 
-    def compute_roc_auc(self, x_val, y_val):
-        # Compute predictions on validation data and calculate ROC AUC using sklearn
-        # Note: This method is not TF graph compatible (uses numpy and sklearn), so should be called eagerly
-        preds = self.base_model.predict(x_val)
-        return roc_auc_score(y_val, preds)
+    def on_epoch_begin(self, epoch, logs={}):
+        return
 
-def my_model_function():
-    # Placeholder model to exemplify the structure
-    # In practice, user would pass their trained model instead of this simple model
-    input_dim = 10  # assumed input feature dimension
-    base_model = tf.keras.Sequential([
-        tf.keras.layers.InputLayer(input_shape=(input_dim,)),
-        tf.keras.layers.Dense(16, activation='relu'),
-        tf.keras.layers.Dense(1, activation='sigmoid')
-    ])
-    return MyModel(base_model)
+    def on_epoch_end(self, epoch, logs={}):
+        pred = model.predict(self.x)
+        roc_val = roc_auc_score(self.y, pred)
+        logs["roc_val"] = roc_val
+        print('\n - %s average: %s' % ('roc_val', str(round(roc_val,4))),end=100*' '+'\n')
+        return
 
-def GetInput():
-    # Assuming input tensor shape is (batch_size, input_dim) with input_dim=10
-    batch_size = 32  # typical batch size
-    input_dim = 10
-    # Return a random tensor matching the expected input shape for the model
-    return tf.random.uniform((batch_size, input_dim), dtype=tf.float32)
+    def on_batch_begin(self, batch, logs={}):
+        return
 
+    def on_batch_end(self, batch, logs={}):
+        return
+
+tf.keras.callbacks.ModelCheckpoint("model.h5", monitor='roc_val', verbose=0, save_best_only=True,
+        save_weights_only=True, mode='max', save_freq='epoch')
+
+# TPUs need this extra setting to save to local disk, otherwise, they can only save models to GCS (Google Cloud Storage).
+# The setting instructs Tensorflow to retrieve all parameters from the TPU then do the saving from the local VM, not the TPU.
+save_locally = tf.saved_model.SaveOptions(experimental_io_device='/job:localhost')
+tf.keras.callbacks.ModelCheckpoint("saved_model", monitor='roc_val', verbose=0, save_best_only=True,
+        save_weights_only=True, mode='max', save_freq='epoch', options=save_locally)

@@ -1,65 +1,130 @@
-# tf.random.uniform((B, 1), dtype=tf.int64) ← The inputs user_id and item_id have shape [B, 1] (batch size and 1 feature)
-
-import tensorflow as tf
 import numpy as np
+import tensorflow as tf
 
-class MyModel(tf.keras.Model):
+flags.DEFINE_string("ps_hosts", "", "Comma-separated list of hostname:port pairs")
+flags.DEFINE_string("worker_hosts", "", "Comma-separated list of hostname:port pairs")
+flags.DEFINE_string("job_name", "", "One of 'ps', 'worker'")
+flags.DEFINE_integer("task_index", 0, "Index of task within the job")
+
+FLAGS(sys.argv)
+
+class Job(object):
     def __init__(self):
-        super().__init__()
-        # Embeddings for users and items
-        # Replicating original variable initialization details from TF1 snippet
-        # Use tf.Variable with appropriate initialization for TF2 compatibility
-        self.user_embedding_variable = tf.Variable(
-            initial_value=tf.random.uniform([1000000, 32], minval=-0.5, maxval=0.5, dtype=tf.float32),
-            trainable=True, name='user_emb_var')
-        self.item_embedding_variable = tf.Variable(
-            initial_value=tf.random.uniform([500000, 32], minval=-0.5, maxval=0.5, dtype=tf.float32),
-            trainable=True, name='item_emb_var')
-        self.bias = tf.Variable(tf.zeros([1], dtype=tf.float32), trainable=True, name='bias')
-        weight_np = np.zeros((1, 2), dtype=np.float32)
-        weight_np[:, 1] = 1  # weight not trainable per original code
-        self.weight = tf.constant(weight_np, dtype=tf.float32, name='weight')
+        self.ps_hosts = FLAGS.ps_hosts.split(',')
+        self.worker_hosts = FLAGS.worker_hosts.split(',')
+        self.job_name = FLAGS.job_name
+        self.task_index = FLAGS.task_index
+        self.cluster = tf.train.ClusterSpec({'ps': self.ps_hosts, 'worker': self.worker_hosts})
+        self.server = tf.train.Server(self.cluster, job_name=self.job_name, task_index=self.task_index)
+        self.is_chief = (self.task_index == 0 and self.job_name == 'worker')
+        worker_prefix = '/job:worker/task:%s' % self.task_index
+        self.cpu_device = '%s/cpu:0' % worker_prefix
+        self.param_server_device = tf.train.replica_device_setter(
+            worker_device=self.cpu_device, cluster=self.cluster,
+            ps_strategy=tf.contrib.training.GreedyLoadBalancingStrategy(len(self.ps_hosts), tf.contrib.training.byte_size_load_fn))
+        self.num_ps = self.cluster.num_tasks('ps')
+        self.num_worker = self.cluster.num_tasks('worker')
 
-    def call(self, inputs):
-        """
-        inputs: tuple of (user_id, item_id)
-          user_id: tf.int64 tensor shape [B, 1]
-          item_id: tf.int64 tensor shape [B, 1]
-        Returns:
-          logits of shape [B, 2], float32
-        """
-        user_id, item_id = inputs
-        
-        # Embedding lookup
-        user_emb = tf.nn.embedding_lookup(self.user_embedding_variable, tf.reshape(user_id, [-1]))
-        item_emb = tf.nn.embedding_lookup(self.item_embedding_variable, tf.reshape(item_id, [-1]))
-        
-        # Both embeddings shape [B, 32]
-        user_emb = tf.reshape(user_emb, [-1, 32])
-        item_emb = tf.reshape(item_emb, [-1, 32])
-        
-        # Compute dot product for each example, shape [B, 1]
-        cross = tf.reduce_sum(user_emb * item_emb, axis=1, keepdims=True)  # [B,1]
-        
-        # Add bias [1], broadcast to [B,1]
-        layer = cross + self.bias
-        
-        # matmul with weight [1,2] to get logits [B,2]
-        logits = tf.matmul(layer, self.weight)
+    def data_iter(self, batch_size=1000, file_pattern='./input/part-*'):
+        def _parse_function(examples):
+            features = {}
+            features['label'] = tf.FixedLenFeature([], tf.float32)
+            features['user_id'] = tf.FixedLenFeature([1], tf.int64)
+            features['item_id'] = tf.FixedLenFeature([1], tf.int64)
+            instance = tf.parse_example(examples, features)
+            return instance['label'], instance['user_id'], instance['item_id']
+
+        with tf.name_scope('input'):
+            files = tf.data.Dataset.list_files(file_pattern)
+            dataset = files.apply(tf.contrib.data.parallel_interleave(
+                        lambda file: tf.data.TFRecordDataset(file),
+                        cycle_length=1, sloppy=True))
+            dataset = dataset.prefetch(buffer_size=batch_size*2)
+            dataset = dataset.batch(batch_size)
+            dataset = dataset.map(_parse_function, num_parallel_calls=1)
+            iterator = dataset.make_initializable_iterator()
+            return iterator
+
+    def model(self, user_id, item_id):
+        user_embedding_variable = tf.get_variable('user_emb_var', [1000000, 32], initializer=tf.random_uniform_initializer(minval=-0.5, maxval=0.5, dtype=tf.float32))
+        item_embedding_variable = tf.get_variable('user_emb_var', [500000, 32], initializer=tf.random_uniform_initializer(minval=-0.5, maxval=0.5, dtype=tf.float32))
+        user_embedding = tf.nn.embedding_lookup(user_embedding_variable, user_id)
+        item_embedding = tf.nn.embedding_lookup(item_embedding_variable, item_id)
+        user_embedding = tf.reshape(user_embedding, [-1, 32])
+        item_embedding = tf.reshape(item_embedding, [-1, 32])
+        cross = tf.reduce_sum(user_embedding * item_embedding, 1, keep_dims=True)
+        bias = tf.get_variable('bias', initializer=tf.constant(np.zeros((1), dtype=np.float32)), dtype=tf.float32)
+        layer = cross + bias
+        weight_np = np.zeros((1, 2), dtype=np.float32)
+        weight_np[:, 1] = 1
+        weight = tf.get_variable('weight', initializer=tf.constant(weight_np), dtype=tf.float32, trainable=False)
+        logits = tf.matmul(layer, weight)
         return logits
 
+    def train(self):
+        if self.job_name == 'ps':
+            with tf.device('/cpu:0'):
+                self.server.join()
+        elif self.job_name == 'worker':
+            with tf.Graph().as_default():
+                with tf.device(self.param_server_device):
+                    train_iterator = self.data_iter()
+                    train_label, train_user_id, train_item_id = train_iterator.get_next()
+                    train_logit = self.model(train_user_id, train_item_id)
+                    train_label = tf.to_int64(train_label)
+                    train_cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=train_logit, labels=train_label)
+                    train_loss = tf.reduce_mean(train_cross_entropy, name='loss')
+                    opt = tf.train.AdamOptimizer(learning_rate=0.001)
+                    train_op = opt.minimize(train_loss)
+                    saver = tf.train.Saver()
 
-def my_model_function():
-    # Initialize and return an instance of MyModel with random weights as above
-    return MyModel()
+                    sess_config = tf.ConfigProto(allow_soft_placement=True,
+                        log_device_placement=False,
+                        device_filters=["/job:ps", "/job:%s/task:%d" % (self.job_name, self.task_index)],
+                        operation_timeout_in_ms=60000,
+                        inter_op_parallelism_threads=1,
+                        intra_op_parallelism_threads=1)
+                    with tf.train.MonitoredTrainingSession(master=self.server.target,
+                                                           is_chief=self.is_chief,
+                                                           config=sess_config) as sess:
+                        epoch_num = 0
+                        while epoch_num < 10:
+                            epoch_num += 1
+                            sess.run(train_iterator.initializer)
+                            while True:
+                                try:
+                                    sess.run(train_op)
+                                except tf.errors.OutOfRangeError:
+                                    saver.save(sess=sess._sess._sess._sess._sess,
+                                            save_path="some_hdfs_path/model.checkpoint."+str(epoch_num),
+                                            latest_filename='checkpoint.'+str(epoch_num))
+                                    break
 
+def main(_):
+    job = Job()
+    job.train()
 
-def GetInput():
-    # Produce random user_id and item_id integer tensors matching expected input shape [B,1]
-    # Assuming batch size 32 as a typical example batch size
-    batch_size = 32
-    # user_id range: [0, 999999], item_id range: [0, 499999]
-    user_id = tf.random.uniform(shape=(batch_size, 1), minval=0, maxval=1000000, dtype=tf.int64)
-    item_id = tf.random.uniform(shape=(batch_size, 1), minval=0, maxval=500000, dtype=tf.int64)
-    return user_id, item_id
+if __name__ == '__main__':
+    tf.app.run()
 
+server_config = tf.ConfigProto(inter_op_parallelism_threads=1,
+                               intra_op_parallelism_threads=1)
+self.server = tf.train.Server(self.cluster, job_name=self.job_name,
+                              task_index=self.task_index, config=server_config)
+
+train_user_id_placeholder = tf.placeholder(...)
+train_item_id_placeholder = ...
+train_label_placeholder = ...
+train_logit = self.model(train_user_id_placeholder, train_item_id_placeholder)
+...
+train_op = opt.minimize(train_loss)
+...
+try:
+  train_user_id_val, train_item_id_val, train_label_val = sess.run([train_user_id, train_item_id, train_label])
+  sess.run(train_op,
+      feed_dict={
+        train_user_id_placeholder: train_user_id_val,
+        train_item_id_placeholder: train_item_id_val,
+        train_label_placeholder: train_label_val})
+except tf.errors.OutOfRangeError:
+   ...

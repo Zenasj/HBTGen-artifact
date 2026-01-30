@@ -1,84 +1,78 @@
-# tf.random.uniform((1, 224, 224, 3), dtype=tf.float32) ← Inferred input shape from IMAGE_SIZE=224, RGB images batch size 1
+from tensorflow import keras
 
 import tensorflow as tf
+import model as modellib
+import coco
+import os 
+import sys
 
-class MyModel(tf.keras.Model):
-    """
-    A simplified placeholder model to represent the Mask R-CNN keras_model interface
-    for the purpose of reproducing input/output shapes for TFLite conversion.
+# Enable eager execution
+tf.compat.v1.enable_eager_execution()
 
-    Since the original Mask R-CNN model relies on complex TF operations including
-    TensorLists, CropAndResize, dynamic control flow which causes TFLite conversion issues,
-    this model only serves as a stub to exemplify expected input format and 
-    representative dataset structure.
+class InferenceConfig(coco.CocoConfig):
+    GPU_COUNT = 1
+    IMAGES_PER_GPU = 1
+config = InferenceConfig()
+model = modellib.MaskRCNN(mode="inference", model_dir='logs', config=config)
+model.load_weights('mask_rcnn_coco.h5', by_name=True)
+model = model.keras_model
 
-    In a real scenario, the Mask R-CNN keras_model is a Functional/Model instance,
-    but here we encapsulate minimal logic.
-    """
+tf.saved_model.save(model, "tflite")
 
-    def __init__(self):
-        super().__init__()
-        # Here we create simple layers as placeholders; real model is complex.
-        # We simulate a graph expecting multiple inputs like image & anchor boxes.
-        self.dummy_conv = tf.keras.layers.Conv2D(filters=16, kernel_size=3, padding='same', activation='relu')
+# Preparing before conversion - making the representative dataset
+ROOT_DIR = os.path.abspath("../")
+CARS = os.path.join(ROOT_DIR, 'Mask_RCNN\\mrcnn\\smallCar')
 
-        # Assume mask_rcnn expects multiple inputs:
-        # Input 0: image tensor [batch, H, W, 3]
-        # Input 1: image_meta tensor [batch, meta_length] float32 (image info)
-        # Input 2: anchors tensor [num_anchors, 4] float32
+IMAGE_SIZE = 224
+datagen = tf.keras.preprocessing.image.ImageDataGenerator(rescale=1./255)
 
-    def call(self, inputs, training=False):
-        # inputs is expected as a list of 3 tensors here:
-        # image, image_meta, anchors
-        image, image_meta, anchors = inputs
-        x = self.dummy_conv(image)
-        # Dummy outputs that depend on inputs, shapes mimic network outputs
-        # E.g., detections tensor, masks tensor, class_ids, scores
+def representative_data_gen():
+    dataset_list = tf.data.Dataset.list_files(CARS)
+    for i in range(100):
+        image = next(iter(dataset_list))
+        image = tf.io.read_file(image)
+        image = tf.io.decode_jpeg(image, channels=3)
+        image = tf.image.resize(image, [IMAGE_SIZE, IMAGE_SIZE])
+        image = tf.cast(image / 255., tf.float32)
+        image = tf.expand_dims(image, 0)
+        yield [image]
 
-        batch_size = tf.shape(image)[0]
 
-        # For example, detections: [batch, max_detections, 6] (y1,x1,y2,x2,class_id,score)
-        max_detections = 100
-        detections = tf.zeros((batch_size, max_detections, 6), dtype=tf.float32)
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+# This enables quantization
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+# This sets the representative dataset for quantization
+converter.representative_dataset = representative_data_gen
+# This ensures that if any ops can't be quantized, the converter throws an error
+converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
+# For full integer quantization, though supported types defaults to int8 only, we explicitly declare it for clarity.
+converter.target_spec.supported_types = [tf.int8]
+# These set the input and output tensors to uint8 (added in r2.3)
+converter.inference_input_type = tf.uint8
+converter.inference_output_type = tf.uint8
+tflite_model = converter.convert()
 
-        # masks: [batch, height, width, max_detections]
-        masks = tf.zeros((batch_size, image.shape[1], image.shape[2], max_detections), dtype=tf.float32)
+with open('modelQuantized.tflite', 'wb') as f:
+  f.write(tflite_model)
 
-        # class_ids: [batch, max_detections]
-        class_ids = tf.zeros((batch_size, max_detections), dtype=tf.int32)
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+# This enables quantization
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+# This sets the representative dataset for quantization
+converter.representative_dataset = representative_data_gen
+# This ensures that if any ops can't be quantized, the converter throws an error
 
-        # scores: [batch, max_detections]
-        scores = tf.zeros((batch_size, max_detections), dtype=tf.float32)
+converter.target_spec.supported_ops = [
+tf.lite.OpsSet.TFLITE_BUILTINS, tf.lite.OpsSet.SELECT_TF_OPS
+]
+converter._experimental_lower_tensor_list_ops = False
 
-        # Outputs could be a dict or a tuple - choose tuple for simplicity here
-        return detections, masks, class_ids, scores
+# For full integer quantization, though supported types defaults to int8 only, we explicitly declare it for clarity.
+converter.target_spec.supported_types = [tf.int8]
+# These set the input and output tensors to uint8 (added in r2.3)
+converter.inference_input_type = tf.uint8
+converter.inference_output_type = tf.uint8
+tflite_model = converter.convert()
 
-def my_model_function():
-    # Return an instance of MyModel, mimicking the loaded Mask R-CNN keras model.
-    return MyModel()
-
-def GetInput():
-    """
-    Returns a list of inputs matching the Mask R-CNN input signature inferred from the issue:
-    - image: batch of images [batch, height, width, 3]
-    - image_meta: metadata tensor per image [batch, meta_length]
-    - anchors: anchor boxes tensor [num_anchors, 4]
-
-    Since the original paper and Mask R-CNN code expect these three inputs, construct dummy data accordingly.
-    """
-    batch = 1
-    IMAGE_SIZE = 224
-    NUM_ANCHORS = 1000  # arbitrary typical anchor count
-    META_LENGTH = 12    # example metadata length (image size, window, scale, active class ids, etc)
-
-    # Image: random float32 tensor scaled 0-1
-    image = tf.random.uniform((batch, IMAGE_SIZE, IMAGE_SIZE, 3), dtype=tf.float32)
-
-    # Image Meta: dummy tensor with typical metadata shape
-    image_meta = tf.zeros((batch, META_LENGTH), dtype=tf.float32)
-
-    # Anchors: dummy anchor boxes, shape [num_anchors, 4], format [y1, x1, y2, x2]
-    anchors = tf.zeros((NUM_ANCHORS, 4), dtype=tf.float32)
-
-    return [image, image_meta, anchors]
-
+with open('modelQuantized.tflite', 'wb') as f:
+  f.write(tflite_model)

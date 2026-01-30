@@ -1,53 +1,69 @@
-# tf.random.normal((B=5, H=3), dtype=tf.float32) ← inferred input shape (batch size 5, feature dimension 3)
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
+
+def loss(predicted_y, target_y):
+  return tf.reduce_mean(tf.square(predicted_y - target_y))
+
+keras.losses.mean_squared_error(y_true, y_pred)
 
 import tensorflow as tf
-from tensorflow.keras import layers, Model, Input
+from tensorflow.keras.layers import Dense
+from tensorflow.keras.models import Sequential
 from tensorflow import math, dtypes
+from tensorflow import float32 as f32 
 from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.layers import Input
+import random
+import numpy as np # linear algebra
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Simple two-layer dense network resembling the original Sequential structure
-        self.dense1 = layers.Dense(3)
-        self.dense2 = layers.Dense(3)
-
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        return x
-
-def MMSE_loss(y_true, y_pred, mask_value=0.0):
-    """
-    Masked Mean Squared Error loss function with signature (y_true, y_pred),
-    applying mask to ignore positions where target == mask_value.
-
-    This implements the correction described in the issue:
-    The correct order of args is (y_true, y_pred).
-    """
-    mask = dtypes.cast(tf.not_equal(y_true, mask_value), tf.float32)
-    num_valid = math.reduce_sum(mask)
-    # Avoid division by zero if no valid targets
-    num_valid = tf.maximum(num_valid, 1.0)
-    diff = mask * (y_pred - y_true)
-    loss = math.reduce_sum(tf.square(diff)) / num_valid
+rseed=10
+np.random.seed(rseed)
+random.seed(rseed)
+tf.compat.v1.set_random_seed(rseed)
+    
+def MMSE( preds,targets, mask_value=0.0):
+    tf.print('\npred',preds)
+    tf.print('target',targets)
+    mask = dtypes.cast(tf.not_equal(targets,0),f32) 
+    num_rating = math.reduce_sum(mask) #count ratings
+    loss = math.reduce_sum(math.square(mask*(preds - targets))) / num_rating 
     return loss
 
-def my_model_function():
-    """
-    Returns an instance of MyModel compiled with Adam optimizer and MMSE_loss,
-    mimicking the example in the issue.
-    """
-    model = MyModel()
-    # Compile with Adam and the custom masked MSE loss expecting (y_true, y_pred) order
-    model.compile(optimizer=Adam(learning_rate=0.01), loss=MMSE_loss)
-    return model
+def MMSE2( targets,preds, mask_value=0.0):
+    tf.print('\npred',preds)
+    tf.print('target',targets)    
+    mask = dtypes.cast(tf.not_equal(targets,0),f32) 
+    num_rating = math.reduce_sum(mask) #count ratings
+    loss = math.reduce_sum(math.square(mask*(preds - targets))) / num_rating 
+    return loss
 
-def GetInput():
-    """
-    Returns a random tensor input of shape (5,3) matching the batch and feature dims used in example.
-    Using tf.random.normal and rounding to approximate the example data.
-    """
-    data = tf.math.round(tf.random.normal(shape=[5, 3]))
-    return data
+input_dim = Input(shape = (3, ))
+model = Sequential()
+model.add(Dense(3,input_dim=3))
+model.add(Dense(3))
+model.compile(optimizer = Adam(lr=0.01),loss=[MMSE]) 
+            
+data  = tf.math.round(tf.random.normal(shape=[5,3]))
+history = model.fit(data,data, epochs = 1, batch_size = 5,verbose=0, shuffle=False) 
+print(history.history)
 
+
+
+np.random.seed(rseed)
+random.seed(rseed)
+tf.compat.v1.set_random_seed(rseed)
+
+input_dim = Input(shape = (3, ))
+model = Sequential()
+model.add(Dense(3,input_dim=3))
+model.add(Dense(3))
+model.compile(optimizer = Adam(lr=0.01),loss=[MMSE2]) 
+            
+data  = tf.math.round(tf.random.normal(shape=[5,3]))
+history = model.fit(data,data, epochs = 1, batch_size = 5,verbose=0, shuffle=False) 
+
+
+print(history.history)
+
+fixes: tensorflow/tensorflow#38067

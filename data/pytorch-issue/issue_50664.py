@@ -1,27 +1,18 @@
-# torch.rand(B, 1000, dtype=torch.float32)
-import torch
 import torch.nn as nn
+
+import torch
 import torch.nn.functional as F
+import sys
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.layers = nn.ModuleList()
-        for _ in range(100):
-            layer = nn.Linear(1000, 1000, bias=False)
-            # Use SELU gain value of 0.75 as per PR implementation
-            nn.init.xavier_normal_(layer.weight, gain=nn.init.calculate_gain("selu"))
-            self.layers.append(layer)
-    
-    def forward(self, x):
-        for layer in self.layers:
-            x = F.selu(layer(x))
-        return x
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Matches input shape (batch_size, 1000 features)
-    return torch.rand(2, 1000, dtype=torch.float32)
-
+a = torch.randn(1000,1000, requires_grad=True)
+b = a
+print (f"in: {a.std().item():.4f}")
+for i in range(100):
+    l = torch.nn.Linear(1000,1000, bias=False)
+    torch.nn.init.xavier_normal_(l.weight, torch.nn.init.calculate_gain("selu"))
+    b = getattr(F, 'selu')(l(b))
+    if i % 10 == 0:
+        print (f"out: {b.std().item():.4f}", end=" ")
+        a.grad = None
+        b.sum().backward(retain_graph=True)
+        print (f"grad: {a.grad.abs().mean().item():.4f}")

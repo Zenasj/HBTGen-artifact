@@ -1,53 +1,75 @@
-# tf.random.uniform((B, 32, 32, 128), dtype=tf.float32)
+from tensorflow import keras
+from tensorflow.keras import layers
+
 import tensorflow as tf
+
+def build_model():
+    input_tensor = tf.keras.layers.Input((32, 32, 128))
+    x = input_tensor
+
+    boxes = tf.keras.layers.Conv2D(4, (3, 3))(x)
+    boxes = tf.reshape(boxes, (-1, 4))
+
+    scores = tf.keras.layers.Conv2D(1, (3, 3))(x)
+    scores = tf.reshape(scores, (-1,))
+
+    return  tf.keras.Model({"inputs": input_tensor}, {"boxes": boxes, "scores": scores})
+
+model = build_model()
+model = build_model()
+
+model.save("/tmp/model")
+
+restored_fn = tf.saved_model.load("/tmp/model")
+concrete_fn = restored_fn.signatures["serving_default"]
+
+# Would be great if these would match the Keras model:
+# signature_wrapper(*, input_6)
+# Args:
+#   input: float32 Tensor, shape=(None, 32, 32, 128)
+# Returns:
+#   {'boxes': <1>, 'scores': <2>}
+#     <1>: float32 Tensor, shape=(None, 4)
+#     <2>: float32 Tensor, shape=(None,)
+
+# Instead the keys are layer names which depends on implementation details and on how often the model
+# was instantiated: (e.g input_6, tf.reshape_8, tf.reshape_9)
+print(concrete_fn.pretty_printed_signature())
+
+@tf.function(input_signature=[tf.TensorSpec([None, 32, 32, 128], dtype=tf.float32, name="input")])
+def override_output_signatures(input_tensor):
+   outputs = model(input_tensor)
+   return {"boxes": outputs["boxes"], "scores": outputs["scores"]}
+
+signatures = override_output_signatures.get_concrete_function()
+tf.saved_model.save(model, export_dir="/tmp/saved_model", signatures=signatures)
+
 from collections import OrderedDict
+import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define inputs
-        self.input_shape = (32, 32, 128)
+def build_model():
+    input_tensor = tf.keras.layers.Input((32, 32, 128))
+    x = input_tensor
 
-        # Layers for boxes output: Conv2D with 4 filters, kernel 3x3
-        self.conv_boxes = tf.keras.layers.Conv2D(4, (3,3), name="conv_boxes")
-        
-        # Layers for scores output: Conv2D with 1 filter, kernel 3x3
-        self.conv_scores = tf.keras.layers.Conv2D(1, (3,3), name="conv_scores")
+    scores = tf.keras.layers.Conv2D(1, (3, 3))(x)
+    scores = tf.reshape(scores, (-1,))
 
-    def call(self, inputs):
-        # Inputs is expected to be a dict with "inputs" key (matching the original model)
-        if isinstance(inputs, dict):
-            x = inputs.get("inputs", None)
-            if x is None:
-                raise ValueError("Input dictionary must contain 'inputs' key")
-        else:
-            # Allow raw tensor input
-            x = inputs
+    boxes = tf.keras.layers.Conv2D(4, (3, 3))(x)
+    boxes = tf.reshape(boxes, (-1, 4))
 
-        boxes = self.conv_boxes(x)
-        # reshape so that the last dimension is 4, flatten batch dimensions accordingly
-        boxes = tf.reshape(boxes, (tf.shape(boxes)[0], -1, 4))  # shape (batch, ?, 4)
+    return tf.keras.Model({"inputs": input_tensor}, {"scores": scores, "boxes": boxes})
 
-        scores = self.conv_scores(x)
-        # flatten scores similarly
-        scores = tf.reshape(scores, (tf.shape(scores)[0], -1))  # shape (batch, ?)
+model = build_model()
+model.save("/tmp/model")
+restored_fn = tf.saved_model.load("/tmp/model")
+concrete_fn = restored_fn.signatures["serving_default"]
+print(concrete_fn.pretty_printed_signature())
 
-        # Return dict matching keys as per issue discussion
-        return OrderedDict([
-            ("boxes", boxes),
-            ("scores", scores)
-        ])
+@tf.function(input_signature=[tf.TensorSpec([None, 32, 32, 128], dtype=tf.float32, name="input")])
+def override_output_signatures(input_tensor):
+   outputs = model(input_tensor)
+   return OrderedDict([("scores", outputs["scores"]), ("boxes", outputs["boxes"])])
 
-
-def my_model_function():
-    # Return a new instance of MyModel
-    return MyModel()
-
-
-def GetInput():
-    # Returns a dict with "inputs" key matching what MyModel expects
-    # Batch size 2 used as example
-    batch_size = 2
-    x = tf.random.uniform((batch_size, 32, 32, 128), dtype=tf.float32)
-    return {"inputs": x}
-
+signatures = override_output_signatures.get_concrete_function()
+tf.saved_model.save(model, export_dir="/tmp/saved_model", signatures=signatures)
+print(tf.saved_model.load("/tmp/saved_model").signatures["serving_default"].pretty_printed_signature())

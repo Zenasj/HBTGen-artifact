@@ -1,29 +1,36 @@
-# tf.random.uniform((2, 2, 1), dtype=tf.float32) ← input shape and dtype inferred from original example
+from tensorflow import keras
 
 import tensorflow as tf
+import numpy as np
+x1 = tf.constant([1., 2., 3., 4.], shape=[2, 2, 1])
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
+class Model(tf.keras.Model):
 
-    @tf.function(input_signature=[tf.TensorSpec(shape=(2, 2, 1), dtype=tf.float32)])
-    def call(self, x):
-        # The original model unpacks the input tensor along axis 0 into two tensors of shape (2, 1, 1)
-        # Then concatenates them along the last axis (-1).
-        # This should produce shape (2, 2) with values [[1, 3], [2, 4]].
+  def __init__(self):
+    super(Model, self).__init__()
 
-        # Use tf.raw_ops.Unpack to match original operation exactly
-        unpack_op = tf.raw_ops.Unpack(value=x, num=2, axis=0)
-        concat = tf.concat(unpack_op, axis=-1)
-        return concat
+  @tf.function(input_signature=[tf.TensorSpec(x1.shape, x1.dtype)])
+  def call(self, x):
+    unpack_op = tf.raw_ops.Unpack(value=x,num=2,axis=0)
+    return tf.concat(unpack_op, -1)
+m = Model()
+m(x1)
+print('Keras mode output: ', m(x1).numpy())
 
-def my_model_function():
-    # Return an instance of the MyModel class
-    return MyModel()
+converter = tf.lite.TFLiteConverter.from_keras_model(m)
+tflite_model = converter.convert()
 
-def GetInput():
-    # Produce input tensor matching the example input:
-    # shape (2,2,1), dtype float32, values arbitrary but for the sake of demonstration,
-    # let's use uniform random values.
-    return tf.random.uniform((2, 2, 1), dtype=tf.float32)
+def _evaluateTFLiteModel(tflite_model, input_data):
+    interpreter = tf.lite.Interpreter(model_content=tflite_model)
+    interpreter.allocate_tensors()
+    input_details = interpreter.get_input_details()
+    output_details = interpreter.get_output_details()
 
+    for i in range(len(input_data)):
+        interpreter.set_tensor(input_details[i]['index'], input_data[i])
+    interpreter.invoke()
+    output_data = [interpreter.get_tensor(output_details[i]['index'])
+                   for i in range(len(output_details))]
+    return output_data
+print('Lite mode output: ', _evaluateTFLiteModel(tflite_model,[x1])[0])
+tf.lite.experimental.Analyzer.analyze(model_content=tflite_model) #Output IR

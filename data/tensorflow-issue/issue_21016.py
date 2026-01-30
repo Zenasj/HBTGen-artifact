@@ -1,53 +1,50 @@
-# tf.random.uniform((B=100, H=10), dtype=tf.float32) ← inferred input shape from dataset used in issue
+from tensorflow import keras
+from tensorflow.keras import layers
 
+import copy
 import tensorflow as tf
+
+tf.enable_eager_execution()
+tf.logging.set_verbosity(tf.logging.INFO)
 
 class BaseModel(tf.keras.Model):
     def __init__(self):
         super(BaseModel, self).__init__()
-        # Two Dense layers as per original snippet
         self.dense1 = tf.keras.layers.Dense(units=10)
         self.dense2 = tf.keras.layers.Dense(units=1)
-
-    def call(self, inputs):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        return x
+    def call(self, input):
+        """Run the model."""
+        result = self.dense1(input)
+        result = self.dense2(result)
+        return result
+    def get_config(self):
+        config = []
+        for layer in self.layers:
+            config.append({
+                'class_name': layer.__class__.__name__,
+                'config': layer.get_config()
+            })
+        return copy.deepcopy(config)
 
 class NestedModel(tf.keras.Model):
     def __init__(self):
         super(NestedModel, self).__init__()
-        # Nested BaseModel inside plus an additional Dense layer
         self.base_model = BaseModel()
         self.dense = tf.keras.layers.Dense(units=1)
+    def call(self, input):
+        result = self.base_model(input)
+        result = self.dense(result)
+        return result
+    def get_config(self):
+        config = []
+        for layer in self.layers:
+            config.append({
+                'class_name': layer.__class__.__name__,
+                'config': layer.get_config()
+            })
+        return copy.deepcopy(config)
 
-    def call(self, inputs):
-        x = self.base_model(inputs)
-        x = self.dense(x)
-        return x
-
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Encapsulate both models as submodules to reflect issue's focus on nested subclassed models
-        self.base_model = BaseModel()
-        self.nested_model = NestedModel()
-
-    def call(self, inputs):
-        # Forward inputs through both models
-        out_base = self.base_model(inputs)
-        out_nested = self.nested_model(inputs)
-        # Compare outputs elementwise (within a tolerance)
-        diff = tf.abs(out_base - out_nested)
-        # For demonstration, return boolean tensor where difference < 1e-5
-        return diff < 1e-5
-
-def my_model_function():
-    # Instantiate MyModel (no pretrained weights)
-    return MyModel()
-
-def GetInput():
-    # Return random tensor matching expected input shape: [batch_size=2, features=10]
-    # batch size = 2 chosen because in issue's dataset batching with batch 2 was used
-    return tf.random.uniform(shape=(2, 10), dtype=tf.float32)
-
+model = NestedModel()
+model.compile(optimizer=tf.train.AdamOptimizer(learning_rate=0.0001), loss='mean_squared_error', metrics=['accuracy'])
+estimator = tf.keras.estimator.model_to_estimator(keras_model=model)
+estimator.train(input_fn=lambda: tf.data.Dataset.from_tensor_slices((tf.random_uniform([100, 10]), tf.random_uniform([100, ]))).batch(2).repeat(10))

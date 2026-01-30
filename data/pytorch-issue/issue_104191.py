@@ -1,34 +1,11 @@
-# torch.randint(0, 50257, (B, S), dtype=torch.long)  # Input shape: (batch, sequence_length)
+python
 import torch
-from torch import nn
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # GPT-2 style embedding layer with BFloat16 dtype (problematic on MPS)
-        self.embedding = nn.Embedding(
-            num_embeddings=50257,  # GPT-2 vocab size
-            embedding_dim=768,     # Standard embedding dimension
-            dtype=torch.bfloat16   # Problematic dtype for MPS
-        )
+path = "gpt2" # any LM would result the same
+tokenizer = AutoTokenizer.from_pretrained(path) 
+model = AutoModelForCausalLM.from_pretrained(path, torch_dtype=torch.bfloat16, device_map={"":"mps"})
 
-    def forward(self, input_ids):
-        return self.embedding(input_ids)
-
-def my_model_function():
-    model = MyModel()
-    # Attempt to move to MPS if available (will trigger error on unsupported systems)
-    if torch.backends.mps.is_available():
-        model.to("mps")
-    return model
-
-def GetInput():
-    # Generate random input tensor matching GPT-2's expected input
-    batch_size = 1
-    sequence_length = 5  # Minimal test sequence length
-    return torch.randint(
-        0, 50257,  # Valid token IDs for GPT-2
-        (batch_size, sequence_length),
-        dtype=torch.long  # Required for embedding layer input
-    )
-
+t = tokenizer("anything", return_attention_mask=False, return_tensors='pt')
+with torch.inference_mode():
+    model(**t)

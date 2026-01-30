@@ -1,38 +1,60 @@
-# tf.random.uniform((64, 28, 28, 1), dtype=tf.float32) ← Inferred input shape from model input_shape of (28,28,1) and batch size 64
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
+import tensorflow_datasets as tfds
 import tensorflow as tf
+import datetime
+import os
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define the ConvNet layers as given in the example
-        self.conv = tf.keras.layers.Conv2D(32, 3, activation='relu', input_shape=(28, 28, 1))
-        self.pool = tf.keras.layers.MaxPooling2D()
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(64, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(10, activation='softmax')
+tf.config.threading.set_inter_op_parallelism_threads(1)
 
-    def call(self, inputs, training=False):
-        x = self.conv(inputs)
-        x = self.pool(x)
-        x = self.flatten(x)
-        x = self.dense1(x)
-        x = self.dense2(x)
-        return x
+datasets, info = tfds.load(name='mnist',
+                           with_info=True,
+                           as_supervised=True,
+                           shuffle_files=False)
 
-def my_model_function():
-    # Return an instance of MyModel
-    model = MyModel()
-    # Compile the model similar to the original example setup
-    model.compile(
-        loss='sparse_categorical_crossentropy',
-        optimizer=tf.keras.optimizers.Adam(),
-        metrics=['accuracy']
-    )
-    return model
+mnist_train, mnist_test = datasets['train'], datasets['test']
+strategy = tf.distribute.OneDeviceStrategy("/cpu:0")
 
-def GetInput():
-    # Return a batch of images matching the expected input shape (batch_size=64, 28x28 grayscale)
-    # Simulate normalized image input as float32 in [0,1]
-    return tf.random.uniform((64, 28, 28, 1), minval=0, maxval=1, dtype=tf.float32)
+num_train_examples = info.splits['train'].num_examples
 
+BATCH_SIZE_PER_REPLICA = 64
+BATCH_SIZE = BATCH_SIZE_PER_REPLICA * strategy.num_replicas_in_sync
+
+
+def scale(image, label):
+    image = tf.cast(image, tf.float32)
+    image /= 255
+    return image, label
+
+
+train_dataset = mnist_train.map(scale).cache().shuffle(
+    num_train_examples).batch(BATCH_SIZE)
+eval_dataset = mnist_test.map(scale).batch(BATCH_SIZE)
+
+log_dir = "/tmp/tf_logs/fit/" + datetime.datetime.now().strftime(
+    "%Y%m%d-%H%M%S")
+
+with strategy.scope():
+    model = tf.keras.Sequential([
+        tf.keras.layers.Conv2D(32,
+                               3,
+                               activation='relu',
+                               input_shape=(28, 28, 1)),
+        tf.keras.layers.MaxPooling2D(),
+        tf.keras.layers.Flatten(),
+        tf.keras.layers.Dense(64, activation='relu'),
+        tf.keras.layers.Dense(10, activation='softmax')
+    ])
+
+    model.compile(loss='sparse_categorical_crossentropy',
+                  optimizer=tf.keras.optimizers.Adam(),
+                  metrics=['accuracy'])
+
+    callbacks = [
+            tf.keras.callbacks.TensorBoard(log_dir=log_dir,
+                                           histogram_freq=0,
+                                           profile_batch=1)
+    ]
+    model.fit(train_dataset, epochs=3, steps_per_epoch=20, callbacks=callbacks)

@@ -1,46 +1,56 @@
-# torch.rand(1, 3, 384, 384, dtype=torch.float32)  # Inferred input shape
+cpp_fused_clone_4 = async_compile.cpp('''
+#include <ATen/record_function.h>
+#include "/tmp/torchinductor_root/ib/cibrnuq56cxamjj4krp4zpjvsirbmlolpbnmomodzyd46huzhdw7.h"
+extern "C" void kernel(const float* in_ptr0,
+                       const float* in_ptr1,
+                       float* out_ptr0)
+{
+    RECORD_FUNCTION("graph_0_cpp_fused_clone_4", c10::ArrayRef<c10::IValue>({}));
+    {
+        #pragma GCC ivdep
+        for(long i0=static_cast<long>(0L); i0<static_cast<long>(16L); i0+=static_cast<long>(16L))
+        {
+            #pragma GCC ivdep
+            for(long i1=static_cast<long>(0L); i1<static_cast<long>(331776L); i1+=static_cast<long>(16L))
+            {
+                float tmp0[16*16] __attribute__ ((aligned (16)));
+                at::vec::transpose_mxn<float,16,16>(in_ptr0 + static_cast<long>(i0 + (16L*i1)), static_cast<long>(16L), tmp0, 16);
+                for (long i0_inner = 0; i0_inner < 16; i0_inner++)
+                {
+                    auto tmp1 = at::vec::Vectorized<float>::loadu(tmp0 + static_cast<long>(16L*i0_inner));
+                    auto tmp2 = at::vec::Vectorized<float>(static_cast<float>(in_ptr1[static_cast<long>(i0 + i0_inner)]));
+                    auto tmp3 = tmp1 + tmp2;
+                    tmp3.store(out_ptr0 + static_cast<long>(i1 + (331776L*i0) + (331776L*i0_inner)));
+                }
+            }
+        }
+    }
+}
+''')
 
-import torch
-import torch.nn as nn
+buf16 = buf14; del buf14  # reuse
+cpp_fused_clone_4(c_void_p(buf15.data_ptr()), c_void_p(_frozen_param87.data_ptr()), c_void_p(buf16.data_ptr()))
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Simplified version of the cait_m36_384 model
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3)
-        self.bn1 = nn.BatchNorm2d(64)
-        self.relu = nn.ReLU(inplace=True)
-        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-        self.fc = nn.Linear(64 * 96 * 96, 1000)
-
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.relu(x)
-        x = self.maxpool(x)
-        x = x.view(x.size(0), -1)
-        x = self.fc(x)
-        return x
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(1, 3, 384, 384, dtype=torch.float32)
-
-# The issue describes a performance regression in the `cait_m36_384` model due to a change in the PyTorch codebase. The regression is caused by the removal of `remove_extra_clones` and the introduction of `remove_noop_ops`, which leads to additional `clones` and changes in the layout of the buffers.
-# To address this, we need to create a simplified version of the `cait_m36_384` model and ensure that it can be used with `torch.compile`. We will also include a function to generate a valid input for the model.
-# Given the complexity of the actual `cait_m36_384` model, we will create a simplified version that captures the essence of the issue. We will assume the input shape based on the provided information and the typical usage of such models.
-# Here is the complete Python code file:
-# ### Explanation:
-# 1. **Inferred Input Shape**: The input shape is inferred to be `(1, 3, 384, 384)` based on the typical input size for image classification models.
-# 2. **MyModel Class**:
-#    - A simplified version of the `cait_m36_384` model is created.
-#    - It includes a convolutional layer, batch normalization, ReLU activation, max pooling, and a fully connected layer.
-# 3. **my_model_function**:
-#    - Returns an instance of `MyModel`.
-# 4. **GetInput Function**:
-#    - Generates a random tensor with the inferred input shape.
-# This code should be ready to use with `torch.compile(MyModel())(GetInput())` and can be used to further investigate the performance regression.
+cpp_fused_clone_4 = async_compile.cpp('''
+#include <ATen/record_function.h>
+#include "/tmp/torchinductor_liaoxuan/ib/cibrnuq56cxamjj4krp4zpjvsirbmlolpbnmomodzyd46huzhdw7.h"
+extern "C" void kernel(const float* in_ptr0,
+                      const float* in_ptr1,
+                      float* out_ptr0)
+{
+  RECORD_FUNCTION("graph_0_cpp_fused_clone_4", c10::ArrayRef<c10::IValue>({}));
+   {
+       for(long i0=static_cast<long>(0L); i0<static_cast<long>(16L); i0+=static_cast<long>(16L))
+       {
+           #pragma GCC ivdep
+           for(long i1=static_cast<long>(0L); i1<static_cast<long>(331776L); i1+=static_cast<long>(1L))
+           {
+               auto tmp0 = at::vec::Vectorized<float>::loadu(in_ptr0 + static_cast<long>(i0 + (16L*i1)));
+               auto tmp1 = at::vec::Vectorized<float>::loadu(in_ptr1 + static_cast<long>(i0));
+               auto tmp2 = tmp0 + tmp1;
+               { __at_align__ float tmpbuf[16*sizeof(float)/sizeof(float)]; tmp2.store(tmpbuf); for (long i0_inner = 0; i0_inner < 16; i0_inner++) out_ptr0[static_cast<long>(i1 + (331776L*i0) + (331776L*i0_inner))] = tmpbuf[i0_inner]; }
+           }
+       }
+   }
+}
+''')

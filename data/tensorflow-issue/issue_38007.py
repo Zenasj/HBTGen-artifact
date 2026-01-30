@@ -1,58 +1,128 @@
-# tf.random.uniform((B, 28, 28), dtype=tf.float32) ← inferred MNIST input shape from usage
+import random
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras.applications import Xception
+import numpy as np
+
+num_samples = 100
+height = 224
+width = 224
+num_classes = 50
+
+strategy = tf.distribute.MirroredStrategy(devices=['/GPU:0', '/GPU:1'])
+with strategy.scope():
+    parallel_model = Xception(weights=None,
+                              input_shape=(height, width, 3),
+                              classes=num_classes)
+    parallel_model.compile(loss='categorical_crossentropy', optimizer='rmsprop')
+
+### Works only for the first GPU of the
+# parallel_model = Xception(weights=None,
+#                           input_shape=(height, width, 3),
+#                           classes=num_classes)
+# parallel_model.compile(loss='categorical_crossentropy', optimizer='rmsprop')
+
+print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
+
+# Generate dummy data.
+x = np.random.random((num_samples, height, width, 3))
+y = np.random.random((num_samples, num_classes))
+
+parallel_model.summary()
+# This `fit` call will be distributed on 8 GPUs.
+# Since the batch size is 256, each GPU will process 32 samples.
+parallel_model.fit(x, y, epochs=20, batch_size=16)
+
+strategy = tf.distribute.MirroredStrategy(devices=['/GPU:0'])
+
+devices=['/GPU:1']
+
+devices=['/GPU:0', '/GPU:1']
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Simple MNIST classifier as given in examples:
-        self.flatten = tf.keras.layers.Flatten(input_shape=(28, 28))
-        self.dense1 = tf.keras.layers.Dense(128, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(10)
+n = 12345
+dtype = tf.float32
+print(2 * n*n*32/8 / 1.e9)
+with tf.device("/gpu:1"): # /gpu:0
+    for i in range(100):
+        matrix1 = tf.Variable(tf.random.uniform((n, n), dtype=dtype))
+        matrix2 = tf.Variable(tf.random.uniform((n, n), dtype=dtype))
+        product = tf.norm(tf.matmul(matrix1, matrix2))
+        print(i, product)
 
-    def call(self, inputs, training=False):
-        x = self.flatten(inputs)
-        x = self.dense1(x)
-        x = self.dense2(x)
-        return x
+import tensorflow as tf
 
-def my_model_function():
-    # Returns an instance of MyModel with compiled optimizer and loss for classification
-    model = MyModel()
-    model.compile(
-        optimizer='adam',
-        loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
-        metrics=['accuracy'])
-    return model
+mnist = tf.keras.datasets.mnist
 
-def GetInput():
-    # Returns a batch of MNIST-like data: random float32 tensor in shape (B, 28, 28)
-    # Using batch size 32 for example
-    batch_size = 32
-    return tf.random.uniform(shape=(batch_size, 28, 28), minval=0., maxval=1., dtype=tf.float32)
+(x_train, y_train), (x_test, y_test) = mnist.load_data()
+x_train, x_test = x_train / 255.0, x_test / 255.0
 
-# ---
-# ### Explanation / Context
-# From the issue content:
-# - The main minimal model tested extensively by the users was a simple MNIST classifier.  
-# - Input shape was always `(28, 28)` grayscale images.
-# - The common model was a `Sequential` with Flatten -> Dense 128 relu -> Dense 10 logits.
-# - Single GPU usage works fine with this model.
-# - Multi-GPU training via `tf.distribute.MirroredStrategy()` fails due to hardware/driver/BIOS issues (IOMMU setting).
-# - The issue example code showcases construction and compilation of such a model and training on MNIST.
-# - The model code here matches the minimal complete example used in the issue.
-# - `GetInput()` generates appropriately shaped random inputs compatible with the model.
-# - Returned model is compiled for training.
-# - No multi-GPU strategy is implemented here, as the multi-GPU usage stalls because of the environment issues described. The model is single-instance, usable for both single-GPU or possibly multi-GPU (when the environment is fixed).
-# - Input batch size chosen arbitrarily as 32 for demonstration.
-# - This code matches TF 2.x API and should compile and run with TensorFlow 2.20.0 XLA without errors.
-# If you want, you can wrap the model call inside `@tf.function(jit_compile=True)` for XLA compilation externally, for example:
-# ```python
-# model = my_model_function()
-# @tf.function(jit_compile=True)
-# def compiled(x):
-#     return model(x)
-# ```
-# but that was not explicitly requested in output structure. The provided code is the minimal complete model and example input based on the issue content.
-# ---
-# Feel free to ask if you want me to help extend this to a multi-GPU strategy example or something else (noting the issue described environment limitations).
+# strategy = tf.distribute.MirroredStrategy()
+# with strategy.scope():
+with tf.device("/gpu:1"):
+    model = tf.keras.models.Sequential([
+      tf.keras.layers.Flatten(input_shape=(28, 28)),
+      tf.keras.layers.Dense(128, activation='relu'),
+      tf.keras.layers.Dense(10)
+    ])
+
+    model.compile(optimizer='adam',
+                  loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+                  metrics=['accuracy'])
+
+    model.fit(x_train, y_train, epochs=5)
+
+import tensorflow as tf
+
+mnist = tf.keras.datasets.mnist
+
+(x_train, y_train), (x_test, y_test) = mnist.load_data()
+x_train, x_test = x_train / 255.0, x_test / 255.0
+
+physical_devices = tf.config.list_physical_devices('GPU')
+print(physical_devices)
+# tf.config.set_visible_devices(physical_devices[0], 'GPU')
+tf.config.set_visible_devices(physical_devices[1], 'GPU')
+
+model = tf.keras.models.Sequential([
+    tf.keras.layers.Flatten(input_shape=(28, 28)),
+    tf.keras.layers.Dense(128, activation='relu'),
+    tf.keras.layers.Dense(10)
+])
+
+model.compile(optimizer='adam',
+              loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+              metrics=['accuracy'])
+
+model.fit(x_train, y_train, epochs=5)
+
+import tensorflow as tf
+
+mnist = tf.keras.datasets.mnist
+
+(x_train, y_train), (x_test, y_test) = mnist.load_data()
+x_train, x_test = x_train / 255.0, x_test / 255.0
+
+physical_devices = tf.config.list_physical_devices('GPU')
+print(physical_devices)
+tf.config.set_visible_devices(physical_devices, 'GPU')
+
+strategy = tf.distribute.MirroredStrategy()
+with strategy.scope():
+    model = tf.keras.models.Sequential([
+        tf.keras.layers.Flatten(input_shape=(28, 28)),
+        tf.keras.layers.Dense(128, activation='relu'),
+        tf.keras.layers.Dense(10)])
+    model.compile(optimizer='adam',
+                  loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+                  metrics=['accuracy'])
+    model.fit(x_train, y_train, epochs=5)
+
+strategy = tf.distribute.MirroredStrategy()
+with strategy.scope():
+    model.compile(...)
+    model.fit(...)

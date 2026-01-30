@@ -1,35 +1,43 @@
-# tf.random.uniform((1, 5, 5, 3), dtype=tf.float32) ← inferred input shape from example
+from tensorflow.keras import layers
 
+model.tflite
+
+converted_model.tflite
+
+import argparse
+import keras
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define the layers as per the example discussed in the issue
-        self.conv2d = tf.keras.layers.Conv2D(
-            filters=6,
-            kernel_size=(2, 2)
-        )
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense = tf.keras.layers.Dense(
-            units=4,
-            activation='softmax'
-        )
-    
-    def call(self, x, training=False):
-        # Forward pass through Conv2D -> Flatten -> Dense(Softmax)
-        x = self.conv2d(x)
-        x = self.flatten(x)
-        x = self.dense(x)
-        return x
+INPUT_SHAPE = (5, 5, 3)
+CONV_FILTERS = 6
+CONV_KER_SIZE = (2, 2)
+FC_UNITS = 4
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+def build_model():
+    model = keras.Sequential(
+        [
+            keras.Input(shape=INPUT_SHAPE, batch_size=1),
+            keras.layers.Conv2D(CONV_FILTERS, CONV_KER_SIZE),
+            keras.layers.Flatten(),
+            keras.layers.Dense(FC_UNITS, activation='softmax'),
+        ]
+    )
 
-def GetInput():
-    # Produce a random tensor input matching the input shape expected: (1, 5, 5, 3)
-    # Batch size 1 is used to align with the example in the issue
-    input_shape = (1, 5, 5, 3)
-    return tf.random.uniform(input_shape, dtype=tf.float32)
+    model.summary()
+    return model
 
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--output", "-o", type=str, help="Output filename", default=None)
+    parser.add_argument("--totflite", "-t", type=str, help="Output TFlite filename", default=None)
+    args = parser.parse_args()
+    model = build_model()
+
+    if args.output:
+        model.save(args.output)
+
+    if args.totflite:
+        converter = tf.lite.TFLiteConverter.from_keras_model(model)
+        tflite_model = converter.convert()
+        with open(args.totflite, 'wb') as f:
+            f.write(tflite_model)

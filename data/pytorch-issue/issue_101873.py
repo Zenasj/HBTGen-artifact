@@ -1,67 +1,215 @@
-# torch.rand(B, 3, 32, 32, dtype=torch.float)
+import time
 import torch
+import torch.distributed as dist
 import torch.nn as nn
-from torchvision import models
+import torch.optim as optim
+import torchvision
+import torchvision.transforms as transforms
+import matplotlib.pyplot as plt
+import numpy as np
+import mlflow
+import os
+import datetime
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.resnet = models.resnet50(pretrained=False)  # or True? The user's code uses True but maybe better to set to False for reproducibility
-        num_features = self.resnet.fc.in_features
-        self.resnet.fc = nn.Linear(num_features, 10)
+import configparser
+import logging
+import argparse
 
-    def forward(self, x):
-        return self.resnet(x)
+from PIL import Image
 
-def my_model_function():
-    return MyModel()
+import ssl
+ssl._create_default_https_context = ssl._create_unverified_context
 
-def GetInput():
-    return torch.rand(1, 3, 32, 32, dtype=torch.float)
 
-# Okay, I need to generate a Python code file based on the GitHub issue provided. Let me start by understanding the problem. The user is encountering a connection timeout error when using DistributedDataParallel with PyTorch on an Azure cluster. The error occurs in one of the 16 processes, but the others work fine. The task is to create a code that replicates this scenario, but according to the instructions, I need to extract a PyTorch model from the issue and structure it properly.
-# Looking at the code provided in the issue, the main model is ResNet50 from torchvision. The user's training script uses DistributedDataParallel. The goal isn't to fix the bug but to create a code that can be used with torch.compile, so I need to focus on the model structure and input.
-# The required structure includes a class MyModel, functions my_model_function and GetInput. The model in the issue is ResNet50 with the final layer adjusted for 10 classes. So, I'll need to recreate that. The input shape for CIFAR10 is 3x32x32, so the comment at the top should indicate torch.rand(B, 3, 32, 32).
-# The Dockerfile and environment setup mention CUDA and NCCL, but those are more about the environment. The code should just define the model. The user's code uses a ResNet50 with pretrained=True, but maybe for reproducibility, it's better to not use pretrained and initialize properly. However, the problem states to infer missing parts, so I can set pretrained=False and adjust accordingly.
-# The function GetInput should return a random tensor with the correct shape. The my_model_function should return an instance of MyModel. Since the original code uses DistributedDataParallel, but the task is to create a standalone model, I'll ignore the DDP part and just define the base model.
-# Wait, but the special requirement 2 says if there are multiple models to compare, they should be fused. In this case, the issue is about a single model, so no need to fuse. The model is ResNet50 modified for CIFAR10. So the code should define MyModel as ResNet50 with the final layer changed to 10 classes.
-# Check the original code: they do model = torchvision.models.resnet50(pretrained=True), then replace the fc layer. But if we want to avoid relying on pretrained weights (since maybe in some environments it can't download), perhaps set pretrained=False and initialize randomly. But according to the problem, we need to infer missing parts. The user's code uses pretrained=True, so maybe keep that, but in the model function, perhaps set it to False and use a placeholder? Or since the GetInput is for testing, maybe it's okay to proceed.
-# Alternatively, in my_model_function, we can return the model with the necessary changes. So the class MyModel would be a subclass of nn.Module, containing the ResNet50 structure with the modified fc layer.
-# Putting it all together:
-# - The MyModel class initializes a resnet50, changes the fc layer to 10 classes.
-# - my_model_function returns an instance of MyModel.
-# - GetInput returns a random tensor of (B,3,32,32), where B can be 1 or any batch size, but the comment says to specify the shape. Since it's a placeholder, maybe just B=1.
-# Wait, the input shape comment should be at the top as a comment line. The first line should be like:
-# # torch.rand(B, 3, 32, 32, dtype=torch.float)
-# So the code structure would be:
-# Wait, but in the user's code, they set pretrained=True. However, since the problem is about a connection error during download, maybe using pretrained=True would cause similar issues. But the task is to create a code that can be used with torch.compile, so perhaps it's better to not rely on pretrained and just use a random initialization. Alternatively, set pretrained=False to avoid any download dependencies.
-# Also, the model needs to be compatible with torch.compile. The structure here is straightforward, so that should be okay.
-# Another point: the original code uses DistributedDataParallel, but in the generated code, we just need the base model. So the MyModel is just the ResNet50 with the modified fc layer.
-# Therefore, the code should look like the above. Let me check the requirements again:
-# - Class must be MyModel(nn.Module) ✔️
-# - Functions my_model_function and GetInput ✔️
-# - GetInput returns a tensor that works with MyModel() ✔️ (3x32x32)
-# - No test code or main blocks ✔️
-# - The input shape comment is correct.
-# I think that's it. The only possible missing part is whether to use pretrained or not. Since the original code uses pretrained=True but the error is about download, maybe better to set to False to avoid the same issue in the generated code. So I'll set pretrained=False.
-# </think>
-# ```python
-# # torch.rand(B, 3, 32, 32, dtype=torch.float)
-# import torch
-# import torch.nn as nn
-# from torchvision import models
-# class MyModel(nn.Module):
-#     def __init__(self):
-#         super(MyModel, self).__init__()
-#         self.backbone = models.resnet50(pretrained=False)  # Avoid download dependency for reproducibility
-#         num_features = self.backbone.fc.in_features
-#         self.backbone.fc = nn.Linear(num_features, 10)  # CIFAR-10 classes
-#     def forward(self, x):
-#         return self.backbone(x)
-# def my_model_function():
-#     # Initialize model with random weights (pretrained=False by default)
-#     return MyModel()
-# def GetInput():
-#     # Random input tensor matching CIFAR-10 dimensions
-#     return torch.rand(1, 3, 32, 32, dtype=torch.float)
-# ```
+start_time = time.time()
+
+torch.backends.cudnn.benchmark=False
+torch.backends.cudnn.deterministic=True
+
+
+print("NCCL version is: ", torch.cuda.nccl.version())
+print("MLflow version:", mlflow.__version__)
+print("Tracking URI:", mlflow.get_tracking_uri())
+print("Artifact URI:", mlflow.get_artifact_uri())
+
+# Set the seed for reproducibility
+torch.manual_seed(42)
+
+# Set up the data loading parameters
+batch_size = 128
+num_epochs = 10
+num_workers = 4
+pin_memory = True
+
+# Get the world size and rank to determine the process group
+world_size = int(os.environ['WORLD_SIZE'])
+world_rank = int(os.environ['RANK'])
+local_rank = int(os.environ['LOCAL_RANK'])
+
+print("World size:", world_size)
+print("local rank is {} and world rank is {}".format(local_rank, world_rank))
+
+is_distributed = world_size > 1
+
+if is_distributed:
+    batch_size = batch_size // world_size
+    batch_size = max(batch_size, 1)
+
+# Set the backend to NCCL for distributed training
+dist.init_process_group(backend="nccl",
+                        init_method="env://",
+                        world_size=world_size,
+                        rank=world_rank)
+
+# Set the device to the current local rank
+torch.cuda.set_device(local_rank)
+device = torch.device('cuda', local_rank)
+
+dist.barrier()
+
+# Define the transforms for the dataset
+transform_train = transforms.Compose([
+    transforms.RandomCrop(32, padding=4),
+    transforms.RandomHorizontalFlip(),
+    transforms.ToTensor(),
+    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+])
+
+transform_test = transforms.Compose([
+    transforms.ToTensor(),
+])
+
+# Load the CIFAR-10 dataset
+
+data_root = './data_' + str(world_rank)
+train_dataset = torchvision.datasets.CIFAR10(root=data_root, train=True, download=True, transform=transform_train)
+train_sampler = torch.utils.data.distributed.DistributedSampler(dataset=train_dataset, num_replicas=world_size, rank=world_rank, shuffle=True) if is_distributed else None
+train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=(train_sampler is None), num_workers=num_workers, pin_memory=pin_memory, sampler=train_sampler)
+
+test_dataset = torchvision.datasets.CIFAR10(root=data_root, train=False, download=True, transform=transform_test)
+test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory)
+
+# Define the ResNet50 model
+model = torchvision.models.resnet50(pretrained=True)
+num_features = model.fc.in_features
+model.fc = nn.Linear(num_features, 10)
+
+# Move the model to the GPU
+model = model.to(device)
+
+# Wrap the model with DistributedDataParallel
+if is_distributed:
+    model = nn.parallel.DistributedDataParallel(model, device_ids=[local_rank], output_device=local_rank)
+
+# Define the loss function and optimizer
+criterion = nn.CrossEntropyLoss()
+optimizer = optim.Adam(model.parameters(), lr=0.001)
+
+# Train the model for the specified number of epochs
+for epoch in range(num_epochs):
+    running_loss = 0.0
+    train_sampler.set_epoch(epoch) ### why is this line necessary??
+    for batch_idx, (inputs, labels) in enumerate(train_loader):
+        inputs, labels = inputs.to(device), labels.to(device)
+
+        optimizer.zero_grad()
+
+        outputs = model(inputs)
+        loss = criterion(outputs, labels)
+        loss.backward()
+
+        optimizer.step()
+
+        running_loss += loss.item()
+
+    print('[Epoch %d] loss: %.3f' % (epoch + 1, running_loss))
+    if world_rank == 0:
+        # Log the loss and running loss as MLFlow metrics
+        mlflow.log_metric("loss", loss.item())
+        mlflow.log_metric("running loss", running_loss)
+
+dist.barrier()
+# Save the trained model
+if world_rank == 0:
+    checkpoints_path = "train_checkpoints"
+    os.makedirs(checkpoints_path, exist_ok=True)
+    torch.save(model.state_dict(), '{}/{}-{}.pth'.format(checkpoints_path, 'resnet50_cifar10', world_rank))
+    mlflow.pytorch.log_model(model, "resnet50_cifar10_{}.pth".format(world_rank))
+    # mlflow.log_artifact('{}/{}-{}.pth'.format(checkpoints_path, 'resnet50_cifar10', world_rank), artifact_path="model_state_dict")
+
+# Evaluate the model on the test set and save inference on 6 random images
+correct = 0
+total = 0
+with torch.no_grad():
+    fig, axs = plt.subplots(2, 3, figsize=(8, 6), dpi=100)
+    axs = axs.flatten()
+    count = 0
+    for data in test_loader:
+        if count == 6:
+            break
+        inputs, labels = data
+        inputs, labels = inputs.to(device), labels.to(device)
+
+        outputs = model(inputs)
+        _, predicted = torch.max(outputs.data, 1)
+        total += labels.size(0)
+        correct += (predicted == labels).sum().item()
+
+        # Save the inference on the 6 random images
+        if count < 6:
+            image = np.transpose(inputs[0].cpu().numpy(), (1, 2, 0))
+            confidence = torch.softmax(outputs, dim=1)[0][predicted[0]].cpu().numpy()
+            class_name = test_dataset.classes[predicted[0]]
+            axs[count].imshow(image)
+            axs[count].set_title(f'Class: {class_name}\nConfidence: {confidence:.2f}')
+            axs[count].axis('off')
+            count += 1
+
+# Average the test accuracy across all processes
+
+correct = torch.tensor(correct, dtype=torch.int8)
+correct = correct.to(device)
+torch.distributed.all_reduce(correct, op=torch.distributed.ReduceOp.SUM)
+total = torch.tensor(total, dtype=torch.torch.int8)
+total = total.to(device)
+torch.distributed.all_reduce(total, op=torch.distributed.ReduceOp.SUM)
+test_accuracy = 100 * correct / total
+test_accuracy /= world_size
+
+print('Test accuracy: %.2f %%' % test_accuracy)
+
+# Save the plot with the 6 random images and their predicted classes and prediction confidence
+test_img_file_name = 'test_images_' + str(world_rank) + '.png'
+plt.savefig(test_img_file_name)
+
+# Log the test accuracy and elapsed time to MLflow
+if world_rank == 0:
+    mlflow.log_metric("test accuracy", test_accuracy)
+
+end_time = time.time()
+elapsed_time = end_time - start_time
+print('Elapsed time: ', elapsed_time)
+if world_rank == 0:
+    mlflow.log_metric("elapsed time", elapsed_time)
+
+# Save the plot with the 6 random images and their predicted classes and prediction confidence as an artifact in MLflow
+image = Image.open(test_img_file_name)
+image = image.convert('RGBA')
+image_buffer = np.array(image)
+image_buffer = image_buffer[:, :, [2, 1, 0, 3]]
+image_buffer = np.ascontiguousarray(image_buffer)
+artifact_file_name = "inference_on_test_images_" + str(world_rank) + ".png"
+mlflow.log_image(image_buffer, artifact_file=artifact_file_name)
+
+# End the MLflow run
+if mlflow.active_run():
+    mlflow.end_run()
+
+dist.destroy_process_group()
+
+{
+  "azure-cli": "2.35.0",
+  "azure-cli-core": "2.35.0",
+  "azure-cli-telemetry": "1.0.6",
+  "extensions": {}
+}

@@ -1,26 +1,5 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Example shape: (2, 3, 4, 5)
-import torch
-import torch.nn as nn
-
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # This model encapsulates a sparse softmax operation that exercises the Thrust-based CUDA kernel
-        # The error in SoftMax.cu relates to Thrust's make_constant_iterator, which is part of its implementation
-        # The model assumes the PR fix (correct Thrust headers/includes) is applied
-
-    def forward(self, x):
-        # Convert dense input to sparse COO format (triggers sparse softmax path)
-        x_sparse = x.to_sparse()
-        # Apply sparse softmax along the specified dimension (e.g., feature dimension)
-        return torch.sparse.softmax(x_sparse, dim=1)  # dim=1 corresponds to C in (B,C,H,W)
-
-def my_model_function():
-    # Returns an instance exercising the problematic CUDA kernel path
-    return MyModel()
-
-def GetInput():
-    # Generates a random dense tensor that will be converted to sparse in forward()
-    # Shape: Batch=2, Channels=3, Height=4, Width=5 (adjustable via example comment)
-    return torch.rand(2, 3, 4, 5, dtype=torch.float32)
-
+console
+#22 2048. /usr/local/cuda/bin/nvcc -forward-unknown-to-host-compiler -DAT_PER_OPERATOR_HEADERS -DHAVE_MALLOC_USABLE_SIZE=1 -DHAVE_MMAP=1 -DHAVE_SHM_OPEN=1 -DHAVE_SHM_UNLINK=1 -DIDEEP_USE_MKL -DMAGMA_V2 -DMINIZ_DISABLE_ZIP_READER_CRC32_CHECKS -DONNXIFI_ENABLE_EXT=1 -DONNX_ML=1 -DONNX_NAMESPACE=onnx_torch -DTH_BLAS_MKL -DTORCH_CUDA_BUILD_MAIN_LIB -DUSE_C10D_GLOO -DUSE_C10D_MPI -DUSE_C10D_NCCL -DUSE_CUDA -DUSE_DISTRIBUTED -DUSE_EXTERNAL_MZCRC -DUSE_NCCL -DUSE_RPC -DUSE_TENSORPIPE -D_FILE_OFFSET_BITS=64 -Dtorch_cuda_EXPORTS -Iaten/src -I../aten/src -I. -I../ -I../cmake/../third_party/benchmark/include -I../cmake/../third_party/cudnn_frontend/include -I../third_party/onnx -Ithird_party/onnx -I../third_party/foxi -Ithird_party/foxi -Iinclude -I../torch/csrc/distributed -I../aten/src/TH -I../aten/src/THC -I../aten/src/ATen/cuda -Icaffe2/aten/src -I../aten/../third_party/catch/single_include -I../aten/src/ATen/.. -Icaffe2/aten/src/ATen -Inccl/include -I../c10/cuda/../.. -I../c10/.. -I../third_party/tensorpipe -Ithird_party/tensorpipe -I../third_party/tensorpipe/third_party/libnop/include -I../torch/csrc/api -I../torch/csrc/api/include -isystem=third_party/gloo -isystem=../cmake/../third_party/gloo -isystem=../cmake/../third_party/googletest/googlemock/include -isystem=../cmake/../third_party/googletest/googletest/include -isystem=../third_party/protobuf/src -isystem=/opt/conda/include -isystem=../third_party/gemmlowp -isystem=../third_party/neon2sse -isystem=../third_party/XNNPACK/include -isystem=../third_party -isystem=../cmake/../third_party/eigen -isystem=/opt/conda/include/python3.8 -isystem=/opt/conda/lib/python3.8/site-packages/numpy/core/include -isystem=../cmake/../third_party/pybind11/include -isystem=/opt/hpcx/ompi/include/openmpi -isystem=/opt/hpcx/ompi/include/openmpi/opal/mca/hwloc/hwloc201/hwloc/include -isystem=/opt/hpcx/ompi/include/openmpi/opal/mca/event/libevent2022/libevent -isystem=/opt/hpcx/ompi/include/openmpi/opal/mca/event/libevent2022/libevent/include -isystem=/opt/hpcx/ompi/include -isystem=/usr/local/cuda/include -isystem=../third_party/ideep/mkl-dnn/third_party/oneDNN/include -isystem=../third_party/ideep/include -Xfatbin -compress-all -DONNX_NAMESPACE=onnx_torch -gencode arch=compute_70,code=sm_70 -gencode arch=compute_75,code=sm_75 -gencode arch=compute_80,code=sm_80 -gencode arch=compute_86,code=sm_86 -gencode arch=compute_86,code=compute_86 -Xcudafe --diag_suppress=cc_clobber_ignored,--diag_suppress=integer_sign_change,--diag_suppress=useless_using_declaration,--diag_suppress=set_but_not_used,--diag_suppress=field_without_dll_interface,--diag_suppress=base_class_has_different_dll_interface,--diag_suppress=dll_interface_conflict_none_assumed,--diag_suppress=dll_interface_conflict_dllexport_assumed,--diag_suppress=implicit_return_from_non_void_function,--diag_suppress=unsigned_compare_with_zero,--diag_suppress=declared_but_not_referenced,--diag_suppress=bad_friend_decl --expt-relaxed-constexpr --expt-extended-lambda -Xcudafe --diag_suppress=20236 -Wno-deprecated-gpu-targets --expt-extended-lambda -DCUB_WRAPPED_NAMESPACE=at_cuda_detail -DCUDA_HAS_FP16=1 -D__CUDA_NO_HALF_OPERATORS__ -D__CUDA_NO_HALF_CONVERSIONS__ -D__CUDA_NO_HALF2_OPERATORS__ -D__CUDA_NO_BFLOAT16_CONVERSIONS__ -O3 -DNDEBUG -Xcompiler=-fPIC -DCAFFE2_USE_GLOO -DCUDA_HAS_FP16=1 -DHAVE_GCC_GET_CPUID -DUSE_AVX -DUSE_AVX2 -DTH_HAVE_THREAD -Xcompiler=-Wall,-Wextra,-Wno-unused-parameter,-Wno-unused-variable,-Wno-unused-function,-Wno-unused-result,-Wno-unused-local-typedefs,-Wno-missing-field-initializers,-Wno-write-strings,-Wno-unknown-pragmas,-Wno-type-limits,-Wno-array-bounds,-Wno-unknown-pragmas,-Wno-sign-compare,-Wno-strict-overflow,-Wno-strict-aliasing,-Wno-error=deprecated-declarations,-Wno-missing-braces,-Wno-maybe-uninitialized -DTORCH_CUDA_BUILD_MAIN_LIB -Xcompiler -pthread -std=c++14 -MD -MT caffe2/CMakeFiles/torch_cuda.dir/__/aten/src/ATen/native/sparse/cuda/SoftMax.cu.o -MF caffe2/CMakeFiles/torch_cuda.dir/__/aten/src/ATen/native/sparse/cuda/SoftMax.cu.o.d -x cu -c ../aten/src/ATen/native/sparse/cuda/SoftMax.cu -o caffe2/CMakeFiles/torch_cuda.dir/__/aten/src/ATen/native/sparse/cuda/SoftMax.cu.o
+#22 2048. ../aten/src/ATen/native/sparse/cuda/SoftMax.cu(301): error: namespace "thrust" has no member "make_constant_iterator"
+...
+#22 2048. 13 errors detected in the compilation of "../aten/src/ATen/native/sparse/cuda/SoftMax.cu".

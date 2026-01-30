@@ -1,253 +1,114 @@
-# torch.rand(B, 20, 20, dtype=torch.float32)
 import torch
 import numpy as np
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def forward(self, A):
-        # Compute eigenvalues and eigenvectors with default UPLO='L'
-        L_low, Q_low = torch.linalg.eigh(A)
-        A_low = Q_low @ torch.diag(L_low) @ Q_low.T
-        error_low = torch.max(torch.abs(A_low - A) / (torch.abs(A) + 1e-8))
-        
-        # Compute with UPLO='U'
-        L_upp, Q_upp = torch.linalg.eigh(A, UPLO="U")
-        A_upp = Q_upp @ torch.diag(L_upp) @ Q_upp.T
-        error_upp = torch.max(torch.abs(A_upp - A) / (torch.abs(A) + 1e-8))
-        
-        # Return maximum error between the two methods
-        return torch.max(error_low, error_upp)
+A = np.array([[ 1.60782897e+00,  2.28964731e-01,  5.37528796e-03, -3.68031830e-01,  7.76133314e-02,  1.95910275e-01, -3.12402956e-02,  3.67419720e-01,  1.22131474e-01, -2.53661489e+00,  2.17903289e-06,  5.94051089e-05,  2.33369647e-05, -3.33767384e-04,  7.98902474e-05,  9.64686275e-04, -4.88465303e-04,  2.36044801e-03,  4.49522515e-04, -4.29443026e+00],
+       [ 2.28964731e-01,  2.41090322e+00, -1.88907310e-02, -1.11321688e+00,  2.24941388e-01,  5.75562716e-01, -1.19260252e-01,  1.07684803e+00,  3.36590528e-01, -5.06800270e+00, -2.24896939e-06, -4.84753400e-06, -7.50925392e-06,  1.13487244e-04, -3.26065347e-05, -4.61697578e-04,  3.01518885e-04, -1.26068108e-03,  9.04885674e-05,  1.70146358e+00],
+       [ 5.37528796e-03, -1.88907310e-02,  1.62140822e+00, -1.66513994e-02, -1.20639233e-02,  2.17823274e-02,  2.43900251e-03,  2.59594470e-02, -1.06401583e-02,  1.67924047e-01,  2.05849938e-06,  2.44657276e-05,  1.31483248e-05, -1.48024876e-04,  6.39846548e-05,  5.71987592e-04,  3.61403363e-06,  1.01836876e-03,  1.68582925e-03, -3.52031112e+00],
+       [-3.68031830e-01, -1.11321688e+00, -1.66513994e-02,  3.52388382e+00, -3.89591247e-01, -8.86485994e-01,  3.69597822e-01, -2.19188643e+00, -4.24265265e-01,  3.27274895e+00, -2.42434326e-05, -2.98958272e-04, -1.23632257e-04,  1.87904201e-03, -5.15639316e-04, -5.35614789e-03,  2.87756487e-03, -1.53830992e-02, -4.53177467e-03,  2.52128124e+01],
+       [ 7.76133314e-02,  2.24941388e-01, -1.20639233e-02, -3.89591247e-01,  1.93465853e+00,  2.48911351e-01, -2.28518508e-02,  4.19600159e-01,  1.34637073e-01,  4.95270640e-01,  2.64251721e-05,  3.15882266e-04,  1.41064636e-04, -1.91451237e-03,  6.46093860e-04,  6.21308386e-03, -2.34547607e-03,  1.57597680e-02,  8.13580025e-03, -3.23177299e+01],
+       [ 1.95910275e-01,  5.75562716e-01,  2.17823274e-02, -8.86485994e-01,  2.48911351e-01,  2.98399925e+00, -4.25876319e-01,  9.31742251e-01, -4.73557204e-01,  9.36427712e-01,  1.56900787e-05,  1.95616623e-04,  9.17701400e-05, -1.15976110e-03,  4.29244712e-04,  4.25980613e-03, -8.00579088e-04,  8.80736019e-03,  8.03760253e-03, -2.24972534e+01],
+       [-3.12402956e-02, -1.19260252e-01,  2.43900251e-03,  3.69597822e-01, -2.28518508e-02, -4.25876319e-01,  3.06580067e+00, -6.48983538e-01,  4.06311929e-01,  1.37230349e+00,  7.44865829e-05,  8.81816493e-04,  3.89039924e-04, -5.36584575e-03,  1.68655277e-03,  1.71863157e-02, -5.95929101e-03,  4.48325910e-02,  2.24911068e-02, -8.79636688e+01],
+       [ 3.67419720e-01,  1.07684803e+00,  2.59594470e-02, -2.19188643e+00,  4.19600159e-01,  9.31742251e-01, -6.48983538e-01,  5.48731613e+00, -6.58562034e-02, -2.43317747e+00, -2.27659766e-05, -2.60235975e-04, -1.24252401e-04,  1.58591196e-03, -5.84547408e-04, -5.63996658e-03,  1.13803300e-03, -1.05895922e-02, -1.21539282e-02,  2.72431316e+01],
+       [ 1.22131474e-01,  3.36590528e-01, -1.06401583e-02, -4.24265265e-01,  1.34637073e-01, -4.73557204e-01,  4.06311929e-01, -6.58562034e-02,  5.43583727e+00, -2.92779040e+00,  2.11733277e-06,  3.67360190e-05,  3.78659461e-05, -1.60590280e-04,  2.01643910e-04,  1.61331519e-03,  1.96514279e-03, -1.50358269e-03,  1.71575230e-02, -1.18784990e+01],
+       [-2.53661489e+00, -5.06800270e+00,  1.67924047e-01,  3.27274895e+00,  4.95270640e-01,  9.36427712e-01,  1.37230349e+00, -2.43317747e+00, -2.92779040e+00,  8.76316345e+02, -1.22874253e-03, -1.46462396e-02, -6.36728108e-03,  8.91621411e-02, -2.74890810e-02, -2.80071974e-01,  1.21408194e-01, -7.62682676e-01, -3.09633642e-01,  1.52729504e+03],
+       [ 2.17903289e-06, -2.24896939e-06,  2.05849938e-06, -2.42434326e-05,  2.64251721e-05,  1.56900787e-05,  7.44865829e-05, -2.27659766e-05,  2.11733277e-06, -1.22874253e-03,  1.33819203e-03,  1.58352833e-02,  6.75189588e-03, -9.70604271e-02,  2.87030358e-02,  2.97664732e-01, -1.43668085e-01,  8.35517287e-01,  2.84892887e-01, -1.46552661e+03],
+       [ 5.94051089e-05, -4.84753400e-06,  2.44657276e-05, -2.98958272e-04,  3.15882266e-04,  1.95616623e-04,  8.81816493e-04, -2.60235975e-04,  3.67360190e-05, -1.46462396e-02,  1.58352833e-02,  1.87388241e-01,  7.99007788e-02, -1.14855564e+00,  3.39666307e-01,  3.52251792e+00, -1.69990075e+00,  9.88676643e+00,  3.37287593e+00, -1.73432988e+04],
+       [ 2.33369647e-05, -7.50925392e-06,  1.31483248e-05, -1.23632257e-04,  1.41064636e-04,  9.17701400e-05,  3.89039924e-04, -1.24252401e-04,  3.78659461e-05, -6.36728108e-03,  6.75189588e-03,  7.99007788e-02,  3.40821631e-02, -4.89710629e-01,  1.44927666e-01,  1.50249171e+00, -7.23849893e-01,  4.21417427e+00,  1.44301021e+00, -7.40001318e+03],
+       [-3.33767384e-04,  1.13487244e-04, -1.48024876e-04,  1.87904201e-03, -1.91451237e-03, -1.15976110e-03, -5.36584575e-03,  1.58591196e-03, -1.60590280e-04,  8.91621411e-02, -9.70604271e-02, -1.14855564e+00, -4.89710629e-01,  7.04013824e+00, -2.08170390e+00, -2.15894566e+01,  1.04222698e+01, -6.06031189e+01, -2.06613407e+01,  1.06286359e+05],
+       [ 7.98902474e-05, -3.26065347e-05,  6.39846548e-05, -5.15639316e-04,  6.46093860e-04,  4.29244712e-04,  1.68655277e-03, -5.84547408e-04,  2.01643910e-04, -2.74890810e-02,  2.87030358e-02,  3.39666307e-01,  1.44927666e-01, -2.08170390e+00,  6.16610885e-01,  6.38967180e+00, -3.07360172e+00,  1.79079399e+01,  6.14985657e+00, -3.14770039e+04],
+       [ 9.64686275e-04, -4.61697578e-04,  5.71987592e-04, -5.35614789e-03,  6.21308386e-03,  4.25980613e-03,  1.71863157e-02, -5.63996658e-03,  1.61331519e-03, -2.80071974e-01,  2.97664732e-01,  3.52251792e+00,  1.50249171e+00, -2.15894566e+01,  6.38967180e+00,  6.62452698e+01, -3.19060764e+01,  1.85773941e+02,  6.36354866e+01, -3.26240062e+05],
+       [-4.86891717e-04,  3.01372260e-04,  3.62051651e-06,  2.87755951e-03, -2.34574080e-03, -8.00948590e-04, -5.95919322e-03,  1.13837048e-03,  1.96490344e-03,  1.21410340e-01, -1.43668100e-01, -1.69990110e+00, -7.23848820e-01,  1.04222832e+01, -3.07360816e+00, -3.19060802e+01,  1.55375633e+01, -8.98448792e+01, -3.00951061e+01,  1.56913156e+05],
+       [ 2.37344205e-03, -1.26130879e-03,  1.01752952e-03, -1.53824687e-02,  1.57596469e-02,  8.80961865e-03,  4.48332652e-02, -1.05940849e-02, -1.50594860e-03, -7.62646675e-01,  8.35519135e-01,  9.88673401e+00,  4.21416092e+00, -6.06031990e+01,  1.79079304e+01,  1.85773956e+02, -8.98448792e+01,  5.21939880e+02,  1.77149094e+02, -9.14563250e+05],
+       [ 4.47247177e-04,  9.06437635e-05,  1.68623496e-03, -4.53158468e-03,  8.13601911e-03,  8.03825632e-03,  2.24906951e-02, -1.21534169e-02,  1.71582494e-02, -3.09652269e-01,  2.84893215e-01,  3.37288260e+00,  1.44301367e+00, -2.06612988e+01,  6.14986134e+00,  6.36355400e+01, -3.00951061e+01,  1.77149094e+02,  6.36062050e+01, -3.14022406e+05],
+       [-4.30882263e+00,  1.70046997e+00, -3.52318573e+00,  2.52160645e+01, -3.23214111e+01, -2.25007477e+01, -8.79653473e+01,  2.72448120e+01, -1.18774796e+01,  1.52729688e+03, -1.46553210e+03, -1.73432891e+04, -7.40001074e+03,  1.06286719e+05, -3.14769004e+04, -3.26239531e+05,  1.56913156e+05, -9.14563250e+05, -3.14022406e+05,  1.60835072e+09]], dtype=np.float32)
+A = A + A.T # symmetrize
 
-def my_model_function():
-    return MyModel()
+L, Q = np.linalg.eigh(A)
+meo = Q @ np.diag(L) @ Q.T
+print('numpy:', np.max(np.abs(Q @ np.diag(L) @ Q.T - A) / A))  # 1e-5 GOOD
 
-def GetInput():
-    # Generate symmetric random matrix of size 20x20
-    A = torch.rand(20, 20, dtype=torch.float32)
-    A = A + A.T  # Ensure symmetry
-    return A
+L, Q = torch.linalg.eigh(torch.from_numpy(A))
+print('torch cpu:', torch.max(torch.abs(Q @ torch.diag(L) @ Q.T - A) / A).item()) # 1584 BAD
 
-# Okay, I need to create a Python code file based on the GitHub issue provided. Let me start by understanding the problem. The user is comparing the results of `torch.linalg.eigh` with `numpy.linalg.eigh` and notices significant discrepancies, especially on the GPU. The goal is to generate a code that encapsulates both models (numpy and torch) into a single `MyModel` class, including comparison logic.
-# First, the input matrix A is given in the issue. The matrix is symmetric because it's symmetrized by adding A and its transpose. The input shape is 20x20, so the input tensor should be of shape (B, 20, 20) where B is the batch size. Since PyTorch's `linalg.eigh` works on 2D matrices, but can handle batches, maybe the input is a single matrix (so batch size 1?), but the code should handle general cases. The comment at the top should specify the input shape. Let me note that the input is a 2D tensor, so the line should be `# torch.rand(B, 20, 20, dtype=torch.float32)`.
-# The class `MyModel` must have submodules for both numpy and torch computations. However, since numpy isn't a PyTorch module, I can't directly include it. Hmm, the user mentioned to encapsulate both models as submodules. Wait, but numpy isn't part of PyTorch's nn.Module. Maybe the model will compute both using PyTorch and compare with numpy's result via some method? Or perhaps the model is supposed to run both computations and return their difference?
-# Looking at the issue, the main problem is comparing the two results. The user wants the model to return a boolean indicating differences. The model should probably compute eigenvalues and eigenvectors using both methods and then check their difference. But since numpy isn't a PyTorch module, I need to handle this differently. Maybe the model will compute using PyTorch and then compare with a precomputed numpy result, but that's not feasible in code. Alternatively, the model could run both computations internally, but numpy can't be part of the model's forward pass. This is tricky.
-# Wait, perhaps the user expects to compare the outputs of the two functions (numpy and torch) within the model's forward method. But since numpy isn't differentiable, maybe this is only for testing. The problem says to fuse the models into a single MyModel, with comparison logic. The MyModel's forward might compute both and return a boolean or the difference. 
-# Alternatively, maybe the model is just the torch.eigh function, and the numpy is for comparison. Since the user wants to encapsulate both models as submodules, perhaps the model has a method that runs both and returns the difference. But the structure must be a PyTorch module. Let me think: the model's forward function might take the input matrix, compute torch.eigh, then compute numpy's result (but converting to numpy and back), then return the difference. But converting tensors to numpy arrays inside a module's forward might be problematic for autograd. Alternatively, maybe the model is designed for testing, and the comparison is part of the forward, but this might not be compatible with how PyTorch modules work.
-# Alternatively, perhaps the user wants a model that, when given an input matrix, returns the eigenvalues and eigenvectors via both methods, then the comparison is done outside. But the code structure requires a single model that can be compiled with torch.compile. Hmm, perhaps the model is just the torch.eigh function, and the numpy part is not part of the model but part of the GetInput or other functions? Wait, the user's instructions say: "if the issue describes multiple models (e.g., ModelA, ModelB), but they are being compared or discussed together, you must fuse them into a single MyModel, and encapsulate both models as submodules, implement comparison logic from the issue (e.g., using torch.allclose, error thresholds, or custom diff outputs). Return a boolean or indicative output reflecting their differences."
-# So, the MyModel must have both methods as submodules. But since numpy isn't a PyTorch module, perhaps the model will compute the torch version and then compare with a numpy version that's precomputed? Or maybe the numpy computation is done outside, and the model's forward just returns the torch result. But the comparison needs to be part of the model's logic. This is a bit conflicting.
-# Alternatively, maybe the model is structured to run both computations (using PyTorch and numpy) internally, but since numpy can't be part of the module, this might require a workaround. For example, using a wrapper for numpy in a way that's compatible with PyTorch modules. But that's not straightforward. Maybe the user expects that the model will compute the PyTorch eigh, and then in the forward, compare with a numpy version that's computed on the input. However, converting tensors to numpy and back inside the forward is possible but might have performance issues. Let me proceed under the assumption that the model's forward function will compute both and return the difference.
-# Alternatively, perhaps the model's role is to compute the eigenvalues and eigenvectors using PyTorch's eigh, and the comparison is done in the GetInput function or elsewhere. But the problem requires that the model encapsulates both and the comparison.
-# Alternatively, the user might have intended to have two versions of the same function (maybe different parameters like UPLO) and compare them. Looking at the issue, the user compared torch with UPLO="U" vs without. But the main comparison is between torch and numpy. 
-# Wait the problem says "if the issue describes multiple models (e.g., ModelA, ModelB), but they are being compared or discussed together, you must fuse them into a single MyModel". In this case, the two models are the numpy and torch versions. Since numpy isn't a PyTorch module, perhaps the MyModel will have a method that runs the torch computation and then compares with the numpy result computed outside. But how to structure this?
-# Alternatively, perhaps the model is just the PyTorch eigh function, and the numpy is considered as a separate model. But the user wants them fused. Maybe the model has two submodules: one for torch and another for numpy, but numpy can't be a submodule. Maybe the numpy part is handled by converting the input to numpy, computing, then converting back. 
-# Alternatively, the model's forward function could return both the torch and numpy results, but that requires handling numpy inside the forward, which is possible but not typical. Let me proceed with that approach.
-# So, the MyModel class would have a forward method that takes a tensor input, computes the eigenvalues and eigenvectors using torch.linalg.eigh, then converts the input to a numpy array, computes numpy.linalg.eigh, then returns a comparison between the two results. The comparison could be a boolean indicating if they are close, or the maximum error.
-# But for this to work, the model must have access to the numpy version's computation. Since numpy isn't a module, the model would need to handle the conversion. However, in PyTorch's nn.Module, the forward function should only use differentiable operations. Converting to numpy would break the computational graph, but since this is a test case, maybe it's acceptable. Alternatively, the model can be structured to output both results, and the comparison is done outside. But the problem requires the model to encapsulate both and implement the comparison logic.
-# Alternatively, perhaps the user expects to have two separate models (like two eigh implementations with different parameters) and compare them. Looking back at the issue, the user compared torch with numpy, which are different libraries. The special requirement says if multiple models are compared, fuse them into MyModel. So, in this case, the models are the numpy and torch eigh functions, so the MyModel must run both and return the difference.
-# Thus, the MyModel's forward function would take an input matrix, compute both numpy and torch eigh, then compute the error between them and return that as an output. The problem requires that the model returns an indicative output reflecting their differences, so maybe returning a boolean or the maximum error.
-# But since numpy isn't part of PyTorch, the MyModel would have to handle converting the input to numpy, compute, then back. However, in PyTorch's forward, this might be tricky. Let me see:
-# In code:
-# class MyModel(nn.Module):
-#     def forward(self, A):
-#         # Compute torch eigh
-#         L_torch, Q_torch = torch.linalg.eigh(A)
-#         # Compute numpy eigh
-#         A_np = A.detach().cpu().numpy()  # Assuming A is a tensor
-#         L_np, Q_np = np.linalg.eigh(A_np)
-#         Q_np = torch.from_numpy(Q_np).to(A.device)
-#         L_np = torch.from_numpy(L_np).to(A.device)
-#         # Compare
-#         error = torch.max(torch.abs(Q_torch @ torch.diag(L_torch) @ Q_torch.T - A) / (torch.abs(A) + 1e-8))
-#         return error
-# Wait, but the user's original code uses a different error metric. Alternatively, the model could return the difference between the two reconstructed matrices. However, this approach would involve numpy conversions inside the forward, which might not be ideal for a PyTorch module (since it breaks the gradient flow for numpy part), but since this is a comparison model, maybe it's okay.
-# Alternatively, perhaps the MyModel is designed to just run the torch computation, and the numpy is part of GetInput or another function. But the problem requires the model to encapsulate both.
-# Alternatively, maybe the model is supposed to have two submodules, one for torch and one for numpy, but since numpy can't be a submodule, perhaps the numpy part is a stub. But that's against the requirement to not use placeholder modules unless necessary. Hmm.
-# Alternatively, the user might have intended the comparison between different PyTorch implementations (like using different UPLO parameters). Looking at the issue, the user tried both UPLO="U" and default. So maybe the MyModel encapsulates both torch.eigh calls with different UPLO and compares them. Let me re-read the issue's steps to reproduce:
-# The user computes with numpy, then with torch.eigh (default), then with torch.eigh(UPLO="U"), then on GPU. The main comparison is between numpy and torch, but the user also compared different UPLO settings. 
-# The problem says that if multiple models are discussed, fuse them. Since the user is comparing torch and numpy, and also different UPLO options, the MyModel should encapsulate all those. But perhaps the main comparison is between the two libraries. Since numpy isn't part of PyTorch, the model can't directly run it. Maybe the model is supposed to compute the torch results with different parameters and compare among themselves. For example, comparing UPLO="U" vs default, but the user's main issue is comparing with numpy. 
-# Alternatively, perhaps the user wants to compare the torch CPU vs GPU results. But the problem requires encapsulating the models into a single class with comparison logic. Since the model is supposed to be a PyTorch module, perhaps the model will compute both CPU and GPU results and compare. But moving tensors between devices inside a module's forward is possible but might not be efficient.
-# Alternatively, the model will compute the torch.eigh with different parameters (UPLO) and return their differences. For example, the model could compute both the default and UPLO="U" versions and check their agreement. But the user's main issue is about comparing with numpy, which isn't a PyTorch model.
-# Hmm, this is getting a bit tangled. Let me re-read the problem's special requirements:
-# 2. If the issue describes multiple models (e.g., ModelA, ModelB), but they are being compared or discussed together, you must fuse them into a single MyModel, and:
-#    - Encapsulate both models as submodules.
-#    - Implement the comparison logic from the issue (e.g., using torch.allclose, error thresholds, or custom diff outputs).
-#    - Return a boolean or indicative output reflecting their differences.
-# The models being compared are numpy and torch. Since numpy can't be a submodule, perhaps the model's forward will compute the torch results and then compare with a precomputed numpy result. But the input matrix is provided via GetInput, which should generate a random input each time. Wait, but the user's example uses a specific matrix A, but the GetInput function needs to return a valid input for MyModel. So the GetInput should return a symmetric matrix, similar to A.
-# Alternatively, the MyModel could be structured to take an input matrix and compute both torch and numpy versions, but since numpy can't be part of the module, perhaps the numpy computation is done outside. Maybe the model is just the torch.eigh, and the comparison is part of the GetInput or another function. But the problem requires the model to encapsulate both models as submodules. 
-# Perhaps the user intended that the two models are different PyTorch implementations (like different UPLO parameters) and their comparison. Looking at the issue, the user tested with UPLO="U" and without. The default UPLO is lower, and using upper gives better results. So maybe the model includes both versions (UPLO="L" and "U") and compares them.
-# So, the MyModel would have two submodules (each doing eigh with different UPLO), then compare their outputs. That would fit the requirement. The user's issue mentions that using UPLO="U" improves results but still has issues on GPU. So the model could compare the two PyTorch methods.
-# Alternatively, the user's main comparison is between PyTorch and numpy, but since numpy isn't part of PyTorch, perhaps the model just computes PyTorch's eigh with different parameters and the comparison is between those. 
-# Alternatively, the problem might consider the different UPLO options as the models to compare. Let me proceed with that approach, as it's possible.
-# So, the MyModel would have two submodules:
-# class MyModel(nn.Module):
-#     def __init__(self):
-#         super().__init__()
-#         self.model1 = EighModule(UPLO='L')  # default
-#         self.model2 = EighModule(UPLO='U')
-#     def forward(self, A):
-#         L1, Q1 = self.model1(A)
-#         L2, Q2 = self.model2(A)
-#         # compare Q1 @ diag(L1) @ Q1.T vs Q2 @ diag(L2) @ Q2.T
-#         # return the max error between the two reconstructions and A
-#         error1 = torch.max(torch.abs(Q1 @ torch.diag(L1) @ Q1.T - A) / (torch.abs(A) + 1e-8))
-#         error2 = torch.max(torch.abs(Q2 @ torch.diag(L2) @ Q2.T - A) / (torch.abs(A) + 1e-8))
-#         return torch.max(error1, error2)
-# But then the comparison between the two PyTorch models. However, the user's main issue was comparing with numpy. Since that's not possible in the model, maybe the user's actual models to compare are the different UPLO options.
-# Alternatively, perhaps the model is supposed to compute both CPU and GPU versions, but that's more about device placement.
-# Alternatively, the user's code includes the numpy and torch computations, so the model must include both. Since numpy can't be a submodule, perhaps the model's forward function will compute the torch version and then compute the numpy version internally, then return the difference. Even though that breaks the differentiability, it's acceptable for a comparison model. Let's try that.
-# So, the forward function:
-# def forward(self, A):
-#     # Compute torch eigh
-#     L_torch, Q_torch = torch.linalg.eigh(A)
-#     # Compute numpy eigh
-#     A_np = A.detach().cpu().numpy()
-#     L_np, Q_np = np.linalg.eigh(A_np)
-#     Q_np = torch.from_numpy(Q_np).to(A.device)
-#     L_np = torch.from_numpy(L_np).to(A.device)
-#     # Compute reconstructed matrices
-#     A_torch = Q_torch @ torch.diag(L_torch) @ Q_torch.T
-#     A_np = Q_np @ torch.diag(L_np) @ Q_np.T  # wait, no, the numpy Q and L are in numpy, but converted to tensors here
-#     # Compute error between A_torch and original A, and between A_np and A?
-#     # Wait, the user's error metric was comparing the reconstructed matrix to the original.
-#     error_torch = torch.max(torch.abs(A_torch - A) / (torch.abs(A) + 1e-8))
-#     error_np = torch.max(torch.abs(A_np - A) / (torch.abs(A) + 1e-8))
-#     return error_torch, error_np
-# But this requires converting A to numpy and back. However, in the forward pass, the input A is a PyTorch tensor, so this could work. The comparison between the two errors would then be part of the output. The model could return whether the errors are within a certain threshold.
-# Alternatively, the model could return the difference between the two errors. However, the problem requires the model to encapsulate both models as submodules, which is not straightforward here. Since numpy can't be a submodule, perhaps this is the best way given the constraints.
-# Alternatively, the model could just compute the torch version and the numpy version is handled outside. But the problem requires the model to have both as submodules. Hmm.
-# Alternatively, the user might have intended that the two models are the different PyTorch implementations (like different UPLO parameters), so I'll proceed with that approach. Let me re-examine the issue's code:
-# The user ran:
-# L, Q = torch.linalg.eigh(A_cpu)
-# ...
-# L, Q = torch.linalg.eigh(A_cpu, UPLO="U")
-# ...
-# L, Q = torch.linalg.eigh(A_cuda)
-# ...
-# So the comparison between different UPLO parameters and devices. But since the model must be a single PyTorch module, perhaps the MyModel includes both UPLO options and compares their outputs.
-# So, the MyModel would have two submodules for eigh with different UPLO, then compute their errors and return the maximum error.
-# Alternatively, the model's forward function can compute both UPLO versions and return their differences. Let's structure it that way.
-# So, the MyModel would have two submodules, each performing eigh with a different UPLO:
-# class MyModel(nn.Module):
-#     def __init__(self):
-#         super().__init__()
-#         self.eigh_lower = EighModule(UPLO='L')
-#         self.eigh_upper = EighModule(UPLO='U')
-#     def forward(self, A):
-#         L_low, Q_low = self.eigh_lower(A)
-#         L_upp, Q_upp = self.eigh_upper(A)
-#         # Compute reconstructed matrices
-#         A_low = Q_low @ torch.diag(L_low) @ Q_low.T
-#         A_upp = Q_upp @ torch.diag(L_upp) @ Q_upp.T
-#         # Compute errors compared to A
-#         error_low = torch.max(torch.abs(A_low - A) / (torch.abs(A) + 1e-8))
-#         error_upp = torch.max(torch.abs(A_upp - A) / (torch.abs(A) + 1e-8))
-#         # Compare the two errors and return the maximum
-#         return torch.max(error_low, error_upp)
-# But then the comparison is between the two PyTorth methods. This fits the requirement if the models to compare are the different UPLO settings.
-# However, the user's main issue was comparing with numpy. Since that's not possible in the model, perhaps the problem expects the comparison between different PyTorch methods. Alternatively, maybe the user's code includes both numpy and torch, so the model must somehow include both. Since numpy can't be part of the module, perhaps the model's forward function does the numpy computation internally, even if it's not a submodule. 
-# Alternatively, the model's forward function could return the torch results, and the comparison is done outside. But the problem requires the model to encapsulate both and implement the comparison logic. 
-# Another angle: the user's code includes a specific matrix A. The GetInput function must return a tensor of the same shape. The input matrix is 20x20, so the input shape is (20, 20). Thus, the comment at the top should be:
-# # torch.rand(B, 20, 20, dtype=torch.float32)
-# The GetInput function should return a random symmetric matrix. To ensure symmetry, the function can generate a random matrix and add it to its transpose.
-# def GetInput():
-#     A = torch.rand(20, 20, dtype=torch.float32)
-#     A = A + A.T
-#     return A
-# Now, for the model structure. Let's proceed with the assumption that the models to compare are the PyTorch eigh with different UPLO parameters, as that is part of the issue's discussion. The user observed that using UPLO="U" improves results. So the model will encapsulate both and return their maximum error.
-# Alternatively, the main comparison is between the torch and numpy versions. Since numpy can't be a submodule, perhaps the model's forward function will compute the torch version and then the numpy version internally, even if it's not a submodule. Let's try that:
-# class MyModel(nn.Module):
-#     def forward(self, A):
-#         # Compute torch eigh
-#         L_torch, Q_torch = torch.linalg.eigh(A)
-#         # Compute numpy eigh
-#         A_np = A.detach().cpu().numpy()
-#         L_np, Q_np = np.linalg.eigh(A_np)
-#         Q_np = torch.from_numpy(Q_np).to(A.device)
-#         L_np = torch.from_numpy(L_np).to(A.device)
-#         # Compute reconstructed matrices
-#         A_torch = Q_torch @ torch.diag(L_torch) @ Q_torch.T
-#         A_np = Q_np @ torch.diag(L_np) @ Q_np.T
-#         # Compute errors compared to original A
-#         error_torch = torch.max(torch.abs(A_torch - A) / (torch.abs(A) + 1e-8))
-#         error_np = torch.max(torch.abs(A_np - A) / (torch.abs(A) + 1e-8))
-#         # Return the difference between the two errors
-#         return torch.abs(error_torch - error_np)
-# This way, the model encapsulates both computations (even though numpy isn't a submodule) and returns their difference. The problem allows using placeholder modules if necessary, but here it's handled directly in forward.
-# However, using numpy in the forward might have issues with autograd, but since it's a test model and the user wants a comparison, this should be acceptable. The user's issue mentions that the relative error of torch is significantly larger than numpy's, so the model can return the ratio or difference between the two errors.
-# Alternatively, the model could return a boolean indicating if the torch error is below a threshold compared to numpy. But the user's example shows numpy's error is ~1e-5, while torch's is much higher. 
-# Alternatively, the model returns the maximum error between the two reconstructed matrices and the original, but that's not a comparison between the two methods. 
-# Alternatively, the model returns the difference between the two reconstructed matrices (from torch and numpy) and the original. 
-# Wait the user's error metric is the maximum of (reconstructed - original)/original. So for each method, compute that error, then return the difference between the two errors. Or return which one is smaller.
-# The user's main point is that torch's error is much higher than numpy's. So the model could return whether the torch error exceeds numpy's by a certain threshold. For example:
-# def forward(self, A):
-#     # ... compute both errors ...
-#     return error_torch > error_np * 2  # or some threshold
-# But the problem requires returning an indicative output. So returning a boolean or the difference.
-# Given the constraints, perhaps the model's forward returns the maximum error between the two reconstructed matrices and the original, but I think the user wants the comparison between the two methods. 
-# Alternatively, the model returns the ratio of the torch error to the numpy error. 
-# Alternatively, the model returns the torch error and the numpy error as a tuple. 
-# The problem says to return a boolean or indicative output. So perhaps return whether the torch error is within a certain threshold of the numpy error. 
-# Putting it all together, here's a possible structure:
-# class MyModel(nn.Module):
-#     def forward(self, A):
-#         # Compute torch eigh
-#         L_torch, Q_torch = torch.linalg.eigh(A)
-#         # Compute reconstructed matrix
-#         A_torch = Q_torch @ torch.diag(L_torch) @ Q_torch.T
-#         # Compute numpy eigh
-#         A_np = A.detach().cpu().numpy()
-#         L_np, Q_np = np.linalg.eigh(A_np)
-#         A_np_reconstructed = Q_np @ np.diag(L_np) @ Q_np.T
-#         A_np_reconstructed = torch.from_numpy(A_np_reconstructed).to(A.device)
-#         # Compute errors
-#         error_torch = torch.max(torch.abs(A_torch - A) / (torch.abs(A) + 1e-8))
-#         error_np = torch.max(torch.abs(A_np_reconstructed - A) / (torch.abs(A) + 1e-8))
-#         # Return the ratio of errors
-#         return error_torch / error_np  # or a boolean if it's over a threshold
-# This way, the model encapsulates both computations (even though numpy isn't a submodule) and returns an indicative output (the ratio). However, using numpy in the forward might cause issues with gradients, but since this is a comparison model and not for training, it's acceptable. 
-# Now, the GetInput function must generate a symmetric matrix of size 20x20. 
-# def GetInput():
-#     A = torch.rand(20, 20, dtype=torch.float32)
-#     A = A + A.T
-#     return A
-# The my_model_function would return an instance of MyModel.
-# def my_model_function():
-#     return MyModel()
-# Putting it all together in code:
-# The code must be in a single Python code block. Also, the model should be compatible with torch.compile, so it must be a PyTorch module with forward function.
-# Wait, but in the model's forward function, using numpy might prevent compilation. The user's requirement says the model should be usable with torch.compile(MyModel())(GetInput()). However, if the forward function uses numpy, that could break compilation. 
-# This is a problem. Because torch.compile can't handle numpy conversions inside the forward pass. Therefore, the approach of including numpy in the model's forward is invalid. 
-# Hmm, this complicates things. Since the model must be usable with torch.compile, which requires the forward to be differentiable and not involve numpy, I need to find another way. 
-# Alternative approach: The user's issue is about comparing torch's eigh with numpy's, but since numpy can't be part of the model, perhaps the model only uses torch's eigh and the comparison is done outside. But the problem requires encapsulating both into the model. 
-# Alternatively, the problem might consider the different UPLO options as the models to compare. So the MyModel includes two eigh calls with different UPLO parameters and returns their comparison.
-# Looking back at the issue's comments, the user mentions that using UPLO="U" improves results on CPU but not GPU. So the model could compare the results from different UPLO settings.
-# So the MyModel would compute both eigh with UPLO="L" and "U", then compare their reconstructed matrices to the original.
-# class MyModel(nn.Module):
-#     def forward(self, A):
-#         # Compute with default UPLO (lower)
-#         L_low, Q_low = torch.linalg.eigh(A)
-#         A_low = Q_low @ torch.diag(L_low) @ Q_low.T
-#         # Compute with UPLO="U"
-#         L_upp, Q_upp = torch.linalg.eigh(A, UPLO="U")
-#         A_upp = Q_upp @ torch.diag(L_upp) @ Q_upp.T
-#         # Compute errors
-#         error_low = torch.max(torch.abs(A_low - A) / (torch.abs(A) + 1e-8))
-#         error_upp = torch.max(torch.abs(A_upp - A) / (torch.abs(A) + 1e-8))
-#         # Return the maximum error between the two
-#         return torch.max(error_low, error_upp)
-# This way, the model encapsulates both methods (different UPLO) as part of its computation and returns the comparison. This fits the requirement of fusing models being compared into a single MyModel.
-# This approach avoids numpy and uses only PyTorch operations, making it compatible with torch.compile.
-# The user's original issue compared numpy and torch, but since numpy can't be part of the model, perhaps the intended comparison is between different UPLO options. The user observed that using UPLO="U" helps, so this model compares them.
-# The GetInput function remains as before.
-# Now, structuring the code:
-# The input shape is (B, 20, 20), so the comment is:
-# # torch.rand(B, 20, 20, dtype=torch.float32)
-# The class MyModel as above.
-# The my_model_function returns MyModel().
-# The GetInput function creates a symmetric matrix.
-# This should meet all the requirements except the numpy comparison, but given the constraints of PyTorch modules and the need for compatibility with torch.compile, this seems feasible.
-# Another point: the user's matrix is float32. The GetInput uses dtype=torch.float32.
-# The model's forward function uses torch.linalg.eigh which, by default, uses float32 if the input is float32. 
-# Testing this code should show that when using the specific matrix from the issue, the errors between the two UPLO methods would be similar to what the user observed.
-# Therefore, the final code would look like this.
-# </think>
+L, Q = torch.linalg.eigh(torch.from_numpy(A), UPLO="U")
+print('torch cpu upper:', torch.max(torch.abs(Q @ torch.diag(L) @ Q.T - A) / A).item())  # 0.11 OKAY
+
+A_cuda = torch.from_numpy(A).to("cuda:0")
+L, Q = torch.linalg.eigh(A_cuda)
+print('torch gpu:', torch.max(torch.abs((Q @ torch.diag(L) @ Q.T) - A_cuda) / A_cuda).item())  # 18295 BAD
+
+L, Q = torch.linalg.eigh(A_cuda, UPLO="U")
+print('torch gpu upper:', torch.max(torch.abs((Q @ torch.diag(L) @ Q.T) - A_cuda) / A_cuda).item())  # 4687 BAD
+
+import torch
+import numpy as np
+import pandas as pd
+
+A = np.array(
+    [[ 1.60782897e+00,  2.28964731e-01,  5.37528796e-03, -3.68031830e-01,  7.76133314e-02,  1.95910275e-01, -3.12402956e-02,  3.67419720e-01,  1.22131474e-01, -2.53661489e+00,  2.17903289e-06,  5.94051089e-05,  2.33369647e-05, -3.33767384e-04,  7.98902474e-05,  9.64686275e-04, -4.88465303e-04,  2.36044801e-03,  4.49522515e-04, -4.29443026e+00],
+     [ 2.28964731e-01,  2.41090322e+00, -1.88907310e-02, -1.11321688e+00,  2.24941388e-01,  5.75562716e-01, -1.19260252e-01,  1.07684803e+00,  3.36590528e-01, -5.06800270e+00, -2.24896939e-06, -4.84753400e-06, -7.50925392e-06,  1.13487244e-04, -3.26065347e-05, -4.61697578e-04,  3.01518885e-04, -1.26068108e-03,  9.04885674e-05,  1.70146358e+00],
+     [ 5.37528796e-03, -1.88907310e-02,  1.62140822e+00, -1.66513994e-02, -1.20639233e-02,  2.17823274e-02,  2.43900251e-03,  2.59594470e-02, -1.06401583e-02,  1.67924047e-01,  2.05849938e-06,  2.44657276e-05,  1.31483248e-05, -1.48024876e-04,  6.39846548e-05,  5.71987592e-04,  3.61403363e-06,  1.01836876e-03,  1.68582925e-03, -3.52031112e+00],
+     [-3.68031830e-01, -1.11321688e+00, -1.66513994e-02,  3.52388382e+00, -3.89591247e-01, -8.86485994e-01,  3.69597822e-01, -2.19188643e+00, -4.24265265e-01,  3.27274895e+00, -2.42434326e-05, -2.98958272e-04, -1.23632257e-04,  1.87904201e-03, -5.15639316e-04, -5.35614789e-03,  2.87756487e-03, -1.53830992e-02, -4.53177467e-03,  2.52128124e+01],
+     [ 7.76133314e-02,  2.24941388e-01, -1.20639233e-02, -3.89591247e-01,  1.93465853e+00,  2.48911351e-01, -2.28518508e-02,  4.19600159e-01,  1.34637073e-01,  4.95270640e-01,  2.64251721e-05,  3.15882266e-04,  1.41064636e-04, -1.91451237e-03,  6.46093860e-04,  6.21308386e-03, -2.34547607e-03,  1.57597680e-02,  8.13580025e-03, -3.23177299e+01],
+     [ 1.95910275e-01,  5.75562716e-01,  2.17823274e-02, -8.86485994e-01,  2.48911351e-01,  2.98399925e+00, -4.25876319e-01,  9.31742251e-01, -4.73557204e-01,  9.36427712e-01,  1.56900787e-05,  1.95616623e-04,  9.17701400e-05, -1.15976110e-03,  4.29244712e-04,  4.25980613e-03, -8.00579088e-04,  8.80736019e-03,  8.03760253e-03, -2.24972534e+01],
+     [-3.12402956e-02, -1.19260252e-01,  2.43900251e-03,  3.69597822e-01, -2.28518508e-02, -4.25876319e-01,  3.06580067e+00, -6.48983538e-01,  4.06311929e-01,  1.37230349e+00,  7.44865829e-05,  8.81816493e-04,  3.89039924e-04, -5.36584575e-03,  1.68655277e-03,  1.71863157e-02, -5.95929101e-03,  4.48325910e-02,  2.24911068e-02, -8.79636688e+01],
+     [ 3.67419720e-01,  1.07684803e+00,  2.59594470e-02, -2.19188643e+00,  4.19600159e-01,  9.31742251e-01, -6.48983538e-01,  5.48731613e+00, -6.58562034e-02, -2.43317747e+00, -2.27659766e-05, -2.60235975e-04, -1.24252401e-04,  1.58591196e-03, -5.84547408e-04, -5.63996658e-03,  1.13803300e-03, -1.05895922e-02, -1.21539282e-02,  2.72431316e+01],
+     [ 1.22131474e-01,  3.36590528e-01, -1.06401583e-02, -4.24265265e-01,  1.34637073e-01, -4.73557204e-01,  4.06311929e-01, -6.58562034e-02,  5.43583727e+00, -2.92779040e+00,  2.11733277e-06,  3.67360190e-05,  3.78659461e-05, -1.60590280e-04,  2.01643910e-04,  1.61331519e-03,  1.96514279e-03, -1.50358269e-03,  1.71575230e-02, -1.18784990e+01],
+     [-2.53661489e+00, -5.06800270e+00,  1.67924047e-01,  3.27274895e+00,  4.95270640e-01,  9.36427712e-01,  1.37230349e+00, -2.43317747e+00, -2.92779040e+00,  8.76316345e+02, -1.22874253e-03, -1.46462396e-02, -6.36728108e-03,  8.91621411e-02, -2.74890810e-02, -2.80071974e-01,  1.21408194e-01, -7.62682676e-01, -3.09633642e-01,  1.52729504e+03],
+     [ 2.17903289e-06, -2.24896939e-06,  2.05849938e-06, -2.42434326e-05,  2.64251721e-05,  1.56900787e-05,  7.44865829e-05, -2.27659766e-05,  2.11733277e-06, -1.22874253e-03,  1.33819203e-03,  1.58352833e-02,  6.75189588e-03, -9.70604271e-02,  2.87030358e-02,  2.97664732e-01, -1.43668085e-01,  8.35517287e-01,  2.84892887e-01, -1.46552661e+03],
+     [ 5.94051089e-05, -4.84753400e-06,  2.44657276e-05, -2.98958272e-04,  3.15882266e-04,  1.95616623e-04,  8.81816493e-04, -2.60235975e-04,  3.67360190e-05, -1.46462396e-02,  1.58352833e-02,  1.87388241e-01,  7.99007788e-02, -1.14855564e+00,  3.39666307e-01,  3.52251792e+00, -1.69990075e+00,  9.88676643e+00,  3.37287593e+00, -1.73432988e+04],
+     [ 2.33369647e-05, -7.50925392e-06,  1.31483248e-05, -1.23632257e-04,  1.41064636e-04,  9.17701400e-05,  3.89039924e-04, -1.24252401e-04,  3.78659461e-05, -6.36728108e-03,  6.75189588e-03,  7.99007788e-02,  3.40821631e-02, -4.89710629e-01,  1.44927666e-01,  1.50249171e+00, -7.23849893e-01,  4.21417427e+00,  1.44301021e+00, -7.40001318e+03],
+     [-3.33767384e-04,  1.13487244e-04, -1.48024876e-04,  1.87904201e-03, -1.91451237e-03, -1.15976110e-03, -5.36584575e-03,  1.58591196e-03, -1.60590280e-04,  8.91621411e-02, -9.70604271e-02, -1.14855564e+00, -4.89710629e-01,  7.04013824e+00, -2.08170390e+00, -2.15894566e+01,  1.04222698e+01, -6.06031189e+01, -2.06613407e+01,  1.06286359e+05],
+     [ 7.98902474e-05, -3.26065347e-05,  6.39846548e-05, -5.15639316e-04,  6.46093860e-04,  4.29244712e-04,  1.68655277e-03, -5.84547408e-04,  2.01643910e-04, -2.74890810e-02,  2.87030358e-02,  3.39666307e-01,  1.44927666e-01, -2.08170390e+00,  6.16610885e-01,  6.38967180e+00, -3.07360172e+00,  1.79079399e+01,  6.14985657e+00, -3.14770039e+04],
+     [ 9.64686275e-04, -4.61697578e-04,  5.71987592e-04, -5.35614789e-03,  6.21308386e-03,  4.25980613e-03,  1.71863157e-02, -5.63996658e-03,  1.61331519e-03, -2.80071974e-01,  2.97664732e-01,  3.52251792e+00,  1.50249171e+00, -2.15894566e+01,  6.38967180e+00,  6.62452698e+01, -3.19060764e+01,  1.85773941e+02,  6.36354866e+01, -3.26240062e+05],
+     [-4.86891717e-04,  3.01372260e-04,  3.62051651e-06,  2.87755951e-03, -2.34574080e-03, -8.00948590e-04, -5.95919322e-03,  1.13837048e-03,  1.96490344e-03,  1.21410340e-01, -1.43668100e-01, -1.69990110e+00, -7.23848820e-01,  1.04222832e+01, -3.07360816e+00, -3.19060802e+01,  1.55375633e+01, -8.98448792e+01, -3.00951061e+01,  1.56913156e+05],
+     [ 2.37344205e-03, -1.26130879e-03,  1.01752952e-03, -1.53824687e-02,  1.57596469e-02,  8.80961865e-03,  4.48332652e-02, -1.05940849e-02, -1.50594860e-03, -7.62646675e-01,  8.35519135e-01,  9.88673401e+00,  4.21416092e+00, -6.06031990e+01,  1.79079304e+01,  1.85773956e+02, -8.98448792e+01,  5.21939880e+02,  1.77149094e+02, -9.14563250e+05],
+     [ 4.47247177e-04,  9.06437635e-05,  1.68623496e-03, -4.53158468e-03,  8.13601911e-03,  8.03825632e-03,  2.24906951e-02, -1.21534169e-02,  1.71582494e-02, -3.09652269e-01,  2.84893215e-01,  3.37288260e+00,  1.44301367e+00, -2.06612988e+01,  6.14986134e+00,  6.36355400e+01, -3.00951061e+01,  1.77149094e+02,  6.36062050e+01, -3.14022406e+05],
+     [-4.30882263e+00,  1.70046997e+00, -3.52318573e+00,  2.52160645e+01, -3.23214111e+01, -2.25007477e+01, -8.79653473e+01,  2.72448120e+01, -1.18774796e+01,  1.52729688e+03, -1.46553210e+03, -1.73432891e+04, -7.40001074e+03,  1.06286719e+05, -3.14769004e+04, -3.26239531e+05,  1.56913156e+05, -9.14563250e+05, -3.14022406e+05,  1.60835072e+09]]
+)
+N, _ = A.shape
+A64 = A + A.T # symmetrize
+A32 = A64.astype(np.float32)
+print(np.linalg.cond(A64))
+del A
+
+eps = 1e-6
+# 
+relerr_np = lambda x, y: (np.abs(x-y) / (np.abs(y) + eps)).max()
+relerr = lambda x, y: ((x-y).abs() / (y.abs() + eps)).max().item()
+
+results = pd.DataFrame(columns=["A", "L", "Q"], index=["numpy64", "numpy32", "cpu", "cpu+upper", "gpu", "gpu+upper"])
+
+L, Q = np.linalg.eigh(A64)
+A2 = Q @ np.diag(L) @ Q.T
+results.loc["numpy64"] = [relerr_np(A2, A64), relerr_np(np.diag(L)@Q.T, Q.T @ A64), relerr_np(Q@Q.T, np.eye(N))]
+
+L, Q = np.linalg.eigh(A32)
+A2 = Q @ np.diag(L) @ Q.T
+results.loc["numpy32"] = [relerr_np(A2, A32), relerr_np(np.diag(L)@Q.T, Q.T @ A32), relerr_np(Q@Q.T, np.eye(N))]
+
+Q_cpu = torch.from_numpy(Q).to(dtype=torch.float32, device="cpu")
+Q_cuda = torch.from_numpy(Q).to(dtype=torch.float32, device="cuda")
+I_cpu = torch.eye(len(A32)).to(dtype=torch.float32, device="cpu")
+I_cuda = torch.eye(len(A32)).to(dtype=torch.float32, device="cuda")
+L_cpu = torch.from_numpy(L).to(dtype=torch.float32, device="cpu")
+L_cuda = torch.from_numpy(L).to(dtype=torch.float32, device="cuda")
+A_cpu = torch.from_numpy(A32).to(dtype=torch.float32, device="cpu")
+A_cuda = torch.from_numpy(A32).to(dtype=torch.float32, device="cuda")
+
+L, Q = torch.linalg.eigh(A_cpu)
+A2 = Q @ torch.diag(L) @ Q.T
+results.loc["cpu"] =  [relerr(A2, A_cpu), relerr(L, L_cpu), relerr(Q@Q.T, I_cpu)]
+
+L, Q = torch.linalg.eigh(A_cpu, UPLO="U")
+A2 = Q @ torch.diag(L) @ Q.T
+results.loc["cpu+upper"] =  [relerr(A2, A_cpu), relerr(L, L_cpu), relerr(Q@Q.T, I_cpu)]
+
+L, Q = torch.linalg.eigh(A_cuda)
+A2 = Q @ torch.diag(L) @ Q.T
+results.loc["gpu"] =  [relerr(A2, A_cuda),relerr(L, L_cuda),relerr(Q@Q.T, I_cuda) ]
+
+L, Q = torch.linalg.eigh(A_cuda, UPLO="U")
+A2 = Q @ torch.diag(L) @ Q.T
+results.loc["gpu+upper"] = [relerr(A2, A_cuda),relerr(L, L_cuda),relerr(Q@Q.T, I_cuda)]
+results

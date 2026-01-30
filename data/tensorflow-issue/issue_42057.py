@@ -1,55 +1,44 @@
-# tf.random.uniform((1, 10, 5, 1), dtype=tf.float32) ← inferred input shape from the issue Keras model examples
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
-from tensorflow.keras.layers import Conv2D, Flatten, Dense, InputLayer
+from tensorflow.keras.layers import Conv2D, Flatten, Input, Dense
+from tensorflow.keras.models import Model
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define two sub-models as seen in the issue:
-        # 1) Model with Conv2D + Flatten + Dense (which triggers threading in TFLite)
-        # 2) Model without Conv2D (only Flatten + Dense)
+### With a convolution (creates threads on invoke())
+inputs = Input(shape=[10, 5, 1])
+x = inputs
+x = Conv2D(32, (3, 3))(x)
+x = Flatten()(x)
+x = Dense(1)(x)
 
-        # Model with convolution path
-        self.conv_model = tf.keras.Sequential([
-            InputLayer(input_shape=(10, 5, 1)),
-            Conv2D(32, (3, 3)),
-            Flatten(),
-            Dense(1)
-        ])
+model = Model(inputs, x)
+model.compile()
 
-        # Model without convolution path
-        self.no_conv_model = tf.keras.Sequential([
-            InputLayer(input_shape=(10, 5, 1)),
-            Flatten(),
-            Dense(1)
-        ])
+# Convert the model.
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+tflite_model = converter.convert()
 
-    def call(self, inputs):
-        # Forward through both sub-models
-        out_conv = self.conv_model(inputs)
-        out_no_conv = self.no_conv_model(inputs)
+# Save the TF Lite model.
+with tf.io.gfile.GFile("min_model_with_conv.tflite", "wb") as f:
+    f.write(tflite_model)
 
-        # Compare outputs with a tolerance and return a boolean tensor indicating close outputs
-        # This illustrates a fusion of the two models with comparison logic,
-        # which lines up with the requirement to integrate multiple related models and implement comparison.
+### Without convolution (no extra threading)
+inputs = Input(shape=[10, 5, 1])
+x = inputs
+# x = Conv2D(32, (3, 3))(x)
+x = Flatten()(x)
+x = Dense(1)(x)
 
-        # Use tf.reduce_all over last dimension after tf.abs diff <= tolerance
-        tolerance = 1e-5
-        is_close = tf.reduce_all(
-            tf.abs(out_conv - out_no_conv) <= tolerance,
-            axis=-1,
-            keepdims=True
-        )
-        return is_close
+model = Model(inputs, x)
+model.compile()
 
+# Convert the model.
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+tflite_model = converter.convert()
 
-def my_model_function():
-    # Return a fully initialized instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Return a random input tensor matching the input shape expected by the model
-    # Based on example inputs: batch dimension added as 1 by default
-    return tf.random.uniform((1, 10, 5, 1), dtype=tf.float32)
-
+# Save the TF Lite model.
+with tf.io.gfile.GFile("min_model_no_conv.tflite", "wb") as f:
+    f.write(tflite_model)

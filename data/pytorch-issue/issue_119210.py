@@ -1,15 +1,11 @@
-# torch.rand(2, dtype=torch.float32)
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+import torch.export
+import torch.nn
+
+class M(torch.nn.Module):
     def forward(self, x):
         a, b = x.tolist()
         return x + a + b
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(2, dtype=torch.float32)
-
+torch.export.export(M(), [torch.tensor([1.0, 2.0])], {}, strict=False)

@@ -1,21 +1,26 @@
-# Input is a NestedTensor with values of shape (N,) and offsets of shape (B+1,). Example: values=torch.randn(20), offsets=torch.tensor([0, 2, 4, ..., 20])
 from torch.nested._internal.nested_tensor import NestedTensor
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def forward(self, x: NestedTensor) -> NestedTensor:
-        x = x.clamp(0.1, 0.5)
-        x *= x._max_seqlen  # Problematic line with static specialization
-        return x
+@torch.compile
+@torch._dynamo.config.patch(error_on_recompile=True)
+def sample_fun(njt: NestedTensor) -> NestedTensor:
+    njt = njt.clamp(0.1, 0.5)
+    # if this is NOT specialized - this should lead to second printed output be larger than first
+    njt *= njt._max_seqlen
+    return njt
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    el_per_row = 2  # Example parameter for input generation
+def create_njt(el_per_row):
     torch.manual_seed(0)
-    values = torch.randn(10 * el_per_row, device="cuda")
-    offsets = torch.arange(11, device="cuda") * el_per_row
-    return NestedTensor(values, offsets)
+    njt = NestedTensor(
+        values=torch.randn(10 * el_per_row, device="cuda"),
+        offsets=torch.arange(11, device="cuda") * el_per_row,
+    )
+    # This sets _max_seqlen in cache
+    print(njt._max_seqlen)
+    return njt
 
+with torch.inference_mode():
+    # This works
+    print(sample_fun(create_njt(el_per_row=1)).values())
+    # But this printed output should be 2x as big - and it is NOT as max_seqlen is specialized in generated code.
+    print(sample_fun(create_njt(el_per_row=2)).values())

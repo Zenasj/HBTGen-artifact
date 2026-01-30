@@ -1,24 +1,44 @@
-# tf.random.uniform((1, 2), dtype=tf.int32) ← Based on input_signature shape from the original examples
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
+import tensorflowjs as tfjs
 
-class MyModel(tf.keras.Model):
+gpus = tf.config.experimental.list_physical_devices('GPU')
+assert len(gpus) > 1, 'Probably multiple GPUs required'
+tf.config.experimental.set_visible_devices([gpus[0]], 'GPU')
+
+class EmbModule(tf.Module):
+    
     def __init__(self):
         super().__init__()
-        # Use a Keras Embedding layer similar to original case 2 example
-        # Embedding with vocab size 3 and embedding dim 4 as per original code
-        self.embedding = tf.keras.layers.Embedding(input_dim=3, output_dim=4)
+    
+    @tf.function(input_signature = [tf.TensorSpec(shape = [1, 2], dtype = tf.int32)])
+    def apply(self, inp):
+        return tf.nn.embedding_lookup(tf.ones([3, 4]), inp)
 
-    @tf.function(input_signature=[tf.TensorSpec(shape=[1, 2], dtype=tf.int32)])
-    def call(self, inputs):
-        # Forward call through embedding layer
-        return self.embedding(inputs)
+embModule = EmbModule()
 
-def my_model_function():
-    # Return an instance of MyModel; no special initialization needed beyond constructor
-    return MyModel()
+tf.saved_model.save(embModule, 'embModule/1/')
+# Next line fails as single GPU (of few in the system) is used:
+tfjs.converters.convert_tf_saved_model('embModule/1/', 'embModule/1-js')
 
-def GetInput():
-    # Return a random int32 tensor of shape (1, 2) in [0, 3) as valid indices for embedding
-    return tf.random.uniform(shape=(1, 2), minval=0, maxval=3, dtype=tf.int32)
+import tensorflow as tf
+import tensorflowjs as tfjs
 
+class EmbModule(tf.Module):
+    
+    def __init__(self):
+        super().__init__()
+        self.emb = tf.keras.layers.Embedding(3, 4)
+        self.emb.build((1, 2))
+    
+    @tf.function(input_signature = [tf.TensorSpec(shape = [1, 2], dtype = tf.int32)])
+    def apply(self, inp):
+        return self.emb(inp)
+
+embModule = EmbModule()
+
+tf.saved_model.save(embModule, 'embModule/1/')
+# Next line fails as 'Embedding' layer was built in constructor:
+tfjs.converters.convert_tf_saved_model('embModule/1/', 'embModule/1-js')

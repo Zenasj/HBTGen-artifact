@@ -1,20 +1,26 @@
-# torch.rand(32, 32, dtype=torch.float32)  # Inferred input shape
-
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+@torch.jit.script
+def func(x):
+    return x * 0.5 * (1.0 + torch.erf(x))
+
+class Model(nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
+        super(Model, self).__init__()
 
-    def forward(self, x):
-        return x * 0.5 * (1.0 + torch.erf(x))
+    def forward(self, input):
+        return func(input)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+model = Model()
+model.eval()
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(32, 32, dtype=torch.float32)
+a = torch.ones(32, 32, dtype=torch.float32)
+torch.onnx.export(model, a, 'th_func.onnx', verbose=False, opset_version=11)
 
+import onnxruntime
+sess = onnxruntime.InferenceSession('th_func.onnx')
+
+out = sess.run(None, {sess.get_inputs()[0].name: a.numpy()})
+print(model(a))
+print(out)

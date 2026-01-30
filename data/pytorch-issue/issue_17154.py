@@ -1,38 +1,25 @@
-# torch.rand(B, segments, C, dtype=torch.float32)
-import torch
-import torch.nn as nn
+def __init__(self, consensus_type, dim=1):
+    self.consensus_type = consensus_type
+    self.dim = dim
+    self.shape = None
 
-class SegmentConsensusModule(nn.Module):
-    def __init__(self, consensus_type, dim=1):
-        super().__init__()
-        self.consensus_type = consensus_type
-        self.dim = dim
+def forward(self, input_tensor):
+    self.shape = input_tensor.size()
+    if self.consensus_type == 'avg':
+        output = input_tensor.mean(dim=self.dim, keepdim=True)
+    elif self.consensus_type == 'identity':
+        output = input_tensor
+    else:
+        output = None
 
-    def forward(self, input_tensor):
-        if self.consensus_type == 'avg':
-            return input_tensor.mean(dim=self.dim, keepdim=True)
-        elif self.consensus_type == 'identity':
-            return input_tensor
-        else:
-            raise ValueError(f"Unsupported consensus_type: {self.consensus_type}")
+    return output
 
-class MyModel(nn.Module):
-    def __init__(self, consensus_type='avg', dim=1):
-        super().__init__()
-        # Preserve original logic for 'rnn' -> 'identity' mapping
-        self.consensus_type = consensus_type if consensus_type != 'rnn' else 'identity'
-        self.dim = dim
-        self.segment_consensus = SegmentConsensusModule(self.consensus_type, self.dim)
+def backward(self, grad_output):
+    if self.consensus_type == 'avg':
+        grad_in = grad_output.expand(self.shape) / float(self.shape[self.dim])
+    elif self.consensus_type == 'identity':
+        grad_in = grad_output
+    else:
+        grad_in = None
 
-    def forward(self, x):
-        return self.segment_consensus(x)
-
-def my_model_function():
-    # Default to 'avg' consensus_type as in original error context
-    return MyModel(consensus_type='avg')
-
-def GetInput():
-    # Input shape (B, segments, C) matching SegmentConsensus's dim=1 expectation
-    B, segments, C = 2, 5, 10
-    return torch.rand(B, segments, C, dtype=torch.float32)
-
+    return grad_in

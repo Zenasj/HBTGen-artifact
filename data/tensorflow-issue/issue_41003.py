@@ -1,31 +1,38 @@
-# tf.random.uniform((B, 32, 32, 3), dtype=tf.float32) ← Inferred CIFAR-10 input shape
-
+from __future__ import absolute_import, division, print_function, unicode_literals
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Replicating the original Sequential model architecture described:
-        # Input: (32, 32, 3)
-        # Conv2D with 16 filters, kernel size (3,3)
-        # Flatten
-        # Dense with 10 units, softmax activation
-        
-        self.conv2d = tf.keras.layers.Conv2D(16, (3, 3))
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense = tf.keras.layers.Dense(10, activation='softmax')
-    
-    def call(self, inputs, training=False):
-        x = self.conv2d(inputs)
-        x = self.flatten(x)
-        return self.dense(x)
+from tensorflow.keras import datasets, layers, models
+(train_images, train_labels), (test_images, test_labels) = datasets.cifar10.load_data()
 
-def my_model_function():
-    # Returns an instance of the model initialized with random weights
-    return MyModel()
+# Normalize pixel values to be between 0 and 1
+train_images, test_images = train_images / 255.0, test_images / 255.0
 
-def GetInput():
-    # Returns a random input tensor of shape (1, 32, 32, 3) with float32 values scaled [0,1]
-    # This matches expected CIFAR-10 input shape for the model.
-    return tf.random.uniform((1, 32, 32, 3), minval=0, maxval=1, dtype=tf.float32)
+class_names = ['airplane', 'automobile', 'bird', 'cat', 'deer',
+               'dog', 'frog', 'horse', 'ship', 'truck']
 
+model = models.Sequential()
+model.add(layers.InputLayer(input_shape=(32, 32, 3)))
+model.add(layers.Conv2D(16, (3,3)))
+model.add(layers.Flatten())
+model.add(layers.Dense(10, activation='softmax'))
+model.summary()
+
+def to_list(x):
+  if isinstance(x, list):
+    return x
+  return [x]
+
+outs = []
+for l in model.layers:
+    output_tensors = [to_list(inbound.output_tensors)[0] for inbound in l.inbound_nodes]
+    outs.append(output_tensors)
+
+ins = []
+for l in model.layers:
+    input_tensors = [to_list(inbound.input_tensors)[0] for inbound in l.inbound_nodes]
+    ins.append(input_tensors)
+
+assert tf.executing_eagerly()
+for i_tensor in ins:
+    if i_tensor in outs:
+        print("BOOM")

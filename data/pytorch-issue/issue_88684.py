@@ -1,19 +1,46 @@
-# torch.rand(B, 3, dtype=torch.float32)
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.linear = nn.Linear(3, 1)  # Matches the model from issue example
-    
-    def forward(self, x):
-        return self.linear(x)
+import torch
+import tempfile
 
-def my_model_function():
-    return MyModel()  # Returns the model instance with default initialization
+model = torch.nn.Linear(3, 1)
+optimizer = torch.optim.RMSprop(model.parameters(), lr=0.1)
+lr = torch.optim.lr_scheduler.CyclicLR(optimizer, 0.1, 1.0)
 
-def GetInput():
-    B = 4  # Example batch size, arbitrary positive integer
-    return torch.rand(B, 3, dtype=torch.float32)  # Matches input shape for nn.Linear(3, 1)
+tmp = tempfile.NamedTemporaryFile()
+with open(tmp.name, 'wb') as f:
+    torch.save(lr.state_dict(), f)
 
+import torch
+import tempfile
+
+model = torch.nn.Linear(3, 1)
+optimizer = torch.optim.RMSprop(model.parameters(), lr=0.1)
+lr = torch.optim.lr_scheduler.CyclicLR(optimizer, 0.1, 1.0)
+
+tmp = tempfile.NamedTemporaryFile()
+with open(tmp.name, 'wb') as f:
+    state_dict = lr.state_dict()
+    print(state_dict["_scale_fn_ref"])
+    torch.save(state_dict["_scale_fn_ref"], f)
+
+import torch
+import tempfile
+
+model = torch.nn.Linear(3, 1)
+optimizer = torch.optim.RMSprop(model.parameters(), lr=0.1)
+
+# no custom scale function so it'll use WeakMethod by default
+lr = torch.optim.lr_scheduler.CyclicLR(optimizer, 0.1, 1.0)
+
+# instantiate the WeakMethod in the lr scheduler object into the custom scale function attribute
+lr._scale_fn_custom = lr._scale_fn_ref()
+
+# remove the reference so there are no more WeakMethod references in the object
+lr._scale_fn_ref = None
+
+# now we can successfully pickle the lr scheduler
+tmp = tempfile.NamedTemporaryFile()
+with open(tmp.name, 'wb') as f:
+    state_dict = lr.state_dict()
+    torch.save(state_dict, f)

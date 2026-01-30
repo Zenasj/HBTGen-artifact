@@ -1,33 +1,38 @@
-# torch.rand(3, 3, dtype=torch.complex128) ← Add a comment line at the top with the inferred input shape
-
+py
 import torch
-from torch import nn
+from torch.autograd.functional import jacobian
+x = torch.zeros(3,3, dtype=torch.complex128)
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        x = torch.fft.ifft(x)
-        return x
+def func(x):
+    x = torch.fft.ifft(x)
+    return x
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+jac_rev = jacobian(func, (x.clone().requires_grad_(), ), strategy='reverse-mode', vectorize=True)[0][0]
+jac_fwd = jacobian(func, (x.clone().requires_grad_(), ), strategy='forward-mode', vectorize=True)[0][0]
+print(torch.isclose(jac_rev, jac_fwd, atol=1e-4, rtol=1e-4))
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(3, 3, dtype=torch.complex128)
+tensor([[[ True,  True,  True],
+         [ True,  True,  True],
+         [ True,  True,  True]],
 
-# The following code is for reference and should not be included in the final output
-# It demonstrates how to use the model and check the Jacobians
-# import torch
-# from torch.autograd.functional import jacobian
+        [[ True, False, False],
+         [ True,  True,  True],
+         [ True,  True,  True]],
 
-# model = my_model_function()
-# x = GetInput()
-# jac_rev = jacobian(model, (x.clone().requires_grad_(), ), strategy='reverse-mode', vectorize=True)[0][0]
-# jac_fwd = jacobian(model, (x.clone().requires_grad_(), ), strategy='forward-mode', vectorize=True)[0][0]
-# print(torch.isclose(jac_rev, jac_fwd, atol=1e-4, rtol=1e-4))
+        [[ True, False, False],
+         [ True,  True,  True],
+         [ True,  True,  True]]])
 
-# This code defines a `MyModel` class that applies the `torch.fft.ifft` function to the input tensor. The `GetInput` function generates a random complex tensor of shape (3, 3) to be used as input to the model. The model and input are designed to be used with `torch.compile(MyModel())(GetInput())`.
+py
+a = torch.tensor([1], dtype=torch.complex64)
+
+def func(a):
+    b = a * 1j
+    return b
+
+jac_rev = jacobian(func, (a.clone().requires_grad_(), ), strategy='reverse-mode', vectorize=True)[0][0]
+jac_fwd = jacobian(func, (a.clone().requires_grad_(), ), strategy='forward-mode', vectorize=True)[0][0]
+print(torch.isclose(jac_rev, jac_fwd, atol=1e-4, rtol=1e-4))
+
+print(jac_rev)
+print(jac_fwd)

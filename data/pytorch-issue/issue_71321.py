@@ -1,26 +1,39 @@
-# torch.rand(B, H, W, C, dtype=torch.complex64)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Compute FFT on original tensor (dim (1,2))
-        x1 = torch.fft.ifft2(x, norm="ortho", dim=(1, 2))
-        
-        # Permute to (B, C, H, W), make contiguous, then compute FFT on last two dims
-        permuted = x.permute(0, 3, 1, 2).contiguous()
-        x2_permuted = torch.fft.ifft2(permuted, norm="ortho", dim=(-2, -1))
-        # Permute back to original shape (B, H, W, C)
-        x2 = x2_permuted.permute(0, 2, 3, 1)
-        
-        # Calculate absolute error sum and check if exceeds threshold
-        error = torch.abs(x1 - x2).sum()
-        return error > 1e-6  # Boolean output indicating non-negligible error
+torch.manual_seed(0)
 
-def my_model_function():
-    return MyModel()
+# Generate random complex tensor.
+X1 = torch.randn((1, 100, 50, 8), dtype=torch.complex64)  # (B, H, W, C)
 
-def GetInput():
-    # Input shape (B, H, W, C) as per original example
-    return torch.randn((1, 100, 50, 8), dtype=torch.complex64)
+# 1. Take the centered 2D ifft along dim=(1,2).
+x1 = torch.fft.ifft2(X1, norm="ortho", dim=(1, 2))
 
+# 2. Permute X1 and take centered 2D ifft.
+# This fails - the error is non-zero
+X2 = X1.permute((0, 3, 1, 2)).contiguous()  # (B, C, H, W)
+x2 = torch.fft.ifft2(X2, norm="ortho", dim=(-2, -1))
+x2 = x2.permute(0, 2, 3, 1)  # (B, H, W, C)
+
+print("x1-x2 error: ", torch.abs(x1 - x2).sum())
+
+def runner(norm="ortho", dtype=torch.complex64):
+  # This is a copy of the code above
+  torch.manual_seed(0)
+
+  X1 = torch.randn((1, 100, 50, 8), dtype=dtype)  # (B, H, W, C)
+
+  # 1. Take the centered 2D ifft along dim=(1,2).
+  x1 = torch.fft.ifft2(X1, norm=norm, dim=(1, 2))
+
+  # 2. Permute X1 and take centered 2D ifft.
+  # This fails - the error is non-zero
+  X2 = X1.permute((0, 3, 1, 2)).contiguous()  # (B, C, H, W)
+  x2 = torch.fft.ifft2(X2, norm=norm, dim=(-2, -1))
+  x2 = x2.permute(0, 2, 3, 1)  # (B, H, W, C)
+
+  print(f"norm={norm}, dtype={dtype} error: ", torch.abs(x1 - x2).sum())
+
+
+for dtype in [torch.complex64, torch.complex128]:
+  for norm in ["forward", "ortho", "backward"]:
+    runner(norm, dtype)

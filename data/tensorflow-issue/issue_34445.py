@@ -1,46 +1,59 @@
-# tf.random.uniform((B, 10), dtype=tf.int32) ← Input shape inferred from X_train shape in the issue: (batch_size, 10)
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
-import tensorflow as tf
+import os
 
-class MyModel(tf.keras.Model):
-    def __init__(self, num_targets=3811, input_length=10, vocab_size=170000, embedding_dim=100):
-        super().__init__()
-        # Embedding layer to map vocab ids to embeddings
-        self.embedding = tf.keras.layers.Embedding(input_dim=vocab_size, 
-                                                   output_dim=embedding_dim,
-                                                   input_length=input_length)
-        # Global average pooling to aggregate sequence embeddings
-        self.global_pool = tf.keras.layers.GlobalAveragePooling1D()
-        # Dense layer with sigmoid activation for multilabel binary classification
-        self.classifier = tf.keras.layers.Dense(num_targets, activation='sigmoid')
+os.environ['CUDA_VISIBLE_DEVICES'] = '2'
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '0'
 
-    def call(self, inputs):
-        x = self.embedding(inputs)
-        x = self.global_pool(x)
-        outputs = self.classifier(x)
-        return outputs
+import tensorflow
+import numpy as np
+import string
+import random
 
-def my_model_function():
-    # Return an instance of MyModel with default parameters matching the issue
-    return MyModel()
+from tensorflow.keras.models import Sequential
+from sklearn.preprocessing import LabelBinarizer
+from tensorflow.keras.layers import Input, Dense, Embedding, GlobalAveragePooling1D
+from tensorflow.keras.optimizers import Adam
 
-def GetInput():
-    # The model input is a batch of sequences with shape (batch_size, 10), dtype int32
-    # We'll use a reasonably small batch size to avoid memory issues during testing
-    batch_size = 4  # Chosen small for demonstration; can be adjusted
-    input_length = 10
-    vocab_size = 170000
-    # Random integers in [0, vocab_size) as token indices
-    return tf.random.uniform((batch_size, input_length), minval=0, maxval=vocab_size, dtype=tf.int32)
+training_size = 12528566  # if you change the size to 1000 it will work if to_use_sparse is False or is_convert is False
 
-# ---
-# ### Explanation / Assumptions:
-# - The original issue revolves around a model that processes input sequences of length 10, vocabulary size approx 170000, output dimension 3811.
-# - The original Sequential model has embedding, pooling, dense with either softmax or sigmoid activation.
-# - Since the last question in the issue is about using *binary_crossentropy* with *sigmoid* output (no sparse version), the code here models that case.
-# - The input shape is (batch_size, 10) integer indices; output shape is (batch_size, 3811) with sigmoid.
-# - The user had enormous datasets; here we use a small batch size in GetInput for demo purposes.
-# - All layers and parameters are inferred from the posted code snippets to replicate the core model.
-# - No explicit loss or compilation is included here, just the model and input tensor generator, as requested.
-# - This model is compatible with TF 2.20.0 and can be used with XLA jit compiling if desired.
-# If you want me to include a compiled training step or evaluation mode, just ask!
+to_use_sparse = True  # if set True and to_convert is False, throws error that adapter is not found
+
+X_train = np.random.randint(low=0, high=169999, size=(training_size, 10), dtype='int32')
+labels = []
+for i in range(3811):
+    labels.append(''.join(random.choices(string.ascii_uppercase + string.digits, k=6)))
+Y = [random.choice(labels) for i in range(training_size)]
+
+if to_use_sparse:
+    Y_train = LabelBinarizer(sparse_output=True).fit(labels).transform(Y)  # no adapter is found
+else:
+    Y_train = LabelBinarizer(sparse_output=True).fit(labels).transform(Y).toarray()  # this thing works but only if training_size is small, say 1000
+
+    
+to_convert = True # converting the labels to integers of their index and using sparse_categorical_crossentropy
+
+if to_convert and to_use_sparse: # if true, it works as expected
+    model = Sequential()
+    model.add(Embedding(input_dim=170000, output_dim=100, input_length=10))
+    model.add(GlobalAveragePooling1D())
+    model.add(Dense(3811, 'softmax'))
+    model.compile(loss='sparse_categorical_crossentropy', optimizer=Adam(learning_rate=0.001))
+    model.fit(X_train,
+              np.asarray(Y_train.tocoo().col),
+              batch_size=16384,
+              epochs=5,
+              verbose=1)
+else:
+    model = Sequential()
+    model.add(Embedding(input_dim=170000, output_dim=100, input_length=10))
+    model.add(GlobalAveragePooling1D())
+    model.add(Dense(3811, 'softmax'))
+    model.compile(loss='categorical_crossentropy', optimizer=Adam(learning_rate=0.001))
+    model.fit(X_train,
+              Y_train,
+              batch_size=16384,
+              epochs=5,
+              verbose=1)

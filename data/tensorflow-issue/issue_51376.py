@@ -1,158 +1,260 @@
-# tf.random.uniform((B, 128, 128, 3), dtype=tf.float32)
-import tensorflow as tf
-from tensorflow.keras.layers import Layer, Input, Lambda, Dense, BatchNormalization
-from tensorflow.keras.models import Model, Sequential
-from tensorflow.keras.optimizers import Adam
 import numpy as np
+import random
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
 
-# Assumptions based on the issue:
-# - Input shape is (128, 128, 3) (typical RGB image size, from generator)
-# - Batch size must be specified for the custom RandomHSV layer to avoid None batch dimension errors
-# - RandomHSV is an augmentation layer that applies random noise in HSV space during training but passes inputs unchanged during inference
-# - The provided model is a Siamese architecture taking two images as input
-# - The issue highlighted is about the batch dimension needing to be known for random noise generation
-# - The output model here fuses the augmentation and base model logic into a single MyModel to address the issue
-# - RandomHSV layer implementation is modified to avoid use of numpy for randomness and to work fully with TF ops to keep it compatible with tf.function jit_compile
+def get_siamese_model(input_shape, conv2d_filts):
+    # Define the tensors for the two input images
+    # ================================= THE INNER MODEL =================================
+    augmentations = Sequential(
+        [
+            tf.keras.layers.experimental.preprocessing.RandomContrast(factor=0.70),
+            RandomBrightnessLayer(max_delta=0.1, name='RandomBrightness'),
+            RandomHSVLayer(hsv_max_amp=[0.05, 0.25, 0], name='RandomHSVPreprocessor'),
+        ],
+        name=configurations.AUGMENTATIONS_LAYER_NAME
+    )
 
-class RandomHSV(Layer):
+    # ================================= THE INNER MODEL =================================
+    # THE PROBLEM IS HERE, WHEN NOT SPECIFING 'batch_size' TO INPUT LAYER.
+    left_input = Input(input_shape, name="Input1")
+    right_input = Input(input_shape, name="Input2")
+    left_input_augmented = augmentations(left_input)
+    right_input_augmented = augmentations(right_input)
+
+    # Generate the encodings (feature vectors) for the two images
+    body = build_body(input_shape=input_shape, conv2d_filts=conv2d_filts)
+    encoded_l = body(left_input_augmented)
+    encoded_r = body(right_input_augmented)
+    distance = Lambda(lambda embeds: euclidean_distance(embeds), name='Distance')([encoded_l, encoded_r])
+    # normed_layer = BatchNormalization()(distance)  # making sure the distances wont be all over the place.
+    distance = Dense(1, activation='sigmoid', name='Prediction')(distance)
+
+    # Connect the inputs with the outputs
+    siamese_net = Model(inputs=[left_input, right_input], outputs=distance)
+
+    return siamese_net
+
+
+# DataFrameGeneratorClass is a custom pair image generator, since nither Keras or Tensorflow has one.
+train_gen, test_gen = DataFrameGeneratorClass.create_train_test_generators(
+    csv_path='data.csv',
+    validation_split=0.1,
+    shuffle=True,
+    batch_size=32,
+    rescale=1. / 255.,
+    img_size=(128, 128),
+)
+siamese_model = get_siamese_model(IMG_SIZE, conv2d_filts=CONV2D_FILTERS)
+siamese_model.summary()
+
+# siamese_model.load_weights('check_points/29-07-21_034351/')
+optimizer = Adam()
+siamese_model.compile(loss='binary_crossentropy',
+                      optimizer=optimizer,
+                      metrics=['accuracy', tf.keras.metrics.Precision(), tf.keras.metrics.Recall()])
+history = siamese_model.fit(train_gen, epochs=10, validation_data=test_gen)
+
+class PairDataGenerator(tf.keras.utils.Sequence):
     """
-    Layer that adds random HSV noise to RGB images as data augmentation.
-
-    Expects inputs with known batch size (no None batch dimension).
-    During training it adds random noise in HSV space per image, else passes input unchanged.
-
-    Args:
-      hsv_max_amp: tuple/list of max noise amplitude per HSV channel in range [0,1].
+    NOTE: ON model.fit(SHUFFLE=FALSE) -> MUST BE FALSE!
     """
-    def __init__(self, hsv_max_amp=(0., 0., 0.), **kwargs):
-        super().__init__(**kwargs)
-        self.hsv_max_amp = tf.constant(hsv_max_amp, dtype=tf.float32)
-        # hsv_max_amp shape: (3,)
 
-    def call(self, inputs, training=None):
-        # inputs shape: (batch_size, height, width, 3)
-        # Need batch shape fully known for tf.random.uniform shape generation.
+    def __init__(self,
+                 df_similar: pd.DataFrame,
+                 df_dissimilar: pd.DataFrame,
+                 batch_size=256,
+                 shuffle=True,
+                 rescale: {float, None} = 1. / 255.,
+                 target_img_size=(128, 128),
+                 preprocess_function=None,
+                 rand_preproc_single: {ImageDataGenerator, dict} = None,
+                 rand_preproc_batch: list = None):
+        # self.batch_counter = 0
+        self.last_batch_index = 0
+        self.df_similar = df_similar.sample(frac=1).reset_index(drop=True)
+        self.df_dissimilar = df_dissimilar.sample(frac=1).reset_index(drop=True)
+        self.preprocess_function = preprocess_function
+        self.rescale = rescale
+        self.target_img_size = target_img_size
+        # rounding up batch size to be an even number.
+        self.batch_size = batch_size + (batch_size % 2 == 1)
+        self.shuffle = shuffle
+        # indexes of rows. every batch we draw 2 samples. 1 similar and 1 dissimilar
+        assert batch_size <= len(self.df_similar) + len(
+            self.df_dissimilar), f"Cannot create batch of size {batch_size} when there " \
+                                 f"are only {len(self.df_similar)} samples"
+        self.indexes_similar = np.arange(len(self.df_similar))
+        self.similar_max_idx = len(self.indexes_similar) // self.batch_size
+        self.indexes_dissimilar = np.arange(len(self.df_dissimilar))
+        self.dissimilar_max_idx = len(self.indexes_dissimilar) // self.batch_size
+        if self.shuffle:
+            np.random.shuffle(self.indexes_dissimilar)
+            np.random.shuffle(self.indexes_similar)
 
-        # Defensive: if batch size is unknown, raise (problem in original issue)
-        batch_size = tf.shape(inputs)[0]
+        self.rand_preproc_single = rand_preproc_single
+        self.rand_preproc_batch = rand_preproc_batch
 
-        def augment():
-            # Convert RGB to HSV
-            hsv = tf.image.rgb_to_hsv(inputs)  # shape (B,H,W,3), range [0,1]
+    def __len__(self):
+        """Denotes the number of batches per epoch"""
+        return (len(self.df_similar) + len(self.df_dissimilar)) // self.batch_size
 
-            # Generate random noise in [-hsv_max_amp, +hsv_max_amp] per channel broadcasted over image
-            # Shape: (batch_size,1,1,3) to broadcast across H,W
-            random_factors = tf.random.uniform(
-                shape=[batch_size, 1, 1, 3],
-                minval=-1.0, maxval=1.0,
-                dtype=tf.float32
-            )
-            noise = random_factors * self.hsv_max_amp  # Broadcasting hsv_max_amp (3,) over last dim
+    def __getitem__(self, index):
+        """Generate one batch of data"""
+        # Generate indexes of the batch
+        batch_idx_sim = index % self.similar_max_idx
+        indexes_sim = self.indexes_similar[batch_idx_sim * (self.batch_size // 2):
+                                           (batch_idx_sim + 1) * (self.batch_size // 2)]
 
-            hsv_noisy = tf.clip_by_value(hsv + noise, clip_value_min=0.0, clip_value_max=1.0)
-            rgb_noisy = tf.image.hsv_to_rgb(hsv_noisy)
-            rgb_noisy.set_shape(inputs.shape)  # maintain static shape information
-            return rgb_noisy
+        batch_idx_dissim = index % self.dissimilar_max_idx
+        indexes_dissim = self.indexes_dissimilar[batch_idx_dissim * (self.batch_size // 2):
+                                                 (batch_idx_dissim + 1) * (self.batch_size // 2)]
+        self.last_batch_index = index
 
-        return tf.cond(tf.cast(training, tf.bool),
-                       true_fn=augment,
-                       false_fn=lambda: inputs)
+        img1 = []
+        img2 = []
+        labels = [0, 1] * (self.batch_size // 2)  # creating labels list
+        np.random.shuffle(labels)
+        same_counter = 0
+        diff_counter = 0
+        for idx, label in enumerate(labels):
+            if label == configurations.LABELS['same']:
+                img1_path, img2_path, _ = self.df_similar.iloc[indexes_sim[same_counter]]
+                same_counter += 1
+            else:
+                img1_path, img2_path, _ = self.df_dissimilar.iloc[indexes_dissim[diff_counter]]
+                diff_counter += 1
 
-    def get_config(self):
-        config = super().get_config()
-        config.update({
-            'hsv_max_amp': self.hsv_max_amp.numpy().tolist()
-        })
-        return config
+            img1.append(self.load_image(img1_path))
+            img2.append(self.load_image(img2_path))
+
+        img1 = np.array(img1, dtype='float32')
+        img2 = np.array(img2, dtype='float32')
+        labels = np.array(labels, dtype='float32')
+
+        if self.rand_preproc_batch is not None:
+            for func in self.rand_preproc_batch:
+                img1 = func(img1)
+                img2 = func(img2)
+
+        return [img1, img2], labels
+
+    def on_epoch_end(self):
+        """Updates indexes after each epoch"""
+        if (self.last_batch_index + 1) % self.dissimilar_max_idx == 0 and self.shuffle:
+            self.indexes_dissimilar = np.arange(len(self.df_dissimilar))
+            np.random.shuffle(self.indexes_dissimilar)
+
+        if (self.last_batch_index + 1) % self.similar_max_idx == 0 and self.shuffle:
+            self.indexes_similar = np.arange(len(self.df_similar))
+            np.random.shuffle(self.indexes_similar)
 
 
-def euclidean_distance(embeds):
-    # embeds is a list or tuple: [encoded_l, encoded_r]
-    (encoded_l, encoded_r) = embeds
-    sum_square = tf.reduce_sum(tf.square(encoded_l - encoded_r), axis=1, keepdims=True)
-    return tf.sqrt(tf.maximum(sum_square, tf.keras.backend.epsilon()))
+    def load_image(self, path):
+        """
+        loads an image using tensorflow tools
+        :param path: absolute path (refers to the project's folder) to the image
+        :return: an image array.
+        """
 
+        if self.rand_preproc_single is not None:
+            if isinstance(self.rand_preproc_single, ImageDataGenerator):
+                img_arr = cv2.cvtColor(cv2.imread(path), cv2.COLOR_BGR2RGB)
+                img_arr = self.rand_preproc_single.random_transform(img_arr)
+                img_arr = cv2.resize(img_arr, self.target_img_size)
+            else:
+                img_arr = my_utils.image_augmentations(path, **self.rand_preproc_single)
+        else:
+            img_arr = cv2.imread(path)
+            img_arr = cv2.cvtColor(img_arr, cv2.COLOR_BGR2RGB)
+            img_arr = cv2.resize(img_arr, self.target_img_size)
+        if self.preprocess_function is not None:
+            img_arr = self.preprocess_function(img_arr)
+        elif self.rescale is not None:
+            img_arr = img_arr * self.rescale
+        return img_arr
 
-def build_body(input_shape, conv2d_filts):
-    # A typical convolutional "base" network for encoding individual images in the Siamese net
-    # For simplicity, we create a small CNN; original details unknown so inferred minimal example
-    inputs = Input(shape=input_shape)
-    x = inputs
-    for i, filters in enumerate(conv2d_filts):
-        x = tf.keras.layers.Conv2D(filters, kernel_size=3, activation='relu', padding='same', name=f'conv_{i}')(x)
-        x = tf.keras.layers.MaxPooling2D(pool_size=2, name=f'maxpool_{i}')(x)
-    x = tf.keras.layers.Flatten()(x)
-    x = tf.keras.layers.Dense(128, activation='relu')(x)
-    model = Model(inputs, x, name='embedding_model')
-    return model
-
-
-class MyModel(tf.keras.Model):
+def create_train_test_generators(csv_path: str,
+                                 pair_gen: bool = True,
+                                 validation_split: float = 0.1,
+                                 shuffle: bool = True,
+                                 batch_size: int = 256,
+                                 rescale: {float, None} = 1. / 255.,
+                                 img_size: tuple = (128, 128),
+                                 preprocess_func=None,
+                                 rand_preproc_single: {ImageDataGenerator, dict} = None,
+                                 rand_preproc_batch: list = None,
+                                 ):
     """
-    A fused model including:
-    - RandomHSV augmentation applied to both inputs (training only)
-    - Siamese network body for encoding images
-    - Euclidean distance computed on encodings with a sigmoid output for similarity prediction
-
-    Inputs:
-      A tuple/list of two images tensors, each shape (batch_size, 128,128,3)
-    
-    Output:
-      Similarity score in [0,1], shape (batch_size, 1)
+    Initialization
+    :param rand_preproc_batch: list of functions which augments a whole batch.
+    :param rand_preproc_single: an ImageDataGenerator Instance or dictionary for my_utils.image_augmentation function.
+    :param pair_gen: boolean. True = Pair Gen. False = Triplets Gen.
+    :param rescale: rescaling factor
+    :param preprocess_func: a preprocessing function for the network's inputs.
+    :param img_size: the size of the output image.
+    :param batch_size: batch size
+    :param shuffle: whether to shuffle the data before casting to Train Test.
+    :param csv_path: the path to the csv file which we create DataFrame object from.
+    :param validation_split: how much from the whole data goes to validation.
     """
-    def __init__(self):
-        super().__init__(name="MySiameseModel")
+    from sklearn.model_selection import train_test_split
 
-        # We fix input shape with batch size None, height,width,... must be fixed to avoid None spatial dims
-        self.input_shape_single = (128, 128, 3)
-        self.conv2d_filts = [32, 64, 128]
+    # read all the csv file
+    df = pd.read_csv(csv_path, index_col=False)
 
-        # Augmentation Sequential
-        # Using only RandomHSV here as it was custom layer problematic in issue.
-        # Original code had: RandomContrast and RandomBrightnessLayer, but not provided - omitted for clarity.
-        self.augmentations = RandomHSV(hsv_max_amp=(0.05, 0.25, 0.0), name='RandomHSVPreprocessor')
+    params = dict(batch_size=batch_size,
+                  shuffle=shuffle,
+                  rescale=rescale,
+                  target_img_size=img_size,
+                  preprocess_function=preprocess_func,
+                  rand_preproc_single=rand_preproc_single,
+                  rand_preproc_batch=rand_preproc_batch)
+    if pair_gen:
+        # split the rows to similar and dissimilar by label column
+        df_similar = df.where(df['labels'] == 1.0).dropna().reset_index(drop=True)
+        df_dissimilar = df.where(df['labels'] == 0.0).dropna().reset_index(drop=True)
 
-        # Body network to encode images
-        self.body = build_body(self.input_shape_single, self.conv2d_filts)
+        print(len(df_dissimilar), len(df_similar))
+        print(f"Found {len(df)} pairs.")
 
-        # Distance and prediction layers
-        self.distance_layer = Lambda(lambda embeds: euclidean_distance(embeds), name='Distance')
-        self.prediction_layer = Dense(1, activation='sigmoid', name='Prediction')
+        # split similar and dissimilar to train and test (4 groups)
+        df_train_similar, df_test_similar = train_test_split(df_similar, test_size=validation_split, shuffle=shuffle)
+        df_train_dissimilar, df_test_dissimilar = train_test_split(df_dissimilar, test_size=validation_split,
+                                                                   shuffle=shuffle)
 
-    def call(self, inputs, training=None, **kwargs):
-        # inputs: list or tuple of two tensors (left_input, right_input)
-        left_input, right_input = inputs
+        # drop the index column, no need of that.
+        df_train_similar = df_train_similar.reset_index(drop=True)
+        df_test_similar = df_test_similar.reset_index(drop=True)
+        df_train_dissimilar = df_train_dissimilar.reset_index(drop=True)
+        df_test_similar = df_test_similar.reset_index(drop=True)
 
-        # Apply augmentation on each input (only if training)
-        left_augmented = tf.cond(tf.cast(training, tf.bool),
-                                 lambda: self.augmentations(left_input, training=True),
-                                 lambda: left_input)
-        right_augmented = tf.cond(tf.cast(training, tf.bool),
-                                  lambda: self.augmentations(right_input, training=True),
-                                  lambda: right_input)
+        # print(len(pd.merge(df_train_similar, df_train_dissimilar, how='inner', on=['img1_p', 'img2_p', 'labels'])))
 
-        # Encode both inputs
-        encoded_l = self.body(left_augmented, training=training)
-        encoded_r = self.body(right_augmented, training=training)
+        print(f"Total={len(df)}",
+              f"Train={len(df_train_similar)} + {len(df_train_dissimilar)}",
+              f"Test={len(df_test_similar)} + {len(df_test_dissimilar)}", sep='\n')
+        return PairDataGenerator(df_similar=df_train_similar, df_dissimilar=df_train_dissimilar, **params), \
+               PairDataGenerator(df_similar=df_test_similar, df_dissimilar=df_test_dissimilar, **params)
 
-        # Compute distance and output prediction
-        dist = self.distance_layer([encoded_l, encoded_r])
-        out = self.prediction_layer(dist)
-        return out
+    else:
+        print(f"Found {len(df)} triplets.")
 
+        # split similar and dissimilar to train and test (4 groups)
+        df_train, df_test = train_test_split(df,
+                                             test_size=validation_split,
+                                             shuffle=shuffle)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+        # drop the index column, no need of that.
+        df_train = df_train.reset_index(drop=True)
+        df_test = df_test.reset_index(drop=True)
 
+        # print(len(pd.merge(df_train_similar, df_train_dissimilar, how='inner', on=['img1_p', 'img2_p', 'labels'])))
 
-def GetInput():
-    # Create a random input matching what MyModel expects:
-    # tuple of two tensors, each (batch_size, 128, 128, 3) with values in [0,1]
-    batch_size = 32
-    shape = (batch_size, 128, 128, 3)
-    # Use tf.random.uniform for float32 [0,1] image data simulation
-    img1 = tf.random.uniform(shape, minval=0.0, maxval=1.0, dtype=tf.float32)
-    img2 = tf.random.uniform(shape, minval=0.0, maxval=1.0, dtype=tf.float32)
-    return (img1, img2)
+        print(f"Total={len(df)}",
+              f"Train={len(df_train)}",
+              f"Test={len(df_test)}", sep='\n')
 
+        return TripletDataGenerator(df=df_train, **params), \
+               TripletDataGenerator(df=df_test, **params)

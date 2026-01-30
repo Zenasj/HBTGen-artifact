@@ -1,20 +1,13 @@
-# torch.rand(B, 10, dtype=torch.float32)
-import torch
-import torch.nn as nn
+correct = 0.0
+for label, batch in dataloader:
+  pred = model(batch)
+  correct += pred.eq(label.data.view_as(y_pred)).long().cpu().sum()
+acc = correct / N
+# acc is 0
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.fc = nn.Linear(10, 2)  # Example model with 10 input features and 2 classes
-
-    def forward(self, x):
-        logits = self.fc(x)
-        return torch.argmax(logits, dim=1)  # Returns class indices (long tensor)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    B = 4  # Example batch size
-    return torch.rand(B, 10, dtype=torch.float32)  # Matches input shape comment
-
+correct = 0.0
+for label, batch in dataloader:
+  pred = model(batch)
+  correct += pred.eq(label.data.view_as(y_pred)).long().cpu().sum()
+acc = 100.0 * correct / N
+# acc is an int, without the decimal

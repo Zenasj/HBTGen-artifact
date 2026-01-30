@@ -1,32 +1,27 @@
-# tf.random.uniform((B, 28, 28, 1), dtype=tf.float32) 
+from tensorflow import keras
+from tensorflow.keras import layers
+
 import tensorflow as tf
+import tensorflow_datasets as tfds
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Following the example sequential model from the issue description
-        self.conv = tf.keras.layers.Conv2D(32, 3, activation="relu", input_shape=(28, 28, 1))
-        self.pool = tf.keras.layers.MaxPooling2D()
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(64, activation="relu")
-        self.dense2 = tf.keras.layers.Dense(10, activation="softmax")
+train, test = tfds.load(name="mnist", split=[tfds.Split.TRAIN, tfds.Split.TEST], as_supervised=True)
 
-    def call(self, inputs, training=False):
-        x = self.conv(inputs)
-        x = self.pool(x)
-        x = self.flatten(x)
-        x = self.dense1(x)
-        x = self.dense2(x)
-        return x
+def scale(image, label):
+    return tf.cast(image, tf.float32) / 255, label
 
-def my_model_function():
-    # Return an instance of MyModel; no weights loading needed for demonstration
-    return MyModel()
+model = tf.keras.Sequential(
+    [
+        tf.keras.layers.Conv2D(32, 3, activation="relu", input_shape=(28, 28, 1)),
+        tf.keras.layers.MaxPooling2D(),
+        tf.keras.layers.Flatten(),
+        tf.keras.layers.Dense(64, activation="relu"),
+        tf.keras.layers.Dense(10, activation="softmax"),
+    ]
+)
 
-def GetInput():
-    # Return a batch of images matching input shape (batch_size, 28, 28, 1)
-    # Use batch size 256 as in the issue example for model.fit
-    batch_size = 256
-    # Generate random float input in [0,1) to simulate normalized MNIST images
-    return tf.random.uniform((batch_size, 28, 28, 1), dtype=tf.float32)
+model.compile(loss="sparse_categorical_crossentropy", optimizer="adam")
 
+model.fit(
+    train.batch(256),
+    validation_data=test.batch(256),
+)

@@ -1,23 +1,66 @@
-# tf.random.uniform((1, 224, 224, 3), dtype=tf.float32)
+from __future__ import absolute_import, division, print_function, unicode_literals
+
 import tensorflow as tf
+from tensorflow import keras
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Use pretrained ResNet50 as backbone model with input shape (224,224,3)
-        # No top layers since this was a feature extraction example; here, keep default include_top=True but can be changed.
-        self.backbone = tf.keras.applications.ResNet50(input_shape=(224, 224, 3), include_top=True)
+# In order to reproduce, just use whatever random JPEG you have handy here.
+# It should be larger than my_crop in the x and y dimension.
+my_jpeg = "/home/ben/my_jpeg.jpg"
+my_crop = 224
 
-    def call(self, inputs, training=False):
-        # Forward pass through ResNet50 model
-        return self.backbone(inputs, training=training)
+# Generates a single crop for TensorFlow.
+class DataGenerator(keras.utils.Sequence):
+  def __init__(
+      self,
+      image_location,
+      crop_size=224):
+    self._image_location = image_location
+    self._crop_size = crop_size
 
-def my_model_function():
-    # Return an instance of MyModel with ResNet50 initialized
-    return MyModel()
+  # Just one single batch will be returned, of just one single image.
+  def __len__(self):
+    return 1
 
-def GetInput():
-    # Return a random tensor with shape (1, 224, 224, 3) matching expected input of MyModel
-    # dtype tf.float32 in [0, 1] range consistent with preprocessing in original generator
-    return tf.random.uniform((1, 224, 224, 3), dtype=tf.float32)
+  # Generate one batch of data.
+  def __getitem__(self, index):
+    # Where the tensors will be stored.
+    X = []
+    y = [1]
 
+    # Read it.
+    image = tf.io.read_file(self._image_location)
+
+    # Load it.
+    image = tf.image.decode_jpeg(image, channels=3)
+
+    assert image.shape[2] == 3  # MUST be RGB.
+    height = image.shape[0]
+    width = image.shape[1]
+
+    # Just take a trivial crop of the image.
+    # This is the offending line operation which hangs forever.
+    image = image[0:self._crop_size, 0:self._crop_size, :]
+
+    # This line is equivalent to above, and it also hangs with multiprocessing enabled.
+    # image = tf.slice(image, [0, 0, 0], [self._crop_size, self._crop_size, 3])
+
+    X.append(tf.dtypes.cast(image, tf.float32))
+
+    # Tensors are not generally assignable, but we can create them from a number of existing ones.
+    X = tf.stack(X)
+    y = tf.stack(y)
+
+    # Preprocess it.
+    X /= 255.0  # Normalize to [0, 1] range.
+
+    return X, y
+
+generator = DataGenerator(my_jpeg, my_crop)
+
+model = tf.keras.applications.ResNet50(input_shape=(my_crop, my_crop, 3))
+
+model.compile(loss='mse')
+
+# use_multiprocessing=False works.
+# use_multiprocessing=True hangs.
+model.fit_generator(generator, use_multiprocessing=True, workers=2)

@@ -1,21 +1,22 @@
-# torch.tensor(2.0)  # Inferred input shape: scalar tensor
-
+import pytest
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.add = torch.add
 
-    def forward(self, x):
-        return self.add(x, x)
+def test_pass():
+    def fn(x):
+        return x + x
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+    input = torch.tensor(2.0)
+    input2 = torch.tensor(-2.0)
+    torch.compile(fn, backend="inductor", options={"_raise_error_for_testing": False})(input)  # this passes as it should
+    torch.compile(fn, backend="inductor", options={"_raise_error_for_testing": True})(input2)  # this line should fail yet it doesn't
+    assert True
 
-def GetInput():
-    # Return a random scalar tensor input that matches the input expected by MyModel
-    return torch.tensor(2.0)
 
+def test_fail():
+    def fn(x):
+        return x + x
+
+    input = torch.tensor(-2.0)
+    torch.compile(fn, backend="inductor", options={"_raise_error_for_testing": True})(input) # this fails as expected
+    assert True

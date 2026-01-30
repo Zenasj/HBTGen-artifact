@@ -1,46 +1,61 @@
-# tf.random.uniform((B, 128, 3072), dtype=tf.float32) ← Input shape inferred from provided Keras example inputs (batch size flexible)
+import random
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
-import tensorflow as tf
+left = Input(shape=(128, 3072), dtype='float32', name='Input-Left')
+right = Input(shape=(128, 3072), dtype='float32', name='Input-Right')
+lstm = Bidirectional(LSTM(units=768,
+                          activation='tanh'),
+                      name='Bidirectional-LSTM')
+l_lstm = lstm(left)
+r_lstm = lstm(right)
+subtracted = Subtract(name='Subtract')([l_lstm, r_lstm])
+abs_subtracted = Lambda(function=backend.abs)(subtracted)
+mul = Multiply(name='multiplication')([l_lstm, r_lstm])
+concat = concatenate([abs_subtracted, mul])
+output = Dense(units=1)(concat)
+model = Model(inputs=[left, right],
+              outputs=output)
+model = multi_gpu_model(model, gpus=2)
+model.compile(loss='mean_squared_error',
+              optimizer='Adam',
+              metrics=['acc'])
+import numpy as np
+x1 = np.random.rand(100, 128, 3072)
+x2 = np.random.rand(100, 128, 3072)
+y = np.random.rand(100)
+model.fit(x = [x1, x2],
+         y=y,
+         epochs=10)
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Bidirectional LSTM layer with 768 units each direction (default activation tanh)
-        self.bilstm = tf.keras.layers.Bidirectional(
-            tf.keras.layers.LSTM(units=768, activation='tanh'),
-            name='Bidirectional_LSTM'
-        )
-        # Layers for combining outputs
-        self.subtract = tf.keras.layers.Subtract(name='Subtract')
-        self.abs_lambda = tf.keras.layers.Lambda(lambda x: tf.abs(x), name='Abs')
-        self.multiply = tf.keras.layers.Multiply(name='Multiply')
-        self.concat = tf.keras.layers.Concatenate(name='Concat')
-        self.dense = tf.keras.layers.Dense(units=1, name='Output_Dense')
+import numpy as np
+from keras.layers import Input, Bidirectional, LSTM, Subtract, Lambda, Multiply, concatenate, Dense
+from keras.utils import multi_gpu_model
+from keras.models import Model
+import keras.backend as backend
 
-    def call(self, inputs, training=None):
-        # inputs is a tuple/list: (left, right)
-        left, right = inputs
-        l_lstm = self.bilstm(left)
-        r_lstm = self.bilstm(right)
+x1 = np.random.rand(100, 128, 3072)
+x2 = np.random.rand(100, 128, 3072)
+y = np.random.rand(100)
 
-        subtracted = self.subtract([l_lstm, r_lstm])
-        abs_subtracted = self.abs_lambda(subtracted)
-        mul = self.multiply([l_lstm, r_lstm])
-        concat = self.concat([abs_subtracted, mul])
-
-        output = self.dense(concat)
-        return output
-
-def my_model_function():
-    # Instantiate MyModel; weights initialized randomly.
-    return MyModel()
-
-def GetInput():
-    # Return tuple of two random inputs compatible with model inputs:
-    # shape (batch_size, 128, 3072), dtype float32.
-    # batch_size chosen as 4 here for demo; can be different.
-    batch_size = 4
-    left_input = tf.random.uniform(shape=(batch_size, 128, 3072), dtype=tf.float32)
-    right_input = tf.random.uniform(shape=(batch_size, 128, 3072), dtype=tf.float32)
-    return (left_input, right_input)
-
+left = Input(shape=(128, 3072), dtype='float32', name='Input-Left')
+right = Input(shape=(128, 3072), dtype='float32', name='Input-Right')
+lstm = Bidirectional(LSTM(units=768,
+                          activation='tanh'),
+                     name='Bidirectional-LSTM')
+l_lstm = lstm(left)
+r_lstm = lstm(right)
+subtracted = Subtract(name='Subtract')([l_lstm, r_lstm])
+abs_subtracted = Lambda(function=backend.abs)(subtracted)
+mul = Multiply(name='multiplication')([l_lstm, r_lstm])
+concat = concatenate([abs_subtracted, mul])
+output = Dense(units=1)(concat)
+model = Model(inputs=[left, right],
+              outputs=output)
+model = multi_gpu_model(model, gpus=2)
+model.compile(loss='mean_squared_error',
+              optimizer='Adam',
+              metrics=['acc'])
+model.fit(x=[x1, x2],
+          y=y,
+          epochs=10)

@@ -1,36 +1,47 @@
-# tf.random.uniform((1, 1, 9, 64), dtype=tf.float32)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
+3
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # DepthwiseConv2D layer setup matching original model from issue
-        # kernel_size=(1,9), strides=(1,1), padding='same', channels_last
-        self.depthwise_conv = tf.keras.layers.DepthwiseConv2D(
-            kernel_size=(1, 9),
-            strides=(1, 1),
-            padding='same',
-            data_format='channels_last',
-            depth_multiplier=1,
-            activation=None,
-            use_bias=True
-        )
+# Generate tf.keras model.
+model = tf.keras.models.Sequential()
+model.add(tf.keras.layers.DepthwiseConv2D(kernel_size=(1, 9), strides=(1, 1), padding='same', data_format='channels_last'))
+# model.add(tf.keras.layers.Dense(2, input_shape=(3,)))
+model.compile(loss=tf.keras.losses.MSE,
+              optimizer=tf.keras.optimizers.RMSprop(lr=0.0001),
+              metrics=[tf.keras.metrics.categorical_accuracy],
+              sample_weight_mode='temporal')
 
-    def call(self, inputs, training=False):
-        # Forward pass applying the single depthwise convolution
-        x = self.depthwise_conv(inputs)
-        return x
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+x = np.random.random((1, 1, 9, 64))
+y = np.random.random((1, 1, 9, 64))
+model.train_on_batch(x, y)
+model.predict(x)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # The original input shape is (1, 1, 9, 64) with dtype float32 in training,
-    # but for TFLite uint8 quantized inference inputs are often uint8.
-    # We use float32 here assuming model expects that (from tf.random.uniform).
-    # If quantized inputs are needed, casting and scaling would be required.
-    return tf.random.uniform((1, 1, 9, 64), dtype=tf.float32)
+# Save tf.keras model in H5 format.
+keras_file = 'keras_model.h5'
+tf.keras.models.save_model(model, keras_file)
 
+# Convert the model.
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+
+def representative_dataset_gen():
+    for _ in range(100):
+        yield [np.ones([1,1,9,64]).astype(np.float32)]
+# converter.quantized_input_stats = {'input' : (0., 1.)}
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.inference_input_type = tf.uint8
+converter.inference_output_type = tf.uint8
+# converter.inference_type = tf.uint8
+converter.representative_dataset = representative_dataset_gen
+
+tflite_model = converter.convert()
+
+# Save the model.
+with open('model2.tflite', 'wb') as f:
+  f.write(tflite_model)

@@ -1,18 +1,18 @@
-# torch.rand(1, 1, 0, dtype=torch.float32)
 import torch
-from torch import nn
+x = torch.ones((1, 0))
+y = torch.ones((1,))
+z = torch.ones((1,))
+# works; b is just a zero-sized axis as expected
+print(torch.einsum('ab,a->b', x, y))
 
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        x, y, z = inputs
-        return torch.einsum('abc,a,b->c', x, y, z)
+x = torch.ones((1, 1, 0))
+y = torch.ones((1,))
+z = torch.ones((1,))
+# no similar luck with an extra argument in the mix; we get an error
+#     self.speedup = self.naive_cost / self.opt_cost
+#     decimal.InvalidOperation: [<class 'decimal.DivisionUndefined'>]
+print(torch.einsum('abc,a,b->c', x, y, z))
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    x = torch.rand(1, 1, 0)
-    y = torch.rand(1)
-    z = torch.rand(1)
-    return (x, y, z)
-
+# numpy and JAX are a-ok with these scenarios, as expected
+import numpy as np
+print(np.einsum('abc,a,b->c', x, y, z))

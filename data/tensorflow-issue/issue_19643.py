@@ -1,26 +1,46 @@
-# tf.zeros(shape=(3, 10), dtype=tf.float32) ← The example input shape used in issue to demonstrate BatchNormalization behavior
+from tensorflow import keras
+from tensorflow.keras import layers
+
+#!/usr/bin/python
+import tensorflow as tf
+
+graph = tf.get_default_graph()
+tf.keras.backend.set_learning_phase(True)
+features = tf.zeros(shape=(3, 10), dtype=tf.float32)
+normed = tf.keras.layers.BatchNormalization()(features)
+
+update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+print('n_ops:        %d' % len(graph.get_operations()))
+print('n_update_ops: %d' % len(update_ops))
+
+updates = layer.updates
+
+updates = model.updates
+
+import tensorflow as tf
+x = tf.zeros(shape=(2, 3), dtype=tf.float32)
+y = tf.keras.layers.Dense(4)(x)
+print('variables: %d' % len(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)))
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Replicating a minimal BatchNormalization usage scenario as in the issue
-        self.bn = tf.keras.layers.BatchNormalization()
+tf.keras.backend.set_learning_phase(True)
+input_shape = (3,)
+inp = tf.keras.Input(shape=input_shape, dtype=tf.float32)
+x = tf.keras.layers.Dense(4, input_shape=input_shape)(inp)
+x = tf.keras.layers.BatchNormalization()(x, training=True)
 
-    def call(self, inputs, training=None):
-        # The BatchNormalization layer's updates are internal to the layer in tf.keras.
-        # They are not added to UPDATE_OPS collection globally.
-        # Instead, they need to be run explicitly if using custom training loops.
-        # Here, we just return the normalized output.
-        return self.bn(inputs, training=training)
+model = tf.keras.Model(inp, x)
+model.compile(tf.train.AdamOptimizer(1e-3), 'mean_squared_error')
+print('model_updates: %d' % len(model.updates))
+for update in model.updates:
+    print(update.name, update._unconditional_update)  # False
 
-def my_model_function():
-    # Return new instance of MyModel
-    return MyModel()
+estimator = tf.keras.estimator.model_to_estimator(model)
 
-def GetInput():
-    # Create a tensor matching the example input in the issue
-    # Shape (3, 10), dtype float32, all zeros as in example code
-    return tf.zeros(shape=(3, 10), dtype=tf.float32)
+z = tf.zeros((2, 3), dtype=tf.float32)
+labels = tf.zeros((2, 4), dtype=tf.float32)
 
+spec = estimator.model_fn(z, labels, mode='train', config=None)
+
+print(len(tf.get_collection(tf.GraphKeys.UPDATE_OPS)))  # 0

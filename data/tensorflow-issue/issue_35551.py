@@ -1,39 +1,43 @@
-# tf.random.uniform((B, 50, 36), dtype=tf.float32) ← Input shape inferred from Masking layer input_shape=(50,36)
+from tensorflow import keras
+from tensorflow.keras import models
 
 import tensorflow as tf
+import os
+os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # A Masking layer to mask out padding in sequences (input shape: (None, 50, 36))
-        self.masking = tf.keras.layers.Masking()
+print(tf.__version__)
 
-        # Bidirectional LSTM with 128 units and return_sequences=True
-        # This was the problematic layer with go_backwards=True due to TFLite reverse op bool support issue
-        self.bidirectional = tf.keras.layers.Bidirectional(
-            tf.keras.layers.LSTM(128, return_sequences=True)
-        )
+model = tf.keras.models.load_model("/home/amish/PycharmProjects/myproject/scripts/temp.h5")
+model.summary()
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS,
+                                       tf.lite.OpsSet.SELECT_TF_OPS]
+converter.experimental_new_converter = True  # Add this line
 
-        # Dropout layer for regularization during training
-        self.dropout = tf.keras.layers.Dropout(0.2)
+tflite_model = converter.convert()
 
-        # Dense output layer with 20 units and softmax activation
-        self.dense = tf.keras.layers.Dense(20, activation='softmax')
+go_backwards=True
 
-    def call(self, inputs, training=False):
-        x = self.masking(inputs)
-        x = self.bidirectional(x)
-        x = self.dropout(x, training=training)
-        x = self.dense(x)
-        return x
+model = tf.keras.Sequential()
+model.add(layers.Bidirectional(layers.LSTM(128, return_sequences=True)))
 
-def my_model_function():
-    # Returns an instance of MyModel
-    return MyModel()
+#model.add(layers.LSTM(128, return_sequences=True)) #Works fine without Birdirectional
+model.add(layers.Dense(20, activation='softmax'))
 
-def GetInput():
-    # Generates a random float32 tensor matching the input shape expected by MyModel
-    # Batch size arbitrarily chosen as 32 here for demonstration
-    batch_size = 32
-    return tf.random.uniform(shape=(batch_size, 50, 36), dtype=tf.float32)
+model.compile(optimizer='adam', loss='mse', metrics=['accuracy'])
 
+model.summary()
+
+model.fit(x_train, y_train, batch_size=32, epochs=13, shuffle=True, validation_data=(x_test, y_test))
+
+model = tf.keras.Sequential()
+model.add(layers.Masking(input_shape=(50,36)))
+model.add(layers.Bidirectional(layers.LSTM(128, return_sequences=True)))
+model.add(layers.Dropout(0.2, noise_shape=None, seed=None))
+model.add(layers.Dense(20, activation='softmax'))
+
+model.compile(optimizer='adam', loss='mse', metrics=['accuracy'])
+
+model.summary()
+
+model.fit(x_train, y_train, batch_size=32, epochs=13, shuffle=True, validation_data=(x_test, y_test))

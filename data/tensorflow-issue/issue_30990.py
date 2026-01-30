@@ -1,36 +1,29 @@
-# tf.random.uniform((B, 28, 28), dtype=tf.float32) ← The input shape is (batch, 28, 28), single channel grayscale images
+from tensorflow import keras
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # LSTM layer with 64 units, input shape (28, 28)
-        # return_sequences=False to output only last output
-        self.lstm = tf.keras.layers.LSTM(units=64, return_sequences=False)
-        # Dense layer to output 10-class logits with softmax activation
-        self.dense = tf.keras.layers.Dense(10, activation='softmax')
+from tensorflow.python.keras import layers
+from tensorflow.python.keras.callbacks import ModelCheckpoint
 
-    def call(self, inputs, training=False):
-        x = self.lstm(inputs, training=training)
-        output = self.dense(x)
-        return output
+model = tf.keras.Sequential()
+model.add(layers.LSTM(units=64, input_shape=(28, 28), return_sequences=False))
+model.add(layers.Dense(10, activation='softmax'))
 
-def my_model_function():
-    # Return an instance of MyModel
-    model = MyModel()
-    # Compile the model with sparse categorical crossentropy loss and SGD optimizer as in the original example
-    model.compile(
-        loss='sparse_categorical_crossentropy',
-        optimizer='sgd',
-        metrics=[]
-    )
-    return model
+mnist = tf.keras.datasets.mnist
 
-def GetInput():
-    # Generate a random tensor with shape (batch_size, 28, 28) matching the expected input of LSTM
-    # Using batch_size=64 to match original training batch size
-    batch_size = 64
-    # The input dtype is float32 normalized in [0,1], so we can sample uniform random floats
-    return tf.random.uniform((batch_size, 28, 28), minval=0, maxval=1, dtype=tf.float32)
+(x_train, y_train), (x_test, y_test) = mnist.load_data()
+x_train, x_test = x_train / 255.0, x_test / 255.0
+sample, sample_label = x_train[0], y_train[0]
 
+model.compile(loss='sparse_categorical_crossentropy',
+              optimizer='sgd',
+              metrics=[])
+
+callback = ModelCheckpoint(filepath='saved/',
+                           monitor='val_loss',
+                           save_weights_only=False,
+                           mode='min', save_freq='epoch')
+
+model.fit(x_train, y_train,
+          validation_data=(x_test, y_test),
+          batch_size=64, epochs=2, callbacks=[callback])

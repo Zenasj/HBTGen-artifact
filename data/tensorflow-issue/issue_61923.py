@@ -1,43 +1,24 @@
-# tf.random.uniform((B, 10), dtype=tf.float32)  ← Assumed batch size B, input shape (10,) based on input_dim=10
+# ------------------ Encoder ------------------
+encoder_model = Model(inputs=all_inputs, outputs=latent_space, name="encoder")
+# ... irrelevant code 
 
-import tensorflow as tf
+# ------------------ Decoder ------------------
+# Output Layers
+numeric_output = Dense(
+    self.numeric_dim, activation="linear", name="numeric_output")(decoder2)
+binary_output = Dense(
+    self.binary_dim, activation="sigmoid", name="binary_output")(decoder2)
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Encoder layers
-        self.encoder_input = tf.keras.layers.InputLayer(input_shape=(10,), name="all_inputs")
-        self.latent_layer = tf.keras.layers.Dense(5, activation="relu", name="latent_space")
+decoder_output = [numeric_output] + [binary_output]
+decoder_model = Model(inputs=latent_input, outputs=decoder_output, name="decoder")
 
-        # Decoder layers
-        self.decoder_input = tf.keras.layers.InputLayer(input_shape=(5,), name="latent_input")
-        self.decoder_hidden = tf.keras.layers.Dense(10, activation="relu", name="decoder2")
-        self.numeric_output_layer = tf.keras.layers.Dense(3, activation="linear", name="numeric_output")
-        self.binary_output_layer = tf.keras.layers.Dense(2, activation="sigmoid", name="binary_output")
+# ------------------ Autoencoder ------------------
+autoencoder_output = decoder_model(encoder_model(all_inputs))
+autoencoder = Model(inputs=all_inputs, outputs=pass_through_layers, name="autoencoder")
 
-    def call(self, inputs, training=False):
-        # Forward pass through encoder
-        x = self.encoder_input(inputs)
-        latent = self.latent_layer(x)
-
-        # Forward pass through decoder
-        dec_in = self.decoder_input(latent)
-        dec_hidden = self.decoder_hidden(dec_in)
-        numeric_output = self.numeric_output_layer(dec_hidden)
-        binary_output = self.binary_output_layer(dec_hidden)
-
-        # Return list outputs to match the original decoder outputs
-        return [numeric_output, binary_output]
-
-
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # Input shape: (batch_size, 10), dtype float32 as typical for numeric data
-    batch_size = 32  # typical batch size, can be changed
-    return tf.random.uniform((batch_size, 10), dtype=tf.float32)
-
+# This will not work:
+losses = {
+            "numeric_output": "mse",
+            "binary_output": "binary_crossentropy"
+}
+autoencoder.compile(optimizer=Adam(learning_rate=lr), loss=losses)

@@ -1,35 +1,40 @@
-# tf.random.uniform((B, 32), dtype=tf.float32) ← Inferred input shape: (batch_size, 32)
+import random
+from tensorflow.keras import layers
 
 import tensorflow as tf
+from tensorflow import keras
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Following the resolved guidance, the first Dense layer specifies input_shape=(32,)
-        # Activations 'relu' for hidden layers; 'softmax' for output.
-        self.dense1 = tf.keras.layers.Dense(64, activation='relu', input_shape=(32,))
-        self.dense2 = tf.keras.layers.Dense(64, activation='relu')
-        self.dense3 = tf.keras.layers.Dense(10, activation='softmax')
+model = keras.Sequential()
+# Adds a densely-connected layer with 64 units to the model:
+model.add(keras.layers.Dense(64, activation='relu'))
+# Add another:
+model.add(keras.layers.Dense(64, activation='relu'))
+# Add a softmax layer with 10 output units:
+model.add(keras.layers.Dense(10, activation='softmax'))
 
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        return self.dense3(x)
+model.compile(optimizer=tf.train.AdamOptimizer(0.001),
+              loss='categorical_crossentropy',
+              metrics=['accuracy'])
 
-def my_model_function():
-    # Create an instance of MyModel and compile it similarly to the example
-    model = MyModel()
-    # Using Adam optimizer with learning rate 0.001 as in original code sample
-    optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
-    model.compile(optimizer=optimizer,
-                  loss='categorical_crossentropy',
-                  metrics=['accuracy'])
-    return model
+# Configure a model for categorical classification.
+model.compile(optimizer=tf.train.RMSPropOptimizer(0.01),
+              loss=keras.losses.categorical_crossentropy,
+              metrics=[keras.metrics.categorical_accuracy])
 
-def GetInput():
-    # Return a random float32 tensor matching the expected input shape (batch, 32)
-    # Batch size is arbitrary; 32 chosen here for consistency with example batch size
-    batch_size = 32
-    # Use tf.random.uniform with dtype float32 to avoid dtype mismatch errors
-    return tf.random.uniform(shape=(batch_size, 32), dtype=tf.float32)
+import numpy as np
 
+data = np.random.random((1000, 32))
+labels = np.random.random((1000, 10))
+
+#model.fit(data, labels, epochs=10, batch_size=32)
+
+# Instantiates a toy dataset instance:
+dataset = tf.data.Dataset.from_tensor_slices((data, labels))
+dataset = dataset.batch(32)
+dataset = dataset.repeat()
+
+# Don't forget to specify `steps_per_epoch` when calling `fit` on a dataset.
+model.fit(dataset, epochs=10, steps_per_epoch=30)
+
+data = np.random.random((1000, 32)).astype(np.float32)
+labels = np.random.random((1000, 10)).astype(np.float32)

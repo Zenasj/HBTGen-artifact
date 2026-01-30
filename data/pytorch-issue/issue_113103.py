@@ -1,19 +1,18 @@
-# Input is a tuple of four tensors (q, k, v, bias) each of shape (1, 1, 16, 16) with dtype=torch.float16
+import torch.nn as nn
+
+Python
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        q, k, v, bias = inputs
-        return torch.nn.functional.scaled_dot_product_attention(q, k, v, bias)
+from torch.nn.attention import TensorBias
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
+@torch.compile(fullgraph=True)
+def main():
     q = torch.rand(1, 1, 16, 16, dtype=torch.float16, device="cuda")
     k = torch.rand(1, 1, 16, 16, dtype=torch.float16, device="cuda")
     v = torch.rand(1, 1, 16, 16, dtype=torch.float16, device="cuda")
-    bias = torch.rand(1, 1, 16, 16, dtype=torch.float16, device="cuda")
-    return (q, k, v, bias)
 
+    bias = TensorBias(torch.rand(1, 1, 16, 16, dtype=torch.float16, device="cuda"))
+
+    out = torch.nn.functional.scaled_dot_product_attention(q, k, v, bias)
+if __name__ == "__main__":
+    main()

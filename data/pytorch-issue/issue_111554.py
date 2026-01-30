@@ -1,18 +1,24 @@
-# torch.rand(B, 2, dtype=torch.float32)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        x_view = x.view(-1)  # Create a view of x
-        new_tensor = torch.ones(2, dtype=x.dtype, device=x.device)  # New tensor for set_()
-        x.set_(new_tensor)  # Replace x's storage with new_tensor
-        x_view.mul_(2)      # Mutate the original storage (now not referenced by x)
-        return x            # Return the new tensor from set_()
+def f(x):
+    x_view = x.view(-1)
+    x.set_(torch.ones(2))
+    x_view.mul_(2)
+    return
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(2)  # Input tensor with 2 elements (shape (2,))
-
+def functionalized_f(x):
+    x_view = x.view(-1)
+    # set_() desugars into a no-op; later usages of x will use x_output
+    x_output = torch.ones(2)
+    # functionalize the mutation on x_view
+    x_view_updated = x.mul(2)
+    x_updated = x_view_updated.view(x.shape)
+    # x experienced TWO TYPES of mutations; a data mutation and a metatadata mutation
+    # We need to return both updated tensors in our graph
+    return x_updated, x_output
+def runtime_wrapper(x):
+    x_data_mutation_result, x_set_mutation_result = compiled_graph(x)
+    # First, perform the data mutation on x's old storage
+    x.copy_(x_data_mutation_result)
+    # Then, swap out the storage of x with the new storage
+    x.set_(x_set_mutation_result)

@@ -1,17 +1,15 @@
-# torch.rand(1, 1, 2, 2, dtype=torch.float32)
+# python -m torch.distributed.run --nnodes=1 --nproc_per_node=2 this_script.py
+
 import torch
-import torch.nn as nn
+import torch.distributed as dist
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return x
+def main():
+    dist.init_process_group(backend="nccl")
+    rank = dist.get_rank()
+    a = torch.tensor([[0, 2.], [3, 0]]).to(rank)
+    a = a.to_sparse()
+    print(f"rank {rank} - a: {a}")
+    dist.all_reduce(a)
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Create a sparse tensor matching the example's 2x2 structure
-    dense = torch.rand(1, 1, 2, 2)
-    sparse = dense.to_sparse()
-    return sparse
-
+if __name__ == "__main__":
+    main()

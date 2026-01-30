@@ -1,24 +1,8 @@
-# torch.rand(100, 100, 100, 5, 5, 5, dtype=torch.complex128) ← Add a comment line at the top with the inferred input shape
-
 import torch
-import torch.nn as nn
-
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Define any necessary layers or operations here
-        # For this example, we will just use an identity layer
-        self.identity = nn.Identity()
-
-    def forward(self, x):
-        # Apply the identity layer to the input
-        return self.identity(x)
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(100, 100, 100, 5, 5, 5, dtype=torch.complex128)
-
+import numpy as np
+arg_1_tensor = torch.neg(torch.rand([100, 100, 100, 5, 5, 5], dtype=torch.complex128))
+arg_1 = arg_1_tensor.clone()
+try:
+  res = torch.Tensor.is_coalesced(arg_1,)
+except Exception as e:
+  print("Error:"+str(e))

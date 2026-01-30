@@ -1,37 +1,41 @@
-# tf.random.uniform((BATCH_SIZE, 224, 224, 3), dtype=tf.float32) ← typical MobileNetV2 input shape
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
-import tensorflow as tf
-from tensorflow.keras import Model, Input
-from tensorflow.keras.layers import Flatten, Dense
 from tensorflow.keras.applications import MobileNetV2
+from tensorflow.keras.layers import AveragePooling2D
+from tensorflow.keras.layers import Dropout
+from tensorflow.keras.layers import Flatten
+from tensorflow.keras.layers import Dense
+from tensorflow.keras.models import Model
+from tensorflow.keras.optimizers import Adam
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Load MobileNetV2 without top, with imagenet weights, input shape 224x224x3
-        self.base_model = MobileNetV2(weights="imagenet", include_top=False,
-                                     input_tensor=Input(shape=(224, 224, 3)))
-        self.base_model.trainable = False
-        # Flatten output from base model
-        self.flatten = Flatten(name="flatten")
-        # Dense layers for bounding box regression head
-        self.dense1 = Dense(128, activation="relu")
-        self.dense2 = Dense(4, activation="sigmoid")  # regression outputs in [0,1]
+INIT_LR = 1e-4
+NUM_EPOCHS = 1
+BATCH_SIZE = 8
 
-    def call(self, inputs, training=False):
-        x = self.base_model(inputs, training=training)
-        x = self.flatten(x)
-        x = self.dense1(x)
-        x = self.dense2(x)
-        return x
+basemodel = MobileNetV2(weights="imagenet", include_top=False,
+        input_tensor=Input(shape=(224, 224, 3)))
+basemodel.trainable = False
 
-def my_model_function():
-    # Instantiate and return MyModel with pre-defined MobileNetV2 backbone and bbox head
-    return MyModel()
+# MobileNetV2
+flatten = basemodel.output
+bboxHead = Flatten(name="flatten")(flatten)
+bboxHead = Dense(128, activation="relu")(bboxHead)
+bboxHead = Dense(4, activation="sigmoid")(bboxHead)
 
-def GetInput():
-    # Produce a random uniformly distributed float32 tensor matching model input shape
-    # Batch size arbitrarily set to 8, as in the example
-    BATCH_SIZE = 8
-    return tf.random.uniform((BATCH_SIZE, 224, 224, 3), dtype=tf.float32)
+model = Model(inputs=basemodel.input, outputs=bboxHead)
+opt = Adam(INIT_LR)
+model.compile(loss="mse", optimizer=opt)
+H = model.fit(
+        trainImages, trainTargets, 
+        validation_data=(testImages, testTargets),
+        batch_size=BATCH_SIZE,
+        epochs=NUM_EPOCHS,
+        verbose=1)
 
+import tensorflow_model_optimization as tfmot
+quantize_model = tfmot.quantization.keras.quantize_model
+
+q_aware_model = quantize_model(model)
+q_aware_model.compile(loss="mse", optimizer=opt, metrics=['accuracy'])

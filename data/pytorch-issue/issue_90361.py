@@ -1,34 +1,31 @@
-# torch.rand(2, 3, dtype=torch.float32) ← Add a comment line at the top with the inferred input shape
+import torch.nn as nn
+
 import torch
-from torch import nn
+import torch._dynamo
+from torch import Tensor
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.m = MyInnerModule()
+class MyInnerModule(torch.nn.Module):
+  def __init__(self):
+    pass
+     
+  def forward(self, a:Tensor, b:Tensor = torch.ones((2, 3))):
+    c = a + b
+    d = c + a
+    e = c + b
+    f = d + e
+    return f
 
-    def forward(self, a: torch.Tensor):
-        res = self.m(a)
-        return res
+class MyModule(torch.nn.Module):
+  def __init__(self):
+    super(MyModule, self).__init__()
+    self.m = MyInnerModule()
 
-class MyInnerModule(nn.Module):
-    def __init__(self):
-        super(MyInnerModule, self).__init__()
+  def forward(self, a:Tensor):
+    res = self.m(a)
+    return res
+ 
+my_module = MyModule()
+my_module = torch._dynamo.optimize("aot_ts")(my_module)
 
-    def forward(self, a: torch.Tensor, b: torch.Tensor = None):
-        if b is None:
-            b = torch.ones((2, 3), device=a.device)
-        c = a + b
-        d = c + a
-        e = c + b
-        f = d + e
-        return f
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(2, 3, dtype=torch.float32)
-
+inp = torch.ones((2, 3))
+res = my_module(inp)

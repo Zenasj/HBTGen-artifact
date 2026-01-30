@@ -1,19 +1,31 @@
-# torch.rand(B, C, H, W, dtype=...)  # Add a comment line at the top with the inferred input shape
-import torch
-from einops import rearrange
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
+import torch
+from functorch import make_fx
+from einops import rearrange
+
+# torch.fx.wrap('rearrange')
+
+class B(torch.nn.Module):
     def forward(self, x):
         x = rearrange(x, 'b c h w -> b (h w) c').contiguous()
         return x
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+b = B()
+tensor = torch.zeros([2, 2, 3, 2])
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    B, C, H, W = 2, 2, 3, 2
-    return torch.rand(B, C, H, W, dtype=torch.float32)
+b2 = make_fx(
+    b,
+    decomposition_table={},
+    # tracing_mode="symbolic",
+    _allow_non_fake_inputs=True,
+    _allow_fake_constant=False,
+)(tensor)
 
+b3 = make_fx(
+    b,
+    decomposition_table={},
+    tracing_mode="symbolic",
+    _allow_non_fake_inputs=True,
+    _allow_fake_constant=False,
+)(tensor)

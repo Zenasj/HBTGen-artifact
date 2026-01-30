@@ -1,65 +1,48 @@
-# tf.random.uniform((32, 100), dtype=tf.int32)  ← Assumed input shape: batch_size=32, sequence_length=100 (embedding dim used as sequence length in original)
+from tensorflow import keras
+from tensorflow.keras import layers
+
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self, vocab_size=300, embedding_dim=100, rnn_units=256, batch_size=32):
-        super().__init__()
-        # Note: In original code batch_input_shape for Embedding uses embedding_dim as sequence length,
-        # which is atypical but copied here to reflect original example.
-        # Usually sequence length would be >1 and embedding_dim is the embedding vector size.
-        self.batch_size = batch_size
-        self.embedding_dim = embedding_dim
-        self.vocab_size = vocab_size
-        self.rnn_units = rnn_units
+def build_model(vocab_size, embedding_dim, rnn_units, batch_size):
+  model = tf.keras.Sequential([
+    tf.keras.layers.Embedding(vocab_size, embedding_dim,
+                              batch_input_shape=[batch_size, embedding_dim]),
+    tf.keras.layers.LSTM(rnn_units,
+                        return_sequences=True,
+                        stateful=False,
+                        recurrent_activation='sigmoid',
+                        recurrent_initializer='glorot_uniform'),
+    tf.keras.layers.Dense(vocab_size)
+  ])
+  return model
 
-        # Embedding layer with input shape as (batch_size, embedding_dim) int indices
-        self.embedding = tf.keras.layers.Embedding(
-            input_dim=vocab_size,
-            output_dim=embedding_dim,
-            batch_input_shape=[batch_size, embedding_dim],
-            embeddings_initializer='uniform',
-            mask_zero=False,  # not specified in original
-            trainable=True
-        )
+embedding_dim = 100
+units = 256
+vocab_size = 300
+batch_size = 32
 
-        self.lstm = tf.keras.layers.LSTM(
-            rnn_units,
-            return_sequences=True,
-            stateful=False,
-            recurrent_activation='sigmoid',
-            recurrent_initializer='glorot_uniform',
-        )
+model = build_model(vocab_size, embedding_dim, units, batch_size)
+model.compile(optimizer='adam', loss='sparse_categorical_crossentropy')
 
-        self.dense = tf.keras.layers.Dense(vocab_size)
+from tensorflow.python.keras.saving import saving_utils as _saving_utils
+from tensorflow.python.framework import convert_to_constants as _convert_to_constants
 
-    def call(self, inputs, training=False):
-        # inputs: int tensor shape (batch_size, embedding_dim) where embedding_dim used as sequence length
-        x = self.embedding(inputs)  # (batch_size, embedding_dim, embedding_dim)
-        x = self.lstm(x)            # (batch_size, embedding_dim, rnn_units)
-        x = self.dense(x)           # (batch_size, embedding_dim, vocab_size)
-        return x
+tf.keras.backend.set_learning_phase(False)
+func = _saving_utils.trace_model_call(model)
+concrete_func = func.get_concrete_function()
+frozen_func = _convert_to_constants.convert_variables_to_constants_v2(concrete_func)
 
-def my_model_function():
-    # Return an instance of MyModel with default parameters matching the issue example
-    model = MyModel()
-    # As in original, the model should be compiled for usage, though not required for inference:
-    model.compile(optimizer='adam', loss='sparse_categorical_crossentropy')
-    return model
+full_model = tf.function(lambda x: model(x))
+full_model = full_model.get_concrete_function(
+    tf.TensorSpec(model.inputs[0].shape, model.inputs[0].dtype))
 
-def GetInput():
-    # Construct a random tensor of int indices representing batch input to Embedding
-    # original shape used embedding_dim=100 as sequence length, batch_size=32
-    batch_size = 32
-    sequence_length = 100  # from embedding_dim in original batch_input_shape
-    vocab_size = 300
+# Get frozen ConcreteFunction   
+frozen_func = convert_variables_to_constants_v2(full_model,lower_control_flow=False)
+frozen_func.graph.as_graph_def()
 
-    # Input shape: (batch_size=32, sequence_length=100)
-    # Values: random integers in [0, vocab_size)
-    input_tensor = tf.random.uniform(
-        shape=(batch_size, sequence_length),
-        minval=0,
-        maxval=vocab_size,
-        dtype=tf.int32
-    )
-    return input_tensor
-
+layers = [op.name for op in frozen_func.graph.get_operations()]
+# Save frozen graph from frozen ConcreteFunction to hard drive
+tf.io.write_graph(graph_or_graph_def=frozen_func.graph,
+                  logdir="./frozen_models",
+                  name="frozen_graph.pb",
+                  as_text=False)

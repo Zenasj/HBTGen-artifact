@@ -1,28 +1,49 @@
-# tf.random.uniform((B, 28, 28), dtype=tf.float32) ← inferred input shape based on Flatten input_shape=(28,28)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
+import gc
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define a simple model matching the example from the issue
-        self.flatten = tf.keras.layers.Flatten(input_shape=(28, 28))
-        self.dense1 = tf.keras.layers.Dense(128, activation='relu')
-        self.dropout = tf.keras.layers.Dropout(0.2)
-        self.dense2 = tf.keras.layers.Dense(10, activation='softmax')
 
-    def call(self, inputs, training=False):
-        x = self.flatten(inputs)
-        x = self.dense1(x)
-        x = self.dropout(x, training=training)
-        return self.dense2(x)
+def build_and_save_own_model():
+    model = tf.keras.models.Sequential([
+        tf.keras.layers.Flatten(input_shape=(28, 28)),
+        tf.keras.layers.Dense(128, activation='relu'),
+        tf.keras.layers.Dropout(0.2),
+        tf.keras.layers.Dense(10, activation='softmax')
+    ])
+    model.save('my_model')
+    tf.keras.backend.clear_session()
+    del model
+    gc.collect()
 
-def my_model_function():
-    # Instantiate and return an instance of MyModel
-    return MyModel()
 
-def GetInput():
-    # Generate a random float32 tensor with batch size 1 to match input (28,28)
-    # This matches the expected input shape by the model (batch, 28, 28)
-    return tf.random.uniform((1, 28, 28), dtype=tf.float32)
+def profile_load_model(path):
+    model = tf.saved_model.load(path)
+    tf.keras.backend.clear_session()
+    del model
+    gc.collect()
 
+
+def run_model():
+    model_path = 'my_model'
+    build_and_save_own_model()
+    print("load model in loops:")
+    c = 1
+    while True:
+        print("----------- iter", c)
+        profile_load_model(model_path)
+        c += 1
+
+
+if __name__ == '__main__':
+    print("*****************************************************")
+    print("START LOADING MODEL")
+    print(tf.version.GIT_VERSION, tf.version.VERSION)
+    print("*****************************************************")
+    run_model()
+
+model_copy =  tf.keras.models.clone_model(model)
+model_copy.build()
+model_copy.set_weights(model.get_weights())

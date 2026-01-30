@@ -1,20 +1,30 @@
-# torch.rand(B, 10, dtype=torch.float32)
 import torch
+from functorch import grad_and_value, vmap, make_functional_with_buffers
 import torch.nn as nn
-from torch import Tensor
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.linear = nn.Linear(10, 10)  # Matches the original Linear(10,10) model
-        
-    def forward(self, x: Tensor) -> Tensor:
-        return self.linear(x)
 
-def my_model_function():
-    return MyModel()  # Returns the core model from the issue's example
+model = nn.Linear(10, 10)
+fmodel, _fparams, buffers = make_functional_with_buffers(model)
 
-def GetInput():
-    B = 256  # Matches batch size from the original reproduction script
-    return torch.randn(B, 10)  # Matches input shape (B, D) where D=10
+criterion = nn.CrossEntropyLoss(reduction="mean")
+def compute_loss_stateless_model(params, buffers, sample, target):
+    batch = sample.unsqueeze(0)
+    targets = target.unsqueeze(0)
 
+    predictions = fmodel(params, buffers, batch)
+    loss = criterion(predictions, targets)
+
+    return loss
+
+ft_compute_grad = grad_and_value(compute_loss_stateless_model)
+ft_compute_sample_grad = vmap(ft_compute_grad, in_dims=(None, None, 0, 0))
+params = list(model.parameters())
+
+B = 256
+T = 64
+D = 10
+inputs = torch.randn(B, D)
+targets = torch.randint(0, D, (B,))
+
+targets[1] = -100
+grads, losses = ft_compute_sample_grad(params, buffers, inputs, targets)

@@ -1,29 +1,27 @@
-# torch.rand(2, 4, dtype=torch.float32)  # Inferred input shape from the provided MWE
-
 import torch
-import torch.nn as nn
+print(f"torch version: " + torch.__version__)
+print("\n\n--WITH CLONE--\n")
+x = torch.arange(8).reshape(2, 4)
+print(f"x: {x}")
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        # Clone and reshape
-        y = x.clone().reshape(x.shape[0], 2, x.shape[1] // 2)
-        y[:, 1] = y[:, 1].flip((1,))
-        
-        # Without clone and reshape
-        z = x.reshape(x.shape[0], 2, x.shape[1] // 2)
-        z[:, 1] = z[:, 1].flip((1,))
-        
-        # Compare the results
-        return torch.all(y == z)
+y = x.clone().reshape(x.shape[0], 2, x.shape[1] // 2)
+y[:, 1] = y[:, 1].flip((1, ))
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+x = torch.cat(x.unsqueeze(1).split(x.shape[1] // 2, dim=2), dim=1)
+x[:, 1] = x[:, 1].flip((1, ))
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.arange(8).reshape(2, 4)
+print("\ny and x ARE " + ("" if torch.all(y == x) else "NOT ") + "equal\n")
+print(f"y:\n {y}, \nx: \n{x}")
 
+print("\n\n--WITHOUT CLONE--\n")
+x = torch.arange(8).reshape(2, 4)
+print(f"x: {x}")
+
+y = x.reshape(x.shape[0], 2, x.shape[1] // 2)
+y[:, 1] = y[:, 1].flip((1, ))
+
+x = torch.cat(x.unsqueeze(1).split(x.shape[1] // 2, dim=2), dim=1)
+x[:, 1] = x[:, 1].flip((1, ))
+
+print("\ny and x ARE " + ("" if torch.all(y == x) else "NOT ") + "equal\n")
+print(f"y:\n {y}, \nx: \n{x}")

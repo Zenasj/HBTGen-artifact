@@ -1,26 +1,26 @@
 import torch
-from torch import nn
 
-class CustomDict(dict):
-    # Placeholder for a custom dictionary class that Dynamo can't handle
-    def __init__(self, *args, **kwargs):
-        super().__init__()
-        # Dynamo doesn't support custom dict inits with args/kwargs
-        pass
+frame_key='1', 
+co_name='fn', 
+co_filename='/data/users/ybliang/debug/debug1.py', 
+co_firstlineno=58, 
+cache_size=0, 
+accumulated_cache_size=0, 
+guard_count=None, 
+graph_op_count=None, 
+graph_node_count=None, 
+graph_input_count=None, 
+entire_frame_compile_time_s=None, 
+backend_compile_time_s=None, 
+fail_type="<class 'torch._dynamo.exc.Unsupported'>", 
+fail_reason='custome dict init with args/kwargs unimplemented', 
+fail_user_frame_filename='/data/users/ybliang/debug/debug1.py',
+fail_user_frame_lineno=61
 
-# torch.rand(B, C, H, W, dtype=torch.float32)
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-    
-    def forward(self, x):
-        # This line triggers the Dynamo error (custom dict init with args/kwargs)
-        custom_dict = CustomDict(x.shape, some_kwarg=True)
-        return x
+fail_type
 
-def my_model_function():
-    return MyModel()
+fail_reason
 
-def GetInput():
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
+fail_user_frame_filename
 
+fail_user_frame_lineno

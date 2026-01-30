@@ -1,33 +1,31 @@
-# torch.rand(1, dtype=torch.bool)  # Inferred input shape: single boolean element
+py
 import torch
-from torch import nn
+import argparse
+from torch import distributed as dist
 
-class OriginalModel(nn.Module):
-    def forward(self, x):
-        return x  # Represents the original approach (bool)
 
-class WorkaroundModel(nn.Module):
-    def forward(self, x):
-        # Convert to uint8 and back as per workaround
-        return x.to(torch.uint8).to(torch.bool)
+parser = argparse.ArgumentParser()
+parser.add_argument("--local_rank", type=int)
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.original = OriginalModel()
-        self.workaround = WorkaroundModel()
-    
-    def forward(self, x):
-        # Compare outputs of both models
-        orig_out = self.original(x)
-        work_out = self.workaround(x)
-        # Return True if they match (ensure workaround preserves data)
-        return torch.all(orig_out == work_out)
+args = parser.parse_args()
 
-def my_model_function():
-    return MyModel()
+torch.distributed.init_process_group("nccl")
 
-def GetInput():
-    # Return a random boolean tensor of shape (1,)
-    return torch.rand(1) > 0.5  # Random True/False tensor
+local_rank = args.local_rank
 
+device = torch.device(local_rank)
+
+if local_rank == 0:
+    element = False
+else:
+    element = True
+
+
+def broadcast_scalar(scalar, src=0, device="cpu"):
+    scalar_tensor = torch.tensor(scalar).to(device)
+    with torch.no_grad():
+        scalar_tensor = dist.broadcast(scalar_tensor, src)
+    return scalar_tensor.item()
+
+
+broadcast_scalar(element, src=0, device=device)

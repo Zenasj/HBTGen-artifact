@@ -1,62 +1,84 @@
-# tf.random.uniform((1, 30, 30, 5), dtype=tf.float32)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+
 import tensorflow as tf
+import numpy as np
+
+reallocate_tensors = False  # Turn this on to reallocate tensors every run, fixing tflite accuracy
+nb_channels = 5
+wt_size = 100
+in_size = 30
 
 class DynamicWeightTest(tf.keras.layers.Layer):
-    def __init__(self, channels, select_size, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self,
+                 channels,
+                 select_size,
+                 **kwargs
+                 ):
+        super().__init__()
+
         self.channels = channels
         self.select_size = select_size
 
-    def call(self, inputs):
-        x = inputs[0]  # input tensor of shape (B, H, W, nb_channels)
-        wt = inputs[1] # weights tensor of shape (B, 1, nb_channels, wt_size)
-
-        # Note: tf.nn.conv2d expects wt with shape [filter_height, filter_width, in_channels, out_channels].
-        # The weight input has shape (B, 1, nb_channels, wt_size) per batch, but tf.nn.conv2d expects a single weight tensor.
-        # We'll assume batch size 1 for simplicity here and slice the 0th element, since original example uses batch=1.
-        # Also use strides=(1,1,1,1)
-        # Padding 'VALID'
-        # This layer is dynamic conv with dynamic weights computed per input.
-
-        conv_out = tf.nn.conv2d(
-            x,
-            wt[0],           # slice batch dim 0 (shape: (1, nb_channels, wt_size))
-            strides=[1, 1, 1, 1],
-            padding='VALID'
-        )
-        return conv_out
-
-class MyModel(tf.keras.Model):
-    def __init__(self, nb_channels=5, wt_size=100, in_size=30):
-        super().__init__()
-        self.nb_channels = nb_channels
-        self.wt_size = wt_size
-        self.in_size = in_size
-
-        # Instantiate the dynamic conv layer with parameters as per example
-        self.dynamic_conv = DynamicWeightTest(channels=wt_size, select_size=nb_channels)
 
     def call(self, inputs):
-        # inputs is a tuple/list: (data_tensor, weight_tensor)
-        # data_tensor shape: (1, in_size, in_size, nb_channels)
-        # weight_tensor shape: (1, 1, nb_channels, wt_size)
+        x = inputs[0]
+        wt = inputs[1]
 
-        data, weight = inputs
+        x = tf.nn.conv2d(x, wt, (1, 1), 'VALID')
 
-        # Simply apply the dynamic convolution with dynamic weights for each input
-        out = self.dynamic_conv([data, weight])
-        return out
+        return x
 
-def my_model_function():
-    # Return an instance of MyModel initialized with standard parameters used in example
-    return MyModel(nb_channels=5, wt_size=100, in_size=30)
 
-def GetInput():
-    # Return a tuple of inputs matching MyModel expected input:
-    # data tensor shape: (1, 30, 30, 5)
-    # weight tensor shape: (1, 1, 5, 100)
+input_wt = tf.keras.layers.Input(shape=(1, nb_channels, wt_size), dtype=tf.float32)
+input_data = tf.keras.layers.Input(shape=(in_size, in_size, nb_channels,), dtype=tf.float32)
+x = DynamicWeightTest(channels=wt_size, select_size=nb_channels)([input_data, input_wt])
 
-    input_data = tf.random.uniform((1, 30, 30, 5), dtype=tf.float32)
-    input_wt = tf.random.uniform((1, 1, 5, 100), dtype=tf.float32)
-    return (input_data, input_wt)
+model = tf.keras.Model(inputs=[input_data, input_wt], outputs=[x])
 
+# Get the concrete function from the Keras model.
+model_fn = tf.function(lambda x: model(x))
+model_fn_concrete = model_fn.get_concrete_function([input_data, input_wt])
+
+
+# tflite
+converter = tf.lite.TFLiteConverter.from_concrete_functions([model_fn_concrete])
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+
+tflite_model = converter.convert()
+
+# Load TFLite model and allocate tensors.
+interpreter = tf.lite.Interpreter(model_content=tflite_model)
+interpreter.allocate_tensors()
+
+# Get input and output tensors.
+input_details = interpreter.get_input_details()
+output_details = interpreter.get_output_details()
+
+for _ in range(10):
+    data = np.array(np.random.random_sample((1, in_size, in_size, nb_channels,)), dtype=np.float32)
+    wt = np.array(np.random.random_sample((1, 1, nb_channels, wt_size)), dtype=np.float32)
+    out_ref = model([data, wt])
+
+    # concrete
+    out_fn = model_fn_concrete(tf.constant(data), tf.constant(wt))
+
+    # Note: need to fake resize the input & reallocate tensors
+    if reallocate_tensors:
+        interpreter.resize_tensor_input(0, (1, in_size, in_size, nb_channels,))
+        interpreter.allocate_tensors()
+
+    # Call tflite
+    interpreter.set_tensor(input_details[0]['index'], data)
+    interpreter.set_tensor(input_details[1]['index'], wt)
+    interpreter.invoke()
+    out_test = interpreter.get_tensor(output_details[0]['index'])
+
+    out_ref = out_ref.numpy()
+    out_fn = out_fn.numpy()
+    diff = 100. * np.sum(np.abs(out_test - out_ref)) / np.sum(np.abs(out_ref))
+    diff_fn = 100. * np.sum(np.abs(out_fn - out_ref)) / np.sum(np.abs(out_ref))
+    test_sum = np.sum(out_test)
+
+    print('Diff concrete function is: %f, diff tflite is: %f' % (diff_fn, diff))

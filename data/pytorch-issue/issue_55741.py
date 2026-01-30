@@ -1,25 +1,19 @@
+import math
+import matplotlib.pyplot as plt
+
 import torch
 import torch.nn as nn
 
-# torch.rand(B, 120, 10, 20, dtype=torch.float32)
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv = nn.Conv2d(
-            in_channels=120,
-            out_channels=100,
-            kernel_size=(3, 8),
-            groups=2
-        )  # Uses default kaiming_uniform_ init with a=math.sqrt(5)
+in_channels = 120
+groups = 2
+kernel = (3, 8)
+m = nn.Conv2d(in_channels=in_channels, groups=groups,
+              out_channels=100, kernel_size=kernel)
 
-    def forward(self, x):
-        return self.conv(x)
+k = math.sqrt(groups / (in_channels * math.prod(kernel)))
+print(f"k: {k:0.6f}")
 
-def my_model_function():
-    # Returns a Conv2d model with the configuration from the issue's example
-    return MyModel()
+print(f"min weight: {m.weight.min().item():0.6f}")
+print(f"max weight: {m.weight.max().item():0.6f}")
 
-def GetInput():
-    # Returns random input tensor matching (B, C, H, W) = (2, 120, 10, 20)
-    return torch.rand(2, 120, 10, 20, dtype=torch.float32)
-
+_ = plt.hist(m.weight.detach().numpy().ravel())

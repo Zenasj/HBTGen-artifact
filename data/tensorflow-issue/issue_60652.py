@@ -1,30 +1,43 @@
-# tf.random.uniform((B, 1), dtype=tf.float32) ← Based on the provided model input shape Input(1)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
+
+##
+##  Imports
+##
+
+import sys
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Reconstructing the simple Dense model as described in the issue:
-        # Input shape: (1,), Dense(10) layer
-        self.dense = tf.keras.layers.Dense(10)
+from tensorflow.keras.models     import Model
+from tensorflow.keras.layers     import Input, Dense
+from tensorflow.keras.optimizers import AdamW
 
-    def call(self, inputs):
-        return self.dense(inputs)
+##
+##  Report versions
+##
 
-def my_model_function():
-    # Return an instance of MyModel
+print(f"Python version is: {sys.version}")
+##  -->  Python version is: 3.10.11 | packaged by conda-forge | (main, May 10 2023, 19:01:19) [Clang 14.0.6 ]
 
-    # Note: The issue centers around the AdamW optimizer usage on Mac M1 with TF 2.12.
-    # The provided model is simple: Input(1) -> Dense(10).
-    # Also, no weights are specified, so default initialization is used.
-    
-    return MyModel()
+print(f"TF version is: {tf.__version__}")
+##  -->  TF version is: 2.12.0
 
-def GetInput():
-    # Return a random input tensor matching shape (batch_size, 1)
-    # Assumption: batch size can be flexible; choose 4 for example.
-    # dtype float32 as typical for Keras models.
-    batch_size = 4
-    return tf.random.uniform((batch_size, 1), dtype=tf.float32)
+print(f"Keras version is: {tf.keras.__version__}")
+##  -->  Keras version is: 2.12.0
 
+
+##
+##  Create a very simple model
+##
+
+x_in  = Input(1)
+x     = Dense(10)(x_in)
+model = Model(x_in, x)
+
+##
+##  Compile model with AdamW optimizer
+##
+model.compile(optimizer=AdamW(learning_rate=1e-3, weight_decay=1e-2))

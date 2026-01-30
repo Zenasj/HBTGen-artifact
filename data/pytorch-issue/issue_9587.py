@@ -1,8 +1,17 @@
-# torch.rand(1, 4, 256, 256, dtype=torch.float32)
+import torch.nn as nn
+
 import torch
 from torch import nn
 
-class Net2_original(nn.Module):
+class Net1(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.net = nn.Sequential(nn.Conv2d(4, 4, 1))
+
+    def forward(self, x):
+        return self.net(x)
+
+class Net2(nn.Module):
     def __init__(self):
         super().__init__()
         self.subnet = nn.Sequential(nn.Conv2d(4, 4, 1))
@@ -11,28 +20,20 @@ class Net2_original(nn.Module):
     def forward(self, x):
         return self.net(x)
 
-class Net2_corrected(nn.Module):
+dummy_input = torch.Tensor(1, 4, 256, 256)
+
+print('Started conversion of Net1')
+torch.onnx.export(Net1(), dummy_input, 'net1.proto')
+print('Finished conversion of Net1')
+
+print('Started conversion of Net2')
+torch.onnx.export(Net2(), dummy_input, 'net2.proto')
+print('Finished conversion of Net2')
+
+class Net2(nn.Module):
     def __init__(self):
         super().__init__()
         self.net = nn.Sequential(nn.Sequential(nn.Conv2d(4, 4, 1)))
 
     def forward(self, x):
         return self.net(x)
-
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.net_original = Net2_original()
-        self.net_corrected = Net2_corrected()
-
-    def forward(self, x):
-        output_original = self.net_original(x)
-        output_corrected = self.net_corrected(x)
-        return torch.tensor([torch.allclose(output_original, output_corrected)], dtype=torch.bool)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(1, 4, 256, 256, dtype=torch.float32)
-

@@ -1,19 +1,8 @@
-# torch.rand((), dtype=torch.float32)
 import torch
-from torch import nn
+import torch._dynamo as dynamo
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Compare two methods of converting a tensor to a bool
-        method1 = bool(x)  # Python's bool() on the tensor
-        method2 = torch.ops.aten.Bool(x.item())  # aten.Bool op on the numeric value
-        # Return tensor indicating if the two methods agree
-        return torch.tensor(int(method1 == method2))
+dynamo_callable = dynamo.optimize(nopython=True)(lambda x: bool(x))
+dynamo_callable(torch.tensor(1, dtype=torch.bool))
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Returns a scalar float tensor (0-dim) to test bool conversion
-    return torch.rand(())
-
+dynamo_callable = dynamo.optimize(nopython=True)(lambda: torch.ops.aten.Bool(5))
+dynamo_callable()

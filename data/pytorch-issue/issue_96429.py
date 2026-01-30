@@ -1,35 +1,47 @@
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import random
 
-# torch.rand(B, C, H, W, dtype=torch.float16)  # Input shape: (1, 3, 192, 192)
-class MyModel(nn.Module):
-    def __init__(self, source_size=192, target_size=112, align_corners=False):
-        super().__init__()
-        self.align_corners = align_corners
-        # Precompute grid as part of the model (stored as float16)
-        identity = torch.tensor([[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]], dtype=torch.float32)
-        target_shape = (1, 3, target_size, target_size)
-        grid = F.affine_grid(identity, target_shape, align_corners=align_corners)
-        self.register_buffer("grid", grid.to(torch.float16))  # Grid stored as float16
+import torch
 
-    def forward(self, x):
-        # Full precision computation (upcast inputs and grid to float32)
-        x_full = x.to(torch.float32)
-        grid_full = self.grid.to(torch.float32)
-        full = F.grid_sample(x_full, grid_full, align_corners=self.align_corners)
-        
-        # Half precision computation (use original float16 inputs/grid)
-        half = F.grid_sample(x, self.grid, align_corners=self.align_corners).to(torch.float32)
-        
-        # Return absolute error between the two results
-        return torch.abs(full - half)
+F = torch.nn.functional
 
-def my_model_function():
-    # Initialize with parameters from the original issue
-    return MyModel(source_size=192, target_size=112, align_corners=False)
+def apply_grid_sample(imgs, grid, upcast=False, align_corners=False):
+    if upcast:
+        imgs = imgs.to(torch.float32)
+        grid = grid.to(torch.float32)
 
-def GetInput():
-    # Generate random input matching the required shape/dtype
-    return torch.randn(1, 3, 192, 192, dtype=torch.float16, device="cuda")
+    result = F.grid_sample(imgs, grid, align_corners=align_corners)
 
+    return result.to(torch.float32)
+
+
+N = 1
+align_corners = False
+
+source_size = 192
+target_size = 112
+
+source_shape = N, 3, source_size, source_size
+target_shape = N, 3, target_size, target_size
+
+torch.random.manual_seed(1)
+imgs = torch.randn(*source_shape)
+imgs = imgs.to(dtype=torch.float16, device="cuda")
+
+identity = torch.tensor([[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]])
+grid = F.affine_grid(theta=identity, size=target_shape, align_corners=align_corners)
+grid = grid.to(dtype=torch.float16, device="cuda")
+
+full_precision = apply_grid_sample(imgs, grid, upcast=True, align_corners=align_corners)
+half_precision = apply_grid_sample(imgs, grid, upcast=False, align_corners=align_corners)
+
+abs_full = abs(full_precision)
+abs_full_mean = abs_full.mean()
+abs_full_max = abs_full.max()
+print(f"Expected result has mean absolute value of {abs_full_mean:.4f} and maximum absolute value of {abs_full_max:.4f}.")
+
+abs_error = abs(full_precision - half_precision)
+abs_error_mean = abs_error.mean()
+abs_error_max = abs_error.max()
+print(f"Half precision result is off by {abs_error_mean:.4f} ({abs_error_mean/abs_full_mean:.2%}) on average and {abs_error_max:.4f} ({abs_error_max/abs_full_max:.2%}) at maximum.")

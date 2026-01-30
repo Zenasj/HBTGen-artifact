@@ -1,21 +1,34 @@
-# torch.rand(1, dtype=torch.float32)  # Dummy input as forward passes through
 import torch
+import torch.multiprocessing as mp
 import torch.nn as nn
 
-class MyModel(nn.Module):
+class Net(nn.Module):
     def __init__(self):
         super().__init__()
-        # Use register_buffer instead of Parameter to avoid gradient-related issues
-        self.register_buffer('i', torch.tensor(0, dtype=torch.int64))  
+        self.i = nn.Parameter(torch.tensor(0), requires_grad=False)
 
-    def forward(self, x):
-        # Dummy forward to satisfy module requirements (original issue didn't use forward)
-        return x  
+def run(rank, net):
+    print('start run rank:', rank)
 
-def my_model_function():
-    return MyModel()
+if __name__ == "__main__":
+    net = Net()
+    net.share_memory()
+    c = mp.spawn(run, args=[net], nprocs=1, join=False)
+    c.join()
 
-def GetInput():
-    # Returns a minimal valid input (since forward is a pass-through)
-    return torch.rand(1)
+net = Net()
+net.share_memory()
+state_dict = copy.deepcopy(net.state_dict())
+c = mp.spawn(run, args=[state_dict], nprocs=1, join=False)
+...
+# later times
+state_dict.update(copy.deepcopy(net.state_dict()))
+...
+# in run(state_dict):
+local_net.load_state_dict(state_dict)
 
+state_dict = {
+    'state': copy.deepcopy(net.state_dict())
+}
+# later times
+state_dict['state'] = copy.deepcopy(net.state_dict()) # instead of .update(...)

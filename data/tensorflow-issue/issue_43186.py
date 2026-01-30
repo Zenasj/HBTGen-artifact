@@ -1,119 +1,102 @@
-# tf.random.uniform((B, 256, 1600, 3), dtype=tf.float32)
-
+import numpy as np
+import random
 import tensorflow as tf
-from tensorflow.keras import layers, backend as K
+from tensorflow import keras
+
+class DataGenerator(tf.keras.utils.Sequence):
+    def __init__(self,batch_size,dataframe,x_col,y_col,number_classes,dimensions=[256,1600,3],shuffle=True):
+        self.batch=batch_size
+        self.df=dataframe
+        self.x=x_col
+        self.y=y_col
+        self.classes=number_classes
+        self.dim=dimensions
+        self.indexes=self.df.index.tolist()
+        self.shuffle=shuffle
+        self.index_of_indexes=np.arange(len(self.indexes))
+        self.on_epoch_end()
+        self.n=0
+        self.max=self.__len__()
+    def __len__(self):
+        return int(np.floor(len(self.indexes)/self.batch))
+    def on_epoch_end(self):
+        if self.shuffle==True:
+            np.random.shuffle(self.index_of_indexes)
+    def __next__(self):
+      if self.n>=self.max:
+        self.n=0
+      result = self.__getitem__(self.n)
+      self.n += 1
+      return result
+    def __getitem__(self,index):
+        temp_index_of_indexes=self.index_of_indexes[index*self.batch:(index+1)*self.batch]
+        temp_indexes=[self.indexes[i] for i in temp_index_of_indexes]
+        X=np.empty((self.batch,self.dim[0],self.dim[1],self.dim[2]))
+        Y=np.empty((self.batch,self.dim[0],self.dim[1],self.classes))
+        for i,id_ in enumerate(temp_indexes):
+            image_name=str(self.df.loc[id_,self.x])
+            classes_list=np.array(self.df.loc[id_,self.y])
+            shape=[self.dim[0],self.dim[1]]
+            X[i,],Y[i,]=self.get_data(image_name,classes_list,shape)
+        return X,Y
+    def get_data(self,image_name,classes_list,shape):
+        for i,c in enumerate(classes_list):
+            if i==0 and c==1:
+                file=image_name.split('.')[0]+'.npy'
+                path='/content/severstal-steel-defect-detection/temp1/'+file
+                channel1=np.load(path)
+                channel1=channel1/255.0
+            elif i==0 and c==0:
+                channel1=np.zeros((shape[0],shape[1]))
+            elif i==1 and c==1:
+                file=image_name.split('.')[0]+'.npy'
+                path='/content/severstal-steel-defect-detection/temp2/'+file
+                channel2=np.load(path)
+                channel2=channel2/255.0
+            elif i==1 and c==0:
+                channel2=np.zeros((shape[0],shape[1]))
+            elif i==2 and c==1:
+                file=image_name.split('.')[0]+'.npy'
+                path='/content/severstal-steel-defect-detection/temp3/'+file
+                channel3=np.load(path)
+                channel3=channel3/255.0
+            elif i==2 and c==0:
+                channel3=np.zeros((shape[0],shape[1]))
+            elif i==3 and c==1:
+                file=image_name.split('.')[0]+'.npy'
+                path='/content/severstal-steel-defect-detection/temp4/'+file
+                channel4=np.load(path)
+                channel4=channel4/255.0
+            elif i==3 and c==0:
+                channel4=np.zeros((shape[0],shape[1]))
+        path='/content/severstal-steel-defect-detection/train_images/'+image_name
+        image=load_img(path,target_size=(shape[0],shape[1],3))
+        image=img_to_array(image)
+        image=image/255.0
+        mask=np.stack([channel1,channel2,channel3,channel4],axis=-1)
+        image=tf.cast(image,dtype=tf.float32)
+        mask=tf.cast(mask,dtype=tf.float32)  
+        return image,mask
+
+batch1=4 * tpu_strategy.num_replicas_in_sync
+batch2=2 * tpu_strategy.num_replicas_in_sync
 
 
-# Assumptions and reasoning:
-# - Input shape inferred from DataGenerator dimensions: (256, 1600, 3)
-# - Output mask shape is (256, 1600, 4) for 4 defect classes (multilabel segmentation)
-# - Model described is a UNet-like for multilabel segmentation
-# - Since TPU support issues with custom Sequence generators, typical approach is to rewrite 
-#   dataset with tf.data (not included here as user code)
-# - We'll create a basic UNet model suitable for (256,1600,3) input and 4-class sigmoid output mask.
-# - Provide soft dice loss and metric inside model scope.
-# - Output is segmentation mask of shape (256, 1600, 4), float32 between 0 and 1 (sigmoid)
-
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Basic UNet-like architecture adapted for TPU compatibility and large input width.
-        # Using simple conv blocks and down/upsampling.
-        
-        # Encoder
-        self.conv1 = layers.Conv2D(32, 3, activation='relu', padding='same')
-        self.conv1b = layers.Conv2D(32, 3, activation='relu', padding='same')
-        self.pool1 = layers.MaxPooling2D((2, 2))
-        
-        self.conv2 = layers.Conv2D(64, 3, activation='relu', padding='same')
-        self.conv2b = layers.Conv2D(64, 3, activation='same', activation='relu')
-        self.pool2 = layers.MaxPooling2D((2, 2))
-        
-        self.conv3 = layers.Conv2D(128, 3, activation='relu', padding='same')
-        self.conv3b = layers.Conv2D(128, 3, activation='relu', padding='same')
-        self.pool3 = layers.MaxPooling2D((2, 2))
-        
-        self.conv4 = layers.Conv2D(256, 3, activation='relu', padding='same')
-        self.conv4b = layers.Conv2D(256, 3, activation='relu', padding='same')
-        
-        # Decoder
-        self.up3 = layers.UpSampling2D((2, 2))
-        self.conv5 = layers.Conv2D(128, 3, activation='relu', padding='same')
-        self.conv5b = layers.Conv2D(128, 3, activation='relu', padding='same')
-        
-        self.up2 = layers.UpSampling2D((2, 2))
-        self.conv6 = layers.Conv2D(64, 3, activation='relu', padding='same')
-        self.conv6b = layers.Conv2D(64, 3, activation='relu', padding='same')
-        
-        self.up1 = layers.UpSampling2D((2, 2))
-        self.conv7 = layers.Conv2D(32, 3, activation='relu', padding='same')
-        self.conv7b = layers.Conv2D(32, 3, activation='relu', padding='same')
-        
-        # Output layer with sigmoid activation for multilabel segmentation
-        self.out_conv = layers.Conv2D(4, 1, activation='sigmoid', padding='same')
-        
-    def call(self, inputs, training=False):
-        # Encoder path
-        c1 = self.conv1(inputs)
-        c1 = self.conv1b(c1)
-        p1 = self.pool1(c1)
-        
-        c2 = self.conv2(p1)
-        c2 = self.conv2b(c2)
-        p2 = self.pool2(c2)
-        
-        c3 = self.conv3(p2)
-        c3 = self.conv3b(c3)
-        p3 = self.pool3(c3)
-        
-        c4 = self.conv4(p3)
-        c4 = self.conv4b(c4)
-        
-        # Decoder path + skip connections
-        u3 = self.up3(c4)
-        u3 = tf.concat([u3, c3], axis=-1)
-        c5 = self.conv5(u3)
-        c5 = self.conv5b(c5)
-        
-        u2 = self.up2(c5)
-        u2 = tf.concat([u2, c2], axis=-1)
-        c6 = self.conv6(u2)
-        c6 = self.conv6b(c6)
-        
-        u1 = self.up1(c6)
-        u1 = tf.concat([u1, c1], axis=-1)
-        c7 = self.conv7(u1)
-        c7 = self.conv7b(c7)
-        
-        output = self.out_conv(c7)
-        return output
-
-
-def my_model_function():
-    # Instantiate model and compile with soft dice loss and metric
-    model = MyModel()
-    
-    def soft_dice_loss(y_true, y_pred):
-        y_true_f = K.flatten(y_true)
-        y_pred_f = K.flatten(y_pred)
-        intersection = 2 * K.sum(y_true_f * y_pred_f) + 1e-9
-        denominator = K.sum(y_true_f ** 2) + K.sum(y_pred_f ** 2) + 1e-9
-        return 1 - (intersection / denominator)
-    
-    def soft_dice_coeff(y_true, y_pred):
-        y_true_f = K.flatten(y_true)
-        y_pred_f = K.flatten(y_pred)
-        intersection = 2 * K.sum(y_true_f * y_pred_f) + 1e-9
-        denominator = K.sum(K.abs(y_true_f)) + K.sum(K.abs(y_pred_f)) + 1e-9
-        return K.mean(intersection / denominator)
-    
-    model.compile(optimizer='adam', loss=soft_dice_loss, metrics=[soft_dice_coeff])
-    return model
-
-
-def GetInput():
-    # Generate a random tensor input matching the model input:
-    # batch size = 4 (typical for TPU, but any batch is fine here),
-    # height=256, width=1600, channels=3
-    return tf.random.uniform((4, 256, 1600, 3), dtype=tf.float32)
-
+with tpu_strategy.scope():
+  training_model=custom_model()
+  def soft_dice_loss(y_true,pred):
+    y_true=K.flatten(y_true)
+    pred=K.flatten(pred)
+    intersec=(2*K.sum(y_true*pred))+1e-9
+    deno=K.sum(y_true**2)+K.sum(pred**2)+1e-9
+    return 1-K.mean(intersec/deno)
+  def soft_dice_coeff(y_true,pred):
+    y_true=K.flatten(y_true)
+    pred=K.flatten(pred)
+    intersec=(2*K.sum(y_true*pred))+1e-9
+    deno=K.sum(K.abs(y_true))+K.sum(K.abs(pred))+1e-9
+    return K.mean(intersec/deno)
+  training_model.compile(
+      optimizer='Adam',
+      loss=soft_dice_loss,
+      metrics=[soft_dice_coeff])

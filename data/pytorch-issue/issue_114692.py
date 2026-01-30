@@ -1,20 +1,11 @@
-# torch.rand(3, dtype=torch.float32)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        # Perform in-place zeroing on the second element of the input tensor
-        x[1].zero_()
-        return x
+# For reference we get the result on cpu
+a = torch.ones(3).to('cpu')
+a[1].zero_()
+print(a) # -> tensor([1., 0., 1.])
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Generate a random tensor of shape (3,) as input
-    return torch.rand(3)
-
+# Now we do the same on MPS
+b = torch.ones(3).to('mps')
+b[1].zero_()
+print(b) # -> tensor([1., 0., 0.], device='mps:0')

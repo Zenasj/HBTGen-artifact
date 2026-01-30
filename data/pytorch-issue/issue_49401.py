@@ -1,27 +1,56 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # B=1568, C=3, H=64, W=64
+import argparse
+import numpy as np
+import os
+import sys
+import time
+from tqdm import tqdm
+from collections import OrderedDict
 
 import torch
 import torch.nn as nn
-import torchvision.models as models
+from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
+import torchaudio
+import torchvision
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.resnet = models.resnet18(pretrained=True, progress=True)
-    
-    def forward(self, x):
-        return self.resnet(x)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
+def validation(args, pr, net, device='cuda'):
+    import pdb; pdb.set_trace()
     batch_size = 1568
-    channels = 3
-    height = 64
-    width = 64
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    return torch.rand(batch_size, channels, height, width, dtype=torch.float32).to(device)
+    net.eval()
+    with torch.no_grad():
+        for i in range(100):
+            img = torch.rand(batch_size, 3, 64, 64).to(device)
+            out = net(img)
+    torch.cuda.empty_cache()
+    return None
 
+def train(args, pr, net, device='cuda'):
+    import pdb; pdb.set_trace()
+    net.train()
+    batch_size = 1568
+    for i in range(100):
+        img = torch.rand(batch_size, 3, 64, 64).to(device)
+        out = net(img)
+    torch.cuda.empty_cache()
+    return None
+
+def main(args, device):
+    # save dir
+    gpus = torch.cuda.device_count()
+    gpu_ids = list(range(gpus))
+
+    # ----- Network ----- #
+    net = torchvision.models.resnet18(pretrained=True, progress=True).to(device)
+    net = nn.DataParallel(net, device_ids=gpu_ids)
+    pr = None
+    #  --------- Random or resume validation ------------ #
+    res = validation(args, pr, net, device)
+    res = train(args, pr, net, device)
+
+
+if __name__ == '__main__':
+    args = None
+    main(args, DEVICE)

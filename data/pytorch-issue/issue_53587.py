@@ -1,0 +1,1 @@
+set_output(full_output_size, input.options().memory_format(input.suggest_memory_format()));

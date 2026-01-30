@@ -1,29 +1,39 @@
-# tf.random.uniform((1, 10), dtype=tf.float32) ← Input shape as per Input(shape=(10,), batch_size=1)
+from tensorflow.keras import layers
 
 import tensorflow as tf
+from tensorflow.keras import Sequential, Input, Model
+from tensorflow.keras.layers import BatchNormalization, Dense, Reshape
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Using a Sequential model inside this tf.keras.Model as per the original code
-        self.mlp = tf.keras.Sequential([
-            tf.keras.layers.Dense(1024 * 5),
-            tf.keras.layers.Reshape((5, 1, 1, 1024)),
-            # BatchNormalization with axis=1 as in the original example
-            tf.keras.layers.BatchNormalization(axis=1),
-            tf.keras.layers.Dense(1024 * 5)
-        ])
+inputs = Input(shape=(10,))
+MLP = Sequential()
+MLP.add(Dense(1024*5))
+MLP.add(Reshape((5,1,1,1024)))
+MLP.add(BatchNormalization(axis=1))
+MLP.add(Dense(1024*5))
 
-    def call(self, inputs, training=False):
-        # Forward pass identical to original model
-        return self.mlp(inputs, training=training)
+output = MLP(inputs)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+model = Model(inputs=inputs, outputs=output)
+model.save('reproduce_bug')
+converter = tf.lite.TFLiteConverter.from_saved_model('reproduce_bug')
 
-def GetInput():
-    # Input shape matches batch_size=1 and input shape (10,)
-    # Uniform random float32 tensor
-    return tf.random.uniform((1, 10), dtype=tf.float32)
+converter._experimental_lower_tensor_list_ops = False
+converter.target_spec.supported_ops = [
+  tf.lite.OpsSet.TFLITE_BUILTINS, # enable TensorFlow Lite ops.
+  tf.lite.OpsSet.SELECT_TF_OPS # enable TensorFlow ops.
+]
 
+tflite_model = converter.convert()
+
+with open("reproduce_bug.tflite", "wb") as f:
+    f.write(tflite_model)
+
+import tflite_runtime.interpreter as tflite
+
+interpreter = tflite.Interpreter(model_path='reproduce_bug.tflite')
+
+for tdetails in interpreter.get_tensor_details():
+    if tdetails['index'] == 19: # or your failing index
+        print(tdetails)
+
+interpreter.allocate_tensors()

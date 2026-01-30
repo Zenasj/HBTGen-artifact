@@ -1,18 +1,13 @@
-# torch.rand(3, 3, dtype=torch.float64)
-import torch
-import torch.nn as nn
+import numpy as np
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Compute PyTorch's nuclear norm condition number
-        pt_result = torch.linalg.cond(x, 'nuc')
-        # Return whether the result is INF (indicating singular matrix, matching numpy's failure case)
-        return torch.isinf(pt_result).all()
+ERROR: test_cond_cpu_complex128 (__main__.TestLinalgCPU)
+ERROR: test_cond_cpu_complex64 (__main__.TestLinalgCPU)
+ERROR: test_cond_cpu_float32 (__main__.TestLinalgCPU)
+ERROR: test_cond_cpu_float64 (__main__.TestLinalgCPU)
 
-def my_model_function():
-    return MyModel()
+input=np.array([[1., 0., 0.], [0., 1., 0.], [0., 0., 0.]])
 
-def GetInput():
-    # Return a random 3x3 tensor with float64 dtype (matches test case input dimensions)
-    return torch.rand(3, 3, dtype=torch.float64)
+np.linalg.cond(input,'nuc')
 
+input=np.array([[1., 0., 0.], [0., 1., 0.], [0., 0., 0.]])
+np.linalg.cond(input,'nuc')

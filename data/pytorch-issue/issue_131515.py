@@ -1,18 +1,15 @@
-# torch.rand(B, 4, dtype=torch.float)
-import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
+import torch
+
+class BroadcastInDim(torch.nn.Module):
     def forward(self, x):
         x = x.clone()
         dims = [0, 1]
         shape = [x.shape[d] for d in dims]
         shape.append(1)
         return torch.ops.prims.broadcast_in_dim.default(x, shape, dims).clone()
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(3, 4)
-
+    
+x = torch.randn(3, 4)
+dim = torch.export.Dim("dyn_dim", min=1, max=4)
+mod = torch.export.export(BroadcastInDim(), (x,), dynamic_shapes=({0: dim},))

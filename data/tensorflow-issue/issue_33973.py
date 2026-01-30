@@ -1,49 +1,61 @@
-# tf.random.uniform((B=16, H=128, W=64, C=2), dtype=tf.float32)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
+import numpy as np
 import tensorflow as tf
-
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Using a Conv2D layer with kernel size 1 and no activation to match example
-        # from the original TF 1.x Model using keras functional API.
-        # Output channels = 2 to match output_shape from example.
-        self.conv = tf.keras.layers.Conv2D(
-            filters=2,
-            kernel_size=1,
-            activation=None,
-            data_format='channels_last'
-        )
-
-    def call(self, inputs, training=False):
-        # Expect inputs shape: (batch_size, 128, 64, 2)
-        return self.conv(inputs)
+import tensorflow.keras.backend as K
+from tensorflow.keras.layers import Input, Conv2D
+from tensorflow.keras.models import Model
+from tensorflow.keras.utils import Sequence
 
 
-def my_model_function():
-    # Return an instance of MyModel with no pretrained weights needed.
-    return MyModel()
+def get_model(input_shape, output_shape, compile_batch_size):
+    assert K.image_data_format() == 'channels_last'
+    m_input = Input(shape=input_shape, batch_size=compile_batch_size)
+    m_output = Conv2D(output_shape[-1], 1, activation=None)(m_input)
+    model = Model(inputs=m_input, outputs=m_output)
+    return model
 
 
-def GetInput():
-    # Return random input tensor of shape (16, 128, 64, 2) - batch size 16,
-    # height 128, width 64, channels 2 as per issue code.
-    return tf.random.uniform((16, 128, 64, 2), dtype=tf.float32)
+class DataGenerator(Sequence):
+    def __init__(self, batch_size, image_size, num_batches):
+        assert K.image_data_format() == 'channels_last'
 
-# ---
-# ### Explanation and Assumptions:
-# - The original issue centers around a Keras model created with a Conv2D layer of kernel size 1 and no activation, taking input shape `(128, 64, 2)` and batch size 16.
-# - The model outputs a tensor of shape `(batch_size, 128, 64, 2)`.
-# - Since the original code used `fit_generator` with multiprocessing that froze when `set_session` was called before training, the minimal model structure is reconstructed here.
-# - `MyModel` mimics the original Keras model built via the functional API with an Input layer and a Conv2D.
-# - The provided `GetInput()` produces a random tensor matching the input shape expected by the model.
-# - The structure aligns with TensorFlow 2.20.0 and is compatible with XLA compilation.
-# - Comments describe assumptions and shapes explicitly for clarity.
-# If you were to compile and use this model:
-# ```python
-# model = my_model_function()
-# model.compile(optimizer='adam', loss='mse', metrics=['accuracy'])
-# input_data = GetInput()
-# output = model(input_data)
-# ```
-# This would replicate the model behavior from the provided issue context suitable for TF2.20.
+        self.batch_size = batch_size
+        self.image_size = image_size
+        self.num_batches = num_batches
+        self.on_epoch_end()
+
+    def __len__(self):
+        assert self.num_batches > 0
+        return self.num_batches
+
+    def __getitem__(self, index):
+        return np.zeros((self.batch_size,) + self.image_size).astype('float32'), np.zeros(
+            (self.batch_size,) + self.image_size).astype('float32')
+
+    def on_epoch_end(self):
+        pass
+
+
+if __name__ == '__main__':
+    print(tf.version.GIT_VERSION, tf.version.VERSION)
+
+    # set to True to trigger infinite wait
+    if True:
+        # limit GPU memory
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+        config.gpu_options.per_process_gpu_memory_fraction = 0.5
+        tf.keras.backend.set_session(tf.Session(config=config))
+
+    inp_shape = (128, 64, 2)
+    outp_shape = (128, 64, 2)
+    batch_size = 16
+
+    gen = DataGenerator(batch_size, inp_shape, 10)
+    model = get_model(inp_shape, outp_shape, batch_size)
+    model.summary()
+    model.compile(loss=["mse"], optimizer="adam", metrics=["accuracy"])
+    model.fit_generator(gen, steps_per_epoch=10, epochs=5, workers=2, use_multiprocessing=True)

@@ -1,16 +1,25 @@
-# torch.rand(2, dtype=torch.float32)  # Inferred input shape (1D tensor of size 2)
+import torch.nn as nn
+
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, input):
-        rt = torch.stack([input])  # Create a stack with single tensor
-        v = torch.nn.functional.silu(input, inplace=True)  # Apply in-place operation
-        return rt  # Return the stacked tensor (should match original input before in-place)
+def fn(input):
+    rt = torch.stack([input]) # works fine if "[input, input]" is the input tensor list
+    v = torch.nn.functional.silu(input, inplace=True) # any inplace operator will trigger this issue
+    return rt
 
-def my_model_function():
-    return MyModel()
+x = torch.tensor([1.0, 1.0])
+ret_eager = fn(x.clone())
 
-def GetInput():
-    return torch.rand(2, dtype=torch.float32)  # 1D tensor matching input requirements
+compiled = torch.compile(fn)
+ret_compiled = compiled(x.clone())
 
+for r1, r2 in zip(ret_eager, ret_compiled):
+    assert torch.allclose(r1, r2), (r1, r2)
+print('==== Check OK! ====')
+
+"""
+Traceback (most recent call last):
+  File "repro.py", line 15, in <module>
+    assert torch.allclose(r1, r2), (r1, r2)
+AssertionError: (tensor([1., 1.]), tensor([0.7311, 0.7311]))
+"""

@@ -1,39 +1,52 @@
-# tf.random.uniform((10, 224, 224, 3), dtype=tf.float32) ← inferred input shape based on batch size and Conv2D input_shape
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
+## run.py ##
 import tensorflow as tf
+import numpy as np
+from tensorflow.keras.layers import Input, Conv2D
+from tensorflow.keras.optimizers import Adam
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # This model replicates the original Sequential model described:
-        # 7 Conv2D layers with filters=1, kernel sizes 3 or 2,
-        # strides mostly 2, final activation sigmoid.
-        self.conv_layers = [
-            tf.keras.layers.Conv2D(filters=1, kernel_size=3, strides=2, activation=None, input_shape=(224, 224, 3)),
-            tf.keras.layers.Conv2D(filters=1, kernel_size=3, strides=2, activation=None),
-            tf.keras.layers.Conv2D(filters=1, kernel_size=3, strides=2, activation=None),
-            tf.keras.layers.Conv2D(filters=1, kernel_size=3, strides=2, activation=None),
-            tf.keras.layers.Conv2D(filters=1, kernel_size=3, strides=2, activation=None),
-            tf.keras.layers.Conv2D(filters=1, kernel_size=3, strides=2, activation=None),
-            tf.keras.layers.Conv2D(filters=1, kernel_size=2, strides=1, activation='sigmoid'),
-        ]
-        
-    def call(self, inputs, training=False):
-        x = inputs
-        for layer in self.conv_layers:
-            x = layer(x)
-        return x
+#tf.keras.backend.set_image_data_format("channels_first")
 
-def my_model_function():
-    # Return an instance of MyModel
-    model = MyModel()
-    # Compile the model similarly as original code:
-    model.compile(optimizer=tf.keras.optimizers.Adam(),
-                  loss='binary_crossentropy')
-    return model
+model = tf.keras.Sequential()
+model.add(tf.keras.layers.Conv2D(filters=1, kernel_size=3, strides=2, input_shape=(224, 224, 3)))
+model.add(tf.keras.layers.Conv2D(filters=1, kernel_size=3, strides=2))
+model.add(tf.keras.layers.Conv2D(filters=1, kernel_size=3, strides=2))
+model.add(tf.keras.layers.Conv2D(filters=1, kernel_size=3, strides=2))
+model.add(tf.keras.layers.Conv2D(filters=1, kernel_size=3, strides=2))
+model.add(tf.keras.layers.Conv2D(filters=1, kernel_size=3, strides=2))
+model.add(tf.keras.layers.Conv2D(filters=1, kernel_size=2, strides=1, activation='sigmoid'))
 
-def GetInput():
-    # Return a random tensor input matching model input
-    # batch size=10, height=224, width=224, channels=3, dtype float32
-    return tf.random.uniform(shape=(10, 224, 224, 3), dtype=tf.float32)
+model.compile( optimizer=Adam(), loss='binary_crossentropy')
 
+model.summary()
+
+gpu = tf.test.is_gpu_available()
+print("GPU is available:", gpu)
+assert(gpu)
+
+batch_size = 10
+x = np.random.random((batch_size, 224, 224, 3))
+y = np.random.random((batch_size, 1, 1, 1))
+
+print("x", x.shape)
+print("y", y.shape)
+
+y_pred = model.predict(x)
+print("Predict successful: ", y_pred.shape)
+
+print("Begin training with fit")
+model.fit(x, y, epochs=10)
+print("Fit successful")
+
+print("Begin training with train_on_batch")
+for i in range(10):
+    model.train_on_batch(x, y)
+print("On batch successful")
+
+physical_devices = tf.config.experimental.list_physical_devices('GPU')
+assert len(physical_devices) > 0, "Not enough GPU hardware devices available"
+tf.config.experimental.set_memory_growth(physical_devices[0], True)

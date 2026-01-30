@@ -1,14 +1,23 @@
-# tf.random.uniform((262144, 3), dtype=tf.float32)
+import math
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
+
+import numpy as np
 import tensorflow as tf
+from tensorflow.python.distribute import distribution_strategy_context as ds
+from tensorflow.python.distribute import reduce_util
+from tensorflow.python.keras.layers import normalization
 
-class SyncBatchNormalization(tf.keras.layers.experimental.SyncBatchNormalization):
-    """Custom SyncBatchNormalization to avoid NaN issues with large batch sizes on some hardware.
 
-    This implementation overrides _calculate_mean_and_var to apply a synchronized 
-    all-reduce mean and variance over replicas, with additional logging on large variance.
-    
-    This is based on an approach inspired by the SimCLR repo and the original issue reproduction.
+class SyncBatchNormalization(normalization.BatchNormalizationBase):
+    """The SyncBatchNormalization in TF 2.2 seems causing NaN issue.
+    We implement this one to avoid the issue.
+    See https://github.com/google-research/simclr/blob/bfe07eed7f101ab51f3360100a28690e1bfbf6ec/resnet.py#L37-L85
     """
+
     def __init__(self,
                  axis=-1,
                  momentum=0.99,
@@ -30,8 +39,8 @@ class SyncBatchNormalization(tf.keras.layers.experimental.SyncBatchNormalization
                  adjustment=None,
                  name=None,
                  **kwargs):
-        # Disable fused because fused SyncBatchNorm in TF 2.2 is problematic for large batches.
-        super().__init__(
+        # Currently we only support aggregating over the global batch size.
+        super(SyncBatchNormalization, self).__init__(
             axis=axis,
             momentum=momentum,
             epsilon=epsilon,
@@ -55,45 +64,36 @@ class SyncBatchNormalization(tf.keras.layers.experimental.SyncBatchNormalization
             **kwargs)
 
     def _calculate_mean_and_var(self, inputs, reduction_axes, keep_dims):
-        # Compute local mean and var per replica
-        shard_mean, shard_variance = super()._calculate_mean_and_var(inputs, reduction_axes, keep_dims=keep_dims)
-        replica_ctx = tf.distribute.get_replica_context()
+        shard_mean, shard_variance = super(SyncBatchNormalization, self)._calculate_mean_and_var(
+            inputs, reduction_axes, keep_dims=keep_dims)
+        replica_ctx = ds.get_replica_context()
         if replica_ctx:
-            # Perform all-reduce mean over all replicas for mean and variance
-            group_mean, group_variance = replica_ctx.all_reduce(tf.distribute.ReduceOp.MEAN, [shard_mean, shard_variance])
-            # Correct the variance by adding the mean distance variance across shards
+            group_mean, group_variance = replica_ctx.all_reduce(reduce_util.ReduceOp.MEAN, [shard_mean, shard_variance])
             mean_distance = tf.math.squared_difference(tf.stop_gradient(group_mean), shard_mean)
-            group_variance += replica_ctx.all_reduce(tf.distribute.ReduceOp.MEAN, mean_distance)
-            # If group variance mean is large (threshold=50), print debug info
-            def _print_debug():
-                return tf.print(
-                    f"\n{self.name} id", replica_ctx.replica_id_in_sync_group, "/",
-                    replica_ctx.num_replicas_in_sync, "\n",
-                    "local mean distance:", mean_distance, "mean local mean distance",
-                    tf.reduce_mean(mean_distance), "\n",
-                    "group var:", group_variance, "mean group var:", tf.reduce_mean(group_variance), "\n",
-                    "local var:", shard_variance, "mean local var:", tf.reduce_mean(shard_variance), "\n",
-                    "group mean:", group_mean, "mean group mean", tf.reduce_mean(group_mean), "\n",
-                    "local mean:", shard_mean, "mean local mean", tf.reduce_mean(shard_mean), "\n",
-                    "size:", tf.shape(shard_mean)
-                )
-            tf.cond(tf.reduce_mean(group_variance) > 50, _print_debug, lambda: tf.no_op())
+            group_variance += replica_ctx.all_reduce(reduce_util.ReduceOp.MEAN, mean_distance)
+            tf.cond(tf.reduce_mean(group_variance) > 50,
+                    lambda: tf.print(
+                        f"\n{self.name} id", replica_ctx.replica_id_in_sync_group, "/",
+                        replica_ctx.num_replicas_in_sync, "\n",
+                        "local mean distance:", mean_distance, "mean local mean distance",
+                        tf.reduce_mean(mean_distance), "\n",
+                        "group var:", group_variance, "mean group var:", tf.reduce_mean(group_variance), "\n",
+                        "local var:", shard_variance, "mean local var:", tf.reduce_mean(shard_variance), "\n",
+                        "group mean:", group_mean, "mean group mean", tf.reduce_mean(group_mean), "\n",
+                        "local mean:", shard_mean, "mean local mean", tf.reduce_mean(shard_mean), "\n",
+                        "size:", tf.shape(shard_mean)),
+                    lambda: tf.no_op()
+                    )
             return group_mean, group_variance
         else:
-            # No replica context, just use local stats
             return shard_mean, shard_variance
 
 
-class MyModel(tf.keras.Model):
-    """Combined model that uses 10 parallel MLP sequences, each with Dense + SyncBatchNorm + ReLU layers,
-    then concatenates all outputs and passes through a final Dense layer to predict 10 classes.
-    
-    This replicates the provided test model from the issue.
-    """
+class Test(tf.keras.models.Model):
     def __init__(self):
-        super().__init__()
+        super(Test, self).__init__()
         self.mlps = []
-        for _ in range(10):
+        for i in range(10):
             self.mlps.append(tf.keras.Sequential([
                 tf.keras.layers.Dense(512),
                 SyncBatchNormalization(),
@@ -106,22 +106,22 @@ class MyModel(tf.keras.Model):
         self.head = tf.keras.layers.Dense(10)
 
     def call(self, inputs, training=None, mask=None):
-        outputs = []
+        out = []
         for mlp in self.mlps:
-            x = mlp(inputs, training=training)
-            outputs.append(x)
-        concatenated = tf.concat(outputs, axis=-1)
-        logits = self.head(concatenated)
-        return logits
+            out.append(mlp(inputs))
+        return self.head(tf.concat(out, axis=-1))
 
 
-def my_model_function():
-    # Instantiate and return the model instance
-    return MyModel()
+dummy_data = np.random.random((2621440, 3)).astype(np.float32) * 6 - 3
+dummy_label = np.random.randint(0, 10, 2621440).astype(np.int32)
+# print(dummy_label.shape)
+dataset = tf.data.Dataset.from_tensor_slices((dummy_data, dummy_label)).batch(262144)
 
-
-def GetInput():
-    # Return a random input tensor matching the expected input shape:
-    # shape = (batch_size=262144, input_features=3), dtype float32
-    return tf.random.uniform((262144, 3), minval=-3, maxval=3, dtype=tf.float32)
-
+strategy = tf.distribute.MirroredStrategy()
+with strategy.scope():
+    model = Test()
+    model.compile(
+        loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+        optimizer=tf.keras.optimizers.Adam(learning_rate=0)
+    )
+    model.fit(dataset, epochs=10000)

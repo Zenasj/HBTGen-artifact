@@ -1,32 +1,48 @@
-# torch.rand(1, 5, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
 import torch
 import torch.nn as nn
+import torch._dynamo
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.linear = nn.Linear(5, 5)
+model = nn.Linear(5, 5)
 
-    def forward(self, x):
-        return self.linear(x)
+def new_forward(*args, **kwargs):
+    return nn.Linear.forward(model, *args, **kwargs)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    model = MyModel()
+model.forward = new_forward
+
+fn = torch.compile(model, backend='eager')
+fn(torch.randn(1, 5))
+
+model = nn.Linear(5, 5)
+
+def new_forward1(*args, **kwargs):
+    return nn.Linear.forward(model, *args, **kwargs)
+
+print("Is method originally:", inspect.ismethod(model.forward))  # True
+model.forward = new_forward1
+
+old_forward = model.forward
+print("Is method now:", inspect.ismethod(old_forward))   # False
+
+def new_forward2(*args, **kwargs):
+    return old_forward(*args, **kwargs)
     
-    # Workaround for dynamically patching the forward method
-    def new_forward(*args, **kwargs):
-        return nn.Linear.forward(model.linear, *args, **kwargs)
-    
-    model.linear.forward = new_forward
-    
-    return model
+model.forward = new_forward2
+ 
+fn = torch.compile(model, backend='eager')
+fn(torch.randn(1, 5))
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(1, 5)
+model = nn.Linear(5, 5)
+print("Is method originally:", inspect.ismethod(model.forward))   # True
 
-# Example usage:
-# compiled_model = torch.compile(my_model_function())
-# output = compiled_model(GetInput())
+model = torch.compile(model, backend='eager')
+old_forward = model.forward
+# model.forward is no longer a method after doing torch.compile
+print("Is method now:", inspect.ismethod(old_forward))  # False
 
+def new_forward(*args, **kwargs):
+    return old_forward(*args, **kwargs)
+
+model.forward = new_forward
+
+fn = torch.compile(model, backend='eager')
+fn(torch.randn(1, 5))

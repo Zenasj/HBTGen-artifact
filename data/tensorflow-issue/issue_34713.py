@@ -1,61 +1,50 @@
-# tf.random.uniform((B, 32, 32, 3), dtype=tf.float32), tf.random.uniform((B, None, 10), dtype=tf.float32)
+import random
+from tensorflow.keras import optimizers
+
+from tensorflow import keras
 import tensorflow as tf
+import numpy as np
 from tensorflow.keras import layers
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Image input branch
-        self.conv2d = layers.Conv2D(3, 3)
-        self.global_max_pool_2d = layers.GlobalMaxPooling2D()
-        # Time series input branch
-        self.conv1d = layers.Conv1D(3, 3)
-        self.global_max_pool_1d = layers.GlobalMaxPooling1D(name='x2pool')
-        # Concatenate and classify
-        self.concat = layers.Concatenate()
-        self.classifier = layers.Dense(5, activation='softmax', name='class_output')
+image_input = keras.Input(shape=(32, 32, 3), name='img_input')
+timeseries_input = keras.Input(shape=(None, 10), name='ts_input')
 
-    def call(self, inputs, training=False):
-        # inputs is expected to be a dict with keys 'img_input' and 'ts_input'
-        img_input = inputs['img_input']  # shape (B, 32, 32, 3)
-        ts_input = inputs['ts_input']    # shape (B, T, 10), T is variable length (None)
+x1 = layers.Conv2D(3, 3)(image_input)
+x1pool = layers.GlobalMaxPooling2D()(x1)
 
-        # Image branch forward pass
-        x1 = self.conv2d(img_input)           # (B, 30, 30, 3) - conv changes spatial dims from 32->30
-        x1pool = self.global_max_pool_2d(x1) # (B, 3)
+x2 = layers.Conv1D(3, 3)(timeseries_input)
+x2pool = layers.GlobalMaxPooling1D(name='x2pool')(x2)
 
-        # Time series branch forward pass
-        x2 = self.conv1d(ts_input)            # (B, T-2, 3) because kernel=3 in conv1d
-        x2pool = self.global_max_pool_1d(x2) # (B, 3)
+x = layers.concatenate([x1pool, x2pool])
 
-        # Concatenate pooled features from both branches
-        x = self.concat([x1pool, x2pool])     # (B, 6)
+# score_output = layers.Dense(1, name='score_output')(x)
+class_output = layers.Dense(5, activation='softmax', name='class_output')(x)
 
-        # Class output head (softmax)
-        class_output = self.classifier(x)     # (B, 5)
+# original outputs from docs example code
+# outputs = [class_output, score_output]
 
-        # Original model outputs were in a list:
-        # outputs = [x2pool, class_output]
-        # This can cause ambiguity with losses keyed by name due to positional indexing.
-        # So we return outputs as a dictionary keyed by layer names to match loss dict usage.
-        return {
-            'x2pool': x2pool,          # pooled conv1d output, no loss attached
-            'class_output': class_output
-        }
+# the commented one works (only by coincidence!), but the uncommented one doesnt
+# outputs = [class_output, x2pool]
+outputs = [x2pool, class_output]
 
-def my_model_function():
-    # Return an instance of MyModel. No weights initialization needed beyond default.
-    return MyModel()
+model = keras.Model(inputs=[image_input, timeseries_input],
+                    outputs=outputs)
 
-def GetInput():
-    # Return a dict with two tensor inputs matching the expected shapes:
-    # 'img_input' shape (B=4, 32, 32, 3), float32
-    # 'ts_input' shape (B=4, T=20, 10), float32 (T=20 chosen as example variable length)
-    B = 4
-    img_input = tf.random.uniform((B, 32, 32, 3), dtype=tf.float32)
-    ts_input = tf.random.uniform((B, 20, 10), dtype=tf.float32)
-    return {
-        'img_input': img_input,
-        'ts_input': ts_input,
-    }
+model.compile(
+    optimizer=keras.optimizers.Adam(),
+    loss={'class_output': keras.losses.CategoricalCrossentropy()})
 
+
+img_data = np.random.random_sample(size=(100, 32, 32, 3))
+ts_data = np.random.random_sample(size=(100, 20, 10))
+score_targets = np.random.random_sample(size=(100, 1))
+class_targets = np.random.random_sample(size=(100, 5))
+
+
+# we supply the targets for the loss that we tagged to the class_output head.
+train_dataset = tf.data.Dataset.from_tensor_slices(
+    ({'img_input': img_data, 'ts_input': ts_data},
+     {'class_output': class_targets}))
+train_dataset = train_dataset.shuffle(buffer_size=1024).batch(64)
+
+model.fit(train_dataset, epochs=3)

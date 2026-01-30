@@ -1,9 +1,9 @@
-# torch.rand(3, 4, dtype=torch.float32)
-import torch
-from torch import nn, Tensor
 from torch.autograd import Function
+import torch
 
 class _SafeTanh(Function):
+    generate_vmap_rule = True
+
     @staticmethod
     def forward(input, eps):
         output = input.tanh()
@@ -16,15 +16,27 @@ class _SafeTanh(Function):
         ctx.save_for_backward(output)
 
     @staticmethod
-    def backward(ctx, grad_output):
-        grad = grad_output
-        output, = ctx.saved_tensors
-        return grad * (1 - output.pow(2)), None  # No gradient for eps
+    def backward(ctx, *grad):
+        grad = grad[0]
+        (output,) = ctx.saved_tensors
+        return (grad * (1 - output.pow(2)), None)
 
-class HalfRopeInPlace(Function):
+func = _SafeTanh.apply
+
+x = torch.randn((1, 1), requires_grad=True)
+eager = lambda x, y: torch.vmap(lambda x: func(x, y))
+eager(x, 1.0)
+c = torch.compile(eager, fullgraph=True)
+y = c(x, 1.0)
+eager = torch.vmap(lambda x: func(x, 1.0))
+eager(x)
+c = torch.compile(eager, fullgraph=True)
+y = c(x)
+
+class HalfRopeInPlace(torch.autograd.Function):
     @staticmethod
     def forward(t: Tensor, freqs_cis: Tensor, conj: bool):
-        # Dummy implementation (original _halfrope_inplace not provided)
+        _halfrope_inplace(t, freqs_cis, conj)
         return t
 
     @staticmethod
@@ -35,24 +47,48 @@ class HalfRopeInPlace(Function):
 
     @staticmethod
     def backward(ctx, grad_output):
-        freqs_cis, = ctx.saved_tensors
-        # Dummy backward mirroring the issue's implementation
+        (freqs_cis,) = ctx.saved_tensors
+        _halfrope_inplace(grad_output, freqs_cis, not ctx.conj)
         return grad_output, None, None
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.rotations = nn.Parameter(torch.randn(()))  # Example parameter for freqs_cis
+HalfRopeInPlace.apply(qk.unflatten(-1, ((-1, 2))), rotations, False)
 
-    def forward(self, x):
-        # Apply SafeTanh with fixed eps=1.0
-        x = _SafeTanh.apply(x, 1.0)
-        # Apply HalfRopeInPlace with stored rotations and conj=False
-        return HalfRopeInPlace.apply(x, self.rotations, False)
+class HalfRopeInPlace(torch.autograd.Function):
+    @staticmethod
+    def forward(*args):
+        *_, t, freqs_cis, conj = args
+        _halfrope_inplace(t, freqs_cis, conj)
+        return t
 
-def my_model_function():
-    return MyModel()
+import torch
+from torch import Tensor
 
-def GetInput():
-    return torch.rand(3, 4, dtype=torch.float32)
+def _halfrope_inplace(*args):
+    ...
 
+class HalfRopeInPlace(torch.autograd.Function):
+    @staticmethod
+    def forward(t: Tensor, freqs_cis: Tensor, conj: bool):
+        _halfrope_inplace(t, freqs_cis, conj)
+        return t
+
+    @staticmethod
+    def setup_context(ctx, inputs, output):
+        _, freqs_cis, conj = inputs
+        ctx.save_for_backward(freqs_cis)
+        ctx.conj = conj
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        (freqs_cis,) = ctx.saved_tensors
+        _halfrope_inplace(grad_output, freqs_cis, not ctx.conj)
+        return grad_output, None, None
+
+t = torch.randn(3, 4)
+rotations = torch.randn(())
+
+@torch.compile(fullgraph=True)
+def func(t, rotations):
+    return HalfRopeInPlace.apply(t, rotations, False)
+
+func(t, rotations)

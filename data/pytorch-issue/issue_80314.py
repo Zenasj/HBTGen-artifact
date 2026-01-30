@@ -1,18 +1,30 @@
-# torch.rand(2, 64, 64, dtype=torch.complex128)  # Inferred from linalg_svd test input (numel=4096 → 64x64 matrix)
-import torch
-from torch import nn
-
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Compute singular values using linalg.svd (one of the slow/failed operations in the issue's context)
-        _, s, _ = torch.linalg.svd(x, full_matrices=False)
-        return s
-
-def my_model_function():
-    # Returns a model instance representing an operation under test (e.g., linalg_svd)
-    return MyModel()
-
-def GetInput():
-    # Generates a complex tensor matching the input shape of problematic tests (e.g., linalg_svd)
-    return torch.rand(2, 64, 64, dtype=torch.complex128)
-
+742.823, test_fn_fwgrad_bwgrad_diag_embed_cuda_complex128, 7040
+662.876, test_fn_fwgrad_bwgrad_diff_cuda_complex128, 21392
+524.456, test_fn_fwgrad_bwgrad_linalg_svd_cuda_complex128, 4096
+489.465, test_fn_fwgrad_bwgrad_linalg_lu_cuda_complex128, 6500
+408.589, test_fn_fwgrad_bwgrad_linalg_lstsq_grad_oriented_cuda_complex128, OK (skipped=1)
+328.592, test_fn_fwgrad_bwgrad_linalg_lu_factor_cuda_complex128, 6500
+320.207, test_fn_fwgrad_bwgrad_linalg_lu_factor_ex_cuda_complex128, 6500
+277.863, test_fn_fwgrad_bwgrad_matmul_cuda_complex128, 17800
+272.186, test_fn_fwgrad_bwgrad___rmatmul___cuda_complex128, 17800
+269.493, test_fn_fwgrad_bwgrad_baddbmm_cuda_complex128, 12266
+234.94, test_fn_fwgrad_bwgrad_istft_cuda_complex128, 6736
+190.709, test_fn_fwgrad_bwgrad_lu_unpack_cuda_complex128, 6500
+161.455, test_fn_fwgrad_bwgrad_addbmm_cuda_complex128, 9416
+130.886, test_fn_fwgrad_bwgrad_kron_cuda_complex128, 450
+123.73, test_fn_fwgrad_bwgrad__masked_normalize_cuda_complex128, 3310
+118.701, test_fn_fwgrad_bwgrad_dist_cuda_complex128, 7240
+114.121, test_fn_fwgrad_bwgrad_diff_cuda_float64, 10696
+109.087, test_fn_fwgrad_bwgrad__masked_cumprod_cuda_complex128, 3162
+108.905, test_fn_fwgrad_bwgrad_diag_embed_cuda_float64, 3520
+95.968, test_fn_fwgrad_bwgrad_nn_functional_bilinear_cuda_float64, 5318
+89.624, test_fn_fwgrad_bwgrad_mH_cuda_complex128, 5964
+84.776, test_fn_fwgrad_bwgrad_atleast_2d_cuda_complex128, 3124
+83.465, test_fn_fwgrad_bwgrad__masked_cumsum_cuda_complex128, 3162
+82.376, test_fn_fwgrad_bwgrad_atleast_1d_cuda_complex128, 3124
+81.504, test_fn_fwgrad_bwgrad_atleast_3d_cuda_complex128, 3124
+79.894, test_fn_fwgrad_bwgrad_linalg_lu_solve_cuda_complex128, 2400
+78.649, test_fn_fwgrad_bwgrad_mT_cuda_complex128, 5964
+75.415, test_fn_fwgrad_bwgrad___rdiv___cuda_complex128, 2138
+72.503, test_fn_fwgrad_bwgrad_ldexp_cuda_complex128, 2138
+70.524, test_fn_fwgrad_bwgrad___getitem___cuda_complex128, 5000

@@ -1,39 +1,53 @@
-# tf.random.uniform((B, 24, 24, 3), dtype=tf.float32)
+from tensorflow import keras
+from tensorflow.keras import layers
+
 import tensorflow as tf
+import tensorflow_model_optimization as tfmot
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Basic Conv2D layer with tanh activation fused into the model
-        self.conv = tf.keras.layers.Conv2D(10, kernel_size=1)
-        # Note:
-        # Due to known TensorFlow Model Optimization Toolkit limitations,
-        # tanh activation is not currently supported directly in quantization aware training.
-        # To work around this, we separate the conv and tanh layers and
-        # apply fake_quant manually after tanh as shown in the referenced workaround.
+i = tf.keras.layers.Input(shape=(24, 24, 3))
+x = tf.keras.layers.Conv2D(10, kernel_size=1, activation='tanh')(i)
+model = tf.keras.Model(inputs=i, outputs=x)
 
-    def call(self, inputs, training=False):
-        x = self.conv(inputs)
-        # Apply tanh activation manually after convolution
-        x = tf.nn.tanh(x)
-        # Insert a fake quantization node to simulate quantization behavior on the tanh output
-        # This simulates int8 quantization range typically between -1 and 1 for tanh
-        x = tf.quantization.fake_quant_with_min_max_args(
-            x, min=-1.0, max=1.0, num_bits=8, narrow_range=False, name=None)
-        return x
+quant_aware_model = tfmot.quantization.keras.quantize_model(model)
 
+import tensorflow as tf
+import tensorflow_model_optimization as tfmot
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+i = tf.keras.layers.Input(shape=(24, 24, 3))
+x = tf.keras.layers.Conv2D(10, kernel_size=1)(i)
+x = tf.nn.tanh(x)
+model = tf.keras.Model(inputs=i, outputs=x)
 
+quant_aware_model = tfmot.quantization.keras.quantize_model(model)
 
-def GetInput():
-    # Return a random tensor input matching the input shape expected by MyModel
-    # Batch size B is chosen arbitrarily as 1 here
-    B = 1
-    H = 24
-    W = 24
-    C = 3
-    return tf.random.uniform((B, H, W, C), dtype=tf.float32)
+tiny_model = ...
 
+idx = -3 # adjust idx to your use case (probably -2, check it by yourself)
+model_no_tail = tf.keras.Model(inputs=tiny_model.input, outputs=tiny_model.layers[idx].output)
+
+quant_aware_model = tfmot.quantization.keras.quantize_model(model_no_tail)
+
+def add_tail(quant_aware_model):
+    base_model=quant_aware_model
+    x = tf.nn.tanh(base_model.output)
+    x = tf.quantization.fake_quant_with_min_max_args(x, min=-1, max=1, num_bits=8, narrow_range=False, name=None)
+    model=tf.keras.Model(inputs=base_model.input, outputs=x)
+    return model
+
+quant_aware_model = add_tail(quant_aware_model)
+quant_aware_model.summary()
+
+tflite_models_dir = pathlib.Path(model_path)
+tflite_models_dir.mkdir(exist_ok=True, parents=True)
+quantized_tflite_encoder = tflite_models_dir/"tiny_model.tflite"
+
+if not os.path.exists(model_path + "tiny_model.tflite"):
+    converter = tf.lite.TFLiteConverter.from_keras_model(quant_aware_model)
+    converter.optimizations = [tf.lite.Optimize.DEFAULT]
+    converter.inference_input_type = tf.int8
+    converter.inference_output_type = tf.int8
+
+    tflite_model_quant = converter.convert()
+    
+    # Write it out to a tflite file:
+    quantized_tflite_encoder.write_bytes(tflite_model_quant)

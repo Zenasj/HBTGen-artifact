@@ -1,41 +1,37 @@
-# tf.random.uniform((B, None, 1), dtype=tf.float32) and a tf.constant of shape (B,) with dtype=tf.string as inputs
+from tensorflow import keras
+from tensorflow.keras import models
+
+# Model works with an input, then breaks with the same input after you save and load it
+# Must be related to the broadcasting happening with the language input (as it is wrongly set to (None,) instead of ())
 
 import tensorflow as tf
 
+
 class InnerModel(tf.keras.Model):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
-        # No additional layers, pass through lang input
-        # This simulates the minimal processing example from issue
-    def call(self, inputs, training=False):
+        # Optionally some layers here
+
+    def call(self, inputs: tf.Tensor, training: bool) -> tf.Tensor:
         audio, lang = inputs
-        # In the original example, the output is just 'lang'
+        # Optionally some processing here
         return lang
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        self.inner_model = InnerModel()
 
-    def call(self, inputs, training=False):
-        # inputs is a list or tuple of two tensors:
-        # audio shape: (batch, None, 1), dtype=tf.float32
-        # lang shape: (batch,) dtype=tf.string
-        audio, lang = inputs
+def get_model():
+    audio = tf.keras.Input(shape=(None, 1))
+    lang = tf.keras.Input(shape=(None,), dtype=tf.string)  # Fixed by setting shape=()
+    inner_model = InnerModel()
+    out = inner_model([audio, lang])
+    return tf.keras.Model(inputs=[audio, lang], outputs=[out])
 
-        # Pass inputs to inner model
-        output = self.inner_model([audio, lang], training=training)
-        return output
 
-def my_model_function():
-    # Return an instance of MyModel; matches the original model with InnerModel inside
-    return MyModel()
+model = get_model()
+_ = model([tf.zeros((1, 1000, 1)), tf.constant(["fr"])], training=False)
 
-def GetInput():
-    # Create inputs matching shapes and dtypes expected:
-    # audio: batch size 1, length 1000, 1 channel
-    audio_input = tf.random.uniform((1, 1000, 1), dtype=tf.float32)
-    # lang: shape (batch,), a string tensor with one language label
-    lang_input = tf.constant(["fr"])  # batch size 1
-    return [audio_input, lang_input]
+# Save + load
+model.save("test")  # Also breaks with tf.keras.models.save_model(model, "test")
+model = tf.keras.models.load_model("test")
 
+# Do inference again
+_ = model([tf.zeros((1, 1000, 1)), tf.constant(["fr"])], training=False)

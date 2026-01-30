@@ -1,50 +1,98 @@
-# tf.random.uniform((1, None, 600), dtype=tf.float32)  # Input shape corresponds to (batch_size=1, time_steps variable, features=600)
-
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import models
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Reconstructing the original sequential model architecture as described:
-        # Masking layer with mask_value = -27/255
-        self.masking = tf.keras.layers.Masking(mask_value=-27/255, input_shape=(None, 600))
-        # Two stacked LSTM layers, first returns sequences, second does not
-        self.lstm1 = tf.keras.layers.LSTM(32, return_sequences=True)
-        self.lstm2 = tf.keras.layers.LSTM(32, return_sequences=False)
-        # Dropout layer with rate 0.5 after LSTM layers
-        self.dropout1 = tf.keras.layers.Dropout(0.5)
-        # Dense layer with 16 units and tanh activation
-        self.dense1 = tf.keras.layers.Dense(16, activation='tanh')
-        # Another dropout layer with rate 0.5
-        self.dropout2 = tf.keras.layers.Dropout(0.5)
-        # Output Dense layer with 4 units and softmax activation (4-class classification)
-        self.dense2 = tf.keras.layers.Dense(4, activation='softmax')
+def My_LSTM(X_train, y_train, X_test, y_test):
+    model = Sequential()
+    model.add(Masking(mask_value= -27/255 , input_shape=(None, 600)))
+    model.add(LSTM(32, return_sequences=True))
+    model.add(LSTM(32, return_sequences=False))
+    model.add(Dropout(0.5))
+    model.add(Dense(16,activation='tanh'))
+    model.add(Dropout(0.5))
+    model.add(Dense(4,activation='softmax'))
 
-    def call(self, inputs, training=False):
-        x = self.masking(inputs)
-        x = self.lstm1(x)
-        x = self.lstm2(x)
-        x = self.dropout1(x, training=training)
-        x = self.dense1(x)
-        x = self.dropout2(x, training=training)
-        output = self.dense2(x)
-        return output
+    model.compile(loss = 'sparse_categorical_crossentropy', optimizer= Adam(learning_rate = 1e-3, decay = 1e-6),metrics = ['accuracy'])
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+    reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.1, patience=5, min_lr=1e-9)
+    stop = EarlyStopping(monitor='val_accuracy', patience=20, verbose=1, mode='auto', baseline=None, restore_best_weights=True)
 
-def GetInput():
-    # Based on the preprocessing from the issue:
-    # input shape is (1, variable_length, 600) with float32 dtype and values roughly normalized by 255 after padding with -27
-    # For testing, create a random float tensor with one time step (e.g., 10) for stability
-    batch_size = 1
-    time_steps = 10  # arbitrary small length for example
-    features = 600
-    # Generate random float inputs between 0 and 1 matching the input range after normalization
-    # Original padding used value -27, normalized by 255 -> approximately -0.10588
-    # To keep similar data distribution, generate from around [-0.1, 1.0]
-    import numpy as np
-    input_data = np.random.uniform(low=-0.1, high=1.0, size=(batch_size, time_steps, features)).astype(np.float32)
-    return tf.convert_to_tensor(input_data)
+    
+    model.fit(X_train, y_train, epochs=40, batch_size= 128, validation_data=(X_test, y_test), callbacks=[reduce_lr, stop], verbose =1)
+    
+    
+    return model
 
+def Create_tflite_Model(ModelName, savePath):
+    
+    keras_model = tf.keras.models.load_model(ModelName, compile = False)
+    converter = tf.lite.TFLiteConverter.from_keras_model(keras_model)
+    converter.optimizations = [tf.lite.Optimize.DEFAULT]
+    converter.experimental_new_converter=True
+    converter.target_spec.supported_ops = [tf.lite.OpsSet.SELECT_TF_OPS, tf.lite.OpsSet.TFLITE_BUILTINS]
+    tflite_model = converter.convert()
+    tflite_model_dir = pathlib.Path(savePath)
+    tflite_model_file = tflite_model_dir/"My_model.tflite"
+    tflite_model_file.write_bytes(tflite_model)
+    
+    return tflite_model
+
+tf.lite.Interpreter
+
+Super_Interpreter = tf.lite.Interpreter(model_path='My_model.tflite')
+Super_Interpreter.get_signature_list()
+Super = Super_Interpreter.get_signature_runner('serving_default')
+Result = Super(masking_input = "File to Classify")
+object = np.argmax(Result.get('dense_1'))
+print(Classes[object])
+
+import numpy as np
+import os
+import time
+import tflite_runtime.interpreter as tflite
+
+Class = ['Vehicle_1', 'Vehicle_2', 'Vechile_3', 'Vechile_4']
+
+Super_Interpreter = tflite.Interpreter(model_path='My_model.tflite')
+Super_Interpreter.get_signature_list()
+Super = Super_Interpreter.get_signature_runner('serving_default')
+
+def Preprocess(txtfile):
+    
+    Sample = [] 
+    Sample_padded = [] 
+    frames = {} 
+
+    array_from_file = np.loadtxt(txtfile, delimiter=',', dtype=float)
+    array_from_file = (array_from_file*100).astype(int)
+    array_from_file_list = array_from_file.tolist()
+        
+    for item in array_from_file_list: 
+        if item[1] in frames:
+            frames[item[1]].append([item[0], item[2]])
+        else:
+            frames[item[1]] = [[item[0], item[2]]]
+    
+    for key in frames:
+        Sample.append(frames[key]) 
+    
+    for points in Sample: 
+        Sample_padded.append(np.pad(points,[(0,300 - len(points)), (0,0)], 'constant', constant_values=(-27, -27)))
+    
+    Detect = np.array(Sample_padded).reshape(1,-1,600)/255
+    Detect = Detect.astype(np.float32)
+
+    return Detect
+
+for i in os.listdir():
+      if i.endswith('.txt'):
+            start_time = time.time()
+            Sample_file = Preprocess(i)
+            Result = Super(masking_input = Sample_file)
+            Vehicle = np.argmax(Result.get('dense_1'))
+            print(Class[Vehicle])
+            print("--- %s seconds ---" % (time.time() - start_time))
+
+tf.lite.Interpreter
+
+tflite_runtime

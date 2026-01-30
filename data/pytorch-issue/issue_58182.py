@@ -1,24 +1,43 @@
-# torch.rand(2, 4, dtype=torch.float64)  # Inferred input shape from constant tensor dimensions and storage type
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Constant tensor from the issue's constants.pkl (shape (2,4), DoubleStorage)
-        self.constant = nn.Parameter(torch.rand(2, 4, dtype=torch.float64), requires_grad=False)
-        # Scalar constant from the issue's constants.pkl (value 1)
-        self.scalar = 1  # Stored as a module attribute for forward computation
+(5,
+ ('__torch__.___torch_mangle_5.TestModule.forward',
+  (('instructions',
+    (('STOREN', 1, 2),
+     ('DROPR', 1, 0),
+     ('LOADC', 0, 0),
+     ('LOADC', 1, 0),
+     ('MOVE', 2, 0),
+     ('OP', 0, 0),
+     ('LOADC', 1, 0),
+     ('OP', 1, 0),
+     ('RET', 0, 0))),
+   ('operators', (('aten::add', 'int'), ('aten::add', 'Scalar'))),
+   ('constants',
+    (torch._utils._rebuild_tensor_v2(pers.obj(('storage',
+          torch.DoubleStorage,
+          '140245072983168.storage',
+          'cpu',
+          8),),
+       0,
+       (2, 4),
+       (4, 1),
+       False,
+       collections.OrderedDict()),
+     1)),
+   ('types', ()),
+   ('register_size', 2)),
+  (('arguments',
+    ((('name', 'self'),
+      ('type', '__torch__.___torch_mangle_5.TestModule'),
+      ('default_value', None)),
+     (('name', 'y'), ('type', 'int'), ('default_value', None)))),
+   ('returns',
+    ((('name', ''), ('type', 'Tensor'), ('default_value', None)),)))))
 
-    def forward(self, x):
-        # First add: constant tensor + input x (assumed to be a tensor of same shape)
-        # Second add: result + scalar (1)
-        return (self.constant + x) + self.scalar
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Generate input matching the constant tensor's shape and dtype
-    return torch.rand(2, 4, dtype=torch.float64)
-
+(torch._utils._rebuild_tensor_v2(pers.obj(('storage', torch.DoubleStorage, '140245072983168.storage', 'cpu', 8),),
+   0,
+   (2, 4),
+   (4, 1),
+   False,
+   collections.OrderedDict()),)

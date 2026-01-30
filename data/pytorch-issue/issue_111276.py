@@ -1,57 +1,56 @@
-# torch.rand(B, 32, 512, dtype=torch.float32)
+import torch.nn as nn
+
+from torch.nn import TransformerEncoderLayer, Linear
 import torch
 from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
+class DemoModel(torch.nn.Module):
+    def __init__(self) -> None:
         super().__init__()
-        # Original model with float mask (causes error on CPU with autocast)
-        class DemoModel(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                encoder_layer = nn.TransformerEncoderLayer(d_model=512, nhead=8, batch_first=True)
-                self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=6)
-                self.dense = nn.Linear(512, 10)
-            
-            def forward(self, x):
-                src_query_mask = torch.rand(1, 41)  # Float mask causing dtype mismatch
-                src_query_emb_VT = torch.rand(1, 41, 512)
-                out1 = self.transformer_encoder(src_query_emb_VT, src_key_padding_mask=src_query_mask)
-                return self.dense(out1)
         
-        # Fixed model with bool mask (resolves CPU autocast issue)
-        class FixedModel(torch.nn.Module):
-            def __init__(self):
-                super().__init__()
-                encoder_layer = nn.TransformerEncoderLayer(d_model=512, nhead=8, batch_first=True)
-                self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=6)
-                self.dense = nn.Linear(512, 10)
-            
-            def forward(self, x):
-                src_query_mask = torch.rand(1, 41).bool()  # Convert mask to bool
-                src_query_emb_VT = torch.rand(1, 41, 512)
-                out1 = self.transformer_encoder(src_query_emb_VT, src_key_padding_mask=src_query_mask)
-                return self.dense(out1)
-        
-        self.original = DemoModel()  # Model with faulty mask
-        self.fixed = FixedModel()    # Model with corrected mask
+        encoder_layer = nn.TransformerEncoderLayer(d_model=512, nhead=8, batch_first = True)
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=6)
+        self.dense = Linear(512, 10)
     
     def forward(self, x):
-        # Compare outputs of original (faulty) and fixed models
-        # Returns 1.0 if outputs match within tolerance, else 0.0
-        try:
-            out_original = self.original(x)
-        except RuntimeError:
-            # Handle case where original model fails (e.g., CPU autocast error)
-            return torch.tensor(0.0)
+        src_query_mask = torch.rand(1, 41)
+        src_query_emb_VT = torch.rand(1, 41, 512)
+        out1 = self.transformer_encoder(src_query_emb_VT , src_key_padding_mask = src_query_mask)
+        res = self.dense(out1)
+        return res
+
+src = torch.rand(2, 32, 512)
+print(src.shape) # torch.Size([2, 32, 512])
+demo_model = DemoModel()
+with torch.autocast(device_type="cpu", dtype=torch.bfloat16):
+    out = demo_model(src)
+    print("Out shape", out.shape)
+
+from torch.nn import Linear
+import torch
+from torch import nn
+
+class DemoModel(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
         
-        out_fixed = self.fixed(x)
-        return torch.tensor(1.0) if torch.allclose(out_original, out_fixed, atol=1e-4) else torch.tensor(0.0)
+        encoder_layer = nn.TransformerEncoderLayer(d_model=512, nhead=8, batch_first = True)
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=6)
+        self.dense = Linear(512, 10)
+    
+    def forward(self, x):
+        src_query_mask = torch.rand(1, 41)
+        src_query_emb_VT = torch.rand(1, 41, 512)
+        out1 = self.transformer_encoder(src_query_emb_VT , src_key_padding_mask = src_query_mask)
+        res = self.dense(out1)
+        return res
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Returns a random input tensor matching the example's input shape (batch=2, seq_len=32, d_model=512)
-    return torch.rand(2, 32, 512)
-
+src = torch.rand((2, 32, 512), device="cuda")
+print(src.shape) # torch.Size([2, 32, 512])
+demo_model = DemoModel()
+demo_model.eval()
+with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+    print("src device: {}".format(src.get_device())) # 0, gpu
+    out = demo_model(src)
+    print("Out shape", out.shape)
+    print("out device: ", out.get_device()) # -1, cpu

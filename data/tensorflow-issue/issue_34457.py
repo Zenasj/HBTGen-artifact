@@ -1,27 +1,46 @@
-# tf.random.uniform((32, 32), dtype=tf.float32) ← Input shape inferred from model input_shape=(32,)
+import random
+from tensorflow import keras
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
+from tensorflow.keras import layers
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define the layers mimicking the example Sequential model from the issue
-        self.dense1 = tf.keras.layers.Dense(64, activation='relu', input_shape=(32,))
-        self.dense2 = tf.keras.layers.Dense(64, activation='relu')
-        self.dense3 = tf.keras.layers.Dense(10, activation='softmax')
+# Model from tf Keras overview
+model = tf.keras.Sequential([
+    layers.Dense(64, activation='relu', input_shape=(32,)),
+    layers.Dense(64, activation='relu'),
+    layers.Dense(10, activation='softmax')
+])
 
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        return self.dense3(x)
+model.compile(optimizer=tf.keras.optimizers.Adam(0.01),
+              loss='categorical_crossentropy',
+              metrics=['accuracy'])
 
 
-def my_model_function():
-    # Return an instance of MyModel; no pre-trained weights, initialized randomly as in example
-    return MyModel()
+# Data generator
+def get_dataset(batch_size, num_batches):
+    """ Get random tf.data dataset with given batch size and number of batches. """
 
-def GetInput():
-    # Return a random input tensor matching model input shape: (batch_size=32, features=32)
-    # Batch size 32 is consistent with example batch_size in dataset generator
-    return tf.random.uniform((32, 32), dtype=tf.float32)
+    def _generator():
+        for i in range(num_batches):
+            data = np.random.random((batch_size, 32))
+            labels = np.random.random((batch_size, 10))
 
+            yield data, labels
+            
+    dataset = tf.data.Dataset.from_generator(
+        _generator,
+        (tf.float32, tf.float32),
+        ((batch_size, 32), (batch_size, 10))
+    )
+    
+    return dataset
+
+# Create datasets
+dataset = get_dataset(batch_size=32, num_batches=1024)
+val_dataset = get_dataset(batch_size=32, num_batches=128)
+
+# Train
+model.fit(dataset, epochs=10,
+          validation_data=val_dataset)

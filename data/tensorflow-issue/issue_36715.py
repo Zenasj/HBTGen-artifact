@@ -1,33 +1,30 @@
-# tf.random.uniform((32, 10), dtype=tf.float64) ← inferred input shape and dtype from the examples
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+
+import numpy as np
+import tensorflow as tf
+id = np.ones(shape=(2,2))
+i = tf.keras.layers.Input(shape=(2,),dtype=tf.float64)
+y = tf.random.normal(shape=(2,2), name="noise", dtype=tf.float64)
+o = tf.add(i, y)
+model = tf.keras.Model(inputs=i, outputs=o)
+model.predict(id)
+
+import numpy as np
+import tensorflow as tf
+x = tf.constant(value=np.ones(shape=(2,2)), dtype=tf.float64)
+y = tf.random.normal(shape=(2,2), name="noise", dtype=tf.float64)
+z = tf.add(x, y)
+print(z)
 
 import tensorflow as tf
+y = tf.random.normal(shape=(2,2), name="noise", dtype=tf.float64)
+print(y)
+print(y)
 
-class Sampler(tf.keras.layers.Layer):
-    def __init__(self):
-        super().__init__()
+y = tf.keras.layers.Lambda(lambda _: tf.random.normal(shape=(32,10), name="noise", dtype=tf.float64), dtype=tf.float64)(i)
 
-    def call(self, inputs):
-        # Generate fresh normal noise every call to preserve stochasticity in eager mode
-        noise = tf.random.normal(shape=tf.shape(inputs), dtype=inputs.dtype, name="noise")
-        return inputs + noise
-
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Instantiate the sampler layer that adds fresh random noise each call
-        self.sampler = Sampler()
-
-    def call(self, inputs, training=None):
-        # Forward pass adds fresh noise on every call
-        return self.sampler(inputs)
-
-def my_model_function():
-    # Return a new instance of MyModel
-    # This model will generate new noise each time it is called, unlike the flawed fixed-tensor approach
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input matching the model's expected shape and dtype
-    # Batch size 32, sequence length 10, dtype float64 as per issue example
-    return tf.ones(shape=(32, 10), dtype=tf.float64)
-
+for sample in my_dataset:
+    noise = tf.random.normal()
+    output = model(sample + noise)

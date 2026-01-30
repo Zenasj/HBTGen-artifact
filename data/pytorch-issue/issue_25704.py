@@ -1,11 +1,9 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape (B: batch size, C: channels, H: height, W: width)
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class MyModel(nn.Module):
+class Net(nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
+        super(Net, self).__init__()
         # convolutional layer (sees 298x298x3 image tensor)
         self.conv1 = nn.Conv2d(3, 16, 3)
         # convolutional layer (sees 147x147x16 tensor)
@@ -44,14 +42,3 @@ class MyModel(nn.Module):
         # add 2nd hidden layer
         x = self.fc2(x)
         return x
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # Assuming batch size B=1, channels C=3, height H=298, width W=298
-    B, C, H, W = 1, 3, 298, 298
-    return torch.rand(B, C, H, W, dtype=torch.float32)
-

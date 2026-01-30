@@ -1,75 +1,62 @@
-# tf.random.uniform((B, 2), dtype=tf.float32)  <-- Input shape inferred from example: batch size B, 2 features
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self, **kwargs):
-        super(MyModel, self).__init__(**kwargs)
-
-        # Following original design: two copies of dense layer chains with sizes [2, 1]
-        # Stored in a list of lists that remain append-only to avoid checkpointing errors.
-        self._optimizers = []
-        self._denses = []
-        # Instead of caching grouped variables in a list that can be modified after creation
-        # causing ListWrapper replacement, always compute on demand.
-        # This avoids the problematic mutable list state that breaks saving weights.
-
-        for _ in range(2):
-            self._optimizers.append(tf.keras.optimizers.Adam())
-            # Each 'copy' has two Dense layers
-            self._denses.append([
-                tf.keras.layers.Dense(2),
-                tf.keras.layers.Dense(1)
-            ])
-
+class Model(tf.keras.Model):
+    
     @property
     def groupedVariables(self):
-        """
-        Return a list of trainable variables grouped by the same grouping as self._denses.
+        if self._var is None:
+            self._var = []
+            for denses in self._denses:
+                self._var.append([])
+                for d in denses:
+                    self._var[-1] = self._var[-1] + d.trainable_variables                    
+        return self._var
+    ## ------------------------------------------------------------------------
+    def __init__(self, ** kwargs):
+        super(Model, self).__init__(** kwargs)
 
-        WARNING: Must compute each time to avoid mutable list issues that break saving.
-        """
-        var_lists = []
-        for denses in self._denses:
-            vars_for_denses = []
-            # Append variables for each dense in the inner list
-            for d in denses:
-                vars_for_denses.extend(d.trainable_variables)
-            var_lists.append(vars_for_denses)
-        return var_lists
-
+        self._optimizers = []
+        self._denses     = []
+        self._var        = None
+        for copy in range(2):
+            self._optimizers.append(tf.keras.optimizers.Adam())
+            self._denses    .append([ tf.keras.layers.Dense(s) for s in [2,1]])
+    ## ------------------------------------------------------------------------
     def call(self, x):
-        # Forward pass returns a list of outputs (one per group of denses).
-        outputs = []
+        y = []    
         for denses in self._denses:
-            y = x
-            for d in denses:
-                y = d(y)
-            outputs.append(y)
-        return outputs
-
+            yy = x
+            for d in denses: yy = d(yy)
+            y.append(yy) 
+        return y
+    ## ------------------------------------------------------------------------
     def update(self, x, t):
-        # Compute loss and gradients with respect to grouped variables.
-        losses = []
+        loss = []
         with tf.GradientTape() as tape:
-            preds = self(x)  # List of outputs per dense group
-            # Compute mse loss per output vs target t. Broadcasting allowed.
-            for y in preds:
-                losses.append(tf.reduce_mean(tf.square(t - y)))
-            total_loss = tf.reduce_sum(losses)  # sum losses for gradient computation
+            yy   = self(x)
+            for y in zip(yy):
+                y = y[0]
+                l = tf.reduce_mean((t - y) ** 2)
+                loss.append(l)
 
-        grouped_vars = self.groupedVariables
-        grads = tape.gradient(total_loss, grouped_vars)
-        # Apply gradient updates for each optimizer on its grouped variables
-        for g, v, opt in zip(grads, grouped_vars, self._optimizers):
-            if g is not None:
-                opt.apply_gradients(zip(g, v))
+        var  = self.groupedVariables
+        grad = tape.gradient(loss, var) 
+        for g,v,o in zip(grad, var, self._optimizers):
+            o.apply_gradients(zip(g,v))
+## ----------------------------------------------------------------------------
+m = Model()        
+x = tf.zeros(shape = [1, 2], dtype = tf.float32)
 
-def my_model_function():
-    return MyModel()
+print("Simple run then save ... ", end = "")
+m(x)
+m.save_weights("TMP/model") ## <== This works
+print("done")
 
-def GetInput():
-    # Create a random floating tensor of shape (1, 2)
-    # consistent with example and model dense input shape.
-    return tf.random.uniform((1, 2), dtype=tf.float32)
-
+print("Update then save ....... ", end = "")
+m.update(x, 0)
+m.save_weights("TMP/model") ## <== This craches
+print("done")

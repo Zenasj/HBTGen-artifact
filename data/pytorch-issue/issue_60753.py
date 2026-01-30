@@ -1,40 +1,107 @@
-# torch.rand(B, C, H, W, dtype=...)  # Add a comment line at the top with the inferred input shape
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, stride=1, padding=1)
-        self.relu = nn.ReLU()
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
-        self.fc = nn.Linear(16 * 16 * 16, 10)
+import unittest
+from itertools import product
+from torch.testing._internal.common_device_type import (
+    instantiate_device_type_tests, deviceCountAtLeast, ops)
+from torch.testing._internal.common_methods_invocations import op_db
+from torch.testing._internal.common_utils import (
+    TestCase, run_tests, parametrize, instantiate_parametrized_tests, subtest)
 
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.relu(x)
-        x = self.pool(x)
-        x = x.view(-1, 16 * 16 * 16)
-        x = self.fc(x)
-        return x
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+class TestBlah(TestCase):
+    @parametrize("x", range(5))
+    def test_default_names(self, x):
+        print('Passed in:', x)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # Assuming input shape: (B, C, H, W) = (1, 3, 32, 32)
-    return torch.rand(1, 3, 32, 32, dtype=torch.float32)
+    # Use default names but add an expected failure.
+    @parametrize("x", [subtest(0, decorators=[unittest.expectedFailure]),
+                       *range(1, 5)])
+    def test_default_names_expected_failure(self, x):
+        if x == 0:
+            raise RuntimeError('Boom')
+        print('Passed in:', x)
 
-# The provided GitHub issue is about a pull request that introduces a `@parametrize` decorator for test parametrization in PyTorch. The PR does not contain any PyTorch model or related code, but rather focuses on the testing framework and its usage.
-# Since there is no PyTorch model or related code in the issue, I will create a simple example of a PyTorch model and the corresponding input generation function to meet the required structure. This example will be a basic convolutional neural network (CNN) for demonstration purposes.
-# ### Explanation:
-# 1. **MyModel Class**:
-#    - A simple CNN with one convolutional layer, ReLU activation, max pooling, and a fully connected layer.
-#    - The input shape is assumed to be (1, 3, 32, 32), which is typical for small image datasets like CIFAR-10.
-# 2. **my_model_function**:
-#    - Returns an instance of `MyModel`.
-# 3. **GetInput Function**:
-#    - Generates a random tensor with the shape (1, 3, 32, 32) to match the input expected by `MyModel`.
-# This code can be used as a starting point for more complex models and input shapes. If you have specific requirements or a different model structure, please provide more details.
+    @parametrize("bias", [False, True], name_fn=lambda b: 'bias' if b else 'no_bias')
+    def test_custom_names(self, bias):
+        print('Passed in:', bias)
+
+    @parametrize("bias", [subtest(True, name='bias'),
+                          subtest(False, name='no_bias')])
+    def test_custom_names_alternate(self, bias):
+        print('Passed in:', bias)
+
+    @parametrize("x,y", [(1, 2), (1, 3), (1, 4)])
+    def test_two_things_default_names(self, x, y):
+        print('Passed in:', x, y)
+
+    @parametrize("x", [1, 2, 3])
+    @parametrize("y", [4, 5, 6])
+    def test_two_things_composition(self, x, y):
+        print('Passed in:', x, y)
+
+    @parametrize("x", [subtest(0, decorators=[unittest.expectedFailure]),
+                       *range(1, 3)])
+    @parametrize("y", [4, 5, subtest(6, decorators=[unittest.expectedFailure])])
+    def test_two_things_composition_expected_failure(self, x, y):
+        if x == 0 or y == 6:
+            raise RuntimeError('Boom')
+        print('Passed in:', x, y)
+
+    @parametrize("x", [1, 2])
+    @parametrize("y", [3, 4])
+    @parametrize("z", [5, 6])
+    def test_three_things_composition(self, x, y, z):
+        print('Passed in:', x, y, z)
+
+    @parametrize("x", [1, 2], name_fn=str)
+    @parametrize("y", [3, 4], name_fn=str)
+    @parametrize("z", [5, 6], name_fn=str)
+    def test_three_things_composition_custom_names(self, x, y, z):
+        print('Passed in:', x, y, z)
+
+    @parametrize("x,y", product(range(2), range(3)))
+    def test_two_things_product(self, x, y):
+        print('Passed in:', x, y)
+
+    @parametrize("x,y", [subtest((1, 2), name='double'),
+                         subtest((1, 3), name='triple'),
+                         subtest((1, 4), name='quadruple')])
+    def test_two_things_custom_names(self, x, y):
+        print('Passed in:', x, y)
+
+    @parametrize("x,y", [(1, 2), (1, 3), (1, 4)], name_fn=lambda x, y: '{}_{}'.format(x, y))
+    def test_two_things_custom_names_alternate(self, x, y):
+        print('Passed in:', x, y)
+
+
+class TestDeviceBlah(TestCase):
+    @parametrize("x", range(10))
+    def test_default_names(self, device, x):
+        print('Passed in:', device, x)
+
+    @parametrize("x,y", [(1, 2), (3, 4), (5, 6)])
+    def test_two_things(self, device, x, y):
+        print('Passed in:', device, x, y)
+
+    @deviceCountAtLeast(1)
+    def test_multiple_devices(self, devices):
+        print('Passed in:', devices)
+
+    @ops(op_db)
+    @parametrize("flag", [False, True], lambda f: 'flag_enabled' if f else 'flag_disabled')
+    def test_op_parametrized(self, device, dtype, op, flag):
+        print('Passed in:', device, dtype, op, flag)
+
+
+instantiate_parametrized_tests(TestBlah)
+instantiate_device_type_tests(TestDeviceBlah, globals())
+
+
+if __name__ == '__main__':
+    run_tests()
+
+class TestFoo(unittest.TestCase):
+  @parametrize("x,y", [(1, 2), (3, 4)])
+  def test_bar():
+    ...

@@ -1,49 +1,28 @@
-# tf.random.uniform((None,), dtype=tf.string) ← The model takes a 1D string tensor input of variable batch size
-
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self, vocab_file: str):
-        super().__init__()
-        # To fix the asset tracking issue described in the GitHub issue,
-        # keep the initializer as an explicit attribute so its assets are tracked.
-        self._vocab_initializer = tf.lookup.TextFileInitializer(
-            vocab_file,
-            key_dtype=tf.string,
-            key_index=tf.lookup.TextFileIndex.WHOLE_LINE,
-            value_dtype=tf.int64,
-            value_index=tf.lookup.TextFileIndex.LINE_NUMBER)
-        # StaticHashTable created with the initializer
-        self._vocab_table = tf.lookup.StaticHashTable(
-            self._vocab_initializer,
-            default_value=-1)
+class MyLookupModel(tf.train.Checkpoint):
+  def __init__(self, vocab_file):
+    super().__init__()
+    vocab_initializer = tf.lookup.TextFileInitializer(
+        vocab_file,
+        key_dtype=tf.string, key_index=tf.lookup.TextFileIndex.WHOLE_LINE,
+        value_dtype=tf.int64, value_index=tf.lookup.TextFileIndex.LINE_NUMBER)
+    self._vocab_table = tf.lookup.StaticHashTable(vocab_initializer,
+                                                  default_value=-1)
 
-    @tf.function(input_signature=[tf.TensorSpec(shape=(None,), dtype=tf.string)])
-    def call(self, inputs):
-        # Lookup input strings in vocab table
-        return self._vocab_table.lookup(inputs)
+  @tf.function(input_signature=[tf.TensorSpec((None,), tf.string)])
+  def __call__(self, inputs):
+    return self._vocab_table.lookup(inputs)
 
-def my_model_function():
-    # Provide a dummy vocab file to the model as required.
-    # For demonstration, create an in-memory tempfile with vocab contents.
-    import tempfile
-    import os
+ORIGINAL_VOCAB = "/tmp/original/vocab.txt"
+tf.io.gfile.makedirs(os.path.dirname(ORIGINAL_VOCAB))
+with tf.io.gfile.GFile(ORIGINAL_VOCAB, "w") as f:
+  for x in ["a", "b", "c", "d"]:
+    f.write(x + "\n")
 
-    vocab_lines = ["a", "b", "c", "d"]
-    # Use a temporary directory for vocab file asset.
-    temp_dir = tempfile.mkdtemp()
-    vocab_path = os.path.join(temp_dir, "vocab.txt")
-
-    with open(vocab_path, "w") as f:
-        for line in vocab_lines:
-            f.write(line + "\n")
-
-    # Return instance of MyModel with vocab file path
-    return MyModel(vocab_path)
-
-def GetInput():
-    # Return a batch of sample input strings matching expected input signature
-    # The input shape is (batch_size,), dtype string
-    sample_inputs = tf.constant(["a", "b", "x", "d"], dtype=tf.string)
-    return sample_inputs
-
+model0 = MyLookupModel(ORIGINAL_VOCAB)
+tf.saved_model.save(model0, "/tmp/model1")
+model1 = tf.saved_model.load("/tmp/model1")
+tf.saved_model.save(model1, "/tmp/model2")
+# If "/tmp/model1/assets/vocab.txt" is deleted at this point, the next line crashes.
+model2 = tf.saved_model.load("/tmp/model2")

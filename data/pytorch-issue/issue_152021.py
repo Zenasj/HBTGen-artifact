@@ -1,26 +1,36 @@
-# torch.rand(16, 16, dtype=torch.float32, device='cuda')  # Add a comment line at the top with the inferred input shape
-
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.linear = nn.Linear(16, 16, device='cuda')
+import torch
 
-    def forward(self, x):
-        return self.linear(x)
+def capture(fn):
+    def inner(*args):
+        gm = None
+        actual_args = None
+        kwargs = None
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+        def backend(gm_, args_, **kwargs_):
+            nonlocal gm
+            nonlocal actual_args
+            nonlocal kwargs
+            gm = gm_
+            actual_args = args_
+            kwargs = kwargs_
+            return gm
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(16, 16, device='cuda')
+        _ = torch.compile(fn, fullgraph=True, backend=backend)(*args)
+        return gm, actual_args, kwargs
 
-# Example usage:
-# model = my_model_function()
-# inp = GetInput()
-# out = model(inp)
+    return inner
 
+model = torch.nn.Linear(16, 16, device='cuda')
+inp = torch.randn(16, 16, device='cuda')
+
+with torch.no_grad():
+    gm, args, kwargs = capture(model)(inp)
+    assert not kwargs
+    compiled_artifact = torch._inductor.standalone_compile(gm, args)
+    path = 'tmp_cache_dir'
+    format = 'unpacked'
+    compiled_artifact.save(path=path, format=format)
+    loaded = torch._inductor.CompiledArtifact.load(path=path, format=format)
+    compiled_out = loaded(inp)

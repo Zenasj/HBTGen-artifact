@@ -1,25 +1,48 @@
-# tf.random.normal((1, 100), dtype=tf.float32)  ← Input shape inferred from the issue (x shape = (1,100))
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
 
+from memory_profiler import profile
+from time import time
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # A single Dense layer with 100 units and softmax activation, as in the example
-        self.dense = tf.keras.layers.Dense(100, activation=tf.nn.softmax)
-    
-    def call(self, inputs):
-        # Forward pass: apply dense layer
-        return self.dense(inputs)
+model = tf.keras.Sequential([tf.keras.layers.Dense(100, activation=tf.nn.softmax)])
+model.compile(loss='mse', optimizer='sgd')
 
-def my_model_function():
-    # Instantiate MyModel and compile it to replicate the example behavior
-    model = MyModel()
-    model.compile(loss='mse', optimizer='sgd')
-    return model
+@profile
+def eval(x, y):
+    model.evaluate(x, y)
 
-def GetInput():
-    # Return an input tensor shaped (1,100), matching the example input
-    # Using tf.random.normal to generate random normal data as per the issue code
-    return tf.random.normal((1, 100), dtype=tf.float32)
+x = np.random.normal(size=(1,100))
+y = np.random.normal(size=(1,100))
 
+for i in range(100000):
+    print('iteration', i)
+    tic = time()
+    eval(x, y)
+    print('timeit', time() - tic)
+
+from memory_profiler import profile
+from time import time
+import numpy as np
+import tensorflow as tf
+
+model = tf.keras.Sequential([tf.keras.layers.Dense(100, activation=tf.nn.softmax)])
+model.compile(loss='mse', optimizer='sgd')
+
+@profile
+def eval(dataset):
+    model.evaluate(dataset)
+
+x = np.random.normal(size=(1,100))
+y = np.random.normal(size=(1,100))
+
+dataset = tf.data.Dataset.from_tensor_slices((x, y))
+dataset = dataset.batch(1)
+
+for i in range(100000):
+    print('iteration', i)
+    tic = time()
+    eval(dataset)
+    print('timeit', time() - tic)

@@ -1,24 +1,56 @@
+3
 import torch
-import torch.nn as nn
+import transformers as tr
+from datasets import load_dataset
 
-# torch.randint(0, 30522, (B, 512), dtype=torch.long)  # BERT input shape: (batch, sequence_length)
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.embedding = nn.Embedding(30522, 768)  # BERT's vocabulary size and hidden size
-        self.pooler = nn.Linear(768, 768)  # Mimics BERT's pooler layer
+from time import time
+from tqdm import tqdm
+from torch.utils.data import DataLoader
 
-    def forward(self, x):
-        embedded = self.embedding(x)
-        first_token = embedded[:, 0]  # Extract [CLS] token embedding
-        return self.pooler(first_token)
+bert = tr.AutoModel.from_pretrained("bert-base-cased")
+tokenizer = tr.AutoTokenizer.from_pretrained("bert-base-cased")
 
-def my_model_function():
-    return MyModel()
+datasets = load_dataset("conll2003")
+test_data = datasets["test"]
 
-def GetInput():
-    # Generate random token indices matching BERT's expected input
-    batch_size = 32  # Original issue's batch size
-    seq_length = 512  # Typical BERT sequence length
-    return torch.randint(0, 30522, (batch_size, seq_length), dtype=torch.long)
 
+def collate(batch):
+    return tokenizer(
+        [t["tokens"] for t in batch],
+        return_tensors="pt",
+        padding=True,
+        is_split_into_words=True,
+    )
+
+
+dataloader = DataLoader(
+    test_data,
+    batch_size=32,
+    collate_fn=collate,
+    num_workers=0,
+)
+
+times_mps = []
+bert = bert.to("mps")
+# group in batches of 32
+for model_inputs in tqdm(dataloader):
+    model_inputs = {k: v.to("mps") for k, v in model_inputs.items()}
+    t0 = time()
+    with torch.no_grad():
+        outputs = bert(**model_inputs)
+    t1 = time()
+    times_mps.append(t1 - t0)
+
+times = []
+bert = bert.to("cpu")
+# group in batches of 32
+for model_inputs in tqdm(dataloader):
+    model_inputs = {k: v.to("cpu") for k, v in model_inputs.items()}
+    t0 = time()
+    with torch.no_grad():
+        outputs = bert(**model_inputs)
+    t1 = time()
+    times.append(t1 - t0)
+
+print("Mean time per batch GPU: {:.2f}s".format(sum(times_mps) / len(times_mps)))
+print("Mean time per batch CPU: {:.2f}s".format(sum(times) / len(times)))

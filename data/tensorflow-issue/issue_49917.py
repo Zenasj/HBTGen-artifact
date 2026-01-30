@@ -1,103 +1,167 @@
-# tf.random.uniform((B, 784), dtype=tf.float32)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
 import numpy as np
 
-class BuggyRandom(tf.keras.layers.Layer):
-    # Reproduces the old "buggy" behavior where tf.random.uniform inside tf.function
-    # and certain control flows produces same random number sequences across runs.
+def _h(model,x):
+    model(x)
+
+class b(tf.keras.layers.Layer):
+    def call(self, inputs):
+        if tf.constant(True):
+            tf.print(tf.random.uniform([5,]),summarize=-1)
+        else:
+            pass
+        return inputs
+
+tf.random.set_seed(123)
+inputs = tf.keras.Input(shape=(784,))
+
+x=b()(inputs)
+x=b()(x)
+x=b()(x)
+outputs=b()(x)
+
+model = tf.keras.Model(inputs=inputs, outputs=outputs)
+
+h=tf.function(_h)
+
+print('first run:')
+h(model,tf.constant(np.random.rand(64,784)))
+print('second run:')
+h(model,tf.constant(np.random.rand(64,784)))
+
+import tensorflow as tf
+import numpy as np
+
+
+def _h(model,x):
+    model(x)
+
+class buggy_random(tf.keras.layers.Layer):
     def __init__(self, **kwargs):
+        self.boolean_var=tf.Variable(True)
         super().__init__(**kwargs)
-        # A boolean variable to control printing randomness inside call
-        self.boolean_var = tf.Variable(True)
     def call(self, inputs):
         if self.boolean_var:
-            # This triggers the problematic usage scenario:
-            # tf.random.uniform inside a tf.function with conditional variable,
-            # causing deterministic/repeated sequences unexpectedly.
-            tf.print(tf.random.uniform([5,]), summarize=-1)
+          tf.print(tf.random.uniform([5,]))
+
         return inputs
 
-class FixedRandom(tf.keras.layers.Layer):
-    # Uses the recommended tf.random.Generator API to produce truly different
-    # random numbers across different runs even inside tf.function.
+tf.random.set_seed(123)
+inputs = tf.keras.Input(shape=(784,))
+
+x=buggy_random()(inputs)
+x=buggy_random()(x)
+x=buggy_random()(x)
+outputs=buggy_random()(x)
+
+model = tf.keras.Model(inputs=inputs, outputs=outputs)
+model.layers[1].boolean_var.assign(False)
+model.layers[3].boolean_var.assign(False)
+
+
+h=tf.function(_h)
+print('first run:')
+h(model,tf.constant(np.random.rand(64,784)))
+print('second run:')
+h(model,tf.constant(np.random.rand(64,784)))
+'''
+first run:
+[0.277247906 0.994074821 0.379808426 0.71479249 0.50061965]
+[0.277247906 0.994074821 0.379808426 0.71479249 0.50061965]
+second run:
+[0.176383495 0.109812617 0.334476113 0.66576612 0.116794825]
+[0.176383495 0.109812617 0.334476113 0.66576612 0.116794825]
+'''
+
+import tensorflow as tf
+import numpy as np
+
+def _h(model,x):
+    model(x)
+
+class buggy_random(tf.keras.layers.Layer):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        # Initialize generator with a random seed each instantiation to simulate true randomness
-        self.g = tf.random.Generator.from_seed(np.random.randint(2147483647))
     def call(self, inputs):
-        # Generate and print random uniform numbers via the Generator instance
-        tf.print(self.g.uniform([5,]), summarize=-1)
+        for i in tf.range(tf.constant(1)):
+          tf.print(tf.random.uniform([5,]))
+
         return inputs
 
-class MyModel(tf.keras.Model):
-    """
-    Combines both buggy and fixed random layers, encapsulating the old and new APIs.
+tf.random.set_seed(123)
+inputs = tf.keras.Input(shape=(784,))
 
-    The call() method will run a stack of buggy layers followed by fixed layers, showing
-    the deterministic behavior of buggy and the improved randomness of fixed approach.
+x=buggy_random()(inputs)
+x=buggy_random()(x)
+x=buggy_random()(x)
+outputs=buggy_random()(x)
 
-    Output: A dict with:
-      'buggy_outputs': output tensor after buggy layers,
-      'fixed_outputs': output tensor after fixed layers,
-      'random_diff': numeric tensor measuring absolute difference of last buggy vs last fixed printouts,
-                     simulated here as the difference of last random numbers generated for illustration.
-    """
+model = tf.keras.Model(inputs=inputs, outputs=outputs)
 
-    def __init__(self):
-        super().__init__()
-        # 4 buggy random layers as in original examples
-        self.buggy1 = BuggyRandom()
-        self.buggy2 = BuggyRandom()
-        self.buggy3 = BuggyRandom()
-        self.buggy4 = BuggyRandom()
+h=tf.function(_h)
+print('first run:')
+h(model,tf.constant(np.random.rand(64,784)))
+print('second run:')
+h(model,tf.constant(np.random.rand(64,784)))
 
-        # Assign some boolean_vars to False to demo partial printing (like in example)
-        # Here we do it after build in call to avoid tf.Variable assignment error on init
+'''
+first run:
+[0.277247906 0.994074821 0.379808426 0.71479249 0.50061965]
+[0.277247906 0.994074821 0.379808426 0.71479249 0.50061965]
+[0.277247906 0.994074821 0.379808426 0.71479249 0.50061965]
+[0.277247906 0.994074821 0.379808426 0.71479249 0.50061965]
+second run:
+[0.176383495 0.109812617 0.334476113 0.66576612 0.116794825]
+[0.176383495 0.109812617 0.334476113 0.66576612 0.116794825]
+[0.176383495 0.109812617 0.334476113 0.66576612 0.116794825]
+[0.176383495 0.109812617 0.334476113 0.66576612 0.116794825]
+'''
 
-        # 4 fixed random layers as in final example
-        self.fixed1 = FixedRandom()
-        self.fixed2 = FixedRandom()
-        self.fixed3 = FixedRandom()
-        self.fixed4 = FixedRandom()
+import tensorflow as tf
+import numpy as np
 
-    def call(self, inputs, training=None):
-        # Assign boolean_vars after first run (to mimic example behavior)
-        # In real scenario you'd want these consistent and not change in call,
-        # but we do it here to simulate example setup:
-        self.buggy2.boolean_var.assign(False)
-        self.buggy4.boolean_var.assign(False)
+def _h(model,x):
+    model(x)
 
-        # Pass input through buggy layers
-        x = self.buggy1(inputs)
-        x = self.buggy2(x)
-        x = self.buggy3(x)
-        buggy_out = self.buggy4(x)
+class fixed_random(tf.keras.layers.Layer):
+    def __init__(self, **kwargs):
+        self.g = tf.random.Generator.from_seed(np.random.randint(2147483647))
+        super().__init__(**kwargs)
+    def call(self, inputs):
+        for i in tf.range(tf.constant(1)):
+            tf.print(self.g.uniform([5,]),summarize=-1)
+        return inputs
 
-        # Pass same input through fixed random layers
-        y = self.fixed1(inputs)
-        y = self.fixed2(y)
-        y = self.fixed3(y)
-        fixed_out = self.fixed4(y)
+tf.random.set_seed(123)
+np.random.seed(88883)
+inputs = tf.keras.Input(shape=(784,))
 
-        # For demonstration, compute a numeric difference between last buggy and fixed layers'
-        # random numbers is not accessible directly (tf.print outputs only).
-        # Instead, we illustrate by generating two fresh random uniform tensors and taking diff.
-        # This is a placeholder for "comparison" logic.
-        diff_tensor = tf.abs(self.fixed4.g.uniform([5,]) - tf.random.uniform([5,]))
+x=fixed_random()(inputs)
+x=fixed_random()(x)
+x=fixed_random()(x)
+outputs=fixed_random()(x)
 
-        return {
-            'buggy_outputs': buggy_out,
-            'fixed_outputs': fixed_out,
-            'random_diff': diff_tensor
-        }
+model = tf.keras.Model(inputs=inputs, outputs=outputs)
 
-def my_model_function():
-    # Return an instance of MyModel, ready to run
-    return MyModel()
+h=tf.function(_h)
 
-def GetInput():
-    # Return a random input tensor matching the input expected by MyModel: shape (batch_size, 784)
-    # Using batch size 64 as in examples
-    return tf.random.uniform((64, 784), dtype=tf.float32)
-
+print('first run')
+h(model,tf.constant(np.random.rand(64,784)))
+print('second run')
+h(model,tf.constant(np.random.rand(64,784)))
+'''
+first run
+[0.898076177 0.814805269 0.685280442 0.624640703 0.637957335]
+[0.438643932 0.923692703 0.202350736 0.259410977 0.551186323]
+[0.137919307 0.688777804 0.0962672234 0.532677054 0.639819145]
+[0.533203602 0.589777708 0.596117854 0.147099137 0.760685086]
+second run
+[0.391331553 0.65578413 0.0532933474 0.92483747 0.198105812]
+[0.0157146454 0.148599625 0.300893545 0.211638093 0.460565567]
+[0.310432553 0.377720356 0.230332017 0.0171860456 0.905866146]
+[0.927248478 0.930060267 0.906018138 0.391339064 0.362027764]
+'''

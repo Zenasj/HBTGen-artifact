@@ -1,17 +1,19 @@
-# torch.rand(1, 3, 4)  # Input shape: batch=1, features=3 (arbitrary), height/width=4 (matches output)
 import torch
-from torch import nn
 from typing import List
 
-class MyModel(nn.Module):
-    def forward(self, x: torch.Tensor, languages: List[str] = [], per_token_languages: List[List[str]] = []):
-        # Replicates original issue's problematic default container-type arguments
-        return torch.rand(3, 4)  # Matches original issue's output tensor shape
+class Foo(torch.jit.ScriptModule):
+    @torch.jit.script_method
+    def forward(self, languages: List[str]=[], per_token_languages: List[List[str]]=[]):
+        return torch.rand(3, 4)
 
-def my_model_function():
-    return MyModel()  # Minimal initialization, no weights needed
+f = Foo()
+f.save('/tmp/test.zip')
 
-def GetInput():
-    # Returns dummy input tensor matching assumed shape
-    return torch.rand(1, 3, 4)
+torch.jit.load('/tmp/test.zip')
 
+def test(x=[]):
+   x.append(1)
+   return len(x)
+
+print(test()) # 1
+print(test()) # 2

@@ -1,22 +1,29 @@
-# torch.rand(B, 100, dtype=torch.complex64)
 import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self, input_dim=100, hidden_dim=128, output_dim=10):
-        super().__init__()
-        self.fc1 = nn.Linear(input_dim, hidden_dim, dtype=torch.complex64)
-        self.fc2 = nn.Linear(hidden_dim, output_dim, dtype=torch.complex64)
+class MyComplexCrossEntropyLoss(nn.Module):
+    
+    def __init__(self):
+        super(MyComplexCrossEntropyLoss, self).__init__()
 
-    def forward(self, x):
-        x = self.fc1(x)
-        x = self.fc2(x)
-        return x
+    def forward(self, inputs, targets):       
+        real_loss = nn.CrossEntropyLoss(inputs.real, targets)
+        if torch.is_complex(inputs):
+            imag_loss = nn.CrossEntropyLoss(inputs.imag, targets)
+            return (real_loss + imag_loss)/2
+        else:
+            return real_loss
 
-def my_model_function():
-    return MyModel()
+class MyComplexCrossEntropyLoss(nn.Module):
+    
+    def __init__(self):
+        super(MyComplexCrossEntropyLoss, self).__init__()
 
-def GetInput():
-    B = 4  # Example batch size
-    return torch.rand(B, 100, dtype=torch.complex64)
-
+    def forward(self, inputs, targets):       
+        
+        if torch.is_complex(inputs):
+            real_loss = nn.CrossEntropyLoss(inputs.real, targets)
+            imag_loss = nn.CrossEntropyLoss(inputs.imag, targets)
+            return (real_loss + imag_loss)/2
+        else:
+            return nn.CrossEntropyLoss(inputs, targets)

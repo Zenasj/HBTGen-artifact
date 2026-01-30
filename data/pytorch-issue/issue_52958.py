@@ -1,10 +1,8 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Inferred input shape: (batch_size, channels, height, width)
-
-import torch
+import torch 
 import torch.nn as nn
 import torch.nn.functional as F
 
-class MyModel(nn.Module):
+class SlideInference(nn.Module):
     def __init__(self):
         super().__init__()
         self.c1 = nn.Conv2d(3, 1, 3, 1, padding=1)
@@ -37,20 +35,23 @@ class MyModel(nn.Module):
         pred = torch.reshape(pred, (-1, win_count, crop_size[0] * crop_size[1]))
         pred = pred.permute([0, 2, 1])
 
-        # Currently, ONNX export does not support torch.fold
+        # # currently export dont support torch.fold
         # pred = torch.fold(pred, [h, w], crop_size, stride=stride)
 
         return pred
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    batch_size = 2
-    channels = 3
-    height = 224
-    width = 224
-    return torch.rand(batch_size, channels, height, width, dtype=torch.float32)
+img = torch.ones([2, 3, 224, 224])
+model = SlideInference()
+# This line caused the error
+model = torch.jit.script(model)
 
+example_output = model(img)
+
+with torch.no_grad():
+    torch.onnx.export(
+            model,
+            img,
+            './output.onnx',
+            example_outputs=example_output,
+            opset_version=12)

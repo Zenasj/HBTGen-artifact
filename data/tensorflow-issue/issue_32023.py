@@ -1,43 +1,50 @@
-# tf.random.uniform((B, 10), dtype=tf.float32) ← inferred input shape from Input(shape=(10,))
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
-import tensorflow as tf
+from tensorflow.keras.layers import Dense, Input, Concatenate
+from tensorflow.keras.models import Model
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define Dense layers as used in the example
-        self.dense1 = tf.keras.layers.Dense(512)
-        self.dense2 = tf.keras.layers.Dense(256, activation='relu')
-        self.dense3 = tf.keras.layers.Dense(128, activation='relu')
-        self.prediction_dense = tf.keras.layers.Dense(1)
-        self.concat = tf.keras.layers.Concatenate()
+inputs = Input(shape=(10,))
 
-    def call(self, inputs):
-        all_layers = []
+all_layers = []
 
-        x1 = self.dense1(inputs)
-        all_layers.append(x1)
+x1 = Dense(512)(inputs)
+all_layers.append(x1)
 
-        x2 = self.dense2(x1)
-        all_layers.append(x2)
+# all layers: [x1]
+x2 = Dense(256, activation='relu')(x1)
+all_layers.append(x2)
 
-        # Concatenate layers: the issue in the original was about passing list vs non-list.
-        # Here we always pass a list to avoid the error.
-        conc1 = self.concat(list(all_layers))
-        x3 = self.dense3(conc1)
-        all_layers.append(x3)
+# all layers: [x1, x2]
+conc = Concatenate()(all_layers)
+x3 = Dense(128, activation='relu')(conc)
+all_layers.append(x3)
 
-        conc2 = self.concat(list(all_layers))
-        prediction = self.prediction_dense(conc2)
+# all layers: [x1, x2, x3]
+conc = Concatenate()(all_layers)
+prediction = Dense(1)(conc)
+model = Model(inputs=inputs, outputs=prediction)
 
-        return prediction
+from tensorflow.keras.layers import Dense, Input, Concatenate
+from tensorflow.keras.models import Model
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+inputs = Input(shape=(10,))
 
-def GetInput():
-    # Return random input tensor with shape (batch_size=1, 10)
-    # dtype float32 as typical for Dense inputs
-    return tf.random.uniform((1, 10), dtype=tf.float32)
+all_layers = []
 
+x1 = Dense(512)(inputs)
+all_layers.append(x1)
+
+# all layers: [x1]
+x2 = Dense(256, activation='relu')(x1)
+all_layers.append(x2)
+
+# all layers: [x1, x2]
+conc = Concatenate()(list(all_layers))
+x3 = Dense(128, activation='relu')(conc)
+all_layers.append(x3)
+
+# all layers: [x1, x2, x3]
+conc = Concatenate()(list(all_layers))
+prediction = Dense(1)(conc)
+model = Model(inputs=inputs, outputs=prediction)

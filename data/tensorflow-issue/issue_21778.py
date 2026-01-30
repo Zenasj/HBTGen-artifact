@@ -1,30 +1,64 @@
-# tf.random.uniform((32, 8, 8, 1), dtype=tf.float32)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
 import tensorflow as tf
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Reuse of MaxPooling2D layer twice is the core of the issue discussed.
-        # To properly reuse layers in subclassed Model, we explicitly call them twice in sequence.
-        self.max_pool = tf.keras.layers.MaxPooling2D(pool_size=2)
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense = tf.keras.layers.Dense(1, activation='sigmoid')
+max_pool = tf.keras.layers.MaxPooling2D(2)
+model = tf.keras.Sequential([
+    max_pool,
+    max_pool,
+    tf.keras.layers.Flatten(),
+    tf.keras.layers.Dense(1, activation='sigmoid')
+])
+model.compile(optimizer='adam', loss='binary_crossentropy')
 
-    def call(self, inputs, training=False):
-        # Layer reuse: apply the same max_pool layer twice explicitly
-        x = self.max_pool(inputs)
-        x = self.max_pool(x)
-        x = self.flatten(x)
-        x = self.dense(x)
-        return x
+X, y = np.zeros((32, 8, 8, 1)), np.ones((32,))
+model.fit(X, y)
 
-def my_model_function():
-    # Return an instance of MyModel 
-    # No weights loading is included here since none were provided.
-    return MyModel()
+tf.keras.estimator.model_to_estimator(keras_model=model)
 
-def GetInput():
-    # Return a random tensor input matching (batch=32, height=8, width=8, channels=1)
-    # This matches the example usage in the issue.
-    return tf.random.uniform((32, 8, 8, 1), dtype=tf.float32)
+import tensorflow as tf
+import numpy as np
 
+max_pool = tf.keras.layers.MaxPooling2D(2)
+model = tf.keras.Sequential([
+    max_pool,
+    max_pool,
+    tf.keras.layers.Flatten(),
+    tf.keras.layers.Dense(1, activation='sigmoid')
+])
+model.compile(optimizer=tf.train.AdamOptimizer(), loss='binary_crossentropy')
+
+X, y = np.zeros((32, 8, 8, 1)), np.ones((32, 1))
+model.fit(X, y)
+
+estimator = tf.keras.estimator.model_to_estimator(keras_model=model)
+
+input_fn = tf.estimator.inputs.numpy_input_fn(
+    x=X,
+    y=y,
+    batch_size=32,
+    num_epochs=1,
+    shuffle=False
+)
+
+estimator.train(input_fn=input_fn, steps=1)
+
+model = tf.keras.models.Sequential([
+        tf.keras.layers.Conv2D(
+            input_shape=(IMAGE_SIZE, IMAGE_SIZE, IMAGE_DEPTH),
+            filters=96, kernel_size=11, strides=4, padding='valid'),
+        tf.keras.layers.MaxPooling2D(pool_size=3, strides=2, padding='valid'),
+        tf.keras.layers.Conv2D(filters=256, kernel_size=5, strides=1, padding='same'),
+        tf.keras.layers.MaxPooling2D(pool_size=3, strides=2, padding='valid'),
+        tf.keras.layers.Conv2D(filters=384, kernel_size=3, strides=1, padding='same'),
+        tf.keras.layers.Conv2D(filters=384, kernel_size=3, strides=1, padding='same'),
+        tf.keras.layers.Conv2D(filters=256, kernel_size=3, strides=1, padding='same'),
+        tf.keras.layers.MaxPooling2D(pool_size=3, strides=2, padding='valid'),
+        tf.keras.layers.Flatten(),
+        tf.keras.layers.Dense(units=4096),
+        tf.keras.layers.Dense(units=4096),
+        tf.keras.layers.Dense(units=num_classes),
+    ])

@@ -1,21 +1,19 @@
-# torch.rand(6, 3, 224, 224, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
 import torch
-import torch.nn as nn
-from torchvision import models
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.resnet18 = models.resnet18(pretrained=True)
+model = torch.hub.load('pytorch/vision:v0.10.0', 'resnet18', pretrained=True)
+device = torch.device('cuda')
 
-    def forward(self, x):
-        return self.resnet18(x)
+model.to(device).eval()
+model = torch.compile(model, backend='onnxrt')
+input_data = torch.randn((6, 3, 224, 224))
+input_data = input_data.to("cuda")
+output_data = model(input_data)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+model = torch.hub.load('pytorch/vision:v0.10.0', 'resnet18', pretrained=True)
+device = torch.device('cuda')
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn((6, 3, 224, 224), device='cuda')
-
+model.to(device).eval()
+model = torch.compile(model, backend='torch2trt')
+input_data = torch.randn((6, 3, 224, 224))
+input_data = input_data.to("cuda")
+output_data = model(input_data)

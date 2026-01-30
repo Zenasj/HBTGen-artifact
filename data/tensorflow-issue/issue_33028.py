@@ -1,33 +1,61 @@
-# tf.random.uniform((B, 224, 224, 3), dtype=tf.float32) ← inferred input shape from ResNet50 input
+from tensorflow import keras
+
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    """
-    A wrapper model encapsulating ResNet50.
+print('tf_version:', tf.__version__, 'gpu available:', tf.test.is_gpu_available())
+model = tf.keras.applications.ResNet50()
 
-    This class demonstrates the kind of input/output shape and usage close to the example in the issue.
-    """
 
-    def __init__(self):
-        super().__init__()
-        # Instantiate ResNet50 from keras applications with default weights None for simplicity and reproducibility
-        # Input shape is (224, 224, 3), output shape is (1000,)
-        self.resnet50 = tf.keras.applications.ResNet50(weights=None)
+print('compiling model')
+model.compile(optimizer='SGD', loss=tf.keras.losses.categorical_crossentropy)
 
-    def call(self, inputs, training=False):
-        # Forward pass through ResNet50
-        return self.resnet50(inputs, training=training)
+print('running fit function')
+x = tf.data.Dataset.from_tensors(tf.zeros([16]+model.input.shape.as_list()[1:]))
+y = tf.data.Dataset.from_tensors(tf.zeros([16]+model.output.shape.as_list()[1:]))
+print('x:', x, '\ny', y)
+model.fit(tf.data.Dataset.zip((x,y)).repeat().shuffle(buffer_size=1),
+          steps_per_epoch=10,
+          verbose=0,
+          callbacks=[tf.keras.callbacks.ProgbarLogger('steps')])
+print('done')
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel (batch size 16 assumed)
-    # The original code used batch size of 16 in the dataset example
-    batch_size = 16
-    input_shape = (batch_size, 224, 224, 3)
-    # Use uniform random floats as dummy input similar to zeros tensor in original code
-    return tf.random.uniform(input_shape, dtype=tf.float32)
+import tensorflow as tf
 
+print('tf_version:', tf.__version__, 'gpu available:', tf.test.is_gpu_available())
+import datetime
+
+# copied from https://www.tensorflow.org/guide/keras/custom_callback
+class MyCustomCallback(tf.keras.callbacks.Callback):
+
+  def on_train_batch_begin(self, batch, logs=None):
+    print('Training: batch {} begins at {}'.format(batch, datetime.datetime.now().time()))
+
+  def on_train_batch_end(self, batch, logs=None):
+    print('Training: batch {} ends at {}'.format(batch, datetime.datetime.now().time()))
+
+  def on_test_batch_begin(self, batch, logs=None):
+    print('Evaluating: batch {} begins at {}'.format(batch, datetime.datetime.now().time()))
+
+  def on_test_batch_end(self, batch, logs=None):
+    print('Evaluating: batch {} ends at {}'.format(batch, datetime.datetime.now().time()))
+    
+
+model = tf.keras.applications.ResNet50()    
+print('compiling model')
+model.compile(optimizer='SGD', loss=tf.keras.losses.categorical_crossentropy)
+
+print('running fit function')
+x = tf.data.Dataset.from_tensors(tf.zeros([1]+model.input.shape.as_list()[1:]))
+y = tf.data.Dataset.from_tensors(tf.zeros([1]+model.output.shape.as_list()[1:]))
+print('x:', x, '\ny', y)
+model.fit(tf.data.Dataset.zip((x,y)).repeat().shuffle(buffer_size=1),
+          steps_per_epoch=2,
+          verbose=0,
+          callbacks=[MyCustomCallback()])
+print('done')

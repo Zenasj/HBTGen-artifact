@@ -1,36 +1,56 @@
-# tf.random.normal((9, 8, 6), dtype=tf.float32)
+import math
+import random
 
 import tensorflow as tf
+import traceback
 
-class MyModel(tf.keras.Model):
+def replace_special_values(tensor):
+    # Convert tensor to tf.float32 if it's not a supported dtype
+    supported_dtypes = [tf.float16, tf.float32, tf.float64, tf.bfloat16]
+    if tensor.dtype not in supported_dtypes:
+        original_dtype = tensor.dtype
+        tensor = tf.cast(tensor, tf.float32)
+    else :
+        original_dtype = None
+    
+    # Replace NaNs with zeros
+    tensor = tf.where(tf.math.is_nan(tensor), tf.zeros_like(tensor), tensor)
+    
+    # Replace positive infinities with a large number (e.g., 1e30)
+    tensor = tf.where(tf.math.is_inf(tensor), 100, tensor)
+    
+    # Replace negative infinities with a small number (e.g., -1e30)
+    tensor = tf.where(tf.math.is_inf(tensor) & tf.math.less(tensor, 0), -100, tensor)
+    
+    # Convert tensor back to its original dtype
+    if original_dtype is not None :
+        tensor = tf.cast(tensor, original_dtype)
+    return tensor
+
+class Network(tf.Module):
     def __init__(self):
         super().__init__()
 
     @tf.function(jit_compile=True)
-    def call(self, x):
-        # Generate a random tensor "tensor" of shape [9,8,6] for RealDiv denominator
-        tensor = tf.random.normal([9, 8, 6], dtype=tf.float32)
-        # Perform RealDiv operation: y=x, x=tensor (i.e. tensor denominator)
-        realdiv_res = tf.raw_ops.RealDiv(y=x, x=tensor)
+    def __call__(self, x):
+      tensor = tf.random.normal([9, 8, 6], dtype=tf.float32)
+      x = tf.raw_ops.RealDiv(y=x, x=tensor) 
+      tensor1 = tf.random.normal([8, 1], dtype=tf.float32)       
+      x = tf.raw_ops.Zeta(q=x, x=tensor1)        
+      return x
 
-        # Generate another random tensor "tensor1" of shape [8, 1] for Zeta op parameter q
-        tensor1 = tf.random.normal([8, 1], dtype=tf.float32)
+m = Network()
+tensor = tf.random.normal([1], dtype=tf.float32)
+inp = {
+    "x": tensor,
+}
 
-        # Perform Zeta operation with q=realdiv_res, x=tensor1
-        zeta_res = tf.raw_ops.Zeta(q=realdiv_res, x=tensor1)
-
-        return zeta_res
-
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Generate a random input tensor matching expected shape for 'y' in RealDiv.
-    # Since tensor in RealDiv is [9,8,6], y must be broadcastable to that shape.
-    # The example used input of shape [1], so we will provide a shape (9,8,6) tensor to avoid broadcasting issues.
-
-    # Assumption: x should broadcast to shape [9,8,6], so make it (9,8,6)
-    # We keep dtype float32 to match operations' dtype.
-    return tf.random.normal([9, 8, 6], dtype=tf.float32)
-
+with tf.device('/GPU:0'):
+    tf.config.run_functions_eagerly(True)
+    no_op_res = m(**inp)
+    tf.config.run_functions_eagerly(False)
+    with tf.device('/GPU:0'):
+        op_res = m(**inp)
+    no_op_res = replace_special_values(no_op_res)
+    op_res = replace_special_values(op_res)
+    tf.debugging.assert_near(tf.cast(no_op_res, tf.float64), tf.cast(op_res, tf.float64), atol=0.001, rtol=0.001)

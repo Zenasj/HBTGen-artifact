@@ -1,28 +1,26 @@
-# torch.rand(B, 3, 224, 224, dtype=torch.float32)  # Assumed input shape for image classification
-import torch
-import torch.nn as nn
+import os
+import shutil
+import sys
+import zipfile
+import boto3
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, stride=1, padding=1)
-        self.relu = nn.ReLU()
-        self.pool = nn.MaxPool2d(2, 2)
-        self.conv2 = nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1)
-        self.fc1 = nn.Linear(32 * 56 * 56, 10)  # 56x56 from 224 after two pools
+s3 = boto3.client('s3')
 
-    def forward(self, x):
-        x = self.pool(self.relu(self.conv1(x)))
-        x = self.pool(self.relu(self.conv2(x)))
-        x = x.view(-1, 32 * 56 * 56)
-        x = self.fc1(x)
-        return x
+zip_requirements = "/tmp/pytorch1.0.1_lambda_deps.zip"
+pkgdir = '/tmp/sls-py-req'
+sys.path.append(pkgdir)
+if not os.path.exists(pkgdir):
+    tempdir = '/tmp/_temp-sls-py-req'
+    if os.path.exists(tempdir):
+        shutil.rmtree(tempdir)
 
-def my_model_function():
-    # Returns a simple CNN model for image classification
-    return MyModel()
+    s3.download_file(
+                YOUR_BUCKET,"pytorch1.0.1_lambda_deps.zip", zip_requirements)
+    zipfile.ZipFile(zip_requirements, 'r').extractall(tempdir)
+    os.remove(zip_requirements)
+    os.rename(tempdir, pkgdir)  # Atomic
+print("Deps extracted successfully !")
 
-def GetInput():
-    # Returns a random input tensor matching the model's expected input
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
-
+extra_compile_args = {"cxx": [
+        '-Wl,-rpath,$ORIGIN'
+    ]}

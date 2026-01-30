@@ -1,31 +1,24 @@
-# torch.rand(B, 3, 32, 32, dtype=torch.float32)
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.conv1 = nn.Conv2d(3, 6, 5)
-        self.pool = nn.MaxPool2d(2, 2)
-        self.conv2 = nn.Conv2d(6, 16, 5)
-        self.fc1 = nn.Linear(16 * 5 * 5, 120)
-        self.fc2 = nn.Linear(120, 84)
-        self.fc3 = nn.Linear(84, 10)
+# torch.Tensors cannot be used as a key in a dictionary
+# because they define a custom __eq__ function which when used
+# to resolve hash collisions will throw when comparing tensors:
+# "RuntimeError: bool value of Tensor with more than one value is ambiguous."
+# To avoid that, we use an object which will hold a Tensor and use
+# its id for both hashing and equality.
+# In order to use this as a weak key reference, we cannot
+# simply use weakref.WeakKeyDictionary because the newly constructed
+# WeakTensorRefKey only use would be a dictionary so it would have no strong
+# references.
+# To get around this issue, we can use it as a normal key, and then set
+# `weakref.finalize` to delete the key when its contained tensor dies.
 
-    def forward(self, x):
-        x = self.pool(F.relu(self.conv1(x)))
-        x = self.pool(F.relu(self.conv2(x)))
-        x = torch.flatten(x, 1)
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = self.fc3(x)
-        return x
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    B = 1  # Inferred batch size from common use cases
-    return torch.rand(B, 3, 32, 32, dtype=torch.float32)
-
+# [expired-storages]
+# NB: even though the tensor has died,
+# the deallocation of its storage can take longer,
+# even when the storage has no other uses/views.
+# In this case, the StorageWeakRef object will be kept alive
+# longer than it needs to be, however the storage itself
+# will be deallocated. We retain the possibly dead storages
+# and periodically check if any of them are expired and
+# can be freed.

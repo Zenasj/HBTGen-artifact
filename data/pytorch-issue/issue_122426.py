@@ -1,20 +1,10 @@
-# torch.rand(1, dtype=torch.float64)
 import torch
-import torch.nn as nn
+import numpy as np
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        part1 = torch.exp(x ** 2)
-        part2 = torch.special.erfc(x)
-        expected = part1 * part2  # Expected NaN when x is inf
-        actual = torch.special.erfcx(x)  # Actual output (reported as 0 when x is inf)
-        # Check if outputs differ, considering NaN vs non-NaN cases
-        return torch.tensor([not torch.allclose(actual, expected, equal_nan=False)], dtype=torch.bool)
+input = torch.tensor([np.inf], dtype=torch.float64)
+part1 = torch.exp(input ** 2)  # tensor([inf], dtype=torch.float64)
+part2 = torch.special.erfc(input)  # tensor([0.], dtype=torch.float64)
 
-def my_model_function():
-    return MyModel()
+expected = part1 * part2  # expected result: tensor([nan], dtype=torch.float64)
 
-def GetInput():
-    # Returns input that triggers the issue (infinity)
-    return torch.tensor([float('inf')], dtype=torch.float64)
-
+actual = torch.special.erfcx(input)  # actual result: tensor([0.], dtype=torch.float64)

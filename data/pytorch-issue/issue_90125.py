@@ -1,20 +1,26 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        # Bilinear upsample triggers symbolic expressions causing the codegen bug
-        return F.interpolate(x, scale_factor=2, mode='bilinear', align_corners=False)
+py
+#!/usr/bin/env python3
 
-def my_model_function():
-    return MyModel()
+import sympy
+from torch._inductor.codegen.triton import texpr
+from torch._inductor.codegen.cpp import cexpr
 
-def GetInput():
-    B, C, H, W = 1, 3, 32, 32  # Minimal input shape to trigger symbolic expressions
-    return torch.rand(B, C, H, W, dtype=torch.float32)
+s1 = sympy.Symbol('foo', integer=True)
+expr = s1/(2.0*s1 - 1) - 1/(2.0*s1 - 1)
 
+print(type(expr))
+# sympy.core.add.Add
+
+# Default pprinter:
+print(str(expr))
+# 'foo/(2.0*foo - 1) - 1/(2.0*foo - 1)'
+
+# Triton
+print(texpr(expr))
+# '((-1)*) + (foo*)'
+
+# CPP (uses ExprPrinter as texpr)
+print(cexpr(expr))
+#  '((-1)*) + (foo*)'

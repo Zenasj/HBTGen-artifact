@@ -1,57 +1,93 @@
-# tf.random.uniform((B, 3), dtype=tf.float64) ← Input shape inferred from sklearn linnerud dataset features (3 features)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
+tf.keras.backend.set_floatx('float32')
+
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+from sklearn.datasets import load_linnerud
 import tensorflow as tf
+tf.keras.backend.set_floatx('float64')
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Dense, Dropout, LSTM, Concatenate
 
-class MyModel(tf.keras.Model):
+X, y = load_linnerud(return_X_y=True)
+
+data = tf.data.Dataset.from_tensor_slices((X, y)).\
+    map(lambda a, b: (tf.divide(a, tf.reduce_max(X, axis=0, keepdims=True)), b))
+
+train_data = data.take(16).shuffle(16).batch(4)
+test_data = data.skip(16).shuffle(4).batch(4)
+
+
+class FullyConnectedNetwork(Model):
     def __init__(self):
-        super(MyModel, self).__init__()
-        # Layers as per original FullyConnectedNetwork
-        # Note: LSTM expects 3D inputs (batch, timesteps, features), original code feeds 2D input; we assume timesteps=1 for LSTM input to work.
-        # The issue code does not specify shape changes, so we add expand dims before LSTM in call.
+        super(FullyConnectedNetwork, self).__init__()
+        self.layer1 = Dense(9, input_shape=(3,))
+        self.layer2 = LSTM(8, return_sequences=True)
+        self.layer3 = Dense(27)
+        self.layer4 = Dropout(5e-1)
+        self.layer5 = Dense(27)
+        self.layer6 = Concatenate()
+        self.layer7 = Dense(3)
 
-        self.layer1 = tf.keras.layers.Dense(9)  # input_shape=(3,) will be inferred later
-        self.layer2 = tf.keras.layers.LSTM(8, return_sequences=True)
-        self.layer3 = tf.keras.layers.Dense(27)
-        self.layer4 = tf.keras.layers.Dropout(0.5)
-        self.layer5 = tf.keras.layers.Dense(27)
-        self.layer6 = tf.keras.layers.Concatenate()
-        self.layer7 = tf.keras.layers.Dense(3)
-
-    def call(self, x, training=False):
-        # x: shape (batch_size, 3)
-        x1 = tf.nn.tanh(self.layer1(x))               # (batch_size, 9)
-        # For LSTM, add a time dimension: (batch_size, timesteps=1, features=9)
-        y = self.layer2(tf.expand_dims(x1, axis=1))   # (batch_size, 1, 8)
-        # Remove time dimension for next layers to match concatenation (x and y shapes)
-        y = tf.squeeze(y, axis=1)                      # (batch_size, 8)
-
-        x = tf.nn.selu(self.layer3(x1))                # (batch_size, 27)
-        x = self.layer4(x, training=training)          # dropout active only if training=True
-        x = tf.nn.relu(self.layer5(x))                  # (batch_size, 27)
-
-        # Concatenate x (27) and y (8): (batch_size, 35)
+    def __call__(self, x, *args, **kwargs):
+        x = tf.nn.tanh(self.layer1(x))
+        y = self.layer2(x)
+        x = tf.nn.selu(self.layer3(x))
+        x = self.layer4(x)
+        x = tf.nn.relu(self.layer5(x))
         x = self.layer6([x, y])
-
-        x = self.layer7(x)                              # (batch_size, 3)
+        x = self.layer7(x)
         return x
 
 
-def my_model_function():
-    # Return an instance of MyModel.
-    # No pretrained weights to load, just a fresh model.
-    return MyModel()
+model = FullyConnectedNetwork()
+
+loss_object = tf.keras.losses.Huber()
+
+train_loss = tf.keras.metrics.Mean()
+test_loss = tf.keras.metrics.Mean()
+
+optimizer = tf.keras.optimizers.Adamax()
 
 
-def GetInput():
-    # The original data X has shape (samples, 3)
-    # The dtype in user code was set to float64 due to tf.keras.backend.set_floatx('float64')
-    # To avoid dtype mismatch issues, ensure input dtype is float32 as modern TF prefers float32 for operations.
-    # The model layers default to float32 dtype in TF 2.x, so input should be float32.
+@tf.function
+def train_step(inputs, targets):
+    with tf.GradientTape() as tape:
+        outputs = model(inputs)
+        loss = loss_object(outputs, targets)
+        train_loss(loss)
 
-    batch_size = 4  # As in original batching from the issue
-    feature_dim = 3
+    gradients = tape.gradient(loss, model.trainable_variables)
+    optimizer.apply_gradients(zip(gradients, model.trainable_variables))
 
-    # Generate a random float32 tensor input matching shape (batch_size, 3)
-    # Values arbitrary between 0 and 1 to mimic normalized input
-    return tf.random.uniform((batch_size, feature_dim), dtype=tf.float32)
 
+@tf.function
+def test_step(inputs, targets):
+    outputs = model(inputs)
+    print(outputs.dtype, targets.dtype)
+    loss = loss_object(outputs, targets)
+    test_loss(loss)
+
+
+def main():
+    train_loss.reset_states()
+    test_loss.reset_states()
+
+    for epoch in range(1, 10_000 + 1):
+        for x, y in train_data:
+            train_step(x, y)
+
+        for x, y in test_data:
+            test_step(x, y)
+
+        if epoch % 25 == 0:
+            print(f'Epoch: {epoch:>4} Train Loss: {train_loss.result().numpy():.2f} '
+                  f'Test Loss: {test_loss.result().numpy():.2f}')
+
+
+if __name__ == '__main__':
+    main()

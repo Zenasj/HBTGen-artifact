@@ -1,19 +1,28 @@
-# (torch.rand(5), torch.rand(5))
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-    
-    def forward(self, inputs):
-        param, param2 = inputs
-        tensor_list = {param2}
-        return torch.tensor([param in tensor_list], dtype=torch.bool)
+param = torch.zeros(5)
+param2 = torch.zeros(5)
 
-def my_model_function():
-    return MyModel()
+tensor_list = set()
+tensor_list.add(param2)
+print(param2 in tensor_list)  # False
 
-def GetInput():
-    return (torch.rand(5), torch.rand(5))
+def fn(param, param2):
+    tensor_list = set([param2])
+    return param in tensor_list 
 
+ret = torch.compile(fn, onegraph=True)(param, param2)
+
+param = torch.zeros(5)
+param2 = torch.zeros(5)
+
+tensor_list = set()
+tensor_list.add(param2)
+print(param2 in tensor_list)  # False
+
+def fn(param, param2):
+    tensor_list = set([param2])
+    return param in tensor_list
+
+ret = torch.compile(fn, fullgraph=True)(param, param2)
+assert ret == fn(param, param2)   # RuntimeError: Boolean value of Tensor with more than one value is ambiguous

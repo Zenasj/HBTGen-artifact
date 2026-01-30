@@ -1,19 +1,11 @@
-# torch.rand(N, dtype=torch.float32)
-import torch
-import torch.nn as nn
+import timeit
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Apply sinh and cosh operations (vectorized in the PR context)
-        sinh_out = torch.sinh(x)
-        cosh_out = torch.cosh(x)
-        return (sinh_out, cosh_out)
-
-def my_model_function():
-    # Returns the model instance exercising vectorized sinh/cosh
-    return MyModel()
-
-def GetInput():
-    # Generates input matching the benchmark's tensor shape and dtype
-    return torch.rand(10000, dtype=torch.float32)
-
+for n, t in [(10_000, 8000),
+             (100_000, 800)]:
+    for dtype in ('torch.float', 'torch.double'):
+        print(f'================ dtype {dtype}, {t} times ================================')
+        for op in ('sinh', 'cosh'):
+            print(f'a.{op}() (a.numel() == {n}) for {t} times')
+            print(timeit.timeit(f'a.{op}()',
+                                setup=f'import torch; a = torch.arange({n}, device="cpu", dtype={dtype})',
+                                number=t))

@@ -1,5 +1,3 @@
-# torch.rand(B, C, H, W, dtype=...)  # B: batch size, C: channels, H: height (sequence length), W: width (1 for 1D conv)
-import torch
 import torch.nn as nn
 
 class Conv1dSamePad(nn.Module):
@@ -15,9 +13,9 @@ class Conv1dSamePad(nn.Module):
         else:
             return self.conv(x)[:, :, :-1]
 
-class MyModel(nn.Module):
+class ReproduceNet(nn.Module):
     def __init__(self, num_classes):
-        super(MyModel, self).__init__()
+        super(ReproduceNet, self).__init__()
         self.num_classes = num_classes
         self.first_conv = Conv1dSamePad(13, 1000, 13)
         self.convs = nn.ModuleList(
@@ -29,16 +27,5 @@ class MyModel(nn.Module):
     def forward(self, x):
         x = self.first_conv(x)
         for idx, conv in enumerate(self.convs):
-            x = conv(x)
+            x = conv(x) 
         return self.logsoftmax(self.last_conv(x))
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel(num_classes=10)
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # Assuming batch size (B) of 4, 13 input channels, and sequence length (H) of 1000
-    B, C, H = 4, 13, 1000
-    return torch.rand(B, C, H, dtype=torch.float32)
-

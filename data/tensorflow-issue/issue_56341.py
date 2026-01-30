@@ -1,43 +1,94 @@
-# tf.random.uniform((B, 2), dtype=tf.float32) ← Input is a batch of 2D vectors representing points (x1, x2)
+import math
+from tensorflow.keras import layers
 
 import tensorflow as tf
 import numpy as np
+from tensorflow.keras import Sequential
+from tensorflow.keras.layers import Dense
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define the same architecture as the original Sequential model,
-        # but constructed as a tf.keras.Model subclass.
-        self.dense1 = tf.keras.layers.Dense(100, activation='elu')
-        self.dense2 = tf.keras.layers.Dense(100, activation='elu')
-        self.dense3 = tf.keras.layers.Dense(50, activation='elu')
-        self.dense4 = tf.keras.layers.Dense(50, activation='elu')
-        self.dense5 = tf.keras.layers.Dense(10, activation='elu')
-        self.dense6 = tf.keras.layers.Dense(10, activation='elu')
-        self.out_layer = tf.keras.layers.Dense(1, activation='linear')
-    
-    def call(self, inputs):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        x = self.dense3(x)
-        x = self.dense4(x)
-        x = self.dense5(x)
-        x = self.dense6(x)
-        return self.out_layer(x)
+def make_model():
+    x1 = linspace(0,4*pi,100000)
+    x2 = linspace(2,20,100000)
+    y = cos(x1) + x2/5
 
-def my_model_function():
-    # Create an instance of MyModel and compile it with same params as original
-    model = MyModel()
-    model.compile(loss='mse', optimizer='adam', metrics=['accuracy'])
-    return model
+    model = Sequential()
+    model.add(Dense(100, activation='elu', input_shape=(2,)))  # elu used so that smooth, continuous functions are differentiated
+    model.add(Dense(100, activation='elu'))
+    model.add(Dense(50, activation='elu'))
+    model.add(Dense(50, activation='elu'))
+    model.add(Dense(10, activation='elu'))
+    model.add(Dense(10, activation='elu'))
+    model.add(Dense(1, activation='linear'))
+    model.compile(loss='MSE', optimizer='adam', metrics=['accuracy'])
 
-def GetInput():
-    # Return a batch of input points shaped (batch_size, 2) matching the original x_in shape.
-    # Assume batch size 100 for example; values sampled from the ranges of x1 and x2 in original code.
-    # x1 in [0, 4*pi], x2 in [2, 20]
-    batch_size = 100
-    x1 = tf.random.uniform(shape=(batch_size, 1), minval=0.0, maxval=4*np.pi, dtype=tf.float32)
-    x2 = tf.random.uniform(shape=(batch_size, 1), minval=2.0, maxval=20.0, dtype=tf.float32)
-    x_input = tf.concat([x1, x2], axis=1)  # shape (batch_size, 2)
-    return x_input
+    x_in = np.vstack((x1,x2)).T
+    y_out = y
 
+    x_train, x_valid, y_train, y_valid = train_test_split(x_in, y_out, test_size=0.3, shuffle= True)
+
+    epochs = 100
+    batch_size = 110
+
+    h0 = model.fit(x_train, y_train, validation_data=(x_valid,y_valid), batch_size=batch_size,epochs=epochs)
+
+    return x_in, y_out, model
+
+def analyze(model, x_in): 
+
+    grado1 = np.zeros((100000,2))
+    grado2 = np.zeros((100000,2))
+
+    for i in range(0,100000):
+        x = tf.Variable([[x_in[i,0],x_in[i,1]]])
+
+        with tf.GradientTape(persistent=True,watch_accessed_variables=True) as t:
+            t.watch(x)  
+            out1 = model(x)
+            out2 = tf.math.cos(x[:,0]) + x[:,1]/5  # this works using both a Variable array as well as separated taped variables, i.e., x1t, x2t
+        gradients1 = t.gradient(out1, x)
+        gradients2 = t.gradient(out2, x)
+        if i % 100 == 0:
+            print(i)
+        grado1[i,:] = gradients1.numpy()
+        grado2[i,:] = gradients2.numpy()
+
+    ymodel = model.predict([x_in])
+
+    return grado1, grado2, ymodel
+
+
+print('x_in, y_out, model = make_model()')
+print('grado1, grado2, ymodel = analyze(model, x_in)')
+
+def main(x_in, y_out, grado1, grado2, ymodel):
+
+    # project the gradients onto the line x1 = x2
+    direction = np.array([4 * pi, 20 - 2])
+    direction /= np.linalg.norm(direction)
+
+    proj_grado1 = np.matmul(grado1, direction)
+    proj_grado2 = np.matmul(grado2, direction)
+
+    plt.figure(figsize=(15,4))
+    ax = plt.subplot(111)
+    plt.ylabel('dy / d_direction')
+    plt.xlabel('x_1')
+    plt.legend(loc='lower left')
+
+    # ax2 = ax.twinx()
+    # ax2.plot(x_in[:,i],grado1[:,i],'b--',label='grad1_x'+str(i+1)+' model')
+    # ax2.plot(x_in[:,i],grado2[:,i],'g',label='grad2_x'+str(i+1)+' autodiff formula')
+
+    ax.plot(x_in[:,0],proj_grado1[:],'b--',label='line_grad1_x model')
+    ax.plot(x_in[:,0],proj_grado2[:],'g',label='line_grad2_x autodiff formula')
+    # if i == 0:
+        # ax2.plot(x_in[:,0],-sin(x_in[:,0]),'r--',label='grad2_x'+str(i+1)+' explicit formula')
+    # elif i == 1:
+        # ax2.plot(x_in[:,1],(1/5)*ones(len(x_in[:,1])),'r--',label='grad2_x'+str(i+1)+' explicit formula')
+    # plt.ylabel('dy/dx_1')
+    # plt.xlabel('x_1')
+
+    plt.legend()
+    plt.show()

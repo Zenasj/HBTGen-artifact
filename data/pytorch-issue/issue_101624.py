@@ -1,12 +1,19 @@
-# torch.rand(5, 5, dtype=torch.float32)
 import torch
+import logging
+import torch._dynamo
+
+torch._logging.set_logs(dynamo=logging.DEBUG, bytecode=True)
+
 import torch.nn as nn
 import torch.nn.functional as F
 
+torch.manual_seed(420)
+
 class MyModel(nn.Module):
+
     def __init__(self):
         super(MyModel, self).__init__()
-        self.linear = nn.Linear(5, 5)
+        self.linear = torch.nn.Linear(5, 5)
 
     def forward(self, x):
         x = x + 1
@@ -17,11 +24,18 @@ class MyModel(nn.Module):
         x = x - 1
         return x
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel().to("cuda")
+x = torch.randn(5, 5, device="cuda")
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(5, 5, device="cuda")
+m = MyModel().to("cuda")
+print(m(x))
 
+opt_m = torch.compile(backend="eager")(m)
+print(opt_m(x))
+
+l__self___linear = self.L__self___linear(add)
+
+sin = torch.sin(l__self___linear);
+
+torch.with_grad
+
+torch.amp.autocast

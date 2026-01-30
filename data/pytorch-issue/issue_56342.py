@@ -1,22 +1,20 @@
-# torch.rand(1, dtype=torch.float32, device='cuda:0')
 import torch
+import torch.multiprocessing as mp
 import torch.nn as nn
 
-class MyModel(nn.Module):
+class Net(nn.Module):
     def __init__(self):
         super().__init__()
-        # Reproduces the bug: integer tensor parameter on CUDA causes sharing error
         self.i = nn.Parameter(torch.tensor(0), requires_grad=False)
-    
-    def forward(self, x):
-        # Dummy forward to satisfy module interface (input not used in original issue)
-        return self.i  # Returns the problematic parameter
 
-def my_model_function():
-    # Returns the model instance with the faulty parameter configuration
-    return MyModel()
+def run(rank, net):
+    print('start run rank:', rank)
 
-def GetInput():
-    # Generates a dummy input matching the expected shape (scalar)
-    return torch.rand(1, dtype=torch.float32, device='cuda:0')
+if __name__ == "__main__":
+    net = Net()
 
+    net.to('cuda:0')  # Here is the difference from the example in the linked PR
+
+    net.share_memory()
+    c = mp.spawn(run, args=[net], nprocs=1, join=False)
+    c.join()

@@ -1,24 +1,21 @@
-# torch.rand(3, dtype=torch.float32)
-import torch
 import torch.nn as nn
 import torch.nn.utils.parametrize as parametrize
+torch.manual_seed(0)
 
 class Symmetric(nn.Module):
     def forward(self, X):
         return X.triu() + X.triu(1).transpose(-1, -2)
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.layer = nn.Linear(3, 3, bias=False)
-        parametrize.register_parametrization(self.layer, "weight", Symmetric())
-    
-    def forward(self, x):
-        return self.layer(x)
+x = torch.randn(3)
 
-def my_model_function():
-    return MyModel()
+def f(x):
+    layer = nn.Linear(3, 3, bias=False)
+    parametrize.register_parametrization(layer, "weight", Symmetric())
+    y = layer(x)
+    return y, layer.weight
 
-def GetInput():
-    return torch.randn(3)
+f_compiled = torch.compile(f, backend="aot_eager")
 
+out_compiled, weight = f_compiled(x)
+out = torch.nn.functional.linear(x, weight)
+assert torch.allclose(out_compiled, out)

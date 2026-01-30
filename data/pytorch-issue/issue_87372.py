@@ -1,47 +1,54 @@
-# torch.rand(1, dtype=torch.float32)  # Dummy input tensor
 import torch
-from torch import nn
+
 from typing import Dict, Any
 
-class OriginalModule(nn.Module):
-    def forward(self) -> Dict[str, Any]:
-        result = {  # Missing explicit variable annotation (problematic)
+
+class Test:
+    def foo(self) -> Dict[str, Any]:
+        result = {
             "int": 123,
             "float": 0.123,
             "str": "abc",
         }
         return result
 
-class FixedModule(nn.Module):
-    def forward(self) -> Dict[str, Any]:
-        result: Dict[str, Any] = {  # Explicit variable annotation (correct)
+
+class Test2:
+    def foo(self) -> Dict[str, Any]:
+        result = {
             "int": 123,
             "float": 0.123,
             "str": "abc",
         }
+        assert isinstance(result, Dict[str, Any])
         return result
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.original = OriginalModule()  # Problematic submodule
-        self.fixed = FixedModule()        # Fixed submodule
 
-    def forward(self, x):
-        # Compare outputs of both submodules
-        original = self.original()
-        fixed = self.fixed()
-        # Check dictionary equivalence
-        if original.keys() != fixed.keys():
-            return torch.tensor(0)
-        for key in original:
-            if original[key] != fixed[key]:
-                return torch.tensor(0)
-        return torch.tensor(1)  # Return success as tensor
+if __name__ == "__main__":
+    t = Test()
+    t2 = Test2()
 
-def my_model_function():
-    return MyModel()
+    # Will trigger the following error:
+    # Return value was annotated as having type Dict[str, Any] but is actually of type Dict[str, Union[float, int, str]]:
+    try:
+        t_script = torch.jit.script(t)
+    except Exception as e:
+        print(e)
 
-def GetInput():
-    return torch.rand(1, dtype=torch.float32)  # Dummy input
+    # This one is okay
+    t2_script = torch.jit.script(t2)
 
+    # However calling foo will trigger the following error:
+    # RuntimeError: AssertionError:
+    # Notice that t2.foo() will also trigger error:
+    # TypeError: Subscripted generics cannot be used with class and instance checks
+    try:
+        t2_script.foo()
+    except Exception as e:
+        print(e)
+
+result: Dict[str, Any] = {
+            "int": 123,
+            "float": 0.123,
+            "str": "abc",
+        }

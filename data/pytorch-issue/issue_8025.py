@@ -1,26 +1,29 @@
-# torch.rand(B, 1000, dtype=torch.float32)  # Input shape inferred as (batch_size, 1000)
+import torch.nn as nn
+
 import torch
-from torch import nn
+import torch.onnx
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.linear1 = nn.Linear(1000, 100)  # Matches hidden dim H=100
-        self.relu = nn.ReLU()
-        self.linear2 = nn.Linear(100, 10)    # Matches output dim D_out=10
+# N is batch size; D_in is input dimension;
+# H is hidden dimension; D_out is output dimension.
+N, D_in, H, D_out = 64, 1000, 100, 10
 
-    def forward(self, x):
-        x = self.linear1(x)
-        x = self.relu(x)
-        x = self.linear2(x)
-        return x
+# Create random Tensors to hold inputs and outputs
+x = torch.randn(N, D_in)
+y = torch.randn(N, D_out)
 
-def my_model_function():
-    # Returns initialized model instance with default weights
-    return MyModel()
+# Use the nn package to define our model and loss function.
+model = torch.nn.Sequential(
+    torch.nn.Linear(D_in, H),
+    torch.nn.ReLU(),
+    torch.nn.Linear(H, D_out),
+)
+loss_fn = torch.nn.MSELoss(size_average=False)
 
-def GetInput():
-    # Returns random input tensor matching expected shape (B, 1000)
-    B = 64  # Batch size from issue context
-    return torch.rand(B, 1000, dtype=torch.float32)
+# Use the optim package to define an Optimizer that will update the weights of
+# the model for us. Here we will use Adam; the optim package contains many other
+# optimization algoriths. The first argument to the Adam constructor tells the
+# optimizer which Tensors it should update.
+learning_rate = 1e-4
+optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
+torch.onnx.export(model, x, "test.onnx", verbose=True)

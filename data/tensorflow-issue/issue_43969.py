@@ -1,27 +1,15 @@
-# tf.random.uniform((B,), dtype=tf.float32) ← input is a 1D float tensor, e.g. [1, 2, 3]
-
 import tensorflow as tf
+from tensorflow.python.framework.test_util import assert_no_garbage_created
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # No trainable parameters; the model just replicates input in a tuple
-        # This mimics the dataset.map(lambda x: (x, x)) behavior from the issue
-        
-    @tf.function(jit_compile=True)
-    def call(self, inputs):
-        # inputs is a tensor (e.g. shape (B,))
-        # Return a tuple of inputs duplicated, as in dataset.map(lambda x: (x, x))
-        # This matches the mapping function from the issue
-        return (inputs, inputs)
+class TestStandardTrainer(tf.test.TestCase):
+  @assert_no_garbage_created
+  def test_dataset_map(self):
+      data_tensor = {'x': tf.constant([1, 2, 3], dtype=tf.float32),
+                     'y': tf.constant([4, 5, 6], dtype=tf.float32)}
+      dataset = tf.data.Dataset.from_tensor_slices(data_tensor)
 
-def my_model_function():
-    # Return instance of MyModel
-    return MyModel()
+      # We split the data in 2
+      dataset = dataset.map(lambda x: (x, x))
 
-def GetInput():
-    # Generate input tensor matching expected input: 1D float tensor with some batch size
-    # The original issue used tf.constant([1, 2, 3], dtype=tf.float32)
-    # We'll generate uniform float tensor of shape (3,)
-    return tf.random.uniform((3,), dtype=tf.float32)
-
+import unittest
+unittest.main(argv=['first-arg-is-ignored'], exit=False)

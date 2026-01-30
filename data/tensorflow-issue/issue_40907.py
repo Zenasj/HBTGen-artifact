@@ -1,63 +1,43 @@
-# tf.random.uniform((None, 32, 32, 3), dtype=tf.float32)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
 import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Flatten, Conv2D, MaxPooling2D
 
-class MyModelCheckpoint(tf.keras.callbacks.ModelCheckpoint):
-    def __init__(self, **kwargs):
-        super(MyModelCheckpoint, self).__init__(**kwargs)
-
-    def on_train_batch_end(self, batch, logs=None):
-        # Custom logic to enable save_freq by batch count, injecting 'batch' key safely for formatting
-        if (batch + 1) % self.save_freq == 0:
-            if logs is None:
-                logs = {}
-            logs['batch'] = batch + 1
-            self._save_model(epoch=self._current_epoch, logs=logs)
+from tensorflow.keras.callbacks import ModelCheckpoint
 
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Reconstructing the original Sequential model as submodules
-        self.conv_1 = tf.keras.layers.Conv2D(filters=16, kernel_size=(3, 3), activation='relu', name='conv_1', input_shape=(32, 32, 3))
-        self.bn_1 = tf.keras.layers.BatchNormalization()
-        self.conv_2 = tf.keras.layers.Conv2D(filters=8, kernel_size=(3, 3), activation='relu', name='conv_2')
-        self.pool_1 = tf.keras.layers.MaxPooling2D(pool_size=(4, 4), name='pool_1')
-        self.bn_2 = tf.keras.layers.BatchNormalization()
-        self.conv_3 = tf.keras.layers.Conv2D(filters=8, kernel_size=(3, 3), activation='relu', name='conv_3')
-        self.pool_2 = tf.keras.layers.MaxPooling2D(pool_size=(4, 4), name='pool_2')
-        self.flatten = tf.keras.layers.Flatten(name='flatten')
-        self.dense_1 = tf.keras.layers.Dense(units=32, activation='relu', name='dense_1')
-        self.dropout = tf.keras.layers.Dropout(0.5)
-        self.dense_2 = tf.keras.layers.Dense(units=10, activation='softmax', name='dense_2')
 
-    def call(self, inputs, training=False):
-        x = self.conv_1(inputs)
-        x = self.bn_1(x, training=training)
-        x = self.conv_2(x)
-        x = self.pool_1(x)
-        x = self.bn_2(x, training=training)
-        x = self.conv_3(x)
-        x = self.pool_2(x)
-        x = self.flatten(x)
-        x = self.dense_1(x)
-        x = self.dropout(x, training=training)
-        x = self.dense_2(x)
-        return x
+(x_train, y_train), (x_test, y_test) = tf.keras.datasets.cifar10.load_data()
+x_train = x_train / 255.0
+x_test = x_test / 255.0
 
-
-def my_model_function():
-    model = MyModel()
-    # Compile the model with same configuration as original Sequential example
-    model.compile(
-        optimizer='adam',
-        loss='sparse_categorical_crossentropy',
-        metrics=['accuracy']
-    )
+def get_new_model():
+    model = Sequential([
+        Conv2D(filters=16, input_shape=(32, 32, 3), kernel_size=(3, 3), 
+               activation='relu', name='conv_1'),
+        tf.keras.layers.BatchNormalization(),
+        Conv2D(filters=8, kernel_size=(3, 3), activation='relu', name='conv_2'),
+        MaxPooling2D(pool_size=(4, 4), name='pool_1'),
+        tf.keras.layers.BatchNormalization(),
+        Conv2D(filters=8, kernel_size=(3, 3), activation='relu', name='conv_3'),
+        MaxPooling2D(pool_size=(4, 4), name='pool_2'),
+        Flatten(name='flatten'),
+        Dense(units=32, activation='relu', name='dense_1'),
+        tf.keras.layers.Dropout(0.5),
+        Dense(units=10, activation='softmax', name='dense_2')
+    ])
+    model.compile(optimizer='adam',
+                  loss='sparse_categorical_crossentropy',
+                  metrics=['accuracy'])
     return model
 
 
-def GetInput():
-    # Return a random float32 tensor with shape (batch_size, H=32, W=32, C=3)
-    # Using batch_size=10 as in the original train example
-    return tf.random.uniform((10, 32, 32, 3), dtype=tf.float32)
+checkpoint_5000_path = 'checkpoint_5000/checkpoint_{epoch:02d}_{batch:04d}'
 
+model = get_new_model()
+checkpoint_5000 = ModelCheckpoint(filepath=checkpoint_5000_path, verbose=True, save_weights_only=True,
+                                  save_freq=5000)
+model.fit(x_train, y_train, batch_size=10, validation_data=(x_test,y_test), epochs=3, verbose= True, callbacks=[checkpoint_5000])

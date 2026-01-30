@@ -1,17 +1,21 @@
-# torch.rand(2048, 2048, dtype=torch.float16), torch.rand(2048, 2048, dtype=torch.float16)
-import torch
+import torch 
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        A, B = x
-        return A @ B
+import torch._inductor.config as config 
 
-def my_model_function():
-    return MyModel()
+config.force_disable_caches = True
+config.max_autotune = True
+config.max_autotune_gemm_backends = "CUTLASS"
+# the following is only needed if you use a custom cutlass library 
+# config.cuda.cutlass_dir = "/data/users/henrylhtsang/cutlass"
 
-def GetInput():
-    A = torch.randn(2048, 2048, dtype=torch.float16).cuda()
-    B = torch.randn(2048, 2048, dtype=torch.float16).cuda()
-    return (A, B)
+class TestModule(nn.Module):
+    def forward(self, A, B):
+        return A @ B 
 
+model = TestModule().cuda()
+M, K, N = 2048, 2048, 2048
+A = torch.randn(M, K).cuda().half()
+B = torch.randn(K, N).cuda().half()
+
+C = torch.compile(model, fullgraph=True)(A, B)

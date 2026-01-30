@@ -1,49 +1,123 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Inferred input shape: (batch_size, channels, height, width)
-
 import torch
-import torch.nn as nn
-import torch.optim as optim
 
-class AnimalsModel(nn.Module):
-    def __init__(self, model_name, num_classes):
-        super(AnimalsModel, self).__init__()
-        if model_name == 'resnet18':
-            self.model = torch.hub.load('pytorch/vision:v0.10.0', 'resnet18', pretrained=True)
-            self.model.fc = nn.Linear(self.model.fc.in_features, num_classes)
-        else:
-            raise ValueError(f"Unsupported model name: {model_name}")
+def objective(trial):
+    N_TRAIN_EXAMPLES = CONFIG['train_batch_size'] * 30
+    N_VALID_EXAMPLES = CONFIG['valid_batch_size'] * 10
+    device = CONFIG['device']
 
-    def forward(self, x):
-        return self.model(x)
+    # Generate the model.
+    model = AnimalsModel(CONFIG['model_name'], labels)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    num_classes = 10  # Assuming 10 classes for the Animals dataset
-    return AnimalsModel(model_name='resnet18', num_classes=num_classes)
+    # Generate the optimizers.
+    optimizer_number = trial.suggest_categorical('optimizer number (0: Adam; 1: SGD)', [0, 1])
+    lr = trial.suggest_float('learning rate', 1e-2, 1e-1, log=True)
+    
+    optimizer_map = {
+        0: 'Adam',
+        1: 'SGD',
+    }
+    
+    optimizer = getattr(optim, optimizer_map[optimizer_number])(model.parameters(), lr=lr)
+    
+    config = {
+        'optimizer (0: Adam; 1: SGD)': optimizer_number,
+        'learning rate': lr,
+    }
+    
+    run = wandb.init(project='Animals10',
+                     name=f'trial_{trial.number + 1}',
+                     group='optuna research',
+                     config=config,
+                     anonymous='must')
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    batch_size = 4  # Example batch size
-    channels = 3  # RGB images
-    height = 224  # Example image height
-    width = 224  # Example image width
-    return torch.rand(batch_size, channels, height, width, dtype=torch.float32)
+    # Training of the model.
+    for epoch in range(CONFIG['epochs']):
+        model.train()
+    
+        dataset_size = 0
+        running_loss = 0.0
+        
+        for batch_idx, data in enumerate(train_loader):
+            # Limiting training data for faster epochs.
+            if batch_idx * CONFIG['train_batch_size'] > N_TRAIN_EXAMPLES:
+                break
 
-# Example usage:
-# model = my_model_function()
-# input_data = GetInput()
-# output = model(input_data)
+            images = data['image'].to(device, dtype=torch.float)
+            targets = data['target'].to(device, dtype=torch.long)
+            targets = torch.reshape(targets, (-1,))
 
-# Based on the provided issue, it seems that the error is related to the data loading and transformation process, specifically with the use of `albumentations` and the conversion of tensors to numpy arrays. The error indicates that a tensor on the GPU is being incorrectly converted to a numpy array, which is not allowed. 
-# To address this, we need to ensure that the transformations are applied on the CPU before moving the data to the GPU. Additionally, we will extract the relevant parts of the code to create a single Python file that defines the model, the input generation function, and the necessary components.
-# Here is the complete Python code file:
-# ### Explanation:
-# 1. **Model Definition**:
-#    - The `AnimalsModel` class is defined to use a pre-trained ResNet-18 model from `torchvision`. The final fully connected layer is replaced to match the number of classes in the dataset.
-#    - The `my_model_function` returns an instance of `AnimalsModel` with the specified model name and number of classes.
-# 2. **Input Generation**:
-#    - The `GetInput` function generates a random tensor with the shape `(batch_size, channels, height, width)` to match the input expected by the model.
-# 3. **Assumptions**:
-#    - The model name is set to 'resnet18' and the number of classes is assumed to be 10.
-#    - The input shape is inferred to be `(batch_size, 3, 224, 224)` based on common image classification settings.
-# This code should be ready to use with `torch.compile(MyModel())(GetInput())` and should work without the data loading and transformation errors mentioned in the issue.
+            batch_size = images.size(0)
+
+            outputs = model(images)
+            loss = criterion(outputs, targets)
+            loss.backward()
+            optimizer.step()
+            
+            # zero the parameter gradients
+            optimizer.zero_grad()
+
+        # Validation of the model.
+        model.eval()
+        correct = 0
+        with torch.no_grad():
+            for batch_idx, data in enumerate(valid_loader):
+                # Limiting validation data.
+                if batch_idx * CONFIG['valid_batch_size'] > N_VALID_EXAMPLES:
+                    break
+                
+                images = data['image'].to(device, dtype=torch.float)
+                targets = data['target'].to(device, dtype=torch.long)
+                targets = torch.reshape(targets, (-1,))
+
+                batch_size = images.size(0)
+
+                outputs = model(images)
+                loss = criterion(outputs, targets)
+
+                running_loss += (loss.item() * batch_size)
+                dataset_size += batch_size
+
+        epoch_loss = running_loss / dataset_size
+        run.log({'Cross Entropy Loss': epoch_loss})
+
+        trial.report(epoch_loss, epoch)
+
+        # handle pruning based on the intermediate value.
+        if trial.should_prune():
+            raise optuna.exceptions.TrialPruned()
+
+    run.finish()
+    
+    return epoch_loss
+
+study = optuna.create_study()
+study.optimize(objective, n_trials=20, timeout=1800, show_progress_bar=True)
+
+print('Number of finished trials: {}'.format(len(study.trials)))
+
+print('Best trial:')
+trial = study.best_trial
+
+print('  Value: {}'.format(trial.value))
+
+print('  Params: ')
+for key, value in trial.params.items():
+    print('    {}: {}'.format(key, value))
+          
+# Create the summary run.
+summary = wandb.init(project='Animals10',
+                     group='optuna summary',
+                     name='summary')
+
+# Getting the study trials.
+trials = study.trials
+
+# WandB summary.
+for step, trial in enumerate(trials):
+    # Logging the loss.
+    summary.log({'Cross Entropy Loss': trial.value}, step=step, commit=False)
+
+    # Logging the parameters.        
+    summary.log(trial.params, commit=True)
+    
+summary.finish()

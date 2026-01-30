@@ -1,21 +1,33 @@
-# torch.rand(1, 960, dtype=torch.float32)
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.lstm = nn.LSTM(960, 480, bias=True)  # Input size 960 → hidden size 480
+class MLPModel(nn.Module):
+  def __init__(self):
+      super().__init__()
+      self.lstm = nn.LSTM(960, 480, bias=True)
 
-    def forward(self, x):
-        # LSTM expects (seq_len, batch, input_size), but input here is 2D (seq_len=1, batch=1)
-        output, (hn, cn) = self.lstm(x.unsqueeze(0))  # Add seq_len dimension
-        return output.squeeze(0)  # Remove seq_len for compatibility with original code's shape
+  def forward(self, tensor_x: torch.Tensor):
+      x, h = self.lstm(tensor_x)
+      return x
 
-def my_model_function():
-    return MyModel()
+model = MLPModel()
+tensor_x = torch.rand((1, 960), dtype=torch.float32)
+print(model(tensor_x).shape)
+onnx_program = torch.onnx.dynamo_export(model, tensor_x).save('model.onnx')
 
-def GetInput():
-    # Original input shape (1, 960) but LSTM requires 3D tensor → auto-adjust in forward()
-    return torch.rand(1, 960, dtype=torch.float32)
+import torch
+import torch.nn as nn
 
+class MLPModel(nn.Module):
+  def __init__(self):
+      super().__init__()
+      self.lstm = nn.LSTMCell(960, 480, bias=True)
+
+  def forward(self, tensor_x: torch.Tensor):
+      x, h = self.lstm(tensor_x)
+      return x
+
+model = MLPModel()
+tensor_x = torch.rand((1, 960), dtype=torch.float32)
+print(model(tensor_x).shape)
+onnx_program = torch.onnx.dynamo_export(model, tensor_x).save('model.onnx')

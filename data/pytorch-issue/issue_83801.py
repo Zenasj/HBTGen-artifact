@@ -1,17 +1,22 @@
-# torch.rand(B, C, dtype=torch.float32)
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+from typing import Dict
+
+import torch
+
+
+class MyModule(torch.nn.Module):
+    tenGrid: Dict[str, torch.Tensor]
+
     def __init__(self):
-        super(MyModel, self).__init__()
+        super(MyModule, self).__init__()
+        self.tenGrid = {}
 
     def forward(self, x):
-        return torch.cat((x, x), dim=1)
+        k = str(x.size())
+        if k not in self.tenGrid:
+            self.tenGrid[k] = torch.cat((x, x), dim=1)
+        return self.tenGrid[k]
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    return torch.rand(1, 2, dtype=torch.float32)
-
+torch.onnx.export(torch.jit.script(MyModule()), torch.randn(1, 2), 'test.onnx')

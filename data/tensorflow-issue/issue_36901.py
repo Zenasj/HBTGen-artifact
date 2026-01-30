@@ -1,43 +1,22 @@
-# tf.random.uniform((1, 8, 8, 8, 1), dtype=tf.float32)  # Inferred input shape from example code in issue
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
+import numpy as np
+print(tf.__version__)
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # ConvLSTM2D layer as in minimal repro example
-        self.convlstm = tf.keras.layers.ConvLSTM2D(
-            filters=4,
-            kernel_size=(2, 2),
-            return_sequences=True,
-            name='conv_lstm2d'
-        )
-        # MaxPooling3D with pool size (1, 2, 2) to downsample spatial dims only
-        self.maxpool = tf.keras.layers.MaxPooling3D(pool_size=(1, 2, 2))
-        # Flatten layer to prepare for dense
-        self.flatten = tf.keras.layers.Flatten()
-        # Dense output layer to produce scalar output
-        self.dense = tf.keras.layers.Dense(1)
+x_input = tf.keras.Input((8,8,8,1),batch_size=1)
+x = tf.keras.layers.ConvLSTM2D(4,(2,2),return_sequences=True)(x_input)
+x = tf.keras.layers.MaxPooling3D((1, 2, 2))(x)
+x = tf.keras.layers.Flatten()(x)
+x_output = tf.keras.layers.Dense(1)(x)
+model = tf.keras.Model(inputs=x_input,outputs=x_output)
 
-    def call(self, inputs, training=False):
-        # Forward pass through ConvLSTM2D
-        x = self.convlstm(inputs, training=training)
-        x = self.maxpool(x)
-        x = self.flatten(x)
-        output = self.dense(x)
-        return output
+model.compile(loss='mse',optimizer='adam')
 
-def my_model_function():
-    # Return an instance of MyModel
-    model = MyModel()
-    # Build the model by calling once (optional but helpful)
-    # Assuming batch size 1 and input shape (8,8,8,1)
-    dummy_input = tf.random.uniform((1,8,8,8,1), dtype=tf.float32)
-    _ = model(dummy_input)
-    return model
+data_in = np.random.rand(1,8,8,8,1).astype(np.float32)
+data_out = np.random.rand(1,1).astype(np.float32)
 
-def GetInput():
-    # Return a random tensor matching input expected by MyModel:
-    # Shape: (batch_size=1, time=8, height=8, width=8, channels=1), float32
-    return tf.random.uniform((1, 8, 8, 8, 1), dtype=tf.float32)
-
+r = model.fit(data_in,data_out)
+print(r)

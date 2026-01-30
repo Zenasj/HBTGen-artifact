@@ -1,31 +1,20 @@
-# torch.rand(B, C) ← Add a comment line at the top with the inferred input shape
+import torch.nn as nn
 
 import torch
-from torch import nn
+from torch.func import jacrev, functional_call
+inputs = torch.randn(64, 3)
+model = torch.nn.Linear(3, 3)
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.linear = nn.Linear(3, 3)
+params = dict(model.named_parameters())
+jacobians = jacrev(functional_call, argnums=1)(model, params, (inputs,))
 
-    def forward(self, x):
-        return self.linear(x)
+import torch
+from torch.func import jacrev, functional_call
+inputs = torch.randn(64, 3)
+model = torch.nn.Linear(3, 3)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+params = dict(model.named_parameters())
+def f(params, inputs):
+  return functional_call(model, params, (inputs,))
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(64, 3)
-
-# The following code is for demonstration and should not be included in the final output
-# if __name__ == "__main__":
-#     model = my_model_function()
-#     inputs = GetInput()
-#     params = dict(model.named_parameters())
-#     def f(params, inputs):
-#         return functional_call(model, params, (inputs,))
-#     jacobians = jacrev(f)(params, inputs)
-#     print(jacobians)
-
+jacobians = jacrev(f)(params, inputs)

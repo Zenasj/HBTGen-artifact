@@ -1,8 +1,7 @@
-# torch.rand(B, C, H, W, dtype=...)  # Add a comment line at the top with the inferred input shape
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+
+class TestClass(nn.Module):
     def __init__(self):
         super().__init__()
         self._some_property = None
@@ -17,34 +16,48 @@ class MyModel(nn.Module):
         self.indicator = "set"
         self._some_property = value
 
-    def forward(self, x):
-        # Example forward pass, replace with actual model logic
-        return x
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+if __name__ == "__main__":
+    foo = TestClass()
+    foo.some_property = "not a module"
+    print(f"Result foo: {foo.indicator}")
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # Assuming a generic input shape (B, C, H, W)
-    B, C, H, W = 1, 3, 224, 224  # Example batch size, channels, height, width
-    return torch.rand(B, C, H, W, dtype=torch.float32)
+    bar = TestClass()
+    bar.some_property = nn.Module()
+    print(f"Result bar: {bar.indicator}")
 
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
+def __setattr__(self, name, value):
+        if name in vars(type(self)) and isinstance(vars(type(self))[name], property):
+            object.__setattr__(self, name, value)
+        else:
+            super().__setattr__(name, value)
 
-# ### Explanation:
-# 1. **MyModel Class**:
-#    - The `MyModel` class is defined to inherit from `nn.Module`.
-#    - It includes a property `some_property` with a getter and setter.
-#    - The setter updates the `indicator` attribute to show that the setter was called.
-#    - A simple `forward` method is included for completeness, but it should be replaced with the actual model logic.
-# 2. **my_model_function**:
-#    - This function returns an instance of `MyModel`.
-# 3. **GetInput Function**:
-#    - This function generates a random tensor input with a shape of (B, C, H, W), where B is the batch size, C is the number of channels, H is the height, and W is the width.
-#    - The example values (B=1, C=3, H=224, W=224) are used, but these can be adjusted based on the actual input requirements of the model.
-# This code structure ensures that the model can be instantiated and used with a valid input tensor, and it addresses the issue of property setters being bypassed when assigning `nn.Module` instances.
+def __setattr__(self, name, value):
+        # Explicitly get vars from all base classes (via the method resolution attribute __mro__)
+        all_vars = {}
+        for base_class in type(self).__mro__:
+            all_vars.update(vars(base_class))
+
+        if name in all_vars and isinstance(all_vars[name], property):
+            object.__setattr__(self, name, value)
+        else:
+            super().__setattr__(name, value)
+
+from torch.nn import Module
+
+class Foo(Module):
+    def __init__(self, bar = None):
+        super().__init__()
+        self._bar = bar
+
+    @property
+    def bar(self):
+        return self._bar
+    
+    @bar.setter
+    def bar(self, bar):
+        self._bar = bar
+
+
+foo = Foo()
+foo.bar = Module()

@@ -1,6 +1,9 @@
-# torch.rand(1, dtype=torch.float32)
 import torch
-import torch.nn as nn
+
+a = torch.tensor([1.], requires_grad=True)
+c = a.clone()
+v = c[:]
+b = torch.tensor(1., requires_grad=True)
 
 class InplaceFunc(torch.autograd.Function):
     @staticmethod
@@ -10,23 +13,8 @@ class InplaceFunc(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad):
-        return grad, None  # Returns undefined gradient for second input
+        return grad, None
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.a = nn.Parameter(torch.tensor([1.], requires_grad=True))
-        self.b = nn.Parameter(torch.tensor([1.], requires_grad=True))
+out = InplaceFunc.apply(v, b)
 
-    def forward(self, x):
-        c = self.a.clone()
-        v = c[:]  # Create a view of the cloned tensor
-        out = InplaceFunc.apply(v, self.b)
-        return out
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(1, dtype=torch.float32)
-
+torch.autograd.grad(out, inputs=(a, b))

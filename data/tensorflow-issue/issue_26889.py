@@ -1,61 +1,85 @@
-# tf.random.uniform((B, 256, 256, 3), dtype=tf.float32) ← Input shape inferred from the example inputs and model definition
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
-from tensorflow.keras import backend as K
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Base feature detector: Xception without top, pretrained on ImageNet
-        self.feature_detector = tf.keras.applications.Xception(
-            weights='imagenet',
-            include_top=False,
-            input_shape=(256, 256, 3)
-        )
-        self.feature_detector.trainable = False  # freeze base model
-        
-        # Classifier layers expanded inline to fix target feeding issue
-        # Reflects the original classifier architecture but layers are added directly to MyModel
-        self.dense = tf.keras.layers.Dense(256, activation='relu', input_shape=self.feature_detector.output_shape[1:])
-        self.flatten = tf.keras.layers.Flatten()
-        self.dropout = tf.keras.layers.Dropout(0.5)
-        self.output_dense = tf.keras.layers.Dense(1, activation='sigmoid')
-        
-    def call(self, inputs, training=False):
-        x = self.feature_detector(inputs, training=training)  # feature maps (None,8,8,2048)
-        x = self.dense(x)                                    # dense layer applied spatially (None,8,8,256)
-        x = self.flatten(x)
-        x = self.dropout(x, training=training)
-        x = self.output_dense(x)
-        return x
+# get xception
+inshape = (256,256,3)
+ptdnn = tf.keras.applications.Xception(
+	weights='imagenet',
+  	include_top=False,
+  	input_shape=inshape)
+# build classifier
+classifier = tf.keras.models.Sequential(name='Classifier')
+  # The classifier input is dense, or fully connected
+classifier.add(tf.keras.layers.Dense(256, activation='relu',
+  input_shape=feature_shape[1:]))
+  # The flatten layer reduces the dimensions of the output
+classifier.add(tf.keras.layers.Flatten())
+  # Dropout layer prevents overfitting
+classifier.add(tf.keras.layers.Dropout(0.5))
+  # Output layer is a single neuron sigmoid
+classifier.add(tf.keras.layers.Dense(1, activation='sigmoid'))
 
-# Custom metrics similar to original user definitions:
+#Assemble composite model
+model = tf.keras.models.Sequential()
+  #First get the features from ptdnn
+model.add(ptdnn)
+  #Then classify
+model.add(classifier)  
+  #feature_detector should not be trainable if fine_tuning_layers==0
+ptdnn.trainable=False
+
+  # Display layer information for reference
+print('[ASSEMBLE] Full Model Architecture:')
+model.summary()
+
+  # classifier options including metrics and loss function
+classifier.compile(optimizer=tf.keras.optimizers.RMSprop(lr=2e-4),
+                loss='binary_crossentropy',
+                metrics=['acc'])
+model.compile(optimizer=tf.keras.optimizers.RMSprop(lr=2e-5),
+                loss='binary_crossentropy',
+                metrics=['acc'])
+
+# try to fit on random data 
+batch_size=1
+model.train_on_batch(np.random.rand(batch_size,256,256,3),np.random.rand(batch_size,))
+
 def recall(y_true, y_pred):
+    """Recall metric.
+
+    Only computes a batch-wise average of recall.
+
+    Computes the recall, a metric for multi-label classification of
+    how many relevant items are selected.
+    """
     true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
     possible_positives = K.sum(K.round(K.clip(y_true, 0, 1)))
-    return true_positives / (possible_positives + K.epsilon())
+    recall = true_positives / (possible_positives + K.epsilon())
+    return recall
 
 def precision(y_true, y_pred):
+    """Precision metric.
+
+    Only computes a batch-wise average of precision.
+
+    Computes the precision, a metric for multi-label classification of
+    how many selected items are relevant.
+    """
     true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
     predicted_positives = K.sum(K.round(K.clip(y_pred, 0, 1)))
-    return true_positives / (predicted_positives + K.epsilon())
+    precision = true_positives / (predicted_positives + K.epsilon())
+    return precision
 
 def f1(y_true, y_pred):
+    """ F1 metric.
+    The F1 metric is the harmonic mean of precision and recall
+    """
     p = precision(y_true, y_pred)
     r = recall(y_true, y_pred)
     return 2*((p*r)/(p+r+K.epsilon()))
-
-def my_model_function():
-    model = MyModel()
-    model.compile(
-        optimizer=tf.keras.optimizers.RMSprop(learning_rate=2e-5),
-        loss='binary_crossentropy',
-        metrics=['acc', recall, f1]
-    )
-    return model
-
-def GetInput():
-    # Return a random batch of images matching the expected input shape
-    batch_size = 32
-    return tf.random.uniform((batch_size, 256, 256, 3), dtype=tf.float32)
-

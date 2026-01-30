@@ -1,20 +1,28 @@
-# torch.rand(B, 10, dtype=torch.float32)
+import torch.nn as nn
+
+python
 import torch
-from torch import nn
+from concurrent.futures import ThreadPoolExecutor
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(10, 1)
-        )
+# dummy data and network
+input_data = torch.arange(10, dtype=torch.float32)
+net = torch.nn.Sequential(
+    torch.nn.Linear(10, 1)
+)
+
+with ThreadPoolExecutor(2) as ex:
+    with torch.no_grad():
+        # no_grad is working
+        assert net(input_data).grad_fn is None
         
-    def forward(self, x):
-        return self.net(x)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(10, dtype=torch.float32)
-
+        # Should fail because of the "not" <-------------------------------
+        assert list(ex.map(net, [input_data]))[0].grad_fn is not None
+        
+        # no_grad is working
+        assert list(ex.map(torch.no_grad()(net), [input_data]))[0].grad_fn is None
+        
+        # no_grad is working
+        assert net(input_data).grad_fn is None
+        
+    # Can calculate the gradient
+    assert net(input_data).grad_fn is not None

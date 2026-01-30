@@ -1,18 +1,20 @@
-# torch.rand(B, 1, 1, dtype=torch.float32)
-import torch
 import torch.nn as nn
+
+import torch
 import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-    
-    def forward(self, x):
-        return F.interpolate(x, size=3, mode='linear', align_corners=True)
 
-def my_model_function():
-    return MyModel()
+test = torch.Tensor([[1],[2],[4]]).to("mps")
+result = F.interpolate(test.unsqueeze(1), 3, mode="linear", align_corners=True).squeeze(1)
 
-def GetInput():
-    return torch.rand(1, 1, 1, dtype=torch.float32)
+print(result)
+# tensor([[nan, nan, nan],
+#         [nan, nan, nan],
+#         [nan, nan, nan]], device='mps:0')
+test = torch.Tensor([[1],[2],[4]]).to("cpu")
+result = F.interpolate(test.unsqueeze(1), 3, mode="linear", align_corners=True).squeeze(1)
 
+print(result)
+# tensor([[1., 1., 1.],
+#         [2., 2., 2.],
+#         [4., 4., 4.]])

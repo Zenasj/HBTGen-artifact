@@ -1,28 +1,28 @@
-# tf.random.uniform((1, 28, 28, 16), dtype=tf.float32)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+
+import numpy
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Conv2D layer with dilation_rate=(2,2), 16 filters, kernel size 7x7,
-        # bias initialized to ones, input shape (28,28,16)
-        self.conv = tf.keras.layers.Conv2D(
-            filters=16,
-            kernel_size=7,
-            dilation_rate=(2, 2),
-            use_bias=True,
-            bias_initializer='ones',
-            input_shape=(28, 28, 16)
-        )
+import os
+print("ID is {}".format(os.getpid()))
 
-    def call(self, inputs):
-        return self.conv(inputs)
+def representative_dataset_gen():
+    yield [numpy.random.uniform(low=-1, high=1, size=(1,28,28,16)).astype(numpy.float32)]
 
-def my_model_function():
-    # Return an instance of MyModel; weights are initialized randomly except bias which is ones
-    return MyModel()
+model=tf.keras.Sequential()
+model.add(
+    tf.keras.layers.Conv2D(
+        filters=16, kernel_size=7, dilation_rate=(2,2), input_shape=(28,28,16),
+        use_bias=True, bias_initializer='ones'
+    )
+)
 
-def GetInput():
-    # Return a random tensor compatible with input_shape=(1, 28, 28, 16) of type float32
-    return tf.random.uniform(shape=(1, 28, 28, 16), minval=-1.0, maxval=1.0, dtype=tf.float32)
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
+converter.representative_dataset = representative_dataset_gen
+converter.experimental_new_converter = False
 
+tflite_model = converter.convert()

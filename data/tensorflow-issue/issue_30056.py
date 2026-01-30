@@ -1,217 +1,328 @@
-# tf.random.uniform((B, 28, 28, 1), dtype=tf.float32)
-import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
+from datetime import datetime
 from tensorflow.keras import backend as K
-from tensorflow.keras.layers import Conv2D, BatchNormalization, MaxPool2D, Dropout, Flatten, Dense, Input, Layer, PReLU
+from tensorflow.keras import initializers
+from tensorflow.keras import losses
+from tensorflow.keras import optimizers
+from tensorflow.keras.callbacks import TensorBoard
+from tensorflow.keras.datasets import mnist
+from tensorflow.keras.layers import Activation
+from tensorflow.keras.layers import BatchNormalization
+from tensorflow.keras.layers import Conv2D
+from tensorflow.keras.layers import Dense
+from tensorflow.keras.layers import Dropout
+from tensorflow.keras.layers import Flatten
+from tensorflow.keras.layers import Input
+from tensorflow.keras.layers import Layer
+from tensorflow.keras.layers import MaxPool2D
+from tensorflow.keras.layers import PReLU
+from tensorflow.keras.models import Model
 from tensorflow.keras.regularizers import l2
+import math
+import numpy as np
+import os
+import shutil
+import tensorflow as tf
 
-# Assumptions / Notes:
-# - Input shape is MNIST images: (batch_size, 28, 28, 1)
-# - The model includes a custom center loss layer that uses variable scatter_sub operation
-# - scatter_sub is replaced with a workaround compatible with multi-GPU MirroredStrategy:
-#   Using tf.Variable.scatter_sub directly instead of tf.compat.v1.scatter_sub.
-# - The class MyModel fuses the base CNN and the center loss logic.
-# - The model outputs two tensors: main classification output (10 classes) and center loss output (shape (batch_size, 1))
+### parameters
+batch_size = 64
+epochs = 10
+weight_decay = 0.0005
 
+def init_gpus(soft_device_placement=True, log_device_placement=False, create_virtual_devices=False, memory_limit=4096):
+
+    tf.config.set_soft_device_placement(soft_device_placement)    
+    tf.debugging.set_log_device_placement(log_device_placement)
+
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    if gpus:
+        # If there is only one GPU, create two logical virtual devices for developing
+        # on a machine with only one GPU installed
+        try:
+            # Create 2 virtual GPUs on each physical GPU with the given memory_limit GPU memory
+            if create_virtual_devices and len(gpus) == 1:
+                tf.config.experimental.set_virtual_device_configuration(
+                    gpus[0],
+                    [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=4096),
+                     tf.config.experimental.VirtualDeviceConfiguration(memory_limit=4096)]
+                )
+
+            else:
+                # Currently, memory growth needs to be the same across GPUs
+                for gpu in gpus:
+                    tf.config.experimental.set_memory_growth(gpu, True)
+
+        except RuntimeError as e:
+            # Memory growth must be set before GPUs have been initialized
+            print(e)
+
+        # print out physical and logical GPUs
+        logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+        print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
+
+    else:
+        print("No visible GPU is detected...")
+
+def prelu(x, name='default'):
+    if name == 'default':
+        return PReLU(alpha_initializer=initializers.Constant(value=0.25))(x)
+    else:
+        return PReLU(alpha_initializer=initializers.Constant(value=0.25), name=name)(x)
+
+def center_loss(y_true, y_pred):
+    """Center loss based on the paper "A Discriminative Feature Learning Approach for Deep Face Recognition"
+       (http://ydwen.github.io/papers/WenECCV16.pdf)
+       Lc = 1/2 sum(|| xi - ci||)
+    """
+    return 0.5 * K.sum(y_pred, axis=0)
+
+### model
+def my_model(x, labels):
+    # x = BatchNormalization()(x)
+    #
+    x = Conv2D(filters=32, kernel_size=(5, 5), strides=(1, 1), padding='same', kernel_regularizer=l2(weight_decay))(x)
+    x = BatchNormalization()(x)
+    x = prelu(x)
+
+    x = Conv2D(filters=32, kernel_size=(5, 5), strides=(1, 1), padding='same', kernel_regularizer=l2(weight_decay))(x)
+    x = BatchNormalization()(x)
+    x = prelu(x)
+
+    x = MaxPool2D(pool_size=(2, 2), strides=(2, 2), padding='valid')(x)
+    #
+    x = Conv2D(filters=64, kernel_size=(5, 5), strides=(1, 1), padding='same', kernel_regularizer=l2(weight_decay))(x)
+    x = BatchNormalization()(x)
+    x = prelu(x)
+
+    x = Conv2D(filters=64, kernel_size=(5, 5), strides=(1, 1), padding='same', kernel_regularizer=l2(weight_decay))(x)
+    x = BatchNormalization()(x)
+    x = prelu(x)
+
+    x = MaxPool2D(pool_size=(2, 2), strides=(2, 2), padding='valid')(x)
+    #
+    x = Conv2D(filters=128, kernel_size=(5, 5), strides=(1, 1), padding='same', kernel_regularizer=l2(weight_decay))(x)
+    x = BatchNormalization()(x)
+    x = prelu(x)
+
+    x = Conv2D(filters=128, kernel_size=(5, 5), strides=(1, 1), padding='same', kernel_regularizer=l2(weight_decay))(x)
+    x = BatchNormalization()(x)
+    x = prelu(x)
+
+    x = MaxPool2D(pool_size=(2, 2), strides=(2, 2), padding='valid')(x)
+    x = Dropout(0.25)(x)
+    #
+    x = Flatten()(x)
+    x = Dense(2, kernel_regularizer=l2(weight_decay))(x)
+    x = prelu(x, name='side_out')
+    #
+    main = Dense(10, activation='softmax', name='main_out', kernel_regularizer=l2(weight_decay))(x)
+    side = CenterLossLayer(alpha=0.5, name='centerlosslayer')([x, labels])
+    return main, side
+
+# Function for decaying the learning rate.
+# You can define any decay function you need.
+def lr_schedule(epoch):
+    if epoch <= 5:
+        learning_rate = 1e-3
+
+    elif epoch <= 10:
+        learning_rate = 1e-4
+
+    else:
+        learning_rate = 1e-5
+
+    tf.summary.scalar('learning_rate', data=learning_rate, step=epoch)
+    return learning_rate
 
 class CenterLossLayer(Layer):
-    def __init__(self, alpha=0.5, num_classes=10, feat_dim=2, **kwargs):
+
+    def __init__(self, alpha=0.5, **kwargs):
         super().__init__(**kwargs)
         self.alpha = alpha
-        self.num_classes = num_classes
-        self.feat_dim = feat_dim
 
     def build(self, input_shape):
-        # centers is a non-trainable variable updated manually
         self.centers = self.add_weight(
             name='centers',
-            shape=(self.num_classes, self.feat_dim),
+            shape=(10, 2),
             initializer='uniform',
-            trainable=False,
-            dtype=tf.float32
+            trainable=False
         )
+
         super().build(input_shape)
 
-    def call(self, inputs):
-        features, labels = inputs
-        labels = tf.reshape(labels, [-1])
-        features = tf.cast(features, tf.float32)
+    def call(self, x):
+        """This is where the layer's logic lives.
+        Arguments:
+            inputs: Input tensor, or list/tuple of input tensors.
+            **kwargs: Additional keyword arguments.
+        Returns:
+            A tensor or list/tuple of tensors.
+        """
+        features = x[0]
+        labels = K.reshape(x[1], [-1])
 
-        # Gather centers corresponding to each label
-        centers_batch = tf.gather(self.centers, labels)
+        # get the tensor as specified in the label
+        # the centers might repeate depending on the label index
+        centers_batch = K.gather(self.centers, labels)
 
-        # Count occurrences per label in batch
-        unique_labels, unique_idx, unique_counts = tf.unique_with_counts(labels)
-        appear_times = tf.gather(unique_counts, unique_idx)
-        appear_times = tf.reshape(appear_times, [-1, 1])
-
+        unique_label, unique_idx, unique_count = tf.unique_with_counts(labels)
+        appear_times = K.gather(unique_count, unique_idx)
+        appear_times = K.reshape(appear_times, [-1, 1])
+        #
+        # center_loss_alfa default 0.5
         delta_centers = centers_batch - features
         delta_centers = delta_centers / tf.cast((1 + appear_times), tf.float32)
         delta_centers = self.alpha * delta_centers
 
-        # Workaround for multi-GPU: use assign_sub on variable directly instead of tf.compat.v1.scatter_sub
-        # But scatter_sub requires indices and updates; self.centers is variable of shape (num_classes, feat_dim)
-        # indices: labels, updates: delta_centers
-        # Equivalent is to use tf.tensor_scatter_nd_sub or the variable's scatter_sub method for each class.
-        # We'll do a manual update loop on unique labels to avoid scatter_sub issues.
+        # scatter_sub does not support multi-gpu training, there is no equivalent operation 
+        new_centers = tf.compat.v1.scatter_sub(self.centers, x[1], delta_centers)
 
-        def update_center(label, delta):
-            # update one center vector at index label by subtracting delta
-            delta_expanded = tf.expand_dims(delta, axis=0)  # shape (1, feat_dim)
-            self.centers.scatter_sub(tf.IndexedSlices(delta_expanded[0], [label]))
-            return 0
-
-        # Aggregate deltas per label by summation because multiple samples might share label
-        sum_deltas = tf.math.unsorted_segment_sum(delta_centers, labels, self.num_classes)
-
-        # Update centers for each unique label
-        def body(i, _):
-            label = unique_labels[i]
-            delta = sum_deltas[label]
-            self.centers[label].assign_sub(delta)
-            return i + 1, 0
-
-        # Use tf.range + tf.function loop instead of python loop for graph compatibility
-        i = tf.constant(0)
-
-        # tf.while_loop to iterate over unique labels
-        def cond(i, _):
-            return i < tf.size(unique_labels)
-
-        def body_loop(i, _):
-            label = unique_labels[i]
-            delta = sum_deltas[label]
-            self.centers[label].assign_sub(delta)
-            return i + 1, 0
-
-        tf.while_loop(cond, body_loop, [i, 0])
-
-        # Calculate the output which is the center loss term per sample (||features - centers_batch||^2)
-        self.result = tf.reduce_sum(tf.square(features - centers_batch), axis=1, keepdims=True)
+        self.add_update((self.centers, new_centers), x)
+        self.result = K.sum(K.square(features - centers_batch), axis=1, keepdims=True)
         return self.result
 
     def compute_output_shape(self, input_shape):
-        # Output shape is (batch_size, 1)
-        return (input_shape[0][0], 1)
+        return K.int_shape(self.result)
 
+def empty_dir(folder):
+    """
+    Empty a folder recursively.
+    """
+    for file in os.listdir(folder):
+        file_path = os.path.join(folder, file)
+        if os.path.isfile(file_path):
+            print("Remove file: {}".format(file_path))
+            os.remove(file_path)
+        else:
+            empty_dir(file_path)
+            print("Remove folder: {}".format(file_path))
+            os.rmdir(file_path)
 
-class MyModel(tf.keras.Model):
-    def __init__(self, weight_decay=0.0005, num_classes=10, center_loss_alpha=0.5):
-        super().__init__()
-        self.weight_decay = weight_decay
-        self.num_classes = num_classes
-        self.center_loss_alpha = center_loss_alpha
+def build_empty_dir(folder, root_dir=os.getcwd()):
+    base_dir = os.path.join(root_dir, folder)
+    os.makedirs(base_dir, exist_ok=True)
+    empty_dir(os.path.join(root_dir, folder))
 
-        # CNN layers as in my_model function from the issue
-        self.conv1a = Conv2D(32, kernel_size=5, strides=1, padding='same', kernel_regularizer=l2(self.weight_decay))
-        self.bn1a = BatchNormalization()
-        self.prelu1a = PReLU(alpha_initializer=tf.keras.initializers.Constant(0.25))
+    return base_dir
 
-        self.conv1b = Conv2D(32, kernel_size=5, strides=1, padding='same', kernel_regularizer=l2(self.weight_decay))
-        self.bn1b = BatchNormalization()
-        self.prelu1b = PReLU(alpha_initializer=tf.keras.initializers.Constant(0.25))
+"""
+unset CUDA_VISIBLE_DEVICES
 
-        self.pool1 = MaxPool2D(pool_size=2, strides=2, padding='valid')
+export CUDA_VISIBLE_DEVICES="0"
+python3 center_loss_mnist.py
+"""
 
-        self.conv2a = Conv2D(64, kernel_size=5, strides=1, padding='same', kernel_regularizer=l2(self.weight_decay))
-        self.bn2a = BatchNormalization()
-        self.prelu2a = PReLU(alpha_initializer=tf.keras.initializers.Constant(0.25))
+### run model
+def run(lambda_centerloss):
 
-        self.conv2b = Conv2D(64, kernel_size=5, strides=1, padding='same', kernel_regularizer=l2(self.weight_decay))
-        self.bn2b = BatchNormalization()
-        self.prelu2b = PReLU(alpha_initializer=tf.keras.initializers.Constant(0.25))
+    init_gpus(
+        log_device_placement=False,
+        create_virtual_devices=True
+    )
+    
+    # strategy = tf.distribute.MirroredStrategy(cross_device_ops=tf.distribute.ReductionToOneDevice())
+    # strategy = tf.distribute.MirroredStrategy(cross_device_ops=tf.distribute.HierarchicalCopyAllReduce())
+    # strategy = tf.distribute.MirroredStrategy(cross_device_ops=tf.distribute.NcclAllReduce())
+    strategy = tf.distribute.MirroredStrategy()
+    print('Number of devices: {}'.format(strategy.num_replicas_in_sync))
 
-        self.pool2 = MaxPool2D(pool_size=2, strides=2, padding='valid')
+    ### get data
+    (x_train, y_train), (x_test, y_test) = mnist.load_data()
+    # normalize to 0..1
+    x_train, x_test = x_train/255, x_test/255
+    x_train = np.float32(x_train);
+    x_test  = np.float32(x_test)
 
-        self.conv3a = Conv2D(128, kernel_size=5, strides=1, padding='same', kernel_regularizer=l2(self.weight_decay))
-        self.bn3a = BatchNormalization()
-        self.prelu3a = PReLU(alpha_initializer=tf.keras.initializers.Constant(0.25))
+    y_train = np.int32(y_train)
+    y_test = np.int32(y_test)
 
-        self.conv3b = Conv2D(128, kernel_size=5, strides=1, padding='same', kernel_regularizer=l2(self.weight_decay))
-        self.bn3b = BatchNormalization()
-        self.prelu3b = PReLU(alpha_initializer=tf.keras.initializers.Constant(0.25))
+    # reshape to matrix
+    x_train = x_train.reshape((-1, 28, 28, 1))
+    x_test = x_test.reshape((-1, 28, 28, 1))
 
-        self.pool3 = MaxPool2D(pool_size=2, strides=2, padding='valid')
-        self.dropout = Dropout(0.25)
-        self.flatten = Flatten()
+    ### compile
+    main_input = Input((28, 28, 1))
+    aux_input = Input((), dtype='int32')
 
-        # Dense output features for center loss (dim 2), shared side output
-        self.dense_feat = Dense(2, kernel_regularizer=l2(self.weight_decay))
-        self.side_prelu = PReLU(alpha_initializer=tf.keras.initializers.Constant(0.25), name='side_out')
+    # Training using Multi-GPUs
+    # 
+    # tf.compat.v1.scatter_sub does not support multi-gpus training
+    # with strategy.scope():
+    #
+    # The following exception with be thrown.
+    #
+    # AttributeError: 'Tensor' object has no attribute '_lazy_read'
 
-        # Classification output
-        self.classifier = Dense(self.num_classes, activation='softmax', name='main_out', kernel_regularizer=l2(self.weight_decay))
+    # comment out the following line for the training to run successfully
+    with strategy.scope():
+        final_output, side_output = my_model(main_input, aux_input)
+        model = Model(inputs=[main_input, aux_input], outputs=[final_output, side_output])
+        model.compile(
+            optimizer='adam',
+            loss=[losses.sparse_categorical_crossentropy, center_loss],
+            metrics=['accuracy'],
+            loss_weights=[1, lambda_centerloss]
+        )
+        model.summary()
 
-        # Center loss layer
-        self.center_loss_layer = CenterLossLayer(alpha=self.center_loss_alpha, num_classes=self.num_classes, feat_dim=2, name='centerlosslayer')
+    ### create the log directory
+    log_dir = '/tmp/logs/' + datetime.strftime(datetime.now(), '%Y%m%d-%H%M%S')
+    build_empty_dir(log_dir)
 
-    @tf.function(jit_compile=True)
-    def call(self, inputs, training=False):
-        # inputs: tuple (x, labels)
-        x, labels = inputs
-        # Full forward pass
+    # Initialize the file_writer for logging summary
+    # create the file_writer to save events for Tensorboard
+    summary_log_dir = log_dir + '/train'
+    file_writer = tf.summary.create_file_writer(summary_log_dir)
+    file_writer.set_as_default()    
 
-        # Block 1
-        x = self.conv1a(x)
-        x = self.bn1a(x, training=training)
-        x = self.prelu1a(x)
+    tb_callback = TensorBoard(log_dir=log_dir)
 
-        x = self.conv1b(x)
-        x = self.bn1b(x, training=training)
-        x = self.prelu1b(x)
+    # https://www.tensorflow.org/versions/r2.0/api_docs/python/tf/keras/callbacks/LearningRateScheduler
+    lr_callback = tf.keras.callbacks.LearningRateScheduler(lr_schedule)
 
-        x = self.pool1(x)
+    ### fit
+    dummy1 = np.zeros((x_train.shape[0], 1), dtype=int)
+    dummy2 = np.zeros((x_test.shape [0], 1), dtype=int)
 
-        # Block 2
-        x = self.conv2a(x)
-        x = self.bn2a(x, training=training)
-        x = self.prelu2a(x)
+    #
+    print('model.input[0].shape = ', model.input[0].shape)
+    print('model.get_layer(\'side_out\').output.shape = ', model.get_layer('side_out').output.shape)
+    #
+    model.fit(
+        [x_train, y_train],     # inputs =[main_input, aux_input]
+        [y_train, dummy1 ],     # outputs=[final_output, side_output]
+        batch_size=batch_size,
+        epochs=epochs,
+        verbose=1,
+        validation_data=([x_test, y_test], [y_test, dummy2]),
+        callbacks=[tb_callback, lr_callback]
+    )
+    # validation
+    reduced_model = Model(inputs=model.input[0], outputs=model.get_layer('main_out').output)
+    reduced_model.compile(
+        loss='sparse_categorical_crossentropy',
+        optimizer=tf.keras.optimizers.Adam(),
+        metrics=['accuracy']
+    )
+    # evaluate
+    eval_loss, eval_acc = reduced_model.evaluate(
+        x=x_test,
+        y=y_test,
+        batch_size=batch_size
+    )
+    print('\nEval loss: {}, Eval Accuracy: {}'.format(eval_loss, eval_acc))
+    ### run training and val sets
+    reduced_model = Model(inputs=model.input[0], outputs=model.get_layer('side_out').output)
 
-        x = self.conv2b(x)
-        x = self.bn2b(x, training=training)
-        x = self.prelu2b(x)
+    feats = reduced_model.predict(x_train)
 
-        x = self.pool2(x)
+    ### done
+    K.clear_session()
+    return
 
-        # Block 3
-        x = self.conv3a(x)
-        x = self.bn3a(x, training=training)
-        x = self.prelu3a(x)
-
-        x = self.conv3b(x)
-        x = self.bn3b(x, training=training)
-        x = self.prelu3b(x)
-
-        x = self.pool3(x)
-
-        x = self.dropout(x, training=training)
-        x = self.flatten(x)
-
-        # Feature output for center loss
-        feat = self.dense_feat(x)
-        feat = self.side_prelu(feat)
-
-        # Classification output
-        main_out = self.classifier(feat)
-
-        # Center loss output
-        side_out = self.center_loss_layer((feat, labels))
-
-        return main_out, side_out
-
-
-def my_model_function():
-    # Returns a MyModel instance
-    return MyModel()
-
-
-def GetInput():
-    # Return a tuple of inputs matching MyModel expected input: (image batch, labels batch)
-    # We use batch size 64 as in the original script and MNIST 28x28x1 input shape.
-    batch_size = 64
-    img_shape = (28, 28, 1)
-    # Features: random float tensor simulating MNIST normalized images 0..1
-    images = tf.random.uniform((batch_size,) + img_shape, minval=0, maxval=1, dtype=tf.float32)
-    # Labels: random ints in [0,9]
-    labels = tf.random.uniform((batch_size,), minval=0, maxval=10, dtype=tf.int32)
-    return (images, labels)
-
+###
+if __name__ == '__main__':
+    run(0.0001)

@@ -1,19 +1,24 @@
-# torch.rand(100, dtype=torch.float32)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Compute first buffer using indices (i*i + i)
-        indices = torch.arange(x.size(0), device=x.device)
-        first = indices * indices + indices
-        # Compute second buffer using first buffer values (first^2 - first)
-        second = first * first - first
-        return second
+class kernel_arena_scope(object):
+    def __enter__(self):
+        self.scope = torch._C._te.KernelScope()
 
-def my_model_function():
-    return MyModel()
+    def __exit__(self, typ, val, traceback):
+        self.scope = None
 
-def GetInput():
-    return torch.rand(100, dtype=torch.float32)
+with kernel_arena_scope():
+    dtype = torch._C._te.Dtype.Float
+    K = 100
+    KK = torch._C._te.ExprHandle.int(K)
 
+    B = torch._C._te.Compute('buf', [torch._C._te.DimArg(KK, 'i')], lambda k: k*k+k)
+    C = torch._C._te.Compute('buf', [torch._C._te.DimArg(KK, 'i')],
+            lambda k: B.load([k])*B.load([k]) - B.load([k]))
+
+    loopnest = torch._C._te.LoopNest([B, C])
+    print('Aggregated stmt:', loopnest.root_stmt())
+    loops_B = loopnest.get_loops_for(B)
+    loops_C = loopnest.get_loops_for(C)
+    print('First loop:', loops_B[0])
+    print('Second loop:', loops_C[0])

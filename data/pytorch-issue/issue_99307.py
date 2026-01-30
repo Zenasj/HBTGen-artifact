@@ -1,14 +1,5 @@
-# torch.rand(100, dtype=torch.float32)
 import torch
-from torch import nn
-
-class MyModel(nn.Module):
-    def forward(self, x):
-        return torch.as_strided(x, size=(2, 2), stride=(25, 40), storage_offset=1)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(100)
-
+arg_1 = (2, 2)
+arg_2 = [25,40]
+arg_3 = 1
+results = torch.as_strided(size=arg_1,stride=arg_2,storage_offset=arg_3,)

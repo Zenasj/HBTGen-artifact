@@ -1,26 +1,33 @@
-# tf.random.uniform((B, 5), dtype=tf.float32) ← Input shape is (batch_size, 5) as used in the original example
+from tensorflow import keras
+from tensorflow.keras import models
 
 import tensorflow as tf
 from tensorflow.keras import layers
-
-class MyModel(tf.keras.Model):
+class Model():
     def __init__(self):
-        super().__init__()
-        # Sequential model as originally shown causing the issue in TF 2.1.0,
-        # composed here explicitly into layers for clarity and to avoid the save/load issue.
-        self.dense1 = layers.Dense(2)
-        self.dense2 = layers.Dense(1)
+        self.build_model()
 
-    def call(self, inputs):
-        x = self.dense1(inputs)
-        return self.dense2(x)
+    def build_model(self):
+        input1 = layers.Input(shape=5)
 
-def my_model_function():
-    # Return an instance of MyModel 
-    return MyModel()
+        net = tf.keras.models.Sequential([
+            layers.Dense(2),
+            layers.Dense(1),
+        ])
 
-def GetInput():
-    # Return a random input tensor consistent with the model input shape (batch_size, 5)
-    # batch_size is set to a default 4 for testing.
-    return tf.random.uniform((4, 5), dtype=tf.float32)
+        out1 = net(input1)
+        """
+        out1 = layers.Dense(2)(input1)
+        out1 = layers.Dense(1)(out1)
+        """
 
+        self.model = tf.keras.Model(inputs=input1, outputs=out1)
+
+model = Model()
+s1 = "exp\\model"
+model.model.save(s1)
+model2 = tf.keras.models.load_model(s1)
+
+# Correct if not using tf.keras.Sequential
+out1 = layers.Dense(2)(input1)
+out1 = layers.Dense(1)(out1)

@@ -1,124 +1,25 @@
-# tf.random.uniform((B, 2), dtype=tf.float32) ← Input shape inferred as (batch_size, 2) matching the input_5 layer
+from tensorflow import keras
+from tensorflow.keras import models
 
 import tensorflow as tf
+import numpy as np
+import random
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # The architecture is reconstructed from the Keras JSON model configuration
+random.seed(1)
+np.random.seed(1)
 
-        # Reshape layers from the input of shape (None, 2) to various shapes
-        self.reshape_2 = tf.keras.layers.Reshape(target_shape=(1, 2), name="reshape_2")
-        self.reshape_1 = tf.keras.layers.Reshape(target_shape=(1, 2), name="reshape_1")
-        self.reshape = tf.keras.layers.Reshape(target_shape=(2, 1), name="reshape")
-        self.reshape_5 = tf.keras.layers.Reshape(target_shape=(2, 1), name="reshape_5")
-        self.reshape_3 = tf.keras.layers.Reshape(target_shape=(2, 1), name="reshape_3")
-        self.reshape_4 = tf.keras.layers.Reshape(target_shape=(1, 1), name="reshape_4")
+input_data = np.random.random(20000).reshape(10000, 2)
+output_data = np.sin(input_data)
 
-        # UpSampling1D layers with sizes as per config
-        self.up_sampling1d_2 = tf.keras.layers.UpSampling1D(size=3, name="up_sampling1d_2")
-        self.up_sampling1d_1 = tf.keras.layers.UpSampling1D(size=3, name="up_sampling1d_1")
-        self.up_sampling1d = tf.keras.layers.UpSampling1D(size=2, name="up_sampling1d")
+json = '''{"class_name": "Model", "config": {"name": "model_4", "layers": [{"class_name": "InputLayer", "config": {"batch_input_shape": [null, 2], "dtype": "float32", "sparse": false, "ragged": false, "name": "input_5"}, "name": "input_5", "inbound_nodes": []}, {"class_name": "Reshape", "config": {"name": "reshape_2", "trainable": true, "dtype": "float32", "target_shape": [1, 2]}, "name": "reshape_2", "inbound_nodes": [[["input_5", 0, 0, {}]]]}, {"class_name": "Reshape", "config": {"name": "reshape_1", "trainable": true, "dtype": "float32", "target_shape": [1, 2]}, "name": "reshape_1", "inbound_nodes": [[["input_5", 0, 0, {}]]]}, {"class_name": "Reshape", "config": {"name": "reshape", "trainable": true, "dtype": "float32", "target_shape": [2, 1]}, "name": "reshape", "inbound_nodes": [[["input_5", 0, 0, {}]]]}, {"class_name": "UpSampling1D", "config": {"name": "up_sampling1d_2", "trainable": true, "dtype": "float32", "size": 3}, "name": "up_sampling1d_2", "inbound_nodes": [[["reshape_2", 0, 0, {}]]]}, {"class_name": "UpSampling1D", "config": {"name": "up_sampling1d_1", "trainable": true, "dtype": "float32", "size": 3}, "name": "up_sampling1d_1", "inbound_nodes": [[["reshape_1", 0, 0, {}]]]}, {"class_name": "UpSampling1D", "config": {"name": "up_sampling1d", "trainable": true, "dtype": "float32", "size": 2}, "name": "up_sampling1d", "inbound_nodes": [[["reshape", 0, 0, {}]]]}, {"class_name": "Reshape", "config": {"name": "reshape_5", "trainable": true, "dtype": "float32", "target_shape": [2, 1]}, "name": "reshape_5", "inbound_nodes": [[["input_5", 0, 0, {}]]]}, {"class_name": "ZeroPadding1D", "config": {"name": "zero_padding1d_1", "trainable": true, "dtype": "float32", "padding": [0, 1]}, "name": "zero_padding1d_1", "inbound_nodes": [[["up_sampling1d_2", 0, 0, {}]]]}, {"class_name": "ZeroPadding1D", "config": {"name": "zero_padding1d", "trainable": true, "dtype": "float32", "padding": [0, 1]}, "name": "zero_padding1d", "inbound_nodes": [[["up_sampling1d_1", 0, 0, {}]]]}, {"class_name": "Conv1D", "config": {"name": "conv1d", "trainable": true, "dtype": "float32", "filters": 2, "kernel_size": [1], "strides": [1], "padding": "valid", "data_format": "channels_last", "dilation_rate": [1], "activation": "linear", "use_bias": true, "kernel_initializer": {"class_name": "GlorotUniform", "config": {"seed": null}}, "bias_initializer": {"class_name": "Zeros", "config": {}}, "kernel_regularizer": null, "bias_regularizer": null, "activity_regularizer": null, "kernel_constraint": null, "bias_constraint": null}, "name": "conv1d", "inbound_nodes": [[["up_sampling1d", 0, 0, {}]]]}, {"class_name": "MaxPooling1D", "config": {"name": "max_pooling1d", "trainable": true, "dtype": "float32", "strides": [2], "pool_size": [2], "padding": "valid", "data_format": "channels_last"}, "name": "max_pooling1d", "inbound_nodes": [[["reshape_5", 0, 0, {}]]]}, {"class_name": "Reshape", "config": {"name": "reshape_3", "trainable": true, "dtype": "float32", "target_shape": [2, 1]}, "name": "reshape_3", "inbound_nodes": [[["input_5", 0, 0, {}]]]}, {"class_name": "Conv1D", "config": {"name": "conv1d_1", "trainable": true, "dtype": "float32", "filters": 4, "kernel_size": [1], "strides": [1], "padding": "valid", "data_format": "channels_last", "dilation_rate": [1], "activation": "linear", "use_bias": true, "kernel_initializer": {"class_name": "GlorotUniform", "config": {"seed": null}}, "bias_initializer": {"class_name": "Zeros", "config": {}}, "kernel_regularizer": null, "bias_regularizer": null, "activity_regularizer": null, "kernel_constraint": null, "bias_constraint": null}, "name": "conv1d_1", "inbound_nodes": [[["zero_padding1d_1", 0, 0, {}]]]}, {"class_name": "Dot", "config": {"name": "dot", "trainable": true, "dtype": "float32", "axes": -1, "normalize": false}, "name": "dot", "inbound_nodes": [[["zero_padding1d", 0, 0, {}], ["conv1d", 0, 0, {}]]]}, {"class_name": "SpatialDropout1D", "config": {"name": "spatial_dropout1d", "trainable": true, "dtype": "float32", "rate": 0.4, "noise_shape": null, "seed": null}, "name": "spatial_dropout1d", "inbound_nodes": [[["max_pooling1d", 0, 0, {}]]]}, {"class_name": "GlobalAveragePooling1D", "config": {"name": "global_average_pooling1d", "trainable": true, "dtype": "float32", "data_format": "channels_last"}, "name": "global_average_pooling1d", "inbound_nodes": [[["reshape_3", 0, 0, {}]]]}, {"class_name": "Dot", "config": {"name": "dot_1", "trainable": true, "dtype": "float32", "axes": -1, "normalize": false}, "name": "dot_1", "inbound_nodes": [[["conv1d_1", 0, 0, {}], ["dot", 0, 0, {}]]]}, {"class_name": "AlphaDropout", "config": {"name": "alpha_dropout", "trainable": true, "dtype": "float32", "rate": 0.24308844217362846}, "name": "alpha_dropout", "inbound_nodes": [[["spatial_dropout1d", 0, 0, {}]]]}, {"class_name": "Reshape", "config": {"name": "reshape_4", "trainable": true, "dtype": "float32", "target_shape": [1, 1]}, "name": "reshape_4", "inbound_nodes": [[["global_average_pooling1d", 0, 0, {}]]]}, {"class_name": "Dropout", "config": {"name": "dropout", "trainable": true, "dtype": "float32", "rate": 0.4, "noise_shape": null, "seed": null}, "name": "dropout", "inbound_nodes": [[["dot_1", 0, 0, {}]]]}, {"class_name": "Flatten", "config": {"name": "flatten", "trainable": true, "dtype": "float32", "data_format": "channels_last"}, "name": "flatten", "inbound_nodes": [[["alpha_dropout", 0, 0, {}]]]}, {"class_name": "GlobalAveragePooling1D", "config": {"name": "global_average_pooling1d_1", "trainable": true, "dtype": "float32", "data_format": "channels_last"}, "name": "global_average_pooling1d_1", "inbound_nodes": [[["reshape_4", 0, 0, {}]]]}, {"class_name": "Flatten", "config": {"name": "flatten_1", "trainable": true, "dtype": "float32", "data_format": "channels_last"}, "name": "flatten_1", "inbound_nodes": [[["dropout", 0, 0, {}]]]}, {"class_name": "Concatenate", "config": {"name": "concatenate", "trainable": true, "dtype": "float32", "axis": -1}, "name": "concatenate", "inbound_nodes": [[["input_5", 0, 0, {}], ["flatten", 0, 0, {}], ["global_average_pooling1d_1", 0, 0, {}], ["flatten_1", 0, 0, {}]]]}, {"class_name": "Dense", "config": {"name": "dense_4", "trainable": true, "dtype": "float32", "units": 2, "activation": "relu", "use_bias": true, "kernel_initializer": {"class_name": "GlorotUniform", "config": {"seed": null}}, "bias_initializer": {"class_name": "Zeros", "config": {}}, "kernel_regularizer": null, "bias_regularizer": null, "activity_regularizer": null, "kernel_constraint": null, "bias_constraint": null}, "name": "dense_4", "inbound_nodes": [[["concatenate", 0, 0, {}]]]}], "input_layers": [["input_5", 0, 0]], "output_layers": [["dense_4", 0, 0]]}, "keras_version": "2.2.4-tf", "backend": "tensorflow"}'''
 
-        # Zero padding
-        self.zero_padding1d_1 = tf.keras.layers.ZeroPadding1D(padding=(0, 1), name="zero_padding1d_1")
-        self.zero_padding1d = tf.keras.layers.ZeroPadding1D(padding=(0, 1), name="zero_padding1d")
+model = tf.keras.models.model_from_json(json)
+model.compile(loss = 'mse', optimizer = 'adam')
 
-        # Conv1D layers (filters and kernel size as per config)
-        self.conv1d = tf.keras.layers.Conv1D(filters=2, kernel_size=1, padding="valid", activation="linear", name="conv1d")
-        self.conv1d_1 = tf.keras.layers.Conv1D(filters=4, kernel_size=1, padding="valid", activation="linear", name="conv1d_1")
+model.summary()
 
-        # MaxPooling1D layer
-        self.max_pooling1d = tf.keras.layers.MaxPooling1D(pool_size=2, strides=2, padding="valid", name="max_pooling1d")
+model.fit(x = input_data.reshape(-1, 2), y = output_data.reshape(-1, 2), epochs = 3, validation_split = 0.2)
 
-        # Dot layers with axes = -1 (last axis), normalize=False
-        self.dot = tf.keras.layers.Dot(axes=-1, normalize=False, name="dot")
-        self.dot_1 = tf.keras.layers.Dot(axes=-1, normalize=False, name="dot_1")
-
-        # SpatialDropout1D and AlphaDropout
-        self.spatial_dropout1d = tf.keras.layers.SpatialDropout1D(rate=0.4, name="spatial_dropout1d")
-        self.alpha_dropout = tf.keras.layers.AlphaDropout(rate=0.24308844217362846, name="alpha_dropout")
-
-        # Dropout layer with rate 0.4
-        self.dropout = tf.keras.layers.Dropout(rate=0.4, name="dropout")
-
-        # GlobalAveragePooling1D layers
-        self.global_average_pooling1d = tf.keras.layers.GlobalAveragePooling1D(name="global_average_pooling1d")
-        self.global_average_pooling1d_1 = tf.keras.layers.GlobalAveragePooling1D(name="global_average_pooling1d_1")
-
-        # Flatten layers
-        self.flatten = tf.keras.layers.Flatten(name="flatten")
-        self.flatten_1 = tf.keras.layers.Flatten(name="flatten_1")
-
-        # Concatenate layer along last axis (axis=-1)
-        self.concatenate = tf.keras.layers.Concatenate(axis=-1, name="concatenate")
-
-        # Output Dense layer with 2 units and ReLU activation
-        self.dense_4 = tf.keras.layers.Dense(units=2, activation="relu", name="dense_4")
-
-    def call(self, inputs, training=False):
-        # The input shape is (batch_size, 2), dtype float32 as per config
-        
-        # Multiple reshapes from input
-        r2 = self.reshape_2(inputs)      # (B, 1, 2)
-        r1 = self.reshape_1(inputs)      # (B, 1, 2)
-        r = self.reshape(inputs)         # (B, 2, 1)
-        r5 = self.reshape_5(inputs)      # (B, 2, 1)
-        r3 = self.reshape_3(inputs)      # (B, 2, 1)
-
-        # UpSampling on reshaped inputs
-        up2 = self.up_sampling1d_2(r2)   # (B, 3, 2)
-        up1 = self.up_sampling1d_1(r1)   # (B, 3, 2)
-        up = self.up_sampling1d(r)       # (B, 4, 1)
-
-        # Zero padding the upsampled outputs for conv1d_1 and dot
-        zp1 = self.zero_padding1d_1(up2) # (B, 4, 2)
-        zp = self.zero_padding1d(up1)    # (B, 4, 2)
-
-        # Conv1D layers applied
-        c = self.conv1d(up)              # (B, 4, 2)
-        c1 = self.conv1d_1(zp1)          # (B, 4, 4)
-
-        # Dot product layer
-        d = self.dot([zp, c])            # (B, 4, 4)
-
-        # MaxPooling + SpatialDropout + AlphaDropout layers
-        mp = self.max_pooling1d(r5)      # (B, 1, 1)
-        sd = self.spatial_dropout1d(mp, training=training)  # (B, 1, 1)
-        ad = self.alpha_dropout(sd, training=training)      # (B, 1, 1)
-
-        # GlobalAveragePooling1D layers + reshape_4
-        gap = self.global_average_pooling1d(r3)             # (B, 1)
-        r4 = self.reshape_4(gap)                             # (B, 1, 1)
-        gap1 = self.global_average_pooling1d_1(r4)          # (B, 1)
-
-        # Dot_1 layer between conv1d_1 output and previous dot output
-        d1 = self.dot_1([c1, d])              # (B, 4, 4)
-
-        # Dropout and flatten layers
-        do = self.dropout(d1, training=training)            # (B, 4, 4)
-        flt = self.flatten(ad)                               # (B, 1)
-        flt_1 = self.flatten_1(do)                           # (B, 16)
-
-        # Concatenate inputs
-        concat = self.concatenate([inputs, flt, gap1, flt_1])  # (B, 2 + 1 + 1 + 16 = 20)
-
-        # Dense output layer
-        out = self.dense_4(concat)                           # (B, 2)
-
-        return out
-
-
-def my_model_function():
-    # Return an instance of MyModel with layers initialized as above
-    model = MyModel()
-    # Build the model once with a dummy input to create weights properly
-    model(tf.zeros([1, 2], dtype=tf.float32))
-    return model
-
-
-def GetInput():
-    # Return a random tensor input (batch size 4) of shape (4, 2), dtype float32
-    # This matches the input shape expected by the model's InputLayer
-    return tf.random.uniform(shape=(4, 2), dtype=tf.float32)
-
+import os
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
+import tensorflow as tf

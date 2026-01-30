@@ -1,21 +1,16 @@
-# torch.rand(1, 320, 64, 64, dtype=torch.float32) ← Add a comment line at the top with the inferred input shape
-
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv = nn.Conv2d(in_channels=320, out_channels=4, kernel_size=3, stride=1, padding=1)
+def forward():
+    grad_out = torch.randn((1, 4, 64, 64))
+    input_vec = torch.randn((1, 320, 64, 64))
+    weight = torch.randn((4, 320, 3, 3))
+    result0, _, _ = torch.ops.aten.convolution_backward(
+        grad_out, input_vec, weight, bias_sizes=[4], stride=[1, 1],
+        padding=[1, 1], dilation=[1, 1], transposed=False,
+        output_padding=[0, 0], groups=1, output_mask=[False, True, True])
+    return result0 is None
 
-    def forward(self, x):
-        return self.conv(x)
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn((1, 320, 64, 64), dtype=torch.float32)
-
+script_forward = torch.jit.script(forward)
+print(script_forward.graph)
+print(f"forward output: {forward()}")
+print(f"script_forward output: {script_forward()}")

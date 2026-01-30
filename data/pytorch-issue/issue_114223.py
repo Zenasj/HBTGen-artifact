@@ -1,83 +1,120 @@
-# torch.rand((), dtype=torch.float16)  # Scalar input tensor
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-class Model0(nn.Module):
-    def __init__(self, v11_0):
-        super().__init__()
-        self.v11_0 = v11_0
-
+class Model0():
     def forward(self, *args):
         _args = args
+        v11_0 = self.v11_0
         getitem = _args[0]
-        abs_1 = torch.abs(self.v11_0)
+        abs_1 = torch.abs(v11_0)
         div = torch.div(getitem, abs_1)
-        cat = torch.cat((div,), dim=2)
+        cat = torch.cat((div,), dim = 2)
         transpose = div.transpose(2, 4)
-        cat_1 = torch.cat((transpose,), dim=4)
+        cat_1 = torch.cat((transpose,), dim = 4)
         floor = torch.floor(cat_1)
         floor_1 = torch.floor(floor)
         mean = floor_1.mean(4)
-        interpolate = F.interpolate(
-            floor_1,
-            size=[1, 2, 10],
-            mode='trilinear',
-            align_corners=None,
-            recompute_scale_factor=None,
-            antialias=False
-        )
+        interpolate = torch.nn.functional.interpolate(floor_1, size = [1, 2, 10], scale_factor = None, mode = 'trilinear', align_corners = None, recompute_scale_factor = None, antialias = False)
         return (cat, mean, interpolate)
 
-class Model1(nn.Module):
-    def __init__(self, v11_0):
+import numpy as np
+import pickle
+from numpy import testing
+import torch
+
+DEVICE='cuda'
+
+p0 = torch.nn.Parameter(torch.empty([57, 1, 10, 1, 40], dtype=torch.float16), requires_grad=False).to(DEVICE)
+
+class Model0(torch.nn.Module):
+    def __init__(self):
         super().__init__()
-        self.v11_0 = v11_0
+        self.v11_0 = p0
 
     def forward(self, *args):
         _args = args
+        v11_0 = self.v11_0
         getitem = _args[0]
-        abs_1 = torch.abs(self.v11_0)
+        abs_1 = torch.abs(v11_0)
         div = torch.div(getitem, abs_1)
-        cat = torch.cat((div,), dim=2)
+        cat = torch.cat((div,), dim = 2)
         transpose = div.transpose(2, 4)
-        cat_1 = torch.cat((transpose,), dim=4)
+        cat_1 = torch.cat((transpose,), dim = 4)
         floor = torch.floor(cat_1)
         floor_1 = torch.floor(floor)
         mean = floor_1.mean(4)
-        interpolate = F.interpolate(
-            floor_1,
-            size=[1, 2, 10],
-            mode='trilinear',
-            align_corners=None,
-            recompute_scale_factor=None,
-            antialias=False
-        )
-        return (interpolate, cat, mean)
+        interpolate = torch.nn.functional.interpolate(floor_1, size = [1, 2, 10], scale_factor = None, mode = 'trilinear', align_corners = None, recompute_scale_factor = None, antialias = False)
+        return (cat, mean, interpolate)
 
-class MyModel(nn.Module):
+model_0 = Model0()
+output_names_0 = ['v2_0', 'v0_0', 'v7_0']
+
+class Model1(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        # Initialize shared parameter with random values to avoid division by zero
-        self.v11_0 = nn.Parameter(
-            torch.randn([57, 1, 10, 1, 40], dtype=torch.float16),
-            requires_grad=False
-        )
-        self.model0 = Model0(self.v11_0)
-        self.model1 = Model1(self.v11_0)
+        self.v11_0 = p0
 
-    def forward(self, x):
-        out0 = self.model0(x)
-        out1 = self.model1(x)
-        # Compare mean outputs (Model0's second element vs Model1's third element)
-        are_close = torch.allclose(
-            out0[1], out1[2], rtol=1.0, atol=0.0
-        )
-        return torch.tensor(are_close, dtype=torch.bool)
+    def forward(self, *args):
+        _args = args
+        v11_0 = self.v11_0
+        getitem = _args[0]
+        abs_1 = torch.abs(v11_0)
+        div = torch.div(getitem, abs_1)
+        cat = torch.cat((div,), dim = 2)
+        transpose = div.transpose(2, 4)
+        cat_1 = torch.cat((transpose,), dim = 4)
+        floor = torch.floor(cat_1)
+        floor_1 = torch.floor(floor)
+        mean = floor_1.mean(4)
+        interpolate = torch.nn.functional.interpolate(floor_1, size = [1, 2, 10], scale_factor = None, mode = 'trilinear', align_corners = None, recompute_scale_factor = None, antialias = False)
+        return (interpolate, cat, mean)
 
-def my_model_function():
-    return MyModel()
+model_1 = Model1()
+output_names_1 = ['v7_0', 'v2_0', 'v0_0']
 
-def GetInput():
-    return torch.rand((), dtype=torch.float16)
+data_0 = np.array(3.273, dtype=np.float16)
+input_data_0 = [data_0]
 
+optmodel_0 = torch.compile(model_0, fullgraph=True, backend='inductor', mode=None)
+model_out_0 = optmodel_0(*[torch.from_numpy(v).to(DEVICE) for v in input_data_0])
+model_out_0 = [v.to(DEVICE).detach() for v in model_out_0] if isinstance(model_out_0, tuple) else [model_out_0.to(DEVICE).detach()]
+model_out_0 = [v.cpu().resolve_conj().numpy() if v.is_conj() else v.cpu().numpy() for v in model_out_0]
+output_0 = dict(zip(output_names_0, model_out_0))
+
+input_data_1 = input_data_0
+
+optmodel_1 = torch.compile(model_1, fullgraph=True, backend='inductor', mode=None)
+model_out_1 = optmodel_1(*[torch.from_numpy(v).to(DEVICE) for v in input_data_1])
+model_out_1 = [v.to(DEVICE).detach() for v in model_out_1] if isinstance(model_out_1, tuple) else [model_out_1.to(DEVICE).detach()]
+model_out_1 = [v.cpu().resolve_conj().numpy() if v.is_conj() else v.cpu().numpy() for v in model_out_1]
+output_1 = dict(zip(output_names_1, model_out_1))
+output_name_dict = {'v7_0': 'v7_0', 'v2_0': 'v2_0', 'v0_0': 'v0_0'}
+
+print('=========================')
+try:
+    for tensor_name_0, tensor_name_1 in output_name_dict.items():
+        testing.assert_allclose(output_0[tensor_name_0], output_1[tensor_name_1], rtol=1, err_msg=f'at {tensor_name_0}, {tensor_name_1}')
+    print("torch_complie does not trigger assertion")
+except AssertionError as e:
+    print("torch_complie triggers assertion")
+    print(e)
+print('=========================')
+
+model_out_0 = model_0(*[torch.from_numpy(v).to(DEVICE) for v in input_data_0])
+model_out_0 = [v.to(DEVICE).detach() for v in model_out_0] if isinstance(model_out_0, tuple) else [model_out_0.to(DEVICE).detach()]
+model_out_0 = [v.cpu().resolve_conj().numpy() if v.is_conj() else v.cpu().numpy() for v in model_out_0]
+output_0 = dict(zip(output_names_0, model_out_0))
+
+model_out_1 = model_1(*[torch.from_numpy(v).to(DEVICE) for v in input_data_1])
+model_out_1 = [v.to(DEVICE).detach() for v in model_out_1] if isinstance(model_out_1, tuple) else [model_out_1.to(DEVICE).detach()]
+model_out_1 = [v.cpu().resolve_conj().numpy() if v.is_conj() else v.cpu().numpy() for v in model_out_1]
+output_1 = dict(zip(output_names_1, model_out_1))
+
+print('=========================')
+try:
+    for tensor_name_0, tensor_name_1 in output_name_dict.items():
+        testing.assert_allclose(output_0[tensor_name_0], output_1[tensor_name_1], rtol=1, err_msg=f'at {tensor_name_0}, {tensor_name_1}')
+    print("torch_eager does not trigger assertion")
+except AssertionError as e:
+    print("torch_eager triggers assertion")
+    print(e)
+print('=========================')

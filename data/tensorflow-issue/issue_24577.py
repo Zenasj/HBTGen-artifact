@@ -1,26 +1,26 @@
-# tf.random.uniform((B, 2), dtype=tf.float32) ← Based on input shape (batch_size, 2) from the dataset slices
+import random
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
+from tensorflow import keras
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Single dense layer producing 1 output as per original Sequential model
-        self.dense = tf.keras.layers.Dense(1)
+X_train = np.random.rand(1000, 2).astype(np.float32)
+y_train = np.random.rand(1000).astype(np.float32)
+X_valid = np.random.rand(200, 2).astype(np.float32)
+y_valid = np.random.rand(200).astype(np.float32)
+batch_size = 32
+learning_rate = 0.01
 
-    def call(self, inputs, training=False):
-        return self.dense(inputs)
+train_set = tf.data.Dataset.from_tensor_slices((X_train, y_train)).repeat().batch(batch_size)
+valid_set = tf.data.Dataset.from_tensor_slices((X_valid, y_valid)).repeat().batch(batch_size)
 
-def my_model_function():
-    # Instantiate MyModel and compile similarly to the original example
-    model = MyModel()
-    model.compile(optimizer=tf.keras.optimizers.SGD(learning_rate=0.01),
-                  loss='mse')
-    return model
+model = keras.models.Sequential([keras.layers.Dense(1)])
+model.compile(loss="mse", optimizer=keras.optimizers.SGD(learning_rate))
 
-def GetInput():
-    # Return a batch of inputs matching shape (batch_size, 2)
-    # Using batch_size=32 to match original example's batch size
-    batch_size = 32
-    return tf.random.uniform((batch_size, 2), dtype=tf.float32)
-
+model.fit(train_set, epochs=5,
+          steps_per_epoch=len(X_train) // batch_size,
+          validation_data=valid_set,
+          validation_steps=len(X_valid) // batch_size)

@@ -1,25 +1,33 @@
-# torch.rand(1, 1, 1, 1, dtype=torch.float32)
+import torch.nn as nn
+
+#Minimal repro:
+#import torch
+#class Object:
+#  pass
+#
+#def accesses(c):
+#  print(type(c))
+#  print(c.__dict__)
+#torch.compile(accesses)(Object())
+
+#More lifelike repro:
 import torch
 from torch import nn
 
-class Config:
-    def __eq__(self, other):
-        return self.__dict__ == other.__dict__
+class Config():
+  def __eq__(self, other):
+    return self.__dict__ == other.__dict__
 
-class MyModel(nn.Module):
-    def __init__(self, config):
-        super().__init__()
-        self.config = config
+class Custom(nn.Module):
+  def __init__(self, c):
+    super().__init__()
+    self.c = c
 
-    def forward(self, x):
-        # Compare with another Config instance to trigger __eq__ method
-        other_config = Config()
-        return x * 1.0 if self.config == other_config else x * 0.0
+  def forward(self, c2):
+    return 1 if self.c==c2 else 0
 
-def my_model_function():
-    config = Config()
-    return MyModel(config)
-
-def GetInput():
-    return torch.rand(1, 1, 1, 1, dtype=torch.float32)
-
+c1 = Config()
+c2 = Config()
+m = Custom(c1)
+m(c2) # works
+torch.compile(m)(c2) #crashes

@@ -1,29 +1,27 @@
-# tf.random.uniform((None, 28, 28), dtype=tf.float32) ← Inferred input shape from MNIST example (batch unspecified)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
+# $ ./tensorflow_test.py
+#!/usr/bin/env python
 
 import tensorflow as tf
+mnist = tf.keras.datasets.mnist
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Model structure from the issue's MNIST example
-        self.flatten = tf.keras.layers.Flatten(input_shape=(28, 28))
-        self.dense1 = tf.keras.layers.Dense(512, activation='relu')
-        self.dropout = tf.keras.layers.Dropout(0.2)
-        self.dense2 = tf.keras.layers.Dense(10, activation='softmax')
+(x_train, y_train),(x_test, y_test) = mnist.load_data()
+x_train, x_test = x_train / 255.0, x_test / 255.0
 
-    def call(self, inputs, training=False):
-        x = self.flatten(inputs)
-        x = self.dense1(x)
-        x = self.dropout(x, training=training)
-        x = self.dense2(x)
-        return x
+model = tf.keras.models.Sequential([
+  tf.keras.layers.Flatten(input_shape=(28, 28)),
+  tf.keras.layers.Dense(512, activation=tf.nn.relu),
+  tf.keras.layers.Dropout(0.2),
+  tf.keras.layers.Dense(10, activation=tf.nn.softmax)
+])
+model.compile(optimizer='adam',
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Return a random batch of inputs matching (batch_size, 28, 28) for the MNIST example
-    # Assume batch size 32 as a common default
-    return tf.random.uniform((32, 28, 28), dtype=tf.float32)
-
+model.fit(x_train, y_train, epochs=5)
+val = model.evaluate(x_test, y_test)
+print('Result is:\n{}'.format(val[0]))
+print('Success!')

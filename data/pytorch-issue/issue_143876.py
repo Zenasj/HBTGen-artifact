@@ -1,27 +1,15 @@
-# torch.rand(4, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
-
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
+torch._dynamo.config.capture_dynamic_output_shape_ops = True
 
-    def forward(self, x):
-        y = x.nonzero()
-        tmp = torch.ones_like(y)
-        return x.sum() + tmp.sum()
+from torch._functorch import config
+config.ban_recompute_not_in_allowlist = False
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+@torch.compile(backend="aot_eager")
+def f(x):
+    y = x.nonzero()
+    tmp = torch.ones_like(y)
+    return x.sum() + tmp.sum()
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.ones(4, requires_grad=True)
-
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# out = model(input_tensor)
-
+x = torch.ones(4, requires_grad=True)
+out = f(x)

@@ -1,35 +1,59 @@
-# tf.random.uniform((1, H, W, 3), dtype=tf.float32) ← Input shape is dynamic height and width with 3 channels
-
+import numpy as np
+import random
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define the layers as described in the issue's model definition
-        self.conv1 = tf.keras.layers.Conv2D(16, kernel_size=3, padding='same')
-        self.conv2 = tf.keras.layers.Conv2D(32, kernel_size=3, padding='same', strides=2)
-        self.conv3 = tf.keras.layers.Conv2D(64, kernel_size=3, use_bias=False)
-        self.conv4 = tf.keras.layers.Conv2D(3, kernel_size=3, padding='same')
-    
-    def call(self, inputs, training=False):
-        x = self.conv1(inputs)
-        x = self.conv2(x)
-        x = self.conv3(x)
-        x = self.conv4(x)
-        return x
-
-def my_model_function():
-    # Create and return an instance of MyModel
-    model = MyModel()
-    # Optionally build the model by passing a dummy input with None for H and W
-    dummy_input = tf.random.uniform((1, 16, 16, 3))
-    model(dummy_input)  # build model weights
+# create model
+def get_model(input_shape=(None, None, 3)):
+    inputs = tf.keras.Input(shape=input_shape)
+    x = tf.keras.layers.Conv2D(
+            16, kernel_size=3, padding='same')(inputs)
+    x = tf.keras.layers.Conv2D(
+            16 * 2, kernel_size=3, padding='same', strides=2)(x)
+    x = tf.keras.layers.Conv2D(
+            16 * 4, kernel_size=3, use_bias=False)(x)
+    x = tf.keras.layers.Conv2D(
+            3,  kernel_size=3, padding='same')(x)
+    model = tf.keras.Model(inputs, x)
+    model.compile(optimizer=tf.keras.optimizers.Adam(), loss="mean_squared_error")
     return model
 
-def GetInput():
-    # Generate a valid random input tensor that matches the expected input of MyModel
-    # Input shape: batch_size=1, height=variable, width=variable, channels=3
-    # For demonstration, use height=512, width=512 matching the benchmark input shape
-    input_shape = (1, 512, 512, 3)
-    return tf.random.uniform(input_shape, dtype=tf.float32)
 
+# Util functions
+def save_tflite_model(output_model_path, tflite_model):
+    with open(output_model_path, 'wb') as f:
+        f.write(tflite_model)
+    
+def convert_model_from_concrete(model_path, output_model_path, input_shape=(1, None, None, 3)):
+    model = tf.saved_model.load(model_path)
+    concrete_func = model.signatures[
+        tf.saved_model.DEFAULT_SERVING_SIGNATURE_DEF_KEY]
+    
+    concrete_func.inputs[0].set_shape(input_shape)
+    
+    converter = tf.lite.TFLiteConverter.from_concrete_functions([concrete_func])
+    converter.experimental_new_converter = True
+    converter.target_spec.supported_ops = [
+        tf.lite.OpsSet.TFLITE_BUILTINS,
+        tf.lite.OpsSet.SELECT_TF_OPS 
+        ]
+    tflite_model = converter.convert()
+    print(tf.lite.experimental.Analyzer.analyze(model_content=tflite_model, gpu_compatibility=True))
+    save_tflite_model(output_model_path, tflite_model)
+
+
+#Code for exporting my model to TFLite
+model = get_model()
+model.save("my_model_dynamic")
+convert_model_from_concrete("my_model_dynamic","my_model_dynamic.tflite")
+
+interpreter = tf.lite.Interpreter("my_model_dynamic.tflite")
+custom_shape = [1, 512, 512, 3]
+interpreter.resize_tensor_input(interpreter.get_input_details()[0]['index'], custom_shape)
+interpreter.allocate_tensors()
+input =  numpy.random.rand(*custom_shape).astype(np.float32)
+input_details = interpreter.get_input_details()
+interpreter.set_tensor(input_details[0]['index'], input)
+interpreter.invoke()

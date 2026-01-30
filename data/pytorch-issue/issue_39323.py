@@ -1,24 +1,50 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)
-import torch
-import torch.nn as nn
 import torch.nn.functional as F
 
-class MyModel(nn.Module):
+import torch
+import torch.nn as nn
+from torch.nn import functional as F
+
+class AvgPool(nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
-        self.register_buffer('p', torch.tensor(4.0))  # Ensure p is treated as part of the model's state
+        super(AvgPool, self).__init__()
+        self.p = torch.tensor(4).cuda() 
 
     def forward(self, x):
-        # Compute Lp norm using adaptive average pooling to handle dynamic input shapes
-        powered = x.pow(self.p)
-        pooled = F.adaptive_avg_pool2d(powered, (1, 1))  # Dynamically adjusts kernel size based on input
-        result = pooled.pow(1.0 / self.p)
-        return result
+        size_array = [int(s) for s in x.size()[2:]]
+        x = F.avg_pool2d(x.pow(self.p), size_array, stride=1).pow(1.0 / self.p)
+        return x
 
-def my_model_function():
-    return MyModel()
+def export_onnx(modelfile, onnxfile):
+    model = AvgPool()
+    model.cuda()
+    model.eval()
+    dummy_input = Variable(torch.randn(1, 3, 800, 900)).cuda()
 
-def GetInput():
-    # Matches the original dummy input shape (1,3,800,900) but works with any dynamic H/W
-    return torch.rand(1, 3, 800, 900, dtype=torch.float32)
+    dynamic_axes = {'input': {2 : 'batch1', 3 : 'batch2'}}
+    torch.onnx.export(model, dummy_input, onnxfile, verbose=True, \
+                      aten=False, \
+                      opset_version=10, \
+                      training=False, \
+                      do_constant_folding=True, \
+                      keep_initializers_as_inputs=True, \
+                      input_names=('input', ), \
+                      output_names=('output',), \
+                      dynamic_axes=dynamic_axes)
 
+import torch
+import torch.nn as nn
+from torch.nn import functional as F
+
+@torch.jit.script
+def avg_pool_helper(x, p):
+    size_array = [int(s) for s in x.size()[2:]]
+    x = F.avg_pool2d(x.pow(p), size_array, stride=1).pow(1.0 / p)
+    return x
+
+class AvgPool(nn.Module):
+    def __init__(self):
+        super(AvgPool, self).__init__()
+        self.p = torch.tensor(4).cuda() 
+
+    def forward(self, x):
+        return avg_pool_helper(x, self.p)

@@ -1,15 +1,13 @@
-# torch.randint(0, 256, (torch.randint(99, 101, (1,)).item(),), dtype=torch.uint8)
 import torch
-from torch import nn
+import torch._dynamo as dynamo
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return x + x
+@dynamo.optimize("eager",dynamic=True)
+def predict(text):
+    tensor = torch.ByteTensor(list(bytes(text, 'utf8')))
+    return tensor + tensor
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    length = torch.randint(99, 101, (1,)).item()
-    return torch.randint(0, 256, (length,), dtype=torch.uint8)
-
+text = "This is a note about Frank Sinatra who was in Saint Genis Pouilly during summer of 75. He was not really there."
+magic_no = [99,100]
+for i in magic_no:
+    input = text[:i]
+    predict(input)

@@ -1,31 +1,25 @@
-# tf.random.uniform((3, 74, 74, 256), dtype=tf.float32) ← Input shape mentioned in issue reproduction snippet
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
+import os
+import numpy as np
+try:
+  arg_0_0 = 1e+38
+  arg_0_1 = 16777216
+  arg_0 = [arg_0_0,arg_0_1,]
+  strides_0 = 2
+  strides_1 = 2
+  strides = [strides_0,strides_1,]
+  padding = "same"
+  arg_class = tf.keras.layers.MaxPool2D(arg_0,strides=strides,padding=padding,)
+  arg_input_0_tensor = tf.random.uniform([3, 74, 74, 256], dtype=tf.float32)
+  arg_input_0 = tf.identity(arg_input_0_tensor)
+  arg_input = [arg_input_0,]
+  out = arg_class(*arg_input)
+except Exception as e:
+  print("Error:"+str(e))
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Based on the issue, MaxPool2D expects pool_size and strides as tuples of integers.
-        # The example had unreasonable large pool_size values (1e+38, 16777216),
-        # which causes failures. A reasonable pool_size like (2, 2) is typically used.
-        self.pool_size = (2, 2)
-        self.strides = (2, 2)
-        self.padding = "same"
-        self.maxpool = tf.keras.layers.MaxPool2D(
-            pool_size=self.pool_size,
-            strides=self.strides,
-            padding=self.padding
-        )
-
-    def call(self, inputs):
-        # inputs is expected to be a 4D tensor: [batch, height, width, channels]
-        return self.maxpool(inputs)
-
-def my_model_function():
-    # Return an instance of MyModel with default initialization
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel: (3, 74, 74, 256)
-    return tf.random.uniform((3, 74, 74, 256), dtype=tf.float32)
+### Relevant log output
 

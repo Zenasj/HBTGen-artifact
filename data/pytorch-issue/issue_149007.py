@@ -1,18 +1,19 @@
-# torch.rand(10, dtype=torch.float8_e4m3fn).cuda()  # Add a comment line at the top with the inferred input shape
-
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+import torch
+import torch._inductor.config as config
+
+config.aot_inductor.debug_intermediate_value_printer = "2"
+config.aot_inductor.filtered_kernel_names = "triton_poi_fused__to_copy_add_0"
+
+
+class Model(torch.nn.Module):
     def forward(self, x):
         x = x.to(torch.float)
         return x + 1
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+model = Model().cuda()
+x = torch.randn(10).cuda().to(torch.float8_e4m3fn)
+_ = torch.compile(model, fullgraph=True)(x)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(10).cuda().to(torch.float8_e4m3fn)
-
+print("done")

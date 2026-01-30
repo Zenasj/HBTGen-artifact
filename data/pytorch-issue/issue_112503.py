@@ -1,14 +1,11 @@
-# torch.randint(1, 10, (2, 3), dtype=torch.int64)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return x.bitwise_and_(True)
+def fn(input1, input2):
+    res = input1.bitwise_and_(input2)
+    return res
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.randint(1, 10, (2, 3), dtype=torch.int64)
-
+if __name__ == "__main__":
+    input1 = torch.randint(1, 10, (2, 3))
+    input2 = True
+    f = torch.compile(fn)
+    f(input1, input2)

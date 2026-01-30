@@ -1,92 +1,91 @@
-# tf.random.uniform((B, ONEHOT_LENGTH), dtype=tf.float32)
+import random
+
+DEVICE = "/gpu:1"
+
+with tf.device(DEVICE):
+    grads = tf.Variable(0.0)
+    opt = tf.optimizers.Adam(1e-6)
+
+@tf.function
+def train_one_batch(model,train_data,train_label):
+    print("tracing batch")
+    with tf.device(DEVICE):
+        with tf.GradientTape() as tape:
+            predicts = model(train_data)
+            loss = tf.nn.l2_loss(predicts - train_label)
+            grads = tape.gradient(loss, [model.W, model.b])
+            opt.apply_gradients(zip(grads, [model.W, model.b]))
+
+import os
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
+
 import tensorflow as tf
+import pickle
 
-# Assumptions:
-# - Input shape for the model is a batch of size B with width ONEHOT_LENGTH = 1375432 features (likely sparse one-hot encoded)
-# - The model is a simple linear layer: output = x @ W + b where W shape is [ONEHOT_LENGTH, 1]
-# - The device preference is GPU:1 (DEVICE = "/gpu:1")
-# - The issue in the original code is that optimizer.apply_gradients triggers some computations or memory usage on GPU:0 unexpectedly
-# - We adapt this into a tf.keras.Model subclass named MyModel per instructions
-# - We reproduce the optimizer and training logic inside MyModel using tf.function jit-compiled method
-# - We include a GetInput() generating a batch input of shape [batch_size, ONEHOT_LENGTH] with uniform floats (mimicking one-hot like sparse)
-
-ONEHOT_LENGTH = 1375432
+DATA_DIR = "/sensitive_data/"
 DEVICE = "/gpu:1"
 RANDOM_SEED = 12345
+ONEHOT_LENGTH = 1375432
+DEBUG = True
 
-class MyModel(tf.keras.Model):
+if DEBUG:
+    tf.debugging.set_log_device_placement(True)
+    print(tf.config.experimental.list_physical_devices('GPU')) # [PhysicalDevice(name='/physical_device:GPU:0', device_type='GPU'), PhysicalDevice(name='/physical_device:GPU:1', device_type='GPU')]
+
+
+@tf.function
+def _parse_function(example_proto):
+    with tf.device("/cpu:0"):
+        feature_description = {
+            'sensitiveA': tf.io.FixedLenFeature(shape=[], dtype=tf.string, default_value=""),
+            'sensitiveB': tf.io.FixedLenFeature(shape=[], dtype=tf.float32, default_value=0.0),
+            'sensitiveC': tf.io.FixedLenFeature(shape=[], dtype=tf.float32, default_value=0.0),
+            'sensitiveD': tf.io.FixedLenFeature(shape=[], dtype=tf.string, default_value=""),
+            'sensitiveE': tf.io.FixedLenSequenceFeature(shape=[], dtype=tf.int64, default_value=0, allow_missing=True),
+        }
+        return tf.io.parse_single_example(example_proto, feature_description)
+
+
+class Model():
     def __init__(self):
-        super().__init__()
-        # Initialize weights and bias on the specified device
         with tf.device(DEVICE):
-            # Using kernel_initializer with seed to mimic uniform init
-            self.W = tf.Variable(
-                tf.random.uniform(
-                    shape=[ONEHOT_LENGTH, 1],
-                    minval=0.0,
-                    maxval=1.0 / ONEHOT_LENGTH,
-                    seed=RANDOM_SEED,
-                    dtype=tf.float32,
-                ),
-                trainable=True,
-                name="W",
-            )
-            # Scalar bias parameter, initialized to 170.0 as in original code
-            self.b = tf.Variable(170.0, trainable=True, name="b")
+            self.W = tf.Variable(tf.random.uniform(shape=[ONEHOT_LENGTH,1],minval=0,maxval=1.0/ONEHOT_LENGTH,seed=RANDOM_SEED))
+            self.b = tf.Variable(170.0)
 
-        # Create optimizer here; however, to avoid unexpected device usage, we init optimizer outside forward pass
-        # The learning rate is very small (1e-6) mimicking original.
-        self.opt = tf.keras.optimizers.Adam(learning_rate=1e-6)
-
-    @tf.function(jit_compile=True)
-    def call(self, inputs):
-        # Model forward pass: linear mapping xW + b
+    @tf.function
+    def __call__(self, _x):
         with tf.device(DEVICE):
-            x = tf.cast(inputs, tf.float32)
+            x = tf.dtypes.cast(_x, tf.float32)
             return tf.matmul(x, self.W) + self.b
 
-    @tf.function(jit_compile=True)
-    def train_step(self, x, y_true):
-        # One training step applying gradients to W and b on the desired device
-        # Returns the loss scalar
-        
-        with tf.device(DEVICE):
-            with tf.GradientTape() as tape:
-                y_pred = self.call(x)
-                loss = tf.nn.l2_loss(y_pred - y_true)  # sum of squared error / 2
-                
-            grads = tape.gradient(loss, [self.W, self.b])
-            # Applying gradients only on DEVICE; zip correctly pairs
-            self.opt.apply_gradients(zip(grads, [self.W, self.b]))
-            return loss
 
-def my_model_function():
-    # Return an instance of MyModel with initialized weights and optimizer
-    return MyModel()
+with tf.device(DEVICE):
+    grads = tf.Variable(0.0)
+    opt = tf.optimizers.Adam(1e-6)
 
-def GetInput():
-    # Generate a random input batch compatible with MyModel
-    # Assuming batch size 20 to mimic original batching
-    batch_size = 20
-    # Use uniform floats to simulate features in [0, 1/ONEHOT_LENGTH], as model initialized weights similarly
-    # This is an informed guess: original code used random uniform on weights;
-    # input data "sensitiveE" was int64 sequence possibly one-hot like sparse indices, but we produce dense tensor float32
-    input_tensor = tf.random.uniform(
-        [batch_size, ONEHOT_LENGTH],
-        minval=0.0,
-        maxval=1.0,
-        dtype=tf.float32,
-        seed=RANDOM_SEED,
-    )
-    return input_tensor
+@tf.function
+def train_one_batch(model,train_data,train_label):
+    print("tracing batch")
+    with tf.device(DEVICE):
+        with tf.GradientTape() as tape:
+            predicts = model(train_data)
+            loss = tf.nn.l2_loss(predicts - train_label)
+            grads = tape.gradient(loss, [model.W, model.b])
+            opt.apply_gradients(zip(grads, [model.W, model.b]))   #fixme: causes GPU0 uasge and retrace
 
-# Note:
-# - We omit main or dataset logic due to instruction.
-# - This model and methods support direct usage with:
-#      model = my_model_function()
-#      input = GetInput()
-#      output = model(input)
-#      loss = model.train_step(input, some_label_tensor)
-# - All computations pinned to DEVICE to minimize cross-GPU activity as in original user's request.
-# - jit_compile=True added per requirement for XLA compilation.
 
+if __name__ == '__main__':
+
+    sensitive_tfrecord = pickle.load(open("./sensitive.pkl","rb"))
+    for i in range(len(sensitive_tfrecord)):
+        sensitive_tfrecord[i] = DATA_DIR + sensitive_tfrecord[i]
+
+    dataset = tf.data.TFRecordDataset(sensitive_tfrecord).map(_parse_function,num_parallel_calls=22)
+
+    with tf.device(DEVICE):
+        model = Model()
+
+        for data in dataset.batch(20):
+            train_one_batch(model, data["sensitiveE"], data["sensitiveB"])

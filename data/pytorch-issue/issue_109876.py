@@ -1,16 +1,10 @@
-# torch.rand(5,5, dtype=torch.float32, requires_grad=True)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        y = torch.mean(x)
-        z = torch.sum(x)
-        return y, z  # Returns tuple of outputs to enable comparison of their backward logic
+x = torch.randn(5, 5, requires_grad=True)
 
-def my_model_function():
-    return MyModel()
+y = torch.mean(x)
+z = torch.sum(x)
 
-def GetInput():
-    return torch.randn(5, 5, dtype=torch.float32, requires_grad=True)
-
+print(y, z)
+print(list(filter(lambda x: x.startswith('_saved_'), dir(y.grad_fn))), list(filter(lambda x: x.startswith('_saved_'), dir(z.grad_fn))))
+print(y.grad_fn._saved_self is x)

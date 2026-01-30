@@ -1,14 +1,9 @@
-# torch.rand(B, 1, dtype=torch.bool)
 import torch
-from torch import nn
+from torch import vmap
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return torch.ops.aten._is_all_true(x)
+def fn(a):
+    return torch.ops.aten._is_all_true(a)
 
-def my_model_function():
-    return MyModel()
+a = torch.tensor([[True], [False]])
 
-def GetInput():
-    return torch.randint(0, 2, (2, 1), dtype=torch.bool)
-
+result = vmap(fn)(a)

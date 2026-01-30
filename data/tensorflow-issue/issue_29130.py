@@ -1,24 +1,28 @@
-# tf.random.uniform((B, 16), dtype=tf.float32) ← Input shape inferred from model input layer (shape=(16,))
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
+class MyExponentialUpdateLossScaleManager(ExponentialUpdateLossScaleManager):
+    def variables(self):
+        return [self._loss_scale, self._num_good_steps, self._num_bad_steps]
+
+class MyLossScaleOptimizer(LossScaleOptimizer):
+    def variables(self):
+        return self._opt.variables() + self._loss_scale_manager.variables()
+
+import numpy as np
 import tensorflow as tf
+from tensorflow.train import AdamOptimizer
+from tensorflow.contrib.mixed_precision import LossScaleOptimizer, ExponentialUpdateLossScaleManager
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Single dense layer with 1 output unit, linear activation by default
-        self.dense = tf.keras.layers.Dense(1)
+input = tf.keras.layers.Input(shape=(16,))
+output = tf.keras.layers.Dense(1)(input)
+model = tf.keras.models.Model(input, output)
 
-    def call(self, inputs):
-        # Forward pass: input shape (B,16) -> output shape (B,1)
-        return self.dense(inputs)
+optimizer = AdamOptimizer()
+# Works without these two lines below
+loss_scale_manager = ExponentialUpdateLossScaleManager(init_loss_scale=2 ** 32, incr_every_n_steps=1000)
+optimizer = LossScaleOptimizer(optimizer, loss_scale_manager)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor matching input shape of MyModel's expected input:
-    # The original example had input of shape (16,), so batch can be any size.
-    # Here we pick batch size 8 as a reasonable default.
-    return tf.random.uniform((8, 16), dtype=tf.float32)
-
+model.compile(optimizer=optimizer, loss='binary_crossentropy')
+model.fit(np.zeros((16, 16)), np.zeros((16,)))

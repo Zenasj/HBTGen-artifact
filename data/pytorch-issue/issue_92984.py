@@ -1,15 +1,21 @@
-# torch.rand(1, 2, 3, dtype=torch.float64, requires_grad=True)
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        x.retain_grad()
-        return x
+py
+x = torch.rand([1, 2, 3], dtype=torch.float64, requires_grad=True)
 
-def my_model_function():
-    return MyModel()
+def func(x):
+    x.retain_grad()
+    return x
 
-def GetInput():
-    return torch.rand(1, 2, 3, dtype=torch.float64, requires_grad=True)
+torch.autograd.gradcheck(func, (x,), check_forward_ad=True, check_backward_ad=False)
+# RuntimeError: can't retain_grad on Tensor that has requires_grad=False
 
+py
+x = torch.rand([1, 2, 3], dtype=torch.float64, requires_grad=True)
+
+def func(x):
+    x.retain_grad()
+    return x
+
+torch.autograd.gradcheck(func, (x,), check_forward_ad=False, check_backward_ad=True)
+# succeed without error

@@ -1,41 +1,61 @@
-# tf.random.uniform((2, 7, 1, 1), dtype=tf.float64), minval=0, maxval=0 (note: maxval same as minval leads to all zeros)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Use relu Activation layer as in the issue
-        self.activation = tf.keras.layers.Activation("relu")
+activation = "relu"
+__input___0_tensor = tf.random.uniform([2, 7, 1, 1], minval=0, maxval=0, dtype=tf.float64)
+__input___0 = tf.identity(__input___0_tensor)
+Activation_class = tf.keras.layers.Activation(activation)
 
-    def call(self, inputs, training=False):
-        """
-        Forward pass applies ReLU activation to the inputs.
-        """
-        return self.activation(inputs)
+layer = Activation_class
+inputs = __input___0
 
+r = Activation_class(inputs)
+theoretical, numerical = tf.test.compute_gradient(Activation_class, [inputs])
+print(theoretical)
+print(numerical)
 
-def my_model_function():
-    """
-    Returns an instance of MyModel.
-    """
-    return MyModel()
-
-
-def GetInput():
-    """
-    Returns a random input tensor matching the expected input shape of MyModel.
-    The original bug report used shape [2, 7, 1, 1] with all zeros (minval=maxval=0),
-    dtype=tf.float64.
-    
-    Using the same for precise replication.
-    """
-    # The original code uses uniform with minval=0, maxval=0 (all zeros).
-    # To precisely replicate the original bug case, we return a zero tensor.
-    input_tensor = tf.random.uniform(
-        shape=(2, 7, 1, 1),
-        minval=0,
-        maxval=0,
-        dtype=tf.float64
-    )
-    return input_tensor
-
+(array([[0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+       [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+       [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+       [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+       [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+       [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+       [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+       [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+       [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+       [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+       [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+       [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+       [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.],
+       [0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]]),)
+(array([[0.5, 0. , 0. , 0. , 0. , 0. , 0. , 0. , 0. , 0. , 0. , 0. , 0. ,
+        0. ],
+       [0. , 0.5, 0. , 0. , 0. , 0. , 0. , 0. , 0. , 0. , 0. , 0. , 0. ,
+        0. ],
+       [0. , 0. , 0.5, 0. , 0. , 0. , 0. , 0. , 0. , 0. , 0. , 0. , 0. ,
+        0. ],
+       [0. , 0. , 0. , 0.5, 0. , 0. , 0. , 0. , 0. , 0. , 0. , 0. , 0. ,
+        0. ],
+       [0. , 0. , 0. , 0. , 0.5, 0. , 0. , 0. , 0. , 0. , 0. , 0. , 0. ,
+        0. ],
+       [0. , 0. , 0. , 0. , 0. , 0.5, 0. , 0. , 0. , 0. , 0. , 0. , 0. ,
+        0. ],
+       [0. , 0. , 0. , 0. , 0. , 0. , 0.5, 0. , 0. , 0. , 0. , 0. , 0. ,
+        0. ],
+       [0. , 0. , 0. , 0. , 0. , 0. , 0. , 0.5, 0. , 0. , 0. , 0. , 0. ,
+        0. ],
+       [0. , 0. , 0. , 0. , 0. , 0. , 0. , 0. , 0.5, 0. , 0. , 0. , 0. ,
+        0. ],
+       [0. , 0. , 0. , 0. , 0. , 0. , 0. , 0. , 0. , 0.5, 0. , 0. , 0. ,
+        0. ],
+       [0. , 0. , 0. , 0. , 0. , 0. , 0. , 0. , 0. , 0. , 0.5, 0. , 0. ,
+        0. ],
+       [0. , 0. , 0. , 0. , 0. , 0. , 0. , 0. , 0. , 0. , 0. , 0.5, 0. ,
+        0. ],
+       [0. , 0. , 0. , 0. , 0. , 0. , 0. , 0. , 0. , 0. , 0. , 0. , 0.5,
+        0. ],
+       [0. , 0. , 0. , 0. , 0. , 0. , 0. , 0. , 0. , 0. , 0. , 0. , 0. ,
+        0.5]]),)

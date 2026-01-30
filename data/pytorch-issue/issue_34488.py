@@ -1,23 +1,37 @@
-# torch.rand(1, 10, dtype=torch.float32)  # Inferred input shape
-
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+import onnx
+import torch
+
+class M(torch.nn.Module):     
     def __init__(self, hidden_size):
         super().__init__()
-        self.weight_ih = torch.nn.Parameter(torch.randn(4 * hidden_size, hidden_size))
+        self.weight_ih = torch.nn.Parameter(
+            torch.randn(4 * hidden_size, hidden_size)
+        )
         
     def forward(self, x):
-        # Using matmul instead of mm to avoid the ONNX export issue
-        gates = x.matmul(self.weight_ih.t())
+        gates = torch.mm(x, self.weight_ih.t())
+        # matmul works
+        #gates = x.matmul(self.weight_ih.t())
         return gates
+    
+m = M(10)
+m.eval()
+# issue occurs in both jitted and non-jitted case
+m = torch.jit.script(m)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel(10)
+x = torch.ones(1, 10)
+output = m(x)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(1, 10, dtype=torch.float32)
+torch.onnx.export(
+    m,
+    x,
+    "test.onnx",
+    example_outputs=output,
+    input_names="x",
+    opset_version=11
+)
 
+onnx_model = onnx.load("test.onnx")
+print(onnx.helper.printable_graph(onnx_model.graph))

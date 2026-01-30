@@ -1,23 +1,36 @@
-# torch.rand(1, 1, 80, 170, 170, dtype=torch.float32) ← Add a comment line at the top with the inferred input shape
 import torch
-import torch.nn as nn
+import sys
+sys.path.append("/path/to/cloned_repo/pytorch-3dunet/")
+from pytorch3dunet.unet3d.model import get_model
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Define the UNet3D model structure here
-        # This is a placeholder for the actual UNet3D model
-        # The actual implementation can be found in the pytorch-3dunet repository
-        self.unet3d = nn.Identity()  # Placeholder for the UNet3D model
 
-    def forward(self, x):
-        return self.unet3d(x)
+model_config = {'name': 'UNet3D', 'in_channels': 1, 
+                'out_channels': 1, 'layer_order': 'gcr', 
+                'f_maps': 32, 'num_groups': 8, 'final_sigmoid': True}
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(1, 1, 80, 170, 170, dtype=torch.float32)
+def main():
+    # Create model
+    model = get_model(model_config)
+    model = torch.compile(model)
+    print("#### Model Loaded")
+    image = torch.rand(1,1,80,170,170)
 
+    from torch.profiler import ExecutionTraceObserver
+    et = ExecutionTraceObserver()
+    et.register_callback(f"unet3d_traces.json")
+    et.start()
+
+    print("#### Model Running")
+    output = model(image)
+
+    et.stop()
+    et.unregister_callback()
+
+    print("Model Ran Successfully")
+
+if __name__ == '__main__':
+    main()
+
+[tasklist]
+### Tasks

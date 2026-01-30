@@ -1,29 +1,19 @@
-# torch.rand(2, 2, dtype=torch.int64, device='cuda')  # Input shape and dtype for error reproduction
 import torch
-from torch import nn
+print("My pytorch version {}\n\n".format(torch.__version__))
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.rows = torch.as_tensor([0, 1, 1], dtype=torch.int64)
-        self.cols = torch.as_tensor([0, 0, 0], dtype=torch.int64)
-        self.values = torch.as_tensor([1, 1, 1], dtype=torch.int64)
+def test_index_put(device, dtype):
+    print("===== {}, {} =====".format(str(device), str(dtype)))
+    
+    A = torch.zeros((2,2), device = device, dtype = dtype)
+    values = torch.as_tensor([1, 1, 1], device = device,dtype = dtype)
+    rows =  torch.as_tensor([0, 1, 1], device = device, dtype = torch.int64)
+    cols =  torch.as_tensor([0, 0, 0], device = device, dtype = torch.int64)
+    idxes = (rows, cols)
+    A.index_put_(idxes, values, accumulate=True)
 
-    def forward(self, A):
-        # Move indices and values to input device/dtype
-        device = A.device
-        dtype = A.dtype
-        values = self.values.to(dtype=dtype, device=device)
-        rows = self.rows.to(device=device)
-        cols = self.cols.to(device=device)
-        # Perform index_put_ operation that triggers the bug on CUDA + int64
-        A.index_put_((rows, cols), values, accumulate=True)
-        return A
+    print(A)
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Returns CUDA tensor with int64 dtype to trigger the reported error
-    return torch.zeros((2, 2), dtype=torch.int64, device='cuda')
-
+test_index_put('cpu', torch.float32)
+test_index_put('cpu', torch.int64)
+test_index_put('cuda', torch.float32)
+test_index_put('cuda', torch.int64)

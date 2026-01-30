@@ -1,17 +1,16 @@
-# torch.rand(2, dtype=torch.float32)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, input):
-        x = input[0]
-        a = input[1]
-        n = (a * 1.234) // 8.234
-        return x + n
+def func(x, a):
+    n = (a * 1.234) // 8.234
+    y = x + n
+    return y
 
-def my_model_function():
-    return MyModel()
+cfunc = torch.compile(func, dynamic=True, fullgraph=True)
 
-def GetInput():
-    return torch.rand(2, dtype=torch.float32)
+device = "cuda"
+x = torch.tensor(0, dtype=torch.float32, device=device)
+a = 33
 
+out = cfunc(x, a)
+expected = func(x, a)
+torch.testing.assert_close(out, expected)

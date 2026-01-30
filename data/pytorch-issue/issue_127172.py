@@ -1,38 +1,22 @@
-# torch.rand(1, dtype=torch.float32)
 import torch
-from torch import nn
 
 class MyClass:
     foo: int = 1
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.m1 = MyClass()  # Case 1: MyClass instance
-        self.m2 = 0          # Case 2: integer 0
+@torch.compile(fullgraph=True)
+def func(x, m):
+    # return x + getattr(MyClass, "foo", 0)
+    if getattr(type(m), "foo", 0):
+        return x + MyClass.foo
+    return x
 
-    def forward(self, x):
-        # Compute outputs for both cases and return difference
-        # Case 1: m is MyClass instance (triggers Dynamo error when compiled)
-        m = self.m1
-        if getattr(type(m), "foo", 0):
-            out1 = x + MyClass.foo
-        else:
-            out1 = x
+m = MyClass()
+func(torch.zeros(()), m)
+func(torch.zeros(()), 0)
 
-        # Case 2: m is integer 0 (works without error)
-        m = self.m2
-        if getattr(type(m), "foo", 0):
-            out2 = x + MyClass.foo
-        else:
-            out2 = x
-
-        # Return tuple indicating outputs (error occurs in case1 when compiled)
-        return (out1, out2)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(1, dtype=torch.float32)
-
+def call_hasattr(self, tx, obj, attr):
+        if attr.is_python_constant():
+            name = attr.as_python_constant()
+            if isinstance(obj, BuiltinVariable):
+                return super(type(obj), obj).call_hasattr(tx, attr)
+            return obj.call_hasattr(tx, name)

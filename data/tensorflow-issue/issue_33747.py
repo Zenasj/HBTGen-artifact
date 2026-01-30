@@ -1,34 +1,60 @@
-# tf.random.uniform((B, 28, 28, 1), dtype=tf.float32) ← Input shape inferred from fashion_mnist dataset with a single grayscale channel
-
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Model layers similar to fashion_mnist example in issue
-        self.conv = tf.keras.layers.Conv2D(128, (3, 3), activation=None)
-        self.pool = tf.keras.layers.MaxPooling2D(pool_size=(2, 2), strides=(2, 2))
-        self.elu = tf.keras.layers.Activation('elu')
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense = tf.keras.layers.Dense(10)
-        self.softmax = tf.keras.layers.Activation('softmax')
+import numpy as np
 
-    def call(self, inputs, training=False):
-        x = self.conv(inputs)
-        x = self.pool(x)
-        x = self.elu(x)
-        x = self.flatten(x)
-        x = self.dense(x)
-        return self.softmax(x)
+# import distutils
+# if distutils.version.LooseVersion(tf.__version__) < '1.14':
+#     raise Exception('This notebook is compatible with TensorFlow 1.14 or higher, for TensorFlow 1.13 or lower please use the previous version at https://github.com/tensorflow/tpu/blob/r1.13/tools/colab/fashion_mnist.ipynb')
 
-def my_model_function():
-    # Return an instance of the model, no pretrained weights assumed
-    return MyModel()
+(x_train, y_train), (x_test, y_test) = tf.keras.datasets.fashion_mnist.load_data()
 
-def GetInput():
-    # Batch size chosen arbitrarily as 32 for example usage
-    batch_size = 32
-    height, width, channels = 28, 28, 1
-    # Return float32 tensor with values in [0, 1), matching dataset and model input
-    return tf.random.uniform((batch_size, height, width, channels), dtype=tf.float32)
+# add empty color dimension
+x_train = np.expand_dims(x_train, -1)
+x_test = np.expand_dims(x_test, -1)
 
+def create_model():
+  model = tf.keras.models.Sequential()
+
+  model.add(tf.keras.layers.Conv2D(128, (3, 3), input_shape=x_train.shape[1:]))
+  model.add(tf.keras.layers.MaxPooling2D(pool_size=(2, 2), strides=(2,2)))
+  model.add(tf.keras.layers.Activation('elu'))
+
+  model.add(tf.keras.layers.Flatten())
+  model.add(tf.keras.layers.Dense(10))
+  model.add(tf.keras.layers.Activation('softmax'))
+  
+  return model
+
+import os
+
+# # TF 1.x
+# resolver = tf.contrib.cluster_resolver.TPUClusterResolver(tpu='grpc://' + os.environ['COLAB_TPU_ADDR'])
+# tf.tpu.experimental.initialize_tpu_system(resolver)
+# strategy = tf.distribute.experimental.TPUStrategy(resolver)
+
+# TF 2.0
+resolver = tf.distribute.cluster_resolver.TPUClusterResolver(tpu='grpc://' + os.environ['COLAB_TPU_ADDR'])
+tf.config.experimental_connect_to_host(resolver.master())
+tf.tpu.experimental.initialize_tpu_system(resolver)
+strategy = tf.distribute.experimental.TPUStrategy(resolver)
+
+with strategy.scope():
+  model = create_model()
+  model.compile(
+    optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3),
+    loss=tf.keras.losses.sparse_categorical_crossentropy,
+    metrics=[tf.keras.metrics.sparse_categorical_accuracy])
+
+model.fit(
+  x_train.astype(np.float32), y_train.astype(np.float32),
+  epochs=5,
+  steps_per_epoch=60,
+  validation_data=(x_test.astype(np.float32), y_test.astype(np.float32)),
+  validation_freq=5
+)
+
+model.save_weights('./fashion_mnist.h5', overwrite=True)

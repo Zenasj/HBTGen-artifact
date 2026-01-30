@@ -1,26 +1,33 @@
-# torch.rand(2, dtype=torch.complex64)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        x_conj = x.clone()
-        x_physical = x.clone()
-        
-        # Problematic conjugate assignment using lazy conj (may fail)
-        xc1 = x_conj.conj()
-        x_conj[:] = xc1  # Triggers aliasing issue
-        
-        # Safe conjugate assignment using physical conj
-        xc2 = torch.conj_physical(x_physical)
-        x_physical[:] = xc2
-        
-        # Return True if results differ (indicating the bug's presence)
-        return torch.tensor([not torch.allclose(x_conj, x_physical)], dtype=torch.bool)
+x0 = torch.tensor([5 + 1j, 2 + 2j])
+x0 = torch.conj(x0)
+print(x0); print()
 
-def my_model_function():
-    return MyModel()
+x1 = torch.tensor([5 + 1j, 2 + 2j])
+xc1 = torch.conj(x1)
+print(xc1)
+x1[:] = xc1
+print(x1); print()
 
-def GetInput():
-    return torch.rand(2, dtype=torch.complex64)
+x2 = torch.tensor([5 + 1j, 2 + 2j])
+xc2 = torch.tensor([5 - 1j, 2 - 2j])
+print(xc2)
+x2[:] = xc2
+print(x2); print()
 
+print(xc1 == xc2)
+print(xc1.storage())
+print(xc2.storage())
+
+x = torch.tensor([1 + 1j])
+xc = torch.conj(x)
+xc[:] = torch.resolve_conj(xc)
+print(xc)
+print(x)
+
+x = torch.tensor([1 + 1j])
+xc = torch.conj(x)
+xc[:] = torch.conj_physical(xc)
+print(xc)
+print(x)

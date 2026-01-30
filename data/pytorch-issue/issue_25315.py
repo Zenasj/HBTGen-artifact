@@ -1,45 +1,41 @@
-# torch.rand(1, 3, 4, dtype=torch.float32, device='cuda')  # Inferred input shape for the RNN models
-
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.rnn = nn.RNN(4, 4)
-        self.lstm = nn.LSTM(4, 4)
-        self.gru = nn.GRU(4, 4)
+model = torch.nn.Sequential(torch.nn.Linear(4, 3), torch.nn.Sigmoid()).to(gpu)
+model_in = torch.rand(3, 4, requires_grad=True, device=gpu)
+model_out = model(model_in)
+model_first_grad = torch.autograd.grad(model_out.sum(), model_in, create_graph=True)[0]
+model_second_grad = torch.autograd.grad(model_first_grad.sum(), model_in)[0]
+print(model_second_grad) # this returns the second grad
 
-    def forward(self, x):
-        # Run RNN, LSTM, and GRU and return their outputs
-        rnn_out, _ = self.rnn(x)
-        lstm_out, _ = self.lstm(x)
-        gru_out, _ = self.gru(x)
-        return rnn_out, lstm_out, gru_out
+import torch
+gpu = torch.device('cuda')
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+rnn_model = torch.nn.RNN(4, 4).to(gpu)
+rnn_in = torch.rand(1, 3, 4, requires_grad=True, device=gpu)
+rnn_out, _ = rnn_model(rnn_in)
+rnn_first_grad = torch.autograd.grad(rnn_out.sum(), rnn_in, create_graph=True)[0]
+rnn_second_grad = torch.autograd.grad(rnn_first_grad.sum(), rnn_in)[0]
+print(rnn_second_grad) # this never runs
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    gpu = torch.device('cuda')
-    return torch.rand(1, 3, 4, requires_grad=True, device=gpu)
+import torch
+gpu = torch.device('cuda')
 
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# rnn_out, lstm_out, gru_out = model(input_tensor)
-# Note: The second derivative code for these RNNs is not implemented, so running second-order gradients will raise an error.
+with torch.backends.cudnn.flags(enabled=False):
+    rnn_model = torch.nn.LSTM(4, 4).to(gpu)
+    rnn_in = torch.rand(1, 3, 4, requires_grad=True, device=gpu)
+    rnn_out, _ = rnn_model(rnn_in)
+    rnn_first_grad = torch.autograd.grad(rnn_out.sum(), rnn_in, create_graph=True)[0]
+    rnn_second_grad = torch.autograd.grad(rnn_first_grad.sum(), rnn_in)[0]
+    print(rnn_second_grad) # this never runs
 
-# ### Explanation:
-# 1. **MyModel Class**:
-#    - The `MyModel` class encapsulates three RNN models: `nn.RNN`, `nn.LSTM`, and `nn.GRU`.
-#    - The `forward` method runs all three models on the input tensor and returns their outputs.
-# 2. **my_model_function**:
-#    - This function returns an instance of `MyModel`.
-# 3. **GetInput Function**:
-#    - This function generates a random tensor input with the shape `(1, 3, 4)` and `requires_grad=True` to match the input expected by the RNN models.
-# 4. **Second Derivative**:
-#    - As noted in the comments, the second derivative (double backward) for these RNN models is not implemented, and running second-order gradients will raise an error. This is consistent with the issue description.
-# This code can be used to create and run the RNN models, but it will not support second-order gradients due to the limitations mentioned in the GitHub issue.
+import torch
+gpu = torch.device('cuda')
+
+with torch.backends.cudnn.flags(enabled=False):
+    rnn_model = torch.nn.GRU(4, 4).to(gpu)
+    rnn_in = torch.rand(1, 3, 4, requires_grad=True, device=gpu)
+    rnn_out, _ = rnn_model(rnn_in)
+    rnn_out = rnn_out.pow(2)  # to ensure hessian exists
+    rnn_first_grad = torch.autograd.grad(rnn_out.sum(), rnn_in, create_graph=True)[0]
+    rnn_second_grad = torch.autograd.grad(rnn_first_grad.sum(), rnn_in)[0]
+    print(rnn_second_grad) # this never runs

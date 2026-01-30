@@ -1,11 +1,14 @@
-# torch.rand(B, 3, 32, 32, dtype=torch.float32)  # Inferred input shape based on model architecture
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class MyModel(nn.Module):
+import torch
+from torch import nn, optim
+from torch.nn import functional as F
+
+# Define model
+class TheModelClass(nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
+        super(TheModelClass, self).__init__()
         self.conv1 = nn.Conv2d(3, 6, 5)
         self.pool = nn.MaxPool2d(2, 2)
         self.conv2 = nn.Conv2d(6, 16, 5)
@@ -22,9 +25,18 @@ class MyModel(nn.Module):
         x = self.fc3(x)
         return x
 
-def my_model_function():
-    return MyModel()
+# Initialize model
+model = TheModelClass()
 
-def GetInput():
-    return torch.randn(1, 3, 32, 32, dtype=torch.float32)
+# Initialize optimizer
+optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
 
+# Print model's state_dict
+print("Model's state_dict:")
+for param_tensor in model.state_dict():
+    print(param_tensor, "\t", model.state_dict()[param_tensor].size())
+
+# Print optimizer's state_dict
+print("Optimizer's state_dict:")
+for var_name in optimizer.state_dict():
+    print(var_name, "\t", optimizer.state_dict()[var_name])

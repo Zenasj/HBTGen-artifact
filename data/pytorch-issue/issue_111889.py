@@ -1,26 +1,35 @@
-# torch.rand(9, 360000, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
-
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
+# Set a deterministic seed
+torch.manual_seed(42)
 
-    def forward(self, tensor):
-        N = tensor.shape[0]
-        l1_distances = torch.empty(N, N, device=tensor.device)
-        for i in range(N):
-            l1_distances[i] = torch.sum(torch.abs(tensor[i] - tensor), dim=1)
-        return l1_distances
+# Ensure MPS backend is available
+if not torch.backends.mps.is_available():
+    raise ValueError("MPS backend is not available on this machine.")
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+# Create a random tensor
+A = torch.randn(9, 360000)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(9, 360000, device='cpu')  # You can change the device to 'mps' if available
+# Define the pairwise L1 distance function
+def compute_l1_distances(tensor):
+    N = tensor.shape[0]
+    l1_distances = torch.empty(N, N)
+    for i in range(N):
+        l1_distances[i] = torch.sum(torch.abs(tensor[i] - tensor), dim=1)
+    return l1_distances
 
-# This code defines a `MyModel` class that computes the L1 distances between rows of a given tensor. The `GetInput` function generates a random tensor with the shape `(9, 360000)` which is the input expected by the model. The `my_model_function` returns an instance of `MyModel`.
-# The issue was related to the device on which the `l1_distances` tensor was allocated. The fix ensures that the `l1_distances` tensor is allocated on the same device as the input tensor. This should resolve the discrepancy between CPU and MPS computations.
+# Compute on CPU
+A_cpu = A.cpu()
+l1_cpu = compute_l1_distances(A_cpu)
+print("L1 distances (CPU):")
+print(l1_cpu)
+
+# Compute on MPS
+A_mps = A.to(torch.device("mps"))
+l1_mps = compute_l1_distances(A_mps)
+print("\nL1 distances (MPS):")
+print(l1_mps)
+
+# Check for differences
+diff = (l1_cpu.cpu() - l1_mps.cpu()).abs().max().item()
+print(f"\nMaximum absolute difference: {diff}")

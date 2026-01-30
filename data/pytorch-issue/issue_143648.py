@@ -1,14 +1,21 @@
-# torch.rand((), dtype=torch.float32)
+n = 0
+input = torch.tensor(2, dtype=torch.float32)
+
 import torch
-from torch import nn
+import scipy
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return torch.special.polygamma(0, x)
+def polygamma(n, input):
+    return torch.special.polygamma(n, input)
 
-def my_model_function():
-    return MyModel()
+@torch.compile
+def compiled_polygamma(n, input):
+    return torch.special.polygamma(n, input)
 
-def GetInput():
-    return torch.rand((), dtype=torch.float32)
+n = 0
+input = torch.tensor(2, dtype=torch.float32)
+print(f"polygamma in Eager mode: ", polygamma(n, input))  # 0.4228
+print(f"polygamma in compiled mode: ", compiled_polygamma(n, input))  # -inf
+print(f"Scipy's result: ", scipy.special.polygamma(n, input.item()))  # 0.42278433509846713
 
+import torch
+print(torch.special.zeta(torch.tensor(0)+1, 2))  # inf

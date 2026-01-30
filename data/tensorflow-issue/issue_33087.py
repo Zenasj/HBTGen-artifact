@@ -1,81 +1,36 @@
-# tf.random.uniform((batch_size, seq_len, vocab_size), dtype=tf.float32)
+from tensorflow.keras import layers
 
-import tensorflow as tf
+encoder_inputs = Input(shape=(None, vocab_size))
+decoder_inputs = Input(shape=(None, vocab_size))
 
-class MyModel(tf.keras.Model):
-    def __init__(self, vocab_size=162, units=512, dropout=0.0):
-        super().__init__()
-        # Encoder: Bidirectional GRU with return_sequences and return_state
-        self.encoder_bigru = tf.keras.layers.Bidirectional(
-            tf.keras.layers.GRU(units,
-                                return_sequences=True,
-                                return_state=True,
-                                dropout=dropout))
-        # Decoder: GRU with double units (because encoder states concatenated)
-        self.decoder_gru = tf.keras.layers.GRU(units * 2,
-                                               return_sequences=True,
-                                               return_state=True,
-                                               dropout=dropout)
-        # Attention layer
-        self.attention = tf.keras.layers.Attention()
-        # Dense projection wrapped in TimeDistributed for output
-        self.dense_time = tf.keras.layers.TimeDistributed(
-            tf.keras.layers.Dense(vocab_size, activation="softmax"))
-        self.vocab_size = vocab_size
-        self.units = units
+encoder_bigru = Bidirectional(GRU(units, return_sequences=True, return_state=True, dropout=dropout))
 
-    def call(self, inputs, training=False):
-        """
-        inputs: tuple/list of two tensors (encoder_inputs, decoder_inputs)
-          encoder_inputs: shape (batch_size, enc_seq_len, vocab_size)
-          decoder_inputs: shape (batch_size, dec_seq_len, vocab_size)
-        returns:
-          decoder_pred: shape (batch_size, dec_seq_len, vocab_size), softmax output
-        """
-        encoder_inputs, decoder_inputs = inputs
+encoder_out, encoder_fwd_state, encoder_back_state = encoder_bigru(encoder_inputs)
+encoder_states = Concatenate(axis=-1)([encoder_fwd_state, encoder_back_state])
 
-        # Encoder forward pass
-        encoder_out, fwd_state, back_state = self.encoder_bigru(encoder_inputs,
-                                                                training=training)
-        # Concatenate forward and backward states for decoder initial state
-        encoder_states = tf.keras.layers.Concatenate(axis=-1)([fwd_state, back_state])
+decoder_gru = GRU(units * 2, return_sequences=True, return_state=True, dropout=dropout)
 
-        # Decoder forward pass, using encoder_states as initial_state
-        decoder_out, _ = self.decoder_gru(decoder_inputs,
-                                          initial_state=encoder_states,
-                                          training=training)
+decoder_out, decoder_state = decoder_gru(decoder_inputs, initial_state=encoder_states)
 
-        # Compute attention between decoder output and encoder output
-        attn_out = self.attention([decoder_out, encoder_out])
+attn_out = Attention()([decoder_out, encoder_out])
+decoder_concat_input = Concatenate(axis=-1)([decoder_out, attn_out])
 
-        # Concatenate decoder GRU output with attention output
-        decoder_concat_input = tf.keras.layers.Concatenate(axis=-1)([decoder_out, attn_out])
+dense_time = TimeDistributed(Dense(vocab_size, activation="softmax"))
 
-        # Final output projection with softmax over vocab
-        decoder_pred = self.dense_time(decoder_concat_input)
+decoder_pred = dense_time(decoder_concat_input)
 
-        return decoder_pred
+model = Model(inputs=[encoder_inputs, decoder_inputs], outputs=decoder_pred)
+model.compile(optimizer="adam", loss="categorical_crossentropy")
 
+from tensorflow.keras import Model
+from tensorflow.keras.callbacks import CSVLogger, TensorBoard, ModelCheckpoint, EarlyStopping
+from tensorflow.keras.layers import Input, Concatenate, Bidirectional, GRU, TimeDistributed, Dense, Attention
 
-def my_model_function():
-    # Return an instance of MyModel with default parameters simulating the issue's setup
-    return MyModel(vocab_size=162, units=512, dropout=0.0)
+callbacks = [
+  CSVLogger(filename=PATH, separator=";", append=True),
+  TensorBoard(log_dir=PATH, histogram_freq=10, profile_batch=0, write_graph=True, write_images=False, update_freq="epoch"),
+  ModelCheckpoint(filepath=PATH, monitor="val_loss", save_best_only=True, save_weights_only=True, verbose=1),
+  EarlyStopping(monitor="val_loss", min_delta=0.001, patience=40, restore_best_weights=True, verbose=1)
+]
 
-
-def GetInput():
-    # Generate a tuple of two inputs matching the expected input shapes:
-    # - encoder_inputs shape: (batch_size, enc_seq_len, vocab_size)
-    # - decoder_inputs shape: (batch_size, dec_seq_len, vocab_size)
-    # Use batch_size=128, enc_seq_len=128, dec_seq_len=128 as example from issue
-    batch_size = 128
-    enc_seq_len = 128
-    dec_seq_len = 128
-    vocab_size = 162
-
-    encoder_inputs = tf.random.uniform(
-        (batch_size, enc_seq_len, vocab_size), dtype=tf.float32)
-    decoder_inputs = tf.random.uniform(
-        (batch_size, dec_seq_len, vocab_size), dtype=tf.float32)
-
-    return encoder_inputs, decoder_inputs
-
+[one_hot_inputs, one_hot_decoders], one_hot_targets

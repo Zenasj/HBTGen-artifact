@@ -1,8 +1,8 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)
 import torch
-from torch import nn
+import torch.nn as nn
 
 class ScaleFunc(torch.autograd.Function):
+
     @staticmethod
     def forward(ctx, input, scale):
         ctx.save_for_backward(input, scale)
@@ -10,24 +10,19 @@ class ScaleFunc(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output):
-        input, scale = ctx.saved_tensors  # Use ctx.saved_tensors for PyTorch 0.4+
-        grad_input = grad_output * scale
-        grad_scale = torch.mean(grad_output * input)
-        return grad_input, grad_scale
+        input, scale = ctx.saved_variables
+        return grad_output * scale, torch.mean(grad_output * input)
 
-class MyModel(nn.Module):
+class ScaleLayer(nn.Module):
+
     def __init__(self, init_value=1e-3):
         super().__init__()
-        # Use torch.full((), init_value) to create a scalar (0-dim) parameter
-        self.scale = nn.Parameter(torch.full((), init_value))
+        self.scale = nn.Parameter(torch.FloatTensor(1).fill_(init_value))
 
     def forward(self, input):
         return ScaleFunc.apply(input, self.scale)
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Match the original example's input shape (3,7) extended to 4D (B,C,H,W)
-    return torch.randn(3, 7, 1, 1)
-
+scale_layer = ScaleLayer()
+x = torch.randn(3,7)
+y = scale_layer(x).mean()
+y.backward()

@@ -1,19 +1,30 @@
-# tf.random.uniform((1, 512, 512, 3), dtype=tf.float32) ← Input shape inferred from example usage in the issue 
-
 import tensorflow as tf
 from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
-class MyModel(tf.keras.Model):
+class UNet(keras.Model):
     """
-    UNet-like architecture implemented as a Keras Model subclass.
-    This model uses encoder and decoder blocks with Conv2D and Conv2DTranspose layers
-    along with batch normalization, dropout, and nonlinearities.
+    UNet Architecture concatenating encoder and decoder
 
-    The original issue was that trainable variables were empty when layers were appended 
-    to lists initialized as instance attributes first, instead of building lists locally 
-    and assigning them as instance attributes at the end of __init__.
-    This implementation fixes that by setting encoder_layers, decoder_layers,
-    and concat_layers attributes after construction, ensuring Keras tracks the sublayers properly.
+    Examples:
+        * Direct Usage:
+
+            .. testcode::
+
+                x = tf.ones((1, 512, 512, 3))
+                u_net = UNet(input_res = 512,
+                             min_res=4,
+                             kernel_size=4,
+                             initial_filters=64,
+                             filters_cap=512,
+                             channels=3)
+                y = u_net(x)
+                print(y.shape)
+
+            .. testoutput::
+                (1, 512, 512, 3)
+
     """
 
     def __init__(
@@ -32,7 +43,7 @@ class MyModel(tf.keras.Model):
     ):
         super().__init__()
 
-        # Store params
+        # layer specification
         self.use_dropout_encoder = use_dropout_encoder
         self.use_dropout_decoder = use_dropout_decoder
         self.dropout_probability = dropout_prob
@@ -40,26 +51,29 @@ class MyModel(tf.keras.Model):
         self.decoder_non_linearity = decoder_non_linearity
         self.kernel_size = kernel_size
 
-        # Important: build lists locally first, assign to self at the end
-        encoder_layers = []
-        decoder_layers = []
-        concat_layers = []
+        # encoder layers is a list of list, each list is a "block",
+        # this makes easy the creation of decoder
+        self.encoder_layers = []
+        self.decoder_layers = []
+        self.concat_layers = []
 
-        # Encoder layers spec - identical to original
+        # ########### Encoder creation
         encoder_layers_spec = [128, 256, 512, 512, 512, 512, 512, 512]
 
+        decoder_layer_spec = []
         for i, filters in enumerate(encoder_layers_spec):
-            block = self.get_encoder_block(filters, use_bn=(i != 0))
-            encoder_layers.append(block)
+            self.encoder_layers.append(self.get_encoder_block(filters, use_bn=(i != 0)))
 
-        # Decoder layers spec
-        decoder_layer_spec = [512, 512, 512, 512, 512, 256, 128]
+        # ############## Decoder creation
+        decoder_layer_spec =[512, 512, 512, 512, 512, 256, 128]
 
         for i, filters in enumerate(decoder_layer_spec):
-            concat_layers.append(keras.layers.Concatenate())
-            block = self.get_decoder_block(filters, use_dropout=(i < 3))
-            decoder_layers.append(block)
+            self.concat_layers.append(keras.layers.Concatenate())
+            self.decoder_layers.append(
+                self.get_decoder_block(filters, use_dropout=(i < 3))
+            )
 
+        # final layer
         initializer = tf.random_normal_initializer(0.0, 0.02)
         self.final_layer = keras.layers.Conv2DTranspose(
             channels,
@@ -70,11 +84,6 @@ class MyModel(tf.keras.Model):
             kernel_initializer=initializer,
         )
 
-        # Assign to instance attributes *after* list creation (fix the trackability issue)
-        self.encoder_layers = encoder_layers
-        self.decoder_layers = decoder_layers
-        self.concat_layers = concat_layers
-
     def get_block(
         self,
         filters,
@@ -84,6 +93,7 @@ class MyModel(tf.keras.Model):
         non_linearity=keras.layers.LeakyReLU,
     ):
         initializer = tf.random_normal_initializer(0.0, 0.02)
+        # Conv2D
         block = [
             conv_layer(
                 filters,
@@ -95,12 +105,15 @@ class MyModel(tf.keras.Model):
             )
         ]
 
+        # Batch normalization
         if use_bn:
             block.append(keras.layers.BatchNormalization())
 
+        # dropout
         if use_dropout:
             block.append(keras.layers.Dropout(self.dropout_probability))
 
+        # Non linearity
         block.append(non_linearity())
 
         return block
@@ -123,50 +136,117 @@ class MyModel(tf.keras.Model):
             non_linearity=self.decoder_non_linearity,
         )
 
-    def call(self, inputs, training=True):
-        # Evaluate encoder blocks sequentially, save intermediate outputs
-        x = inputs
+    def __call__(self, inputs, training=True):
+        # encoders evaluated
         encoder_layer_eval = []
+        x = inputs
 
         for block in self.encoder_layers:
             for layer in block:
-                # BatchNorm and Dropout layers receive training flag
-                if isinstance(layer, keras.layers.BatchNormalization) or isinstance(layer, keras.layers.Dropout):
+                if isinstance(layer, keras.layers.BatchNormalization) or isinstance(
+                    layer, keras.layers.Dropout
+                ):
                     x = layer(x, training=training)
                 else:
                     x = layer(x)
             encoder_layer_eval.append(x)
 
-        # Remove last encoder layer output (matches original code)
         encoder_layer_eval = encoder_layer_eval[:-1]
 
-        # Decode by going through decoder blocks and concatenate with encoder layers
         for i, block in enumerate(self.decoder_layers):
             for layer in block:
-                if isinstance(layer, keras.layers.BatchNormalization) or isinstance(layer, keras.layers.Dropout):
+                if isinstance(layer, keras.layers.BatchNormalization) or isinstance(
+                    layer, keras.layers.Dropout
+                ):
                     x = layer(x, training=training)
                 else:
                     x = layer(x)
             x = self.concat_layers[i]([x, encoder_layer_eval[-1 - i]])
 
         x = self.final_layer(x)
+
         return x
 
+self.encoder_layers = []
+self.decoder_layers = []
+self.concat_layers = []
 
-def my_model_function():
-    # Return an instance of MyModel, with example parameters consistent with original
-    return MyModel(
-        input_res=512,
-        min_res=4,
-        kernel_size=4,
-        initial_filters=64,
-        filters_cap=512,
-        channels=3,
-    )
+def __init__(
+        self,
+        input_res,
+        min_res,
+        kernel_size,
+        initial_filters,
+        filters_cap,
+        channels,
+        use_dropout_encoder=True,
+        use_dropout_decoder=True,
+        dropout_prob=0.3,
+        encoder_non_linearity=keras.layers.LeakyReLU,
+        decoder_non_linearity=keras.layers.ReLU,
+    ):
+        super().__init__()
 
+        # layer specification
+        self.use_dropout_encoder = use_dropout_encoder
+        self.use_dropout_decoder = use_dropout_decoder
+        self.dropout_probability = dropout_prob
+        self.encoder_non_linearity = encoder_non_linearity
+        self.decoder_non_linearity = decoder_non_linearity
+        self.kernel_size = kernel_size
 
-def GetInput():
-    # Return a random tensor compatible with the model's expected input
-    # Shape: (batch=1, height=512, width=512, channels=3), dtype float32 per example in the issue
-    return tf.random.uniform((1, 512, 512, 3), dtype=tf.float32)
+        # encoder layers is a list of list, each list is a "block",
+        # this makes easy the creation of decoder
+        # IMPORTANT! Do not initialize here instance attributes
+        encoder_layers = []
+        decoder_layers = []
+        concat_layers = []
 
+        # ########### Encoder creation
+        encoder_layers_spec =  [128, 256, 512, 512, 512, 512, 512, 512]
+
+        for i, filters in enumerate(encoder_layers_spec):
+            block = self.get_encoder_block(filters, use_bn=(i != 0))
+            encoder_layers.append(block)
+
+        # ############## Decoder creation
+        decoder_layer_spec = [512, 512, 512, 512, 512, 256, 128]
+
+        for i, filters in enumerate(decoder_layer_spec):
+            concat_layers.append(keras.layers.Concatenate())
+            block = self.get_decoder_block(filters, use_dropout=(i < 3))
+            decoder_layers.append(block)
+
+        # final layer
+        initializer = tf.random_normal_initializer(0.0, 0.02)
+        self.final_layer = keras.layers.Conv2DTranspose(
+            channels,
+            self.kernel_size,
+            strides=(2, 2),
+            padding="same",
+            activation=keras.activations.tanh,
+            kernel_initializer=initializer,
+        )
+       # intialize here object attributes!!!!!!!
+        self.encoder_layers = encoder_layers
+        self.decoder_layers = decoder_layers
+        self.concat_layers = concat_layers
+
+class M(tf.keras.models.Model):
+
+    def __init__(self):
+        super(M, self).__init__()
+        self._list = []
+        self._list.append([tf.keras.layers.Dense(5), tf.keras.layers.Dense(5)])
+        self._list.append([tf.keras.layers.Dense(5), tf.keras.layers.Dense(5)])
+
+    def call(self, inputs):
+        output = inputs
+        for l_list in self._list:
+            for l in l_list:
+                output = l(output)
+        return output
+
+m = M()
+m(tf.ones((10, 10)))
+print(len(m.trainable_variables)) # Got 8

@@ -1,83 +1,113 @@
-# tf.random.uniform((256, 128, 1), dtype=tf.float32) ← input shape (batch_size=256, sequence_length=128, channels=1)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
+
+import datetime
+import os
+
+import pandas as pd
+from numpy import reshape
 
 import tensorflow as tf
 
-RNN_SEQ_LEN = 128     # Sequence length for LSTM input
-L_AMOUNT = 2          # Number of output labels/classes
+EPOCHS = 500
+BATCH_SIZE = 256
+TEST_SET_RATIO = 0.2
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        DROPOUT = 0.2
-        
-        # Define the 3-layer stacked LSTM architecture replicating the Sequential model from issue
-        self.lstm1 = tf.keras.layers.LSTM(
-            units=RNN_SEQ_LEN, 
-            return_sequences=True, 
-            input_shape=(RNN_SEQ_LEN, 1))
-        self.drop1 = tf.keras.layers.Dropout(DROPOUT)
-        self.bn1 = tf.keras.layers.BatchNormalization()
-        
-        self.lstm2 = tf.keras.layers.LSTM(
-            units=RNN_SEQ_LEN, 
-            return_sequences=True)
-        self.drop2 = tf.keras.layers.Dropout(DROPOUT / 2)
-        self.bn2 = tf.keras.layers.BatchNormalization()
-        
-        self.lstm3 = tf.keras.layers.LSTM(units=RNN_SEQ_LEN)
-        self.drop3 = tf.keras.layers.Dropout(DROPOUT)
-        self.bn3 = tf.keras.layers.BatchNormalization()
-        
-        self.dense_out = tf.keras.layers.Dense(
-            L_AMOUNT, activation='softmax')
+LEARNING_RATE = 0.001
+DECAY = 3e-5
+LOSS_FUNC = 'categorical_crossentropy'
+DROPOUT = 0.2
+OUTPUT_PATH = "e:\\ml"
 
-    def call(self, inputs, training=False):
-        x = self.lstm1(inputs)
-        x = self.drop1(x, training=training)
-        x = self.bn1(x, training=training)
-        
-        x = self.lstm2(x)
-        x = self.drop2(x, training=training)
-        x = self.bn2(x, training=training)
-        
-        x = self.lstm3(x)
-        x = self.drop3(x, training=training)
-        x = self.bn3(x, training=training)
-        
-        x = self.dense_out(x)
-        return x
+RNN_SEQ_LEN = 128  # number of RNN/LSTM sequence features
+L_AMOUNT = 2  # number of labels
+
+MIN_ACC_TO_SAVE_MODEL = 0.6
 
 
-def my_model_function():
-    """
-    Returns an instance of MyModel compiled with 
-    Adam optimizer with learning rate and decay as per issue,
-    categorical crossentropy loss and accuracy metric.
-    """
-    model = MyModel()
-    
-    # Compile the model same as in the issue
-    LEARNING_RATE = 0.001
-    DECAY = 3e-5
-    optimizer = tf.keras.optimizers.Adam(LEARNING_RATE, decay=DECAY)
-    
-    model.compile(
-        optimizer=optimizer,
-        loss='categorical_crossentropy',
-        metrics=['accuracy'])
-    
-    return model
+def create_model():
+    new_model = tf.keras.models.Sequential()
+
+    # NETWORK INPUT
+    new_model.add(tf.keras.layers.LSTM(RNN_SEQ_LEN, input_shape=TR_FEATURES.shape[1:], return_sequences=True))
+    new_model.add(tf.keras.layers.Dropout(DROPOUT))
+    new_model.add(tf.keras.layers.BatchNormalization())
+
+    new_model.add(tf.keras.layers.LSTM(RNN_SEQ_LEN, return_sequences=True))
+    new_model.add(tf.keras.layers.Dropout(DROPOUT / 2))
+    new_model.add(tf.keras.layers.BatchNormalization())
+
+    new_model.add(tf.keras.layers.LSTM(RNN_SEQ_LEN))
+    new_model.add(tf.keras.layers.Dropout(DROPOUT))
+    new_model.add(tf.keras.layers.BatchNormalization())
+
+    # NETWORK OUTPUT
+    new_model.add(tf.keras.layers.Dense(L_AMOUNT, activation=tf.keras.activations.softmax))
+
+    opt = tf.keras.optimizers.Adam(LEARNING_RATE, decay=DECAY)
+    new_model.compile(optimizer=opt,
+                      loss=LOSS_FUNC,
+                      metrics=['accuracy'])
+
+    print(new_model.summary())
+    return new_model
 
 
-def GetInput():
-    """
-    Generates a random tensor input with shape:
-    (BATCH_SIZE=256, SEQUENCE_LENGTH=128, CHANNELS=1)
-    matching the model input shape.
-    Values are floats in [0, 1).
-    """
-    BATCH_SIZE = 256
-    SEQ_LENGTH = 128
-    CHANNELS = 1
-    return tf.random.uniform((BATCH_SIZE, SEQ_LENGTH, CHANNELS), dtype=tf.float32)
+class CustomModelCheckpoint(tf.keras.callbacks.ModelCheckpoint):
+    def __init__(self, fp, monitor='val_loss', verbose=0, save_best_only=False, save_weights_only=False, mode='auto', save_freq='epoch', **kwargs):
+        super().__init__(fp, monitor, verbose, save_best_only, save_weights_only, mode, save_freq, **kwargs)
 
+    def on_epoch_end(self, epoch, logs=None):
+        print("\n-------------------------------------------------------------------------------------------------------")
+        print(f"epoch: {epoch}, training_acc: {round(float(logs['accuracy']), 4)}, validation_acc: {round(float(logs['val_accuracy']), 4)}")
+        print("-------------------------------------------------------------------------------------------------------\n")
+
+        if MIN_ACC_TO_SAVE_MODEL <= logs['accuracy']:
+            super().on_epoch_end(epoch, logs)
+
+
+if __name__ == '__main__':
+    data_filename = 'input_data.csv'
+    print("Loading data file: %s" % data_filename)
+    dataset = pd.read_csv(data_filename, delimiter=',', header=None)
+    dataset = dataset.drop(columns=[0, 1, 2, 3, 4, 5, 6]).values  # drop columns with additional information
+
+    test_set_size = int(len(dataset) * TEST_SET_RATIO)
+    print("Test set split at: %d" % test_set_size)
+
+    train_data = dataset[:-test_set_size]
+    test_data = dataset[-test_set_size:]  # use most recent data for validation (extract before shuffle)
+
+    TR_F = train_data[:, 0:RNN_SEQ_LEN]
+    TS_F = test_data[:, 0:RNN_SEQ_LEN]
+
+    TR_L = train_data[:, RNN_SEQ_LEN:RNN_SEQ_LEN + L_AMOUNT]
+    TS_L = test_data[:, RNN_SEQ_LEN:RNN_SEQ_LEN + L_AMOUNT]
+
+    TR_FEATURES = reshape(TR_F, (len(TR_F), RNN_SEQ_LEN, 1))
+    TS_FEATURES = reshape(TS_F, (len(TS_F), RNN_SEQ_LEN, 1))
+
+    model = create_model()
+
+    TRAINING_TIMESTAMP = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    model_name = "sscce_%s" % TRAINING_TIMESTAMP
+    os.mkdir("%s\\models\\%s" % (OUTPUT_PATH, model_name))
+    filepath = "%s\\models\\%s\\%s--{epoch:02d}-{val_accuracy:.3f}.model" % (OUTPUT_PATH, model_name, model_name)
+    checkpoint = CustomModelCheckpoint(filepath,
+                                       monitor='val_accuracy',
+                                       verbose=1,
+                                       save_best_only=True,
+                                       mode='max')
+
+    log_dir = "%s\\logs\\fit\\%s.model" % (OUTPUT_PATH, model_name)
+    tensorboard = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1, profile_batch=0)
+
+    model.fit(x=TR_FEATURES,
+              y=TR_L,
+              epochs=EPOCHS,
+              batch_size=BATCH_SIZE,
+              shuffle=True,
+              validation_data=(TS_FEATURES, TS_L),
+              callbacks=[checkpoint, tensorboard])

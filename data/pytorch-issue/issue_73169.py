@@ -1,32 +1,11 @@
-# torch.rand(B, C, H, W, dtype=...)  # This line is a placeholder. The actual input shape and dtype are defined in GetInput()
 import torch
-import torch.nn as nn
+results = dict()
+input_tensor = torch.rand([3, 3], dtype=torch.complex128)
+out_tensor = torch.rand([3, 3], dtype=torch.float64)
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Define the model structure
-        self.abs_layer = nn.Identity()  # Placeholder for abs operation
-        self.arccos_layer = nn.Identity()  # Placeholder for arccos operation
-
-    def forward(self, x):
-        # Apply abs operation
-        abs_output = torch.abs(x)
-        
-        # Apply arccos operation
-        try:
-            arccos_output = torch.arccos(x)
-        except RuntimeError as e:
-            arccos_output = e
-        
-        return abs_output, arccos_output
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    input_tensor = torch.rand([3, 3], dtype=torch.complex128)
-    return input_tensor
-
+print(torch.abs(input_tensor.clone(), out=out_tensor.clone()))
+# tensor([[0.2063, 1.2438, 1.3721],
+#      [0.6465, 1.1026, 0.7529],
+#      [1.2668, 1.0570, 0.3174]], dtype=torch.float64)
+torch.arccos(input_tensor.clone(), out=out_tensor.clone())
+# RuntimeError: result type ComplexDouble can't be cast to the desired output type Double

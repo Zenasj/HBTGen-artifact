@@ -1,51 +1,60 @@
 import torch
-import torch.multiprocessing as mp
-import os
+from torch.multiprocessing import Process, Queue, set_start_method
 
-# torch.rand(2, 1000, dtype=torch.float32)  # Input shape inferred from the kernel's batch_tensor
-class MyModel(torch.nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Dummy model to fulfill structure requirements
-        self.identity = torch.nn.Identity()
+def worker(input_queue, results_queue, exit_queue):
+    start, end, tensor = input_queue.get()
+    # I put start, end too as an identifier for this process/result
+    results_queue.put((start, end, tensor[start:end].float().mean()))
+    exit_queue.get()
 
-    def forward(self, x):
-        return self.identity(x)
+if __name__ == "__main__":
+    set_start_method("spawn")
 
-def my_model_function():
-    return MyModel()
+    input_queue = Queue()
+    results_queue = Queue()
+    exit_queue = Queue()
 
-def GetInput():
-    return torch.rand(2, 1000, dtype=torch.float32)
+    tensor = torch.arange(100)
+    step = 10
+    n_procs = 0
+    for start in range(0, len(tensor), step):
+        end = start + step - 1
+        input_queue.put((start, end, tensor))
+        n_procs += 1
 
-def worker(queue, exit_queue, device):
-    model = my_model_function()
-    input_tensor = GetInput()
-    output = model(input_tensor)
-    queue.put(output)
-    print(f"Worker {os.getpid()} finished processing")
-    exit_queue.get()  # Wait for exit signal
+    procs = []
+    for _ in range(n_procs):
+        proc = Process(target=worker, args=(input_queue, results_queue, exit_queue))
+        proc.start()
+        procs.append(proc)
 
-def run_synchronized_multiprocessing():
-    mp.set_start_method("spawn")
-    exit_queue = mp.Queue()
+    results = [results_queue.get() for _ in range(n_procs)]
+    print(results)
+
+    for _ in range(n_procs):
+        exit_queue.put(1)
+
+    for proc in procs:
+        proc.join()
+
+def kernel(q,  device):
+    batch_tensor = torch.FloatTensor(2, 1000)
+    # some operation
+    q.put(batch_tensor)
+    print('finish')
+
+if __name__ == "__main__":
     q = mp.Queue()
-    processes = []
+    jobs = []
     device_list = [0, 1]
     for device in device_list:
-        p = mp.Process(target=worker, args=(q, exit_queue, device))
-        p.start()
-        processes.append(p)
-    
-    # Read all results first before signaling workers to exit
-    results = [q.get() for _ in range(len(device_list))]
-    
-    # Send exit signals to all workers
-    for _ in range(len(device_list)):
-        exit_queue.put(None)
-    
-    for p in processes:
-        p.join()
-    
-    return results
-
+        proc = mp.Process(
+            target=kernel, 
+            args=(q, device)
+        )
+        proc.start()
+        jobs.append(proc)
+    for job in jobs:
+        job.join()
+    for device in device_list:
+        batch_tensor = q.get()

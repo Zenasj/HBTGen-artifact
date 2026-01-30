@@ -1,19 +1,13 @@
-# torch.rand(B, 10, dtype=torch.float32)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.linear = nn.Linear(10, 20)  # Example layer to form a valid model
-    
-    def forward(self, x):
-        return self.linear(x)
+# OK
+data = {"a": 1, "b": "str"}
+torch.save(data, "data.pth")
+torch.load("data.pth", weights_only=True)
+print("PASS 1")
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    B = 2  # Example batch size
-    return torch.rand(B, 10, dtype=torch.float32)
-
+# Error
+data = {"a": 1, "b": "str", "c": 1e-6}
+torch.save(data, "data.pth")
+torch.load("data.pth", weights_only=True)
+print("PASS 2")

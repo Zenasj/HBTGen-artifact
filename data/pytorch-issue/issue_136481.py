@@ -1,29 +1,24 @@
-# torch.rand(B, C, H, W, dtype=...)  # The input shape is not explicitly defined in the issue, so we will assume a generic input shape for demonstration purposes.
 import torch
-import torch.nn as nn
+from vllm import LLM, SamplingParams
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Define a simple model structure for demonstration purposes
-        self.linear1 = nn.Linear(128, 256)
-        self.relu = nn.ReLU()
-        self.linear2 = nn.Linear(256, 128)
+# Sample prompts.                                                                                                                 
+prompts = [
+    "Hello, my name is",
+    "The president of the United States is",
+    "The capital of France is",
+    "The future of AI is",
+]
+# Create a sampling params object.                                                                                                
+sampling_params = SamplingParams(temperature=0.8, top_p=0.95)
 
-    def forward(self, x):
-        x = self.linear1(x)
-        x = self.relu(x)
-        x = self.linear2(x)
-        return x
+# Create an LLM.                                                                                                                  
+llm = LLM(model="bigcode/tiny_starcoder_py", enforce_eager=True, dtype=torch.float32)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # Assuming the input shape is (batch_size, 128) for demonstration purposes
-    batch_size = 32
-    input_dim = 128
-    return torch.rand(batch_size, input_dim, dtype=torch.float32)
-
+# Generate texts from the prompts. The output is a list of RequestOutput objects                                                  
+# that contain the prompt, generated text, and other information.                                                                 
+outputs = llm.generate(prompts, sampling_params)
+# Print the outputs.                                                                                                              
+for output in outputs:
+    prompt = output.prompt
+    generated_text = output.outputs[0].text
+    print(f"Prompt: {prompt!r}, Generated text: {generated_text!r}")

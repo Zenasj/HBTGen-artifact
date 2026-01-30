@@ -1,9 +1,17 @@
-# torch.rand(1, 2, dtype=torch.float)  # Inferred input shape from the provided code
+import torch.nn as nn
 
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
+class bad_func(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, x):
+        return x
+    
+    @staticmethod
+    def backward(ctx, g):
+        return g * 0.5
+
+class Model(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.param = torch.nn.Parameter(torch.tensor(1, dtype=torch.float))
@@ -11,27 +19,17 @@ class MyModel(nn.Module):
     def forward(self, x):
         return bad_func.apply(x * self.param)
 
-class bad_func(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, x):
-        ctx.save_for_backward(x)
-        return x
-    
-    @staticmethod
-    def backward(ctx, g):
-        x, = ctx.saved_tensors
-        return g * 0.5
+m = Model()
+t = torch.tensor([1.0, -1.0], dtype=torch.float)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+def check_grad(model):
+    sm = model(t).square().sum()
+    print(sm)
+    sm.backward()
+    print(type(model), model.param.grad)
+    model.param.grad = None
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(1, 2, dtype=torch.float)
+check_grad(m)
 
-# The model and the custom autograd function are combined into a single class `MyModel`.
-# The custom autograd function `bad_func` is used within the forward method of `MyModel`.
-# The input shape is inferred to be (1, 2) based on the provided tensor in the issue.
-# The `GetInput` function generates a random tensor of the same shape.
-
+m_c = torch.export.export(m, (t,))
+check_grad(m_c.module())

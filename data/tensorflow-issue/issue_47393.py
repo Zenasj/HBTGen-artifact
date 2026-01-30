@@ -1,42 +1,27 @@
-# tf.random.uniform((), dtype=tf.float32) ← Input is a scalar tensor as the issue revolves around scalar vs non-scalar EagerTensors
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
+import numpy as np
+import sys
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Use sigmoid activation as per the example in the issue
-        self.sigmoid = tf.keras.layers.Activation("sigmoid")
+print(tf.version.GIT_VERSION, tf.version.VERSION) # v2.4.0-49-g85c8b2a817f 2.4.1
+print(sys.version) # 3.8.5 (default, Jul 28 2020, 12:59:40) [GCC 9.3.0]
+x = np.dtype('float32').type(3.0)
 
-    def call(self, inputs):
-        # inputs expected to be a scalar or tensor
-        # Apply sigmoid activation
-        activated = self.sigmoid(inputs)
-        
-        # The core issue described: len() fails on scalars, so implement a safe length check
-        # Return a dictionary with the activated tensor and length check result for demonstration
-        length = self.safe_len(activated)
-        return {
-            "activated": activated,
-            "length_or_error_msg": length
-        }
+sigmoid = tf.keras.layers.Activation(activation="sigmoid")
+actX = sigmoid(x)
 
-    def safe_len(self, tensor):
-        # Attempt to get len(tensor) safely for scalar or non-scalar tensor
-        # Scalars have shape () and raise TypeError on len()
-        try:
-            # len() works if tensor shape has dimension(s)
-            return len(tensor)
-        except TypeError:
-            # For scalars, len() is not valid; return a descriptive message
-            return "Scalar tensor has no len()"
+print(type(x)) # <class 'numpy.float32'>
+print(type(actX)) # <class 'tensorflow.python.framework.ops.EagerTensor'>
 
-def my_model_function():
-    # Returns an instance of MyModel 
-    return MyModel()
+if hasattr(actX, "__len__"):
+    print(len(actX))
+else:
+    print("Has no length")
 
-def GetInput():
-    # Based on the issue, input can be scalar float32 tensor, e.g., tf.constant(3.0)
-    # Matching the example from the issue: scalar tensor of dtype float32
-    return tf.constant(3.0, dtype=tf.float32)
+x = tf.constant(1)
+y = tf.constant([1,2,3])
 
+print(x.shape) # ()
+print(y.shape) # (3,)

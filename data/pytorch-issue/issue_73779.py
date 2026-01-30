@@ -1,46 +1,57 @@
-# torch.rand(B, C, H, W, dtype=...) ← Add a comment line at the top with the inferred input shape
+3
 import torch
-import torch.nn as nn
+from timeit import default_timer as timer
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
+vals = torch.arange(1, 10000000, 1).cuda() # Create an array of values
+times_tadd = []
+times_add = []
+times_seq = []
+times_pre = []
+loops = 10
+loops_per_type = 100
+
+for _ in range(loops):
     
-    def forward(self, x):
-        # Using torch add
-        _vals_tadd = torch.add(x, 10 + 10 + 10)
-        
-        # Chaining the operations in a single line
-        _vals_add = x + 10 + 10 + 10
-        
-        # Performing the operations sequentially
-        _vals_seq = x + 10
-        _vals_seq = _vals_seq + 10
-        _vals_seq = _vals_seq + 10
-        
-        # Adding the numbers separately first
+    # Using torch add
+    s_tadd = timer()
+    for _ in range(loops_per_type):
+        _vals = torch.add(vals, 10 + 10 + 10)
+    e_tadd = timer()
+    times_tadd.append([s_tadd, e_tadd])
+
+    # Chaining the operations in a single line
+    s_add = timer()
+    for _ in range(loops_per_type):
+        _vals = vals + 10 + 10 + 10
+    e_add = timer()
+    times_add.append([s_add, e_add])
+
+    # Performing the operations sequentially
+    s_seq = timer()
+    for _ in range(loops_per_type):
+        _vals = vals + 10
+        _vals = _vals + 10
+        _vals = _vals + 10  
+    e_seq = timer()
+    times_seq.append([s_seq, e_seq])
+
+    # Adding the numbers separately first
+    s_pre = timer()
+    for _ in range(loops_per_type):
         precompute = 10 + 10 + 10
-        _vals_pre = x + precompute
-        
-        return _vals_tadd, _vals_add, _vals_seq, _vals_pre
+        _vals = vals + precompute
+    e_pre = timer()
+    times_pre.append([s_pre, e_pre])
+    
+times_tadd = torch.tensor(times_tadd)
+times_add = torch.tensor(times_add)
+times_seq = torch.tensor(times_seq)
+times_pre = torch.tensor(times_pre)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+print('tadd', torch.mean(times_tadd[:, 1] - times_tadd[:, 0]))
+print('add', torch.mean(times_add[:, 1] - times_add[:, 0]))
+print('seq', torch.mean(times_seq[:, 1] - times_seq[:, 0]))
+print('pre', torch.mean(times_pre[:, 1] - times_pre[:, 0]))
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # Assuming B=1, C=1, H=1000, W=1000 for demonstration purposes
-    return torch.rand(1, 1, 1000, 1000, dtype=torch.float32).cuda()
-
-# The provided issue is about performance differences when chaining operations in PyTorch. The code example given is a performance benchmark and does not define a PyTorch model. However, to meet the task requirements, we will create a simple `MyModel` class that demonstrates the performance difference between different ways of adding scalars to a tensor. We will also include a function to generate a random input tensor.
-# Here is the complete Python code file:
-# ### Explanation:
-# 1. **MyModel Class**:
-#    - The `MyModel` class has a `forward` method that performs the same operations as in the original code example.
-#    - It returns four tensors: `_vals_tadd`, `_vals_add`, `_vals_seq`, and `_vals_pre`.
-# 2. **my_model_function**:
-#    - This function returns an instance of `MyModel`.
-# 3. **GetInput Function**:
-#    - This function generates a random tensor with the shape `(1, 1, 1000, 1000)` and `dtype=torch.float32` on the GPU. The shape is inferred based on the original code example, which used a large 1D tensor. For a more general case, we use a 4D tensor with batch size 1, 1 channel, and height and width of 1000.
-# This code can be used to demonstrate the performance differences between different ways of adding scalars to a tensor in PyTorch.
+3
+_vals = 10 + 10 + 10 + vals

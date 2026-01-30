@@ -1,112 +1,129 @@
-# tf.random.uniform((5, 1, 2, 4), dtype=tf.float32) ← inferred input shape from example tensor x
+from tensorflow import keras
+from tensorflow.keras import optimizers
+
+lr_fn = PiecewiseConstantDecay()
+opt = SGD(lr_fn)
+opt = WrapOpt(opt)
 
 import tensorflow as tf
+from tensorflow.keras import layers, optimizers, models
+print(tf.__version__)
+class OptimizerWrapper(optimizers.Optimizer):
+  def __init__(self, optimizer, name=None, **kwargs):
+    super(OptimizerWrapper, self).__init__(name, **kwargs)
+    self._optimizer = optimizer
 
-class OptimizerWrapper(tf.keras.optimizers.Optimizer):
-    def __init__(self, optimizer, name=None, **kwargs):
-        super(OptimizerWrapper, self).__init__(name, **kwargs)
-        self._optimizer = optimizer
+  def _create_slots(self, var_list):
+    self._optimizer._create_slots(var_list)
 
-    def _create_slots(self, var_list):
-        self._optimizer._create_slots(var_list)
+  def _resource_apply_dense(self, grad, var):
+    return self._optimizer._resource_apply_dense(grad, var)
 
-    def _resource_apply_dense(self, grad, var, apply_state=None):
-        # apply_state is an optional argument in newer TF versions required to avoid colocation errors
-        if apply_state is not None:
-            return self._optimizer._resource_apply_dense(grad, var, apply_state)
-        else:
-            return self._optimizer._resource_apply_dense(grad, var)
+  def _resource_apply_sparse(self, grad, var):
+    return self._optimizer._resource_apply_sparse(grad, var)
 
-    def _resource_apply_sparse(self, grad, var, apply_state=None):
-        if apply_state is not None:
-            return self._optimizer._resource_apply_sparse(grad, var, apply_state)
-        else:
-            return self._optimizer._resource_apply_sparse(grad, var)
-
-    def _prepare(self, var_list):
-        # Delegating _prepare to underlying optimizer to handle apply_state properly
-        return self._optimizer._prepare(var_list)
-
-    def apply_gradients(self, grads_and_vars, name=None, experimental_aggregate_gradients=True):
-        # Delegate apply_gradients - optional but recommended to avoid errors
-        return self._optimizer.apply_gradients(grads_and_vars, name, experimental_aggregate_gradients)
-
-    def get_config(self):
-        return self._optimizer.get_config()
+  def get_config(self):
+    return self._optimizer.get_config()
 
 
-class SimplePiecewiseConstantDecay(tf.keras.optimizers.schedules.LearningRateSchedule):
-    def __init__(self, boundaries, values, name=None):
-        super(SimplePiecewiseConstantDecay, self).__init__()
-        if len(boundaries) != len(values) - 1:
-            raise ValueError(
-                "The length of boundaries should be 1 less than the length of values"
-            )
-        self.boundaries = boundaries
-        self.values = values
-        self.name = name
+model = tf.keras.Sequential()
+model.add(layers.Dense(8))
+x = tf.constant(12., shape=(5, 1, 2, 4))
+boundaries = [100000, 110000]
+values = [1.0, 0.5, 0.1]
+learning_rate_fn = optimizers.schedules.PiecewiseConstantDecay(
+    boundaries, values)
+#learning_rate_fn = optimizers.schedules.ExponentialDecay(
+#    0.1, decay_steps=100000, decay_rate=0.96, staircase=True)
+#learning_rate_fn = optimizers.schedules.PolynomialDecay(
+#    0.1, 10000, 0.01, power=0.5)
+opt = optimizers.SGD(learning_rate=learning_rate_fn, momentum=1.0)
+opt = OptimizerWrapper(opt)
 
-    def __call__(self, step):
-        # Using tf.cond to avoid tf.case and device colocation issues on GPU
-        def case0():
-            return tf.constant(self.values[0], dtype=tf.float32)
+@tf.function
+def train_step(x):
+  with tf.GradientTape(persistent=True) as tape:
+    y = model(x)
+    loss = tf.reduce_mean(y)
 
-        def case1_2():
-            cond = tf.greater(step, self.boundaries[-1])
-            return tf.cond(cond,
-                           lambda: tf.constant(self.values[-1], dtype=tf.float32),
-                           lambda: tf.constant(self.values[0], dtype=tf.float32))
+  grads = tape.gradient(loss, model.variables)
+  opt.apply_gradients(zip(grads, model.variables))
+  return loss
 
-        return tf.cond(tf.less_equal(step, self.boundaries[0]), case0, case1_2)
+for i in range(3):
+  loss = train_step(x)
+  print("Loss:", loss)
 
-    def get_config(self):
-        return {
-            "boundaries": self.boundaries,
+physical_devices = tf.config.list_physical_devices('GPU')
+print("Num GPUs:", len(physical_devices))
+
+class SimplePiecewiseConstantDecay(
+    tf.keras.optimizers.schedules.LearningRateSchedule):
+  def __init__(self, boundaries, values, name=None):
+    super(SimplePiecewiseConstantDecay, self).__init__()
+    if len(boundaries) != len(values) - 1:
+      raise ValueError(
+          "The length of boundaries should be 1 less than the length of values"
+      )
+    self.boundaries = boundaries
+    self.values = values
+    self.name = name
+
+  def __call__(self, step):
+    pred_fn_pairs = []
+    pred_fn_pairs.append((step <= self.boundaries[0], lambda: self.values[0]))
+    pred_fn_pairs.append((step > self.boundaries[-1], lambda: self.values[-1]))
+    for low, high, v in zip(self.boundaries[:-1], self.boundaries[1:],
+                            self.values[1:-1]):
+      # Need to bind v here; can do this with lambda v=v: ...
+      pred = (step > low) & (step <= high)
+      pred_fn_pairs.append((pred, lambda v=v: v))
+
+    # The default isn't needed here because our conditions are mutually
+    # exclusive and exhaustive, but tf.case requires it.
+    default = lambda: self.values[0]
+    return tf.case(pred_fn_pairs, default, exclusive=True)
+
+  def get_config(self):
+    return {"boundaries": self.boundaries,
             "values": self.values,
-            "name": self.name
-        }
+            "name": self.name}
 
+class OptimizerWrapper(optimizers.Optimizer):
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Simple sequential model with one Dense layer as per original example
-        self.dense = tf.keras.layers.Dense(8)
+  ...
 
-        # Define piecewise constant decay learning rate function
-        boundaries = [100000, 110000]
-        values = [1.0, 0.5, 0.1]
-        # Use the custom SimplePiecewiseConstantDecay schedule to avoid tf.case device errors
-        self.learning_rate_fn = SimplePiecewiseConstantDecay(boundaries, values)
+  def apply_gradients(self,
+                      grads_and_vars,
+                      name=None,
+                      experimental_aggregate_gradients=True):
+    self._optimizer.apply_gradients(grads_and_vars, name,
+                                    experimental_aggregate_gradients)
 
-        # Base optimizer SGD with momentum and custom learning rate schedule
-        base_opt = tf.keras.optimizers.SGD(learning_rate=self.learning_rate_fn, momentum=1.0)
-        # Wrap the base optimizer in the OptimizerWrapper to simulate user's custom wrapper
-        self.optimizer = OptimizerWrapper(base_opt)
+def _resource_apply_dense(self, grad, var):
+  if var is elegible:
+    self._optimizer._resource_apply_dense(...)
+    new_var = prune(var)
+    return var.assign(new_var)
+  else:
+    return self._optimizer._resource_apply_dense(...)
 
-    @tf.function
-    def call(self, inputs):
-        return self.dense(inputs)
+class OptimizerWrapper(optimizers.Optimizer):
+  def __init__(self, optimizer, name=None, **kwargs):
+    super(OptimizerWrapper, self).__init__(name, **kwargs)
+    self._optimizer = optimizer
 
-    @tf.function
-    def train_step(self, x):
-        with tf.GradientTape() as tape:
-            y = self.call(x)
-            loss = tf.reduce_mean(y)
+  def _prepare(self, var_list):
+    return self._optimizer._prepare(var_list)
 
-        grads = tape.gradient(loss, self.trainable_variables)
-        # Apply gradients using wrapped optimizer
-        self.optimizer.apply_gradients(zip(grads, self.trainable_variables))
-        return loss
+  def _create_slots(self, var_list):
+    self._optimizer._create_slots(var_list)
 
+  def _resource_apply_dense(self, grad, var, apply_state):
+    return self._optimizer._resource_apply_dense(grad, var, apply_state)
 
-def my_model_function():
-    # Instantiate and return the MyModel instance
-    return MyModel()
+  def _resource_apply_sparse(self, grad, var):
+    return self._optimizer._resource_apply_sparse(grad, var)
 
-
-def GetInput():
-    # Return a batch of random input tensors matching the shape used in example (5,1,2,4)
-    # Use float32 dtype as typical for Keras models
-    return tf.random.uniform((5, 1, 2, 4), dtype=tf.float32)
-
+  def get_config(self):
+    return self._optimizer.get_config()

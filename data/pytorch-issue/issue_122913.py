@@ -1,19 +1,7 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Example: B=2, C=3, H=1 (constrained singleton), W=5
-import torch
-import torch.nn as nn
-
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Symbolic dimension constraint check (H must be singleton)
-        h = x.shape[2]
-        if h != 1:
-            raise ValueError("H dimension must be constrained to singleton")
-        return x.view(x.size(0), -1)  # Force shape dependency for Dynamo testing
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Valid input with constrained H=1 (matches PR's singleton constraint scenario)
-    return torch.rand(2, 3, 1, 5, dtype=torch.float32)
-
+@record_shapeenv_event()
+def _constrain_symbol_range(shape_env, s: sympy.Symbol, compiler_min: int, compiler_max: int):
+    upd_vr = ValueRanges(compiler_min, compiler_max)
+    old_vr = shape_env.var_to_range.get(s, ValueRanges.unknown())
+    shape_env._update_var_to_range(s, upd_vr)
+    if (new_vr := shape_env.var_to_range[s]) != old_vr:
+        log.info("_constrain_symbol_range %s [%s, %s]", s, new_vr.lower, new_vr.upper)

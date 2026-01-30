@@ -1,16 +1,16 @@
-# torch.rand(1, dtype=torch.float32)
-import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
+python
+import torch
+class Net(torch.nn.Module):
     def forward(self, x):
         for i in range(1000):
             x = 1.0 * x
         return x
+net = Net()
+net = torch.compile(net)
+x = torch.tensor([1.0])
+print(net(x))
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(1, dtype=torch.float32)
-
+while (cont := cont()) is not None:
+    pass

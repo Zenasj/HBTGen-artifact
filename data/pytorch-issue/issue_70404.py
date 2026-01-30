@@ -1,24 +1,42 @@
-# torch.rand(B, T, D, dtype=torch.float)
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.gru = nn.GRU(10, 10, 1, batch_first=True)  # batch_first to match input shape
-        self.linear = nn.Linear(10, 1)  # Fused as per comparison in the issue
-        
-    def forward(self, x):
-        # Process GRU and Linear in parallel for comparison
-        gru_out, _ = self.gru(x)
-        linear_input = x[:, -1, :]  # Extract last time step for Linear compatibility
-        linear_out = self.linear(linear_input)
-        return (gru_out, linear_out)  # Return both outputs for comparison
+def run_demo(demo_fn, world_size):
+    mp.spawn(demo_fn,
+             args=(world_size,),
+             nprocs=world_size,
+             join=True)
+def demo_basic(rank, world_size):
+    print(f"Running basic DDP example on rank {rank}.")
+    dist.init_process_group("nccl", rank=rank, world_size=world_size)
+    # The GRU or LSTM gets additional processes on GPU 0.
+    ToyModel = nn.GRU(10, 10, 1)
+    # The Linear does not get these problems.
+    # ToyModel = nn.Linear(10,1)
+    model = ToyModel.to(rank)
+    ddp_model = DDP(model, device_ids=[rank])
+    pbar_len = int(1e10 / 2)
+    for _ in range(pbar_len):
+        input_seq = torch.randn(4, 20,10)
+        input_seq = input_seq.float().to(rank)
+        ddp_model(input_seq)
+    dist.destroy_process_group()
+if __name__ == "__main__":
+    world_size = torch.cuda.device_count()
+    os.environ['MASTER_ADDR'] = 'localhost'
+    os.environ['MASTER_PORT'] = '12355'
+    run_demo(demo_basic, world_size)
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Matches input shape (batch, seq_len, features) for GRU and Linear compatibility
-    return torch.randn(4, 20, 10, dtype=torch.float)
-
+def demo_basic(rank, world_size):
+    print(f"Running basic DDP example on rank {rank}.")
+    dist.init_process_group("nccl", rank=rank, world_size=world_size)
+    torch.cuda.set_device(rank)
+    ToyModel = nn.GRU(10, 10, 1)
+    model = ToyModel.cuda()
+    ddp_model = DDP(model, device_ids=[rank])
+    pbar_len = int(1e10 / 2)
+    for _ in range(pbar_len):
+        input_seq = torch.randn(4, 20,10)
+        input_seq = input_seq.float().cuda()
+        ddp_model(input_seq)
+    dist.destroy_process_group()

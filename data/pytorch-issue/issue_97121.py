@@ -1,20 +1,26 @@
-# torch.rand(B, 512, dtype=torch.int64)
 import torch
-from transformers import BertForMaskedLM
-import torch.nn as nn
+import torch_xla.core.xla_model as xm
+import transformers
+import os
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.bert = BertForMaskedLM.from_pretrained('bert-base-uncased')
+os.environ['GPU_NUM_DEVICES'] = '1'
+device = xm.xla_device()
+model = transformers.BertForMaskedLM.from_pretrained('bert-base-uncased')
+model.to(device)
+model.eval()
+model = torch.compile(model, backend='aot_torchxla_trace_once')
 
-    def forward(self, input_ids):
-        return self.bert(input_ids=input_ids)[0]  # Return logits to match original usage
+for batch_size in [1,2,4]:
+    for seq_len in [64,128,256,512]:
+        print(f'batch_size: {batch_size}, seq_len: {seq_len}')
+        input_dict = {
+            'input_ids':
+                torch.ones((batch_size, seq_len)).to(torch.int64).to(device),
+            'attention_mask':
+                torch.ones((batch_size, seq_len)).to(torch.int64).to(device),
+        }
+        with torch.no_grad():
+            outputs = model(**input_dict)
+            xm.mark_step()
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    B = 2  # Batch size from error case (2,512)
-    return torch.randint(0, 30522, (B, 512), dtype=torch.int64)
-
+print('Done')

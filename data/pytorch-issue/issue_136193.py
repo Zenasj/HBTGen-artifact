@@ -1,29 +1,32 @@
-# torch.rand(2), torch.rand(2)  # input shape for MyModel is a tuple of two tensors of shape (2,)
 import torch
-from torch import nn
+import torch._dynamo.utils
+from torch._dynamo import compiled_autograd
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.grads = []  # Stores gradients from hook
+def test_compiled_autograd():
+        device = "cpu"
+        backend = "inductor"
+
+        grads = []
+        
+        def hook_fn(grad):
+            #If the line below is commented out or changed to, for example, grads.append(grad), there is no issue
+            grads.append(grad)
+            return grad
+        
+        def fn(x, y):
+            x.register_hook(hook_fn)
+            return x + y
+        
+        def compiler_fn(gm):
+            return torch.compile(gm, backend=backend)
+
+        torch._dynamo.reset()
     
-    def hook(self, grad):
-        # Reproduces the problematic list append operation
-        self.grads.append(grad)
-        return grad
-    
-    def forward(self, inputs):
-        x, y = inputs
-        # Register hook on x's gradient during forward
-        x.register_hook(lambda grad: self.hook(grad))
-        return x + y  # Forward pass matches original fn(x, y) = x + y
+        with compiled_autograd.enable(compiler_fn):
+            x = torch.tensor([0.5, 0.5], device=device, requires_grad=True)
+            y = torch.tensor([0.5, 0.5], device=device, requires_grad=True)
+            out = fn(x, y)
+            grad_out = torch.tensor([2.0, 2.0], device=device)
+            out.backward(grad_out)
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Returns two tensors matching the input requirements of MyModel
-    x = torch.rand(2, requires_grad=True)
-    y = torch.rand(2, requires_grad=True)
-    return (x, y)
-
+test_compiled_autograd()

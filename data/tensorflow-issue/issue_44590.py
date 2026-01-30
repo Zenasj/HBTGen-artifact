@@ -1,36 +1,46 @@
-# tf.random.uniform((B, 1), dtype=tf.float32) ← Assumed input shape is (batch_size, 1) based on Input(shape=(1,)) in the original issue
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Two Dense layers with 1 unit each, mimicking the example from the issue
-        self.layer1 = tf.keras.layers.Dense(1)
-        self.layer2 = tf.keras.layers.Dense(1)
-        
-        # Add losses using the fixed approach to capture layer kernel correctly inside the lambda
-        # Use closure helper to avoid late binding issue in lambdas inside loops as per the issue discussion
-        def make_loss(layer):
-            return lambda: tf.reduce_sum(layer.kernel)
+layer_units = [2, 1]
 
-        # Add losses properly to each layer
-        self.layer1.add_loss(make_loss(self.layer1))
-        self.layer2.add_loss(make_loss(self.layer2))
-    
-    def call(self, inputs):
-        x1 = self.layer1(inputs)
-        x2 = self.layer2(inputs)
-        # Just output both layer outputs as a tuple, for demonstration
-        # You could implement any logic here based on the issue context
-        return x1, x2
+tf.random.set_seed(0)
+model = tf.keras.Sequential()
+inputs = tf.keras.Input(shape=(1,))
+model.add(inputs)
+layer1 = tf.keras.layers.Dense(layer_units[0])
+layer1.add_loss(lambda :tf.reduce_sum(layer1.kernel))
+model.add(layer1)
+layer2 = tf.keras.layers.Dense(layer_units[1])
+layer2.add_loss(lambda :tf.reduce_sum(layer2.kernel))
+model.add(layer2)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+print(model.losses)
 
-def GetInput():
-    # Return a random tensor matching the input shape (batch_size, 1) expected by MyModel
-    # batch_size is inferred as 4 here arbitrarily for test, since issue example does not specify batch_size
-    return tf.random.uniform((4, 1), dtype=tf.float32)
+layer_units = [2, 1]
 
+tf.random.set_seed(0)
+model = tf.keras.Sequential()
+inputs = tf.keras.Input(shape=(1,))
+model.add(inputs)
+for i in range(2):
+    layer = tf.keras.layers.Dense(layer_units[i])
+    layer.add_loss(lambda :tf.reduce_sum(layer.kernel))
+    model.add(layer)
+
+print(model.losses)
+
+for i in range(2):
+    layer = tf.keras.layers.Dense(1)
+    layer.add_loss(lambda :tf.reduce_sum(layer.kernel))
+    model.add(layer)
+
+def make_loss(layer):
+    return lambda : tf.reduce_sum(layer.kernel)
+
+for i in range(2):
+    layer = tf.keras.layers.Dense(1)
+    layer.add_loss(make_loss(layer))
+    model.add(layer)

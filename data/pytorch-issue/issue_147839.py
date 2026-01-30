@@ -1,39 +1,25 @@
-# torch.rand(B, C, H, W, dtype=...)  # Add a comment line at the top with the inferred input shape
+from vllm import LLM, SamplingParams
 
-import torch
-import torch.nn as nn
+if __name__ == '__main__':
+    # Sample prompts
+    prompts = [
+        "Hello, my name is",
+        "The president of the United States is",
+        "The capital of France is",
+        "The future of AI is",
+    ]
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3, stride=1, padding=1)
-        self.relu = nn.ReLU()
-        self.fc = nn.Linear(16 * 32 * 32, 10)
+    # Create a sampling params object.
+    sampling_params = SamplingParams(temperature=0.8, top_p=0.95)
 
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.relu(x)
-        x = x.view(x.size(0), -1)
-        x = self.fc(x)
-        return x
+    # Create an LLM object
+    llm = LLM(model="/data2/Llama-2-70b-hf", dtype="float16", tensor_parallel_size=4, enforce_eager=True, trust_remote_code=True)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+    # Generate texts from the prompts
+    outputs = llm.generate(prompts, sampling_params)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # Assuming the input shape is (B, C, H, W) where B=1, C=3, H=32, W=32
-    return torch.rand(1, 3, 32, 32, dtype=torch.float32)
-
-# The provided issue describes an error that occurs when using the `vllm` library to load and generate text from a model. The error is related to the random seed initialization, specifically in the `torch.cuda.default_generators[i]` call. This issue is more related to the `vllm` library and its interaction with PyTorch, rather than a direct PyTorch model.
-# However, to meet the requirements of the task, I will create a minimal example of a PyTorch model and a function to generate input for it. Since the issue does not provide a specific PyTorch model, I will create a simple model and input generator.
-# ### Explanation:
-# 1. **MyModel Class**:
-#    - A simple convolutional neural network (CNN) with one convolutional layer, a ReLU activation, and a fully connected layer.
-#    - The input shape is assumed to be (B, C, H, W) where B=1, C=3, H=32, W=32.
-# 2. **my_model_function**:
-#    - Returns an instance of `MyModel`.
-# 3. **GetInput Function**:
-#    - Generates a random tensor with the shape (1, 3, 32, 32) and dtype `torch.float32`, which is a common input shape for image classification tasks.
-# This code can be used to create a simple PyTorch model and generate a valid input for it. If you need a more specific model or input shape, please provide additional details.
+    # Print the outputs
+    for output in outputs:
+        prompt = output.prompt
+        generated_text = output.outputs[0].text
+        print(f"Prompt: {prompt!r}, Generated text: {generated_text!r}")

@@ -1,43 +1,45 @@
-# torch.rand(4, 10, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
 import torch
-import torch.nn as nn
+from monai.networks.nets import FullyConnectedNet
 
-class FullyConnectedNet(nn.Module):
-    def __init__(self, in_size, out_size, channels, dropout_prob):
-        super(FullyConnectedNet, self).__init__()
-        self.in_size = in_size
-        self.out_size = out_size
-        self.channels = channels
-        self.dropout_prob = dropout_prob
+model = lambda : FullyConnectedNet(
+    10, #inSize
+    3, #outSize
+    [8, 16], #channels
+    0.15
+)
+model = model().eval().to('cuda')
+data = torch.randn(4, 10).to("cuda")
 
-        layers = []
-        for i, channel in enumerate(channels):
-            if i == 0:
-                layers.append(nn.Linear(in_size, channel))
-            else:
-                layers.append(nn.Linear(channels[i-1], channel))
-            layers.append(nn.PReLU())
-            layers.append(nn.Dropout(p=dropout_prob))
-        layers.append(nn.Linear(channels[-1], out_size))
+dynamo_export = True
+if dynamo_export:
+    model = torch.export.export(model, args=(data,))
+    export_output = torch.onnx.dynamo_export(model, data)
+    export_output.save('Clara_FullyConnectedNet_dynamo.onnx')
+else:
+    torch.onnx.export(model, (data,), 'Clara_FullConnectedNet_torchscript.onnx')
 
-        self.fc_layers = nn.Sequential(*layers)
+model = torch.export.export(model, args=(data,))
+export_output = torch.onnx.dynamo_export(model, data)
+export_output.save('Clara_FullyConnectedNet_dynamo.onnx', model_state=model.state_dict)
 
-    def forward(self, x):
-        return self.fc_layers(x)
+import torch_onnx
+torch_onnx.patch_torch()
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.model = FullyConnectedNet(10, 3, [8, 16], 0.15)
+import torch
+from monai.networks.nets import FullyConnectedNet
 
-    def forward(self, x):
-        return self.model(x)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+model = lambda : FullyConnectedNet(
+    10, #inSize
+    3, #outSize
+    [8, 16], #channels
+    0.15
+)
+data = torch.randn(4, 10).to("cuda")
+model = model().eval().to('cuda')
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(4, 10, dtype=torch.float32)
-
+import torch_onnx
+torch_onnx.patch_torch()
+model = torch.export.export(model, args=(data,))
+export_output = torch.onnx.dynamo_export(model, data)
+export_output.save('Clara_FullyConnectedNet_dynamo.onnx', model_state=model.state_dict)

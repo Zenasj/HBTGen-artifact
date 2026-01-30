@@ -1,36 +1,58 @@
-# tf.random.uniform((B, 28, 28, 1), dtype=tf.float32) ← Input shape corresponds to Fashion MNIST grayscale images (28x28x1)
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
+# Simple model that illustrate the problem:
+
+# First- create the model and save it. ( Relayed on: https://iq.opengenus.org/conv2d-in-tf/)
 
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import Sequential
+from tensorflow.keras.layers import Conv2D
+from tensorflow.keras.layers import MaxPooling2D, Flatten, Dense
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Following the sequential model architecture described in the issue:
-        # Conv2D with 32 filters, kernel 3x3, input shape (28,28,1)
-        self.conv = tf.keras.layers.Conv2D(32, (3, 3), activation=None, input_shape=(28, 28, 1))
-        # Flatten layer
-        self.flatten = tf.keras.layers.Flatten()
-        # Dense output layer with 10 units and softmax activation
-        self.dense = tf.keras.layers.Dense(10, activation='softmax')
+fashion = keras.datasets.fashion_mnist
 
-    def call(self, x, training=False):
-        x = self.conv(x)
-        x = self.flatten(x)
-        x = self.dense(x)
-        return x
+(train_images, train_labels), (test_images, test_labels) = fashion.load_data()
+class_names = ['T-shirt/top', 'Trouser', 'Pullover', 'Dress', 'Coat', 'Sandal', 'Shirt', 'Sneaker', 'Bag', 'Ankle boot']
+train_images = train_images.reshape((60000, 28, 28, 1))
+train_images = train_images.astype('float32') / 255
 
-def my_model_function():
-    # Return an instance of MyModel.
-    # There is no mention of loading saved weights in the issue for this extraction,
-    # so we instantiate a fresh model.
-    # Note: For replicating training or loading weights, additional code can be added.
-    return MyModel()
+test_images = test_images.reshape((10000, 28, 28, 1))
+test_images = test_images.astype('float32') / 255
 
-def GetInput():
-    # Return a random input tensor matching the shape expected by the model.
-    # Since the inputs in the original context are normalized image batches from Fashion MNIST,
-    # shape: (batch_size, 28, 28, 1), dtype float32, values in [0,1].
-    # We pick batch size 8 as a reasonable example.
-    batch_size = 8
-    return tf.random.uniform((batch_size, 28, 28, 1), minval=0.0, maxval=1.0, dtype=tf.float32)
 
+model = Sequential()
+model.add(Conv2D(32, (3, 3),input_shape=(28, 28, 1)))
+# model.add(MaxPooling2D((2, 2)))
+# model.add(Conv2D(64, (5, 5), activation='relu'))
+model.add(Flatten())
+model.add(Dense(10, activation='softmax'))
+model.compile(optimizer='adam',
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
+
+model.fit(train_images, train_labels, epochs=10)
+test_loss, test_acc = model.evaluate(test_images, test_labels)
+print('Test accuracy:', test_acc)
+
+
+model.save('model.h5')
+
+
+# -----------------------------------------------------------------------------
+# Then: 
+# load the model and run it few times:
+model= tf.keras.models.load_model('model.h5')
+print(model.predict(test_images))
+
+# Gives different predictions
+
+
+# You might need to remove cache files from one run to another to notice the differences: 
+# sudo rm -rf ~/.nv/
+
+print(model.predict(test_images))
+import subprocess
+subprocess.run('sudo rm -rf ~/.nv/',shell=True)
+print(model.predict(test_images))

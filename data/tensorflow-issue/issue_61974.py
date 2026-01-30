@@ -1,31 +1,37 @@
-# tf.random.uniform((B, 2), dtype=tf.float32)  # Input shape inferred from X_train which has 2 features per sample
+from tensorflow.keras import layers
 
-import tensorflow as tf
+# import library
 import numpy as np
+import tensorflow as tf
+from tensorflow.python.keras import Sequential
+from tensorflow.python.keras.layers import Dense
+from tensorflow.python.keras.losses import BinaryCrossentropy
+print(tf.__version__)
+# 2.13.0
+# import data
+X = []
+y = []
+with open('../../Part1/Week2/data/ex2data1.txt') as file:
+# with open('/home/wisdom/vs_code_repository/Python/AndrewNG_ML/Part1/Week2/data/ex2data1.txt', 'r') as file:
+    for lines in file:
+        colums = lines.strip().split(',')
+        X.append([float(colums[0]), float(colums[1])])
+        y.append(float(colums[2]))
+X = np.array(X)
+y = np.array(y)
+# normalization
+X_mean = np.mean(X, axis=0)
+X_max = np.max(X, axis=0)
+X_min = np.min(X, axis=0)
+X = (X - X_mean) / (X_max - X_min)
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Model architecture reflecting the user code, a Sequential model with 3 Dense layers using sigmoid activations
-        self.dense1 = tf.keras.layers.Dense(units=32, activation='sigmoid')
-        self.dense2 = tf.keras.layers.Dense(units=16, activation='sigmoid')
-        self.dense3 = tf.keras.layers.Dense(units=1, activation='sigmoid')
-    
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        return self.dense3(x)
-
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Generate a random input tensor compatible with the model's input
-    # Assuming batch size of 8 for demonstration, with 2 features each (matching the original dataset)
-    # Use float32 dtype as typical for tensorflow inputs
-    batch_size = 8
-    feature_dim = 2
-    # Generate uniform random input in range similar to normalized data ~[-1,1]
-    return tf.random.uniform((batch_size, feature_dim), minval=-1, maxval=1, dtype=tf.float32)
-
+# split data into training_set and testing_set
+X_train = X[:80]
+y_train = y[:80]
+X_test = X[80:]
+y_test = y[80:]
+model = Sequential([Dense(units=32, activation='sigmoid'),
+                    Dense(units=16, activation='sigmoid'),
+                    Dense(units=1, activation='sigmoid')])
+model.compile(loss=BinaryCrossentropy())
+model.fit(X_train, y_train, epochs=150) # bug appears this line

@@ -1,27 +1,29 @@
-# torch.rand(3,3,5,3,5, dtype=torch.float32), torch.rand(3,3,5,3,5, dtype=torch.float32)
 import torch
-from torch import nn
+from torch._inductor.utils import run_and_get_triton_code
 from torch._inductor import config
 
-full_size = (5, 5, 5, 5, 5)
-view_size = (3, 3, 5, 3, 5)
+import functools
 
 config.triton.max_tiles = 3
 config.triton.prefer_nd_tiling = True
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        a, b = x
-        return a + b
+full_size, view_size, num_block_pointers, num_tiles = (
+    (5, 5, 5, 5, 5),
+    (3, 3, 5, 3, 5),
+    1,
+    2,
+)
 
-def my_model_function():
-    return MyModel()
+GPU_TYPE = "cuda"
 
-def GetInput():
-    device = torch.device("cuda")
-    full_a = torch.randn(full_size).to(device)
-    a = torch.as_strided(full_a, view_size, full_a.stride())
-    full_b = torch.randn(full_size).to(device)
-    b = torch.as_strided(full_b, view_size, full_b.stride())
-    return (a, b)
 
+def get_input() -> torch.Tensor:
+    device = torch.device(GPU_TYPE)
+    full = torch.randn(full_size).to(device)
+    return torch.as_strided(full, view_size, full.stride())
+
+
+a, b = get_input(), get_input()
+
+opt_fn = torch.compile(functools.partial(torch.add))
+code = run_and_get_triton_code(opt_fn, a, b)

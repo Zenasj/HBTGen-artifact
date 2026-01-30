@@ -1,40 +1,92 @@
-# tf.random.uniform((B,)) ← The input is a dataset yield: two strings and a tensor of shape (100,120) float32; 
-# for modeling a similar structure, we assume input tensor is of shape (100,120) float32
+import random
+
+import numpy as np
+import tensorflow as tf
+class ASRDataGenerator(object):
+    def __init__(self,num):
+        self.num = num
+    def __call__(self):
+        for i in range(self.num):
+            for j in range(106):
+                yield 'a','b',np.random.randn(100,120)
+
+class TFASRDataSet(object):
+    def __init__(self,num,batch_size):
+
+        self.num = num
+        self.batch_size = batch_size
+        self.asrDataGenerator = ASRDataGenerator(num)
+        
+    def setDataSetIterator(self):
+        
+        dataset = tf.data.Dataset.from_generator(self.asrDataGenerator, (tf.string,tf.string,tf.float32))
+        dataset = dataset.shuffle(30000)
+        dataset = dataset.map(lambda s1,s2,feat: [s1,s2,feat])
+        dataset = dataset.batch(self.batch_size, drop_remainder=True)
+        self.iterator = dataset.make_initializable_iterator()
+        
+test_tfASRDataSet = TFASRDataSet(248,192)
+test_tfASRDataSet.setDataSetIterator()
+test_iter = test_tfASRDataSet.iterator
+test_next = test_iter.get_next()   
+
+run_config = tf.ConfigProto()
+run_config.gpu_options.allow_growth = True
+run_config.allow_soft_placement = True
+
+with tf.Session(config=run_config) as sess:
+
+    for i in range(100):
+
+        sess.run(test_iter.initializer)
+        
+        while True:
+            try:
+                loss_list = sess.run([test_next])
+                print(len(loss_list[0]))
+            except tf.errors.OutOfRangeError:
+                print("train epoch %d finish" % (i+1))
+                break
+
+...
+def view_used_mem():
+  used_mem = psutil.virtual_memory().used
+  print("used memory: {} Mb".format(used_mem / 1024 / 1024))
+
+
+def main(argv):
+  del argv
+
+  test_tfASRDataSet = TFASRDataSet(248, 192)
+  test_tfASRDataSet.setDataSetIterator()
+  test_iter = test_tfASRDataSet.iterator
+  test_next = test_iter.get_next()
+
+  run_config = tf.ConfigProto()
+  run_config.gpu_options.allow_growth = True
+  run_config.allow_soft_placement = True
+
+  with tf.Session(config=run_config) as sess:
+
+    for i in range(100):
+
+      sess.run(test_iter.initializer)
+
+      while True:
+        try:
+          loss_list = sess.run([test_next])
+        except tf.errors.OutOfRangeError:
+          print('train epoch %d finish' % (i + 1))
+          view_used_mem()
+          break
+...
 
 import tensorflow as tf
+import psutil
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Since the original issue is about tf.data shuffling and memory leaks,
-        # there's no explicit model structure described.
-        # We build a minimal model that takes input tensor and processes it.
-        # For demonstration, apply a simple dense layer to last dim for demonstration.
-        
-        # Using TimeDistributed Dense to process 100x120 input as (100 time steps, 120 features)
-        self.dense = tf.keras.layers.TimeDistributed(
-            tf.keras.layers.Dense(64, activation='relu')
-        )
-        self.global_pool = tf.keras.layers.GlobalAveragePooling1D()
-        self.classifier = tf.keras.layers.Dense(10)  # example output dim = 10
-    
-    def call(self, inputs, training=False):
-        # inputs is expected shape (B, 100, 120)
-        x = self.dense(inputs)  # (B, 100, 64)
-        x = self.global_pool(x)  # (B, 64)
-        return self.classifier(x)  # (B, 10)
+dataset = tf.Dataset.range(int(1e7))
+iterator = dataset.shuffle(int(1e7)).batch(int(1e6))
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Return a random input tensor matching expected input shape for MyModel
-    # B (batch size) inferred from example: original ASRDataGenerator batches 192 samples,
-    # but we choose a manageable batch size as 32 for demonstration.
-    B = 32
-    H = 100
-    W = 120
-    # Input dtype float32, tensor shape (B, H, W)
-    return tf.random.uniform((B, H, W), dtype=tf.float32)
-
+for _ in iterator:
+  used_mem = psutil.virtual_memory().used
+  print("used memory: {} Mb".format(used_mem / 1024 / 1024))

@@ -1,31 +1,78 @@
-# tf.random.uniform((B, 500000), dtype=tf.float32) ← input shape is (batch_size, input_dim=500000)
+import random
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
-import tensorflow as tf
+import sys
+import resource  # used for monitoring memory usage
+import logging
+import numpy as np
 
-class MyModel(tf.keras.Model):
+from tensorflow import keras
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense
+from tensorflow.keras import callbacks
+
+"""In order to prevent the memory leak remove/comment out the tensorflow 
+imports above and uncomment keras imports below"""
+# import keras
+# from keras.models import Sequential
+# from keras.layers import Dense
+# from keras import callbacks
+
+
+class MemoryLoggerCallback(callbacks.Callback):
     def __init__(self):
-        super().__init__()
-        # Define a simple feedforward network as described in the issue:
-        # Input dimension = 500000
-        self.dense1 = tf.keras.layers.Dense(64, activation='relu', input_shape=(500000,))
-        self.dense2 = tf.keras.layers.Dense(64, activation='relu')
-        self.output_layer = tf.keras.layers.Dense(10, activation='softmax')
+        self.memory_usage = []
 
-    def call(self, inputs, training=False):
-        # Forward pass
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        return self.output_layer(x)
+    def on_epoch_end(self, epoch, logs=None):
+        max_used_memory = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        logging.info(f"\nmemory usage after end of epoch hook: {max_used_memory}")
+        if epoch % 10 == 0:
+            self.memory_usage.append(max_used_memory)
+            logging.info("############")
+            logging.info(self.memory_usage)
+            logging.info("############")
 
-def my_model_function():
-    # Return an instance of MyModel with no pretrained weights
-    return MyModel()
 
-def GetInput():
-    # Return a random tenosr that matches input expected by MyModel
-    # Use float32 dtype matching typical TF default and realistic input data
-    batch_size = 32  # batch size consistent with example in issue
-    input_dim = 500000
-    # Random uniform input with shape (batch_size, input_dim)
-    return tf.random.uniform(shape=(batch_size, input_dim), dtype=tf.float32)
+def dummy_gen_simple(input_dim: int, batch_size: int = 3):
+    """random data and label generator"""
+    while True:
+        x = np.random.random((batch_size, input_dim))
+        y = keras.utils.to_categorical(np.random.randint(10, size=(batch_size, 1)), num_classes=10)
+        yield (x, y, None)
 
+
+def init_logger():
+    """initialise logger which redirects to stderr,
+    so it prints log messages during training"""
+    # set up global logger
+    logger = logging.getLogger('')
+    logger.setLevel(logging.INFO)
+    logger.handlers = []  # remove default handlers
+    # set up STDERR handler
+    stderr_handler = logging.StreamHandler(sys.stderr)
+    logger.addHandler(stderr_handler)
+
+
+init_logger()
+
+input_dim = 500000
+
+# arbitrary simple model
+model = Sequential()
+model.add(Dense(64, activation='relu', input_dim=input_dim))
+model.add(Dense(64, activation='relu'))
+model.add(Dense(10, activation='softmax'))
+
+model.compile(loss='categorical_crossentropy',
+              optimizer='adam',
+              metrics=['accuracy'])
+
+memory_logger_callback = MemoryLoggerCallback()
+
+model.fit(dummy_gen_simple(input_dim, batch_size=32),
+          steps_per_epoch=10,
+          epochs=252,
+          validation_data=dummy_gen_simple(input_dim, batch_size=16),
+          validation_steps=2,
+          callbacks=[memory_logger_callback])

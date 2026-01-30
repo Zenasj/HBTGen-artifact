@@ -1,49 +1,38 @@
-# tf.random.uniform((B, 32, 32, 3), dtype=tf.float32) ← CIFAR-10 image shape (batch size B inferred)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
+import h5py
 import tensorflow as tf
+from tensorflow.keras.utils import to_categorical, HDF5Matrix
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Model architecture extracted from the example, matching CIFAR-10 input (32x32 RGB images)
-        self.conv1 = tf.keras.layers.Conv2D(8, (3, 3), activation='relu', input_shape=(32,32,3))
-        self.conv2 = tf.keras.layers.Conv2D(8, (3, 3), activation='relu')
-        self.pool1 = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))
-        self.drop1 = tf.keras.layers.Dropout(0.25)
-        self.conv3 = tf.keras.layers.Conv2D(16, (3, 3), activation='relu')
-        self.conv4 = tf.keras.layers.Conv2D(16, (3, 3), activation='relu')
-        self.pool2 = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))
-        self.drop2 = tf.keras.layers.Dropout(0.25)
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(32, activation='relu')
-        self.drop3 = tf.keras.layers.Dropout(0.5)
-        self.dense2 = tf.keras.layers.Dense(10, activation='softmax')  # 10 classes for CIFAR-10
+(Xtr, Ytr), (Xva, Yva) = tf.keras.datasets.cifar10.load_data()
+Xtr, Ytr, Xva, Yva, nc = Xtr[:1000], Ytr[:1000], Xva[:100], Yva[:100], 10
+Xtr, Xva = Xtr.astype('float32') / 255, Xva.astype('float32') / 255
+Ytr, Yva, ins = to_categorical(Ytr, nc), to_categorical(Yva, nc), Xtr.shape[1:]
+with h5py.File('cifar10.hdf5', 'w') as h5f:
+    h5f['Xtr'], h5f['Ytr'], h5f['Xva'], h5f['Yva'] = Xtr, Ytr, Xva, Yva
+del Xtr, Ytr, Xva, Yva
 
-    def call(self, inputs, training=False):
-        x = self.conv1(inputs)
-        x = self.conv2(x)
-        x = self.pool1(x)
-        x = self.drop1(x, training=training)
-        x = self.conv3(x)
-        x = self.conv4(x)
-        x = self.pool2(x)
-        x = self.drop2(x, training=training)
-        x = self.flatten(x)
-        x = self.dense1(x)
-        x = self.drop3(x, training=training)
-        return self.dense2(x)
+model = tf.keras.models.Sequential()
+model.add(tf.keras.layers.Conv2D(8, (3, 3), input_shape=ins, activation='relu'))
+model.add(tf.keras.layers.Conv2D(8, (3, 3), activation='relu'))
+model.add(tf.keras.layers.MaxPooling2D(pool_size=(2, 2)))
+model.add(tf.keras.layers.Dropout(0.25))
+model.add(tf.keras.layers.Conv2D(16, (3, 3), activation='relu'))
+model.add(tf.keras.layers.Conv2D(16, (3, 3), activation='relu'))
+model.add(tf.keras.layers.MaxPooling2D(pool_size=(2, 2)))
+model.add(tf.keras.layers.Dropout(0.25))
+model.add(tf.keras.layers.Flatten())
+model.add(tf.keras.layers.Dense(32, activation='relu'))
+model.add(tf.keras.layers.Dropout(0.5))
+model.add(tf.keras.layers.Dense(nc, activation='softmax'))
+opt = tf.keras.optimizers.RMSprop(lr=0.0001, decay=1e-6)
+model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['acc'])
 
-def my_model_function():
-    # Returns an untrained instance of MyModel
-    model = MyModel()
-    # Compile with RMSProp and categorical crossentropy matching the example
-    opt = tf.keras.optimizers.RMSprop(learning_rate=0.0001, decay=1e-6)
-    model.compile(loss='categorical_crossentropy', optimizer=opt, metrics=['accuracy'])
-    return model
+Xtr, Ytr = HDF5Matrix('cifar10.hdf5', 'Xtr'), HDF5Matrix('cifar10.hdf5', 'Ytr')
+Xva, Yva = HDF5Matrix('cifar10.hdf5', 'Xva'), HDF5Matrix('cifar10.hdf5', 'Yva')
 
-def GetInput():
-    # Returns a random float32 input tensor consistent with CIFAR-10 shape (batch size 32)
-    # Normalize to [0, 1] as in the example
-    batch_size = 32
-    return tf.random.uniform((batch_size, 32, 32, 3), minval=0, maxval=1, dtype=tf.float32)
-
+model.fit(x=Xtr, y=Ytr, batch_size=32, epochs=100,
+          validation_data=(Xva, Yva), shuffle='batch')

@@ -1,65 +1,69 @@
-# tf.random.uniform((B, 32), dtype=tf.float32)
+from tensorflow import keras
+
 import tensorflow as tf
+import numpy as np
+from tensorflow.keras import layers
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
-class Linear(tf.keras.layers.Layer):
-    def __init__(self, units=32, input_dim=32):
-        super(Linear, self).__init__()
-        self.w = self.add_weight(
-            shape=(input_dim, units),
-            initializer='random_normal',
-            trainable=True,
-            name="W")
-        self.b = self.add_weight(
-            shape=(units,),
-            initializer='zeros',
-            trainable=True,
-            name='b')
+class Linear(layers.Layer):
 
-    def call(self, inputs):
-        return tf.matmul(inputs, self.w) + self.b
+  def __init__(self, units=32, input_dim=32):
+    super(Linear, self).__init__()
+    self.w = self.add_weight(shape=(input_dim, units),
+                             initializer='random_normal',
+                             trainable=True, name="W")
+    self.b = self.add_weight(shape=(units,),
+                             initializer='zeros',
+                             trainable=True, name='b')
 
+  def call(self, inputs):
+    return tf.matmul(inputs, self.w) + self.b
 
-class NestedLinear(tf.keras.layers.Layer):
-    def __init__(self, input_dim=32):
-        super(NestedLinear, self).__init__()
-        # Initialize child Linear layer with input_dim
-        self.linear_1 = Linear(units=32, input_dim=input_dim)
+class NestedLinear(layers.Layer):
 
-    def call(self, inputs):
-        return self.linear_1(inputs)
+  def __init__(self):
+    super(NestedLinear, self).__init__()
+    self.linear_1 = Linear(32)
 
+  def call(self, inputs):
+    x = self.linear_1(inputs)
+    return x
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Create base Linear layer and nested Linear layer
-        # Note: input_dim=32 assumed from the original code
-        self.linear = Linear(units=32, input_dim=32)
-        self.nested_linear = NestedLinear(input_dim=32)
+inputs = layers.Input(shape=(32,))
 
-    def call(self, inputs):
-        # Compute outputs of both linear layers
-        out_linear = self.linear(inputs)
-        out_nested = self.nested_linear(inputs)
+print("SAVING SINGLE LAYER")
+outputs = Linear(32)(inputs)
 
-        # Compare outputs element-wise within a tolerance
-        # This reflects a potential comparison of both models' forward outputs
-        tol = 1e-5
-        diff = tf.abs(out_linear - out_nested)
-        compare = diff < tol
+model = tf.keras.Model(inputs=inputs, outputs=outputs)
+for var in model.trainable_variables:
+    print(var)
+ckpt = tf.train.Checkpoint(model=model)
 
-        # Return boolean tensor indicating closeness, shape (batch_size, 32)
-        return compare
+sess = tf.Session()
+sess.run(tf.global_variables_initializer())
+with sess.as_default():
+    ckpt.save("ckpt")
 
+for var in tf.train.list_variables("./"):
+    print(var)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+print("--------------------------------------")
 
+nl_layer = NestedLinear()
+outputs = nl_layer(inputs)
 
-def GetInput():
-    # Generate a random float32 input of shape (batch_size, 32)
-    # Batch size chosen as 4 for example, consistent with input shape (None, 32)
-    batch_size = 4
-    return tf.random.uniform(shape=(batch_size, 32), dtype=tf.float32)
+print("SAVING NESTED LAYER")
 
+model = tf.keras.Model(inputs=inputs, outputs=outputs)
+for var in model.trainable_variables:
+    print(var)
+ckpt = tf.train.Checkpoint(model=model)
+
+sess = tf.Session()
+sess.run(tf.global_variables_initializer())
+with sess.as_default():
+    ckpt.save("ckpt")
+
+for var in tf.train.list_variables("./"):
+    print(var)

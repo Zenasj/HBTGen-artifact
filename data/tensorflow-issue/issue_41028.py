@@ -1,134 +1,109 @@
-# tf.random.uniform((B, T, 40), dtype=tf.float32)
+import math
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
+class TranNetwork(tf.keras.Model):
+    """Transcription Network
     """
-    Combined model demonstrating the original RNNTModel with two versions
-    of recurrent_activation usage in LSTM:
-    - One using recurrent_activation='sigmoid'  (enables CuDNN kernel)
-    - One using recurrent_activation=tf.keras.activations.sigmoid (no CuDNN)
-    
-    The forward pass runs both variants on identical inputs and compares outputs.
-    This comparison highlights the difference discussed in the issue:
-    using string 'sigmoid' triggers CuDNN kernel and convergence,
-    using tf.keras.activations.sigmoid triggers slower standard LSTM without convergence.
-    
-    Output is a dictionary containing outputs from both variants and a boolean tensor 
-    indicating if they are close within a tolerance.
-    
-    Assumptions:
-    - Input shape: [batch, timesteps, 40] feature vectors.
-    - The model includes simple sequence length input as int tensor.
-    - For this demonstration, labels and loss are not computed.
-    """
+    def __init__(self, num_lstm_layers, lstm_cell_size, dropout=0.0):
+        super(TranNetwork, self).__init__()
 
-    def __init__(self, num_lstm_layers=2, lstm_cell_size=32, dropout=0.0, vocab_size=29):
-        super().__init__()
         self.num_lstm_layers = num_lstm_layers
         self.lstm_cell_size = lstm_cell_size
         self.dropout = dropout
-        self.vocab_size = vocab_size
-
-        # Pooling layer after first LSTM layer, same for both variants
+        self.trans_layers = []
         self.pooling = tf.keras.layers.MaxPool1D(pool_size=3, padding="same")
 
-        # Build two parallel transcription networks:
-        # One with recurrent_activation='sigmoid' (string)
-        self.trans_layers_str = []
-        recurrent_activation_str = 'sigmoid'
-        for _ in range(num_lstm_layers):
-            self.trans_layers_str.append(
-                tf.keras.layers.LSTM(
-                    self.lstm_cell_size,
-                    return_sequences=True,
-                    dropout=self.dropout,
-                    recurrent_activation=recurrent_activation_str))
+        # HERE IS THE ISSUE, USING RECURRENT ACTIVATION AS tf.keras.activations.sigmoid instead of 'sigmoid'
+        # causes model to not converge at all
+        recurrent_activation = 'sigmoid'
+        #recurrent_activation = tf.keras.activations.sigmoid
+        for l in range(num_lstm_layers):
+          self.trans_layers.append(tf.keras.layers.LSTM(
+                                     self.lstm_cell_size,
+                                     return_sequences=True,
+                                     dropout=self.dropout,
+                                     recurrent_activation=recurrent_activation))
 
-        # One with recurrent_activation=tf.keras.activations.sigmoid (callable)
-        self.trans_layers_callable = []
-        recurrent_activation_callable = tf.keras.activations.sigmoid
-        for _ in range(num_lstm_layers):
-            self.trans_layers_callable.append(
-                tf.keras.layers.LSTM(
-                    self.lstm_cell_size,
-                    return_sequences=True,
-                    dropout=self.dropout,
-                    recurrent_activation=recurrent_activation_callable))
-
-        # Shared dense layer for both outputs to simulate CTC output layer
-        self.ctc_layer = tf.keras.layers.Dense(1 + self.vocab_size, name='ctc')
-
-    def _run_transcription(self, x, x_len, trans_layers):
+    def call(self, x, x_len, training=True):
         seq_len = x_len
         output = tf.clip_by_value(x, -3.0, 3.0)
         for l in range(self.num_lstm_layers):
             mask = tf.sequence_mask(seq_len)
-            output = trans_layers[l](output, mask=mask, training=True)
+            output = self.trans_layers[l](output, mask=mask, training=training)
             if l == 0:
-                seq_len = tf.cast(tf.math.ceil(seq_len / 3), dtype=tf.int32)
-                output = self.pooling(output, training=True)
+              seq_len = tf.cast(tf.math.ceil(tf.divide(seq_len, 3)), dtype=tf.int32)
+              output = self.pooling(output, training=training)
+
         mask = tf.sequence_mask(seq_len)
-        output = trans_layers[-1](output, mask=mask, training=True)
+        output = self.trans_layers[-1](output, mask=mask, training=training)
+
         return output, seq_len
 
-    def call(self, inputs, training=True):
-        """
-        Expects input tuple (x, x_len)
-        x: float32 tensor of shape [batch, timestep, 40]
-        x_len: int32 tensor of shape [batch] - sequence lengths
-        """
-        x, x_len = inputs
-
-        # Run transcription network with string recurrent_activation (cuDNN path)
-        trans_out_str, out_len_str = self._run_transcription(x, x_len, self.trans_layers_str)
-        ctc_out_str = self.ctc_layer(trans_out_str, training=training)
-
-        # Run transcription network with callable recurrent_activation (standard LSTM path)
-        trans_out_callable, out_len_callable = self._run_transcription(x, x_len, self.trans_layers_callable)
-        ctc_out_callable = self.ctc_layer(trans_out_callable, training=training)
-
-        # Compare outputs numerically, within a tolerance
-        # Outputs shapes: [batch, timestep', vocab_size+1]
-        # We compare ctc outputs (logits) for closeness.
-        are_close = tf.reduce_all(
-            tf.abs(ctc_out_str - ctc_out_callable) < 1e-5,
-            axis=[1, 2])  # shape: [batch]
-
-        return {
-            'ctc_out_str': ctc_out_str,
-            'output_len_str': out_len_str,
-            'ctc_out_callable': ctc_out_callable,
-            'output_len_callable': out_len_callable,
-            'outputs_close': are_close
-        }
-
-def my_model_function():
+class RNNTModel(object):
+    """ RNNT Model class for training
     """
-    Return an instance of MyModel with default parameters reflecting
-    the example from the issue:
-    - 2 LSTM layers
-    - 32 units each
-    - vocab_size=29 (from example)
-    - dropout=0.0
-    """
-    return MyModel(num_lstm_layers=2, lstm_cell_size=32, dropout=0.0, vocab_size=29)
+    def __init__(self, num_lstm_layers, lstm_cell_size, vocab_size, dropout=0.0):
+        self.vocab_size = vocab_size
+        self.trans = TranNetwork(num_lstm_layers, lstm_cell_size, dropout=dropout)
+        self.ctc_layer = tf.keras.layers.Dense(1+self.vocab_size, name='ctc')
 
-def GetInput():
-    """
-    Returns a random input tuple (x, x_len) compatible with MyModel.
-    
-    - x: tf.float32 tensor with shape = [batch, timestep, 40], features clipped between -3 and 3 by model.
-    - x_len: tf.int32 tensor shape [batch], sequence lengths <= timestep.
-    
-    Using batch=4, timestep=100 as example.
-    """
-    batch = 4
-    timestep = 100
-    feature_dim = 40
+    def forward(self, x, y, x_len, y_len, training=True):
+        @tf.function(input_signature=[
+            tf.TensorSpec(shape=[None, None, 40], dtype=tf.float32),
+            tf.TensorSpec(shape=[None, None], dtype=tf.int32),
+            tf.TensorSpec(shape=[None, ], dtype=tf.int32),
+            tf.TensorSpec(shape=[None, ], dtype=tf.int32),
+            tf.TensorSpec(shape=[], dtype=tf.bool)])
+        def _forward(x, y, x_len, y_len, training=True):
+            trans_output, output_len = self.trans(x, x_len, training=training)
+            ctc_out = self.ctc_layer(trans_output, training=training)
+            output_d = {'ctc_out': ctc_out, 'output_len': output_len}
+            return output_d
+        return _forward(x, y, x_len, y_len, training=training)
 
-    x = tf.random.uniform(shape=[batch, timestep, feature_dim], minval=-5.0, maxval=5.0, dtype=tf.float32)
-    # Provide sequence lengths between 50 and 100 (inclusive)
-    x_len = tf.random.uniform(shape=[batch], minval=50, maxval=timestep+1, dtype=tf.int32)
-    return (x, x_len)
+    def loss(self, y, x_len, y_len, ctc_out):
+        @tf.function(input_signature=[
+            tf.TensorSpec(shape=[None, None], dtype=tf.int32),
+            tf.TensorSpec(shape=[None, ], dtype=tf.int32),
+            tf.TensorSpec(shape=[None, ], dtype=tf.int32),
+            tf.TensorSpec(shape=[None, None, 1+self.vocab_size], dtype=tf.float32)])
+        def _loss(y, x_len, y_len, ctc_out):
+            ctc_loss = tf.nn.ctc_loss(y, ctc_out, y_len, x_len,
+                                      logits_time_major=False,
+                                      blank_index=self.vocab_size)
+            # to ignore invalid ctc loss case
+            mask = tf.dtypes.cast(
+              tf.math.greater_equal(x_len, y_len), dtype=tf.float32)
+            ctc_loss = tf.multiply(ctc_loss, mask)
+            ctc_loss = tf.reduce_sum(ctc_loss)
+            return ctc_loss
+        return _loss(y, x_len, y_len, ctc_out)
 
+    @property
+    def trainable_variables(self):
+        return self.trans.trainable_variables \
+               + self.ctc_layer.trainable_variables
+
+model = RNNTModel(2, 32, 29, dropout=0.0)
+optimizer = tf.keras.optimizers.Adam(0.00025)
+
+@tf.function(input_signature=[
+    tf.TensorSpec(shape=[None, None, 40], dtype=tf.float32),
+    tf.TensorSpec(shape=[None, None], dtype=tf.int32),
+    tf.TensorSpec(shape=[None, ], dtype=tf.int32),
+    tf.TensorSpec(shape=[None, ], dtype=tf.int32)])
+def train_step(x, y, x_len, y_len):
+    with tf.GradientTape() as tape:
+        output_d = model.forward(x, y, x_len, y_len, training=True)
+        ctc_loss = model.loss(y, output_d['output_len'],
+                              y_len, output_d['ctc_out'])
+    variables = model.trainable_variables
+    gradients = tape.gradient(ctc_loss, variables)
+    gradients, _ = tf.clip_by_global_norm(gradients, 1.0)
+    optimizer.apply_gradients(zip(gradients, variables))
+    loss_norm_factor = 1.0 / tf.cast(tf.reduce_sum(y_len), dtype=tf.float32)
+    return ctc_loss * loss_norm_factor

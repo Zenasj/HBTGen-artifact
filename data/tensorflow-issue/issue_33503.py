@@ -1,30 +1,47 @@
-# tf.random.uniform((B, feature_dimension), dtype=tf.float32) ← Input shape is (batch_size, feature_dimension)
+import random
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
-import tensorflow as tf
+import attr
 import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self, feature_dimension=3):
-        super().__init__()
-        # Single Dense layer without activation (linear)
-        self.dense = tf.keras.layers.Dense(1, activation=None)
-        self.feature_dimension = feature_dimension
+from tensorflow.python.keras import Input, Model
+from tensorflow.python.keras.layers import Dense
+from tensorflow.python.keras.optimizers import SGD
+from tensorflow.python.keras.utils import Sequence
 
-    def call(self, inputs, training=False):
-        # Forward pass through Dense layer
-        return self.dense(inputs)
 
-def my_model_function():
-    # Initialize model with default feature dimension 3 as in original example
-    return MyModel(feature_dimension=3)
+def make_model(D):
+    x = Input(shape=[D])
+    y = Dense(1, activation=None)(x)
+    model = Model(inputs=x, outputs=y)
+    model.compile(optimizer=SGD(), loss="mean_squared_error")
+    return model
 
-def GetInput():
-    # Generate a random input tensor consistent with model input shape
-    # Assumptions:
-    # - batch_size is arbitrary, we choose 10 to match original example batch_size
-    # - feature_dimension from model default is 3
-    batch_size = 10
-    feature_dimension = 3
-    # Use tf.random.uniform for diverse input data
-    return tf.random.uniform((batch_size, feature_dimension), dtype=tf.float32)
 
+@attr.s
+class Feed(Sequence):
+    foo = attr.ib(default=np.arange(12))  # Remove this attribute to get the expected behaviour
+    batch_size = attr.ib(default=10)
+    feature_dimension = attr.ib(default=3)
+
+    def __getitem__(self, idx):
+        features = np.random.randn(self.batch_size, self.feature_dimension)
+        targets = np.sum(features, axis=1, keepdims=True)
+        return features, targets
+
+    def __len__(self):
+        return 100
+
+
+if __name__ == "__main__":
+    feed = Feed()
+    model = make_model(feed.feature_dimension)
+    model.fit(x=feed, epochs=10)
+
+def _get_num_samples_or_steps(data, steps_per_epoch):
+  """Returns number of samples or steps, and whether to use steps count mode."""
+  flat_inputs = nest.flatten(data)
+  if hasattr(flat_inputs[0], 'shape'):
+    return int(flat_inputs[0].shape[0]), False
+  return steps_per_epoch, True

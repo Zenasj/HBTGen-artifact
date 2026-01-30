@@ -1,16 +1,9 @@
-# torch.rand(1, dtype=torch.float32)  # Dummy input to satisfy model signature
 import torch
-from torch import nn
+def fn():
+    res = torch.tensor(data=[[1., -1.]])
+    return res
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Reproduces the error scenario of creating a tensor inside compiled forward
-        return torch.tensor(data=[[1., -1.]])
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Dummy input required for model compatibility
-    return torch.rand(1, dtype=torch.float32)
-
+if __name__ == "__main__":
+    fn = torch.compile(fn)
+    res_fwd = fn()
+    print(res_fwd)

@@ -1,19 +1,20 @@
-# Inputs: (torch.zeros(3,5, dtype=torch.bfloat16), torch.ones(2,5, dtype=torch.bfloat16), torch.tensor([[0,1,2,0,0]], dtype=torch.int64))
+import numpy as np
+
 import torch
-from torch import nn
+import triton
 
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        inp, src, index = inputs
-        return inp.scatter_add(0, index, src)
+torch.cuda._check_bf16_tensor_supported = lambda x: False
+print(torch.__version__, triton.__version__, torch.cuda.get_device_properties(0), torch.cuda.is_bf16_supported())
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    dtype = torch.bfloat16
-    inp = torch.zeros(3, 5, dtype=dtype)
-    src = torch.ones(2, 5, dtype=dtype)
-    index = torch.tensor([[0, 1, 2, 0, 0]], dtype=torch.int64)
-    return (inp, src, index)
+@torch.compile
+def fn(inp, src, index):
+            return inp.scatter_add(0, index, src)
 
+with torch.device("cuda"):
+  dtype = torch.bfloat16
+  inp = torch.zeros(3, 5, dtype=dtype)
+  src = torch.ones((2, 5), dtype=dtype)
+  index = torch.tensor([[0, 1, 2, 0, 0]])
+
+print(fn(inp, src, index))

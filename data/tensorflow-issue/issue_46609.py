@@ -1,19 +1,28 @@
-# tf.random.uniform((B, D, H, W, C), dtype=tf.float32)  # Typical 3D data format for UpSampling3D
+import math
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
 import numpy as np
+from numpy import (zeros, where, diff, floor, minimum, maximum, array, concatenate, logical_or, logical_xor,
+                   sqrt)
 
-# The interpolation functions for 1D, 2D, 3D separable interpolation using numpy.
-# These are direct translations/integrations from the issue source.
 
 def linear_interpolate(x_fix, y_fix, x_var):
     '''
-    1D linear interpolation (numpy-based).
+        Functionality:
+            1D linear interpolation
+        Author:
+            Michael Osthege
+        Link:
+            https://gist.github.com/michaelosthege/e20d242bc62a434843b586c78ebce6cc
     '''
+
     x_repeat = np.tile(x_var[:, None], (len(x_fix), ))
     distances = np.abs(x_repeat - x_fix)
 
     x_indices = np.searchsorted(x_fix, x_var)
+
     weights = np.zeros_like(distances)
     idx = np.arange(len(x_indices))
     weights[idx, x_indices] = distances[idx, x_indices - 1]
@@ -27,105 +36,142 @@ def linear_interpolate(x_fix, y_fix, x_var):
 
 def cubic_interpolate(x, y, x0):
     '''
-    1D cubic spline interpolation (numpy-based).
+        Functionliaty:
+            1D cubic spline interpolation
+        Author:
+            Raphael Valentin
+        Link:
+            https://stackoverflow.com/questions/31543775/how-to-perform-cubic-spline-interpolation-in-python
     '''
+
     x = np.asfarray(x)
     y = np.asfarray(y)
+
+    # remove non finite values
+    # indexes = np.isfinite(x)
+    # x = x[indexes]
+    # y = y[indexes]
+
+    # check if sorted
     if np.any(np.diff(x) < 0):
         indexes = np.argsort(x)
         x = x[indexes]
         y = y[indexes]
+
     size = len(x)
+
     xdiff = np.diff(x)
     ydiff = np.diff(y)
+
+    # allocate buffer matrices
     Li = np.empty(size)
     Li_1 = np.empty(size - 1)
     z = np.empty(size)
-    Li[0] = np.sqrt(2 * xdiff[0])
+
+    # fill diagonals Li and Li-1 and solve [L][y] = [B]
+    Li[0] = sqrt(2 * xdiff[0])
     Li_1[0] = 0.0
-    B0 = 0.0  # natural boundary condition
+    B0 = 0.0  # natural boundary
     z[0] = B0 / Li[0]
 
-    for i in range(1, size - 1):
+    for i in range(1, size - 1, 1):
         Li_1[i] = xdiff[i - 1] / Li[i - 1]
-        Li[i] = np.sqrt(2 * (xdiff[i - 1] + xdiff[i]) - Li_1[i - 1] * Li_1[i - 1])
+        Li[i] = sqrt(2 * (xdiff[i - 1] + xdiff[i]) - Li_1[i - 1] * Li_1[i - 1])
         Bi = 6 * (ydiff[i] / xdiff[i] - ydiff[i - 1] / xdiff[i - 1])
         z[i] = (Bi - Li_1[i - 1] * z[i - 1]) / Li[i]
 
     i = size - 1
     Li_1[i - 1] = xdiff[-1] / Li[i - 1]
-    Li[i] = np.sqrt(2 * xdiff[-1] - Li_1[i - 1] * Li_1[i - 1])
-    Bn = 0.0  # natural boundary
-    z[i] = (Bn - Li_1[i - 1] * z[i - 1]) / Li[i]
+    Li[i] = sqrt(2 * xdiff[-1] - Li_1[i - 1] * Li_1[i - 1])
+    Bi = 0.0  # natural boundary
+    z[i] = (Bi - Li_1[i - 1] * z[i - 1]) / Li[i]
 
+    # solve [L.T][x] = [y]
+    i = size - 1
     z[i] = z[i] / Li[i]
     for i in range(size - 2, -1, -1):
         z[i] = (z[i] - Li_1[i - 1] * z[i + 1]) / Li[i]
 
+    # find index
     index = x.searchsorted(x0)
-    index = np.clip(index, 1, size - 1)
+    np.clip(index, 1, size - 1, index)
 
     xi1, xi0 = x[index], x[index - 1]
     yi1, yi0 = y[index], y[index - 1]
     zi1, zi0 = z[index], z[index - 1]
     hi1 = xi1 - xi0
 
-    f0 = (zi0 / (6 * hi1) * (xi1 - x0) ** 3 +
-          zi1 / (6 * hi1) * (x0 - xi0) ** 3 +
-          (yi1 / hi1 - zi1 * hi1 / 6) * (x0 - xi0) +
-          (yi0 / hi1 - zi0 * hi1 / 6) * (xi1 - x0))
+    # calculate cubic
+    f0 = zi0/(6*hi1)*(xi1-x0)**3 + \
+         zi1/(6*hi1)*(x0-xi0)**3 + \
+         (yi1/hi1 - zi1*hi1/6)*(x0-xi0) + \
+         (yi0/hi1 - zi0*hi1/6)*(xi1-x0)
 
     return f0
 
 
 def pchip_interpolate(xi, yi, x, mode="mono", verbose=False):
+    ''' 
+        Functionality:
+            1D PCHP interpolation
+        Authors:
+            Michael Taylor <mtaylor@atlanticsciences.com>
+            Mathieu Virbel <mat@meltingrocks.com>
+        Link:
+            https://gist.github.com/tito/553f1135959921ce6699652bf656150d
     '''
-    1D PCHIP interpolation (numpy-based).
-    '''
+
     if mode not in ("mono", "quad"):
         raise ValueError("Unrecognized mode string")
 
+    # Search for [xi,xi+1] interval for each x
     xi = xi.astype("double")
     yi = yi.astype("double")
 
-    x_index = np.zeros(len(x), dtype="int")
-    xi_steps = np.diff(xi)
-    if not np.all(xi_steps > 0):
+    x_index = zeros(len(x), dtype="int")
+    xi_steps = diff(xi)
+    if not all(xi_steps > 0):
         raise ValueError("x-coordinates are not in increasing order.")
 
-    x_steps = np.diff(x)
+    x_steps = diff(x)
     if xi_steps.max() / xi_steps.min() < 1.000001:
         # uniform input grid
+        if verbose:
+            print("pchip: uniform input grid")
         xi_start = xi[0]
         xi_step = (xi[-1] - xi[0]) / (len(xi) - 1)
-        x_index = np.minimum(np.maximum(np.floor((x - xi_start) / xi_step).astype(int), 0), len(xi) - 2)
+        x_index = minimum(maximum(floor((x - xi_start) / xi_step).astype(int), 0), len(xi) - 2)
 
+        # Calculate gradients d
         h = (xi[-1] - xi[0]) / (len(xi) - 1)
-        d = np.zeros(len(xi), dtype="double")
+        d = zeros(len(xi), dtype="double")
         if mode == "quad":
+            # quadratic polynomial fit
             d[[0]] = (yi[1] - yi[0]) / h
             d[[-1]] = (yi[-1] - yi[-2]) / h
-            d[1:-1] = (yi[2:] - yi[0:-2]) / (2 * h)
+            d[1:-1] = (yi[2:] - yi[0:-2]) / 2 / h
         else:
-            delta = np.diff(yi) / h
-            d = np.concatenate(([delta[0]], 
-                                2 / (1 / delta[:-1] + 1 / delta[1:]), 
-                                [delta[-1]]))
-            zero_mask = np.concatenate(([False], np.logical_xor(delta[:-1] > 0, delta[1:] > 0), [False]))
-            d[zero_mask] = 0
-            d[np.concatenate(([False], delta == 0))] = 0
-            d[np.concatenate((delta == 0, [False]))] = 0
-
+            # mode=='mono', Fritsch-Carlson algorithm from fortran numerical
+            # recipe
+            delta = diff(yi) / h
+            d = concatenate((delta[0:1], 2 / (1 / delta[0:-1] + 1 / delta[1:]), delta[-1:]))
+            d[concatenate((array([False]), logical_xor(delta[0:-1] > 0, delta[1:] > 0), array([False])))] = 0
+            d[logical_or(concatenate((array([False]), delta == 0)), concatenate(
+                (delta == 0, array([False]))))] = 0
+        # Calculate output values y
         dxxi = x - xi[x_index]
         dxxid = x - xi[1 + x_index]
-        dxxi2 = dxxi ** 2
-        dxxid2 = dxxid ** 2
-        y = (2 / h ** 3 * (yi[x_index] * dxxid2 * (dxxi + h / 2) - yi[1 + x_index] * dxxi2 * (dxxid - h / 2)) +
-             1 / h ** 2 * (d[x_index] * dxxid2 * dxxi + d[1 + x_index] * dxxi2 * dxxid))
+        dxxi2 = pow(dxxi, 2)
+        dxxid2 = pow(dxxid, 2)
+        y = (2 / pow(h, 3) * (yi[x_index] * dxxid2 * (dxxi + h / 2) - yi[1 + x_index] * dxxi2 *
+                              (dxxid - h / 2)) + 1 / pow(h, 2) *
+             (d[x_index] * dxxid2 * dxxi + d[1 + x_index] * dxxi2 * dxxid))
     else:
-        # non-uniform or monotonic grids
-        # Logic for x_index assignment
+        # not uniform input grid
         if (x_steps.max() / x_steps.min() < 1.000001 and x_steps.max() / x_steps.min() > 0.999999):
+            # non-uniform input grid, uniform output grid
+            if verbose:
+                print("pchip: non-uniform input grid, uniform output grid")
             x_decreasing = x[-1] < x[0]
             if x_decreasing:
                 x = x[::-1]
@@ -133,14 +179,17 @@ def pchip_interpolate(xi, yi, x, mode="mono", verbose=False):
             x_step = (x[-1] - x[0]) / (len(x) - 1)
             x_indexprev = -1
             for xi_loop in range(len(xi) - 2):
-                x_indexcur = max(int(np.floor((xi[1 + xi_loop] - x_start) / x_step)), -1)
+                x_indexcur = max(int(floor((xi[1 + xi_loop] - x_start) / x_step)), -1)
                 x_index[1 + x_indexprev:1 + x_indexcur] = xi_loop
                 x_indexprev = x_indexcur
             x_index[1 + x_indexprev:] = len(xi) - 2
             if x_decreasing:
                 x = x[::-1]
                 x_index = x_index[::-1]
-        elif np.all(x_steps > 0) or np.all(x_steps < 0):
+        elif all(x_steps > 0) or all(x_steps < 0):
+            # non-uniform input/output grids, output grid monotonic
+            if verbose:
+                print("pchip: non-uniform in/out grid, output grid monotonic")
             x_decreasing = x[-1] < x[0]
             if x_decreasing:
                 x = x[::-1]
@@ -155,66 +204,96 @@ def pchip_interpolate(xi, yi, x, mode="mono", verbose=False):
                 x = x[::-1]
                 x_index = x_index[::-1]
         else:
+            # non-uniform input/output grids, output grid not monotonic
+            if verbose:
+                print("pchip: non-uniform in/out grids, " "output grid not monotonic")
             for index in range(len(x)):
-                loc = np.where(x[index] < xi)[0]
+                loc = where(x[index] < xi)[0]
                 if loc.size == 0:
                     x_index[index] = len(xi) - 2
                 elif loc[0] == 0:
                     x_index[index] = 0
                 else:
                     x_index[index] = loc[0] - 1
-
-        h = np.diff(xi)
-        d = np.zeros(len(xi), dtype="double")
-        delta = np.diff(yi) / h
+        # Calculate gradients d
+        h = diff(xi)
+        d = zeros(len(xi), dtype="double")
+        delta = diff(yi) / h
         if mode == "quad":
+            # quadratic polynomial fit
             d[[0, -1]] = delta[[0, -1]]
-            d[1:-1] = (delta[1:] * h[:-1] + delta[:-1] * h[1:]) / (h[:-1] + h[1:])
+            d[1:-1] = (delta[1:] * h[0:-1] + delta[0:-1] * h[1:]) / (h[0:-1] + h[1:])
         else:
-            d = np.concatenate(
-                (delta[0:1],
-                 3 * (h[:-1] + h[1:]) / ((h[:-1] + 2 * h[1:]) / delta[:-1] +
-                                          (2 * h[:-1] + h[1:]) / delta[1:]),
-                 delta[-1:]))
-
-            zero_mask = np.concatenate(([False], np.logical_xor(delta[:-1] > 0, delta[1:] > 0), [False]))
-            d[zero_mask] = 0
-            zero_mask2 = np.logical_or(np.concatenate(([False], delta == 0)),
-                                      np.concatenate((delta == 0, [False])))
-            d[zero_mask2] = 0
-
+            # mode=='mono', Fritsch-Carlson algorithm from fortran numerical
+            # recipe
+            d = concatenate(
+                (delta[0:1], 3 * (h[0:-1] + h[1:]) / ((h[0:-1] + 2 * h[1:]) / delta[0:-1] +
+                                                      (2 * h[0:-1] + h[1:]) / delta[1:]), delta[-1:]))
+            d[concatenate((array([False]), logical_xor(delta[0:-1] > 0, delta[1:] > 0), array([False])))] = 0
+            d[logical_or(concatenate((array([False]), delta == 0)), concatenate(
+                (delta == 0, array([False]))))] = 0
         dxxi = x - xi[x_index]
         dxxid = x - xi[1 + x_index]
-        dxxi2 = dxxi ** 2
-        dxxid2 = dxxid ** 2
-
-        y = (2 / h[x_index] ** 3 *
+        dxxi2 = pow(dxxi, 2)
+        dxxid2 = pow(dxxid, 2)
+        y = (2 / pow(h[x_index], 3) *
              (yi[x_index] * dxxid2 * (dxxi + h[x_index] / 2) - yi[1 + x_index] * dxxi2 *
-              (dxxid - h[x_index] / 2)) + 1 / h[x_index] ** 2 *
+              (dxxid - h[x_index] / 2)) + 1 / pow(h[x_index], 2) *
              (d[x_index] * dxxid2 * dxxi + d[1 + x_index] * dxxi2 * dxxid))
-
     return y
 
 
 def Interpolate1D(x, y, xx, method='nearest'):
     '''
-    1D interpolation dispatcher (numpy-based).
+        Functionality:
+            1D interpolation with various methods
+        Author:
+            Kai Gao <nebulaekg@gmail.com>
     '''
+
     n = len(x)
     nn = len(xx)
     yy = np.zeros(nn)
 
+    # Nearest neighbour interpolation
     if method == 'nearest':
-        for i in range(nn):
+        for i in range(0, nn):
             xi = np.abs(xx[i] - x).argmin()
             yy[i] = y[xi]
 
+    # Linear interpolation
     elif method == 'linear':
+
+        # # slower version
+        # if n == 1:
+        #     yy[:-1] = y[0]
+
+        # else:
+        #     for i in range(0, nn):
+
+        #         if xx[i] < x[0]:
+        #             t = (xx[i] - x[0]) / (x[1] - x[0])
+        #             yy[i] = (1.0 - t) * y[0] + t * y[1]
+
+        #         elif x[n - 1] <= xx[i]:
+        #             t = (xx[i] - x[n - 2]) / (x[n - 1] - x[n - 2])
+        #             yy[i] = (1.0 - t) * y[n - 2] + t * y[n - 1]
+
+        #         else:
+        #             for k in range(1, n):
+        #                 if x[k - 1] <= xx[i] and xx[i] < x[k]:
+        #                     t = (xx[i] - x[k - 1]) / (x[k] - x[k - 1])
+        #                     yy[i] = (1.0 - t) * y[k - 1] + t * y[k]
+        #                     break
+
+        # # faster version
         yy = linear_interpolate(x, y, xx)
 
+    # Cubic interpolation
     elif method == 'cubic':
         yy = cubic_interpolate(x, y, xx)
 
+    # Piecewise cubic Hermite interpolating polynomial (PCHIP)
     elif method == 'pchip':
         yy = pchip_interpolate(x, y, xx, mode='mono')
 
@@ -223,8 +302,14 @@ def Interpolate1D(x, y, xx, method='nearest'):
 
 def Interpolate2D(x, y, f, xx, yy, method='nearest'):
     '''
-    2D separable interpolation (numpy-based).
+        Functionality:
+            2D interpolation implemented in a separable fashion
+            There are methods that do real 2D non-separable interpolation, which are
+                more difficult to implement. 
+        Author:
+            Kai Gao <nebulaekg@gmail.com>
     '''
+
     n1 = len(x)
     n2 = len(y)
     nn1 = len(xx)
@@ -233,10 +318,12 @@ def Interpolate2D(x, y, f, xx, yy, method='nearest'):
     w = np.zeros((nn1, n2))
     ff = np.zeros((nn1, nn2))
 
-    for j in range(n2):
+    # Interpolate along the 1st dimension
+    for j in range(0, n2):
         w[:, j] = Interpolate1D(x, f[:, j], xx, method)
 
-    for i in range(nn1):
+    # Interpolate along the 2nd dimension
+    for i in range(0, nn1):
         ff[i, :] = Interpolate1D(y, w[i, :], yy, method)
 
     return ff
@@ -244,8 +331,14 @@ def Interpolate2D(x, y, f, xx, yy, method='nearest'):
 
 def Interpolate3D(x, y, z, f, xx, yy, zz, method='nearest'):
     '''
-    3D separable interpolation (numpy-based).
+        Functionality:
+            3D interpolation implemented in a separable fashion
+            There are methods that do real 3D non-separable interpolation, which are
+                more difficult to implement. 
+        Author:
+            Kai Gao <nebulaekg@gmail.com>
     '''
+
     n1 = len(x)
     n2 = len(y)
     n3 = len(z)
@@ -257,19 +350,117 @@ def Interpolate3D(x, y, z, f, xx, yy, zz, method='nearest'):
     w2 = np.zeros((nn1, nn2, n3))
     ff = np.zeros((nn1, nn2, nn3))
 
-    for k in range(n3):
-        for j in range(n2):
+    # Interpolate along the 1st dimension
+    for k in range(0, n3):
+        for j in range(0, n2):
             w1[:, j, k] = Interpolate1D(x, f[:, j, k], xx, method)
 
-    for k in range(n3):
-        for i in range(nn1):
+    # Interpolate along the 2nd dimension
+    for k in range(0, n3):
+        for i in range(0, nn1):
             w2[i, :, k] = Interpolate1D(y, w1[i, :, k], yy, method)
 
-    for j in range(nn2):
-        for i in range(nn1):
+    # Interpolate along the 3rd dimension
+    for j in range(0, nn2):
+        for i in range(0, nn1):
             ff[i, j, :] = Interpolate1D(z, w2[i, j, :], zz, method)
 
     return ff
+
+
+def UpInterpolate1D(x, size=2, interpolation='nearest', data_format='channels_first', align_corners=True):
+    '''
+        Functionality:
+            1D upsampling interpolation for tf
+        Author:
+            Kai Gao <nebulaekg@gmail.com>
+    '''
+
+    x = x.numpy()
+
+    if data_format == 'channels_last':
+        nb, nr, nh = x.shape
+    elif data_format == 'channels_first':
+        nb, nh, nr = x.shape
+
+    r = size
+    ir = np.linspace(0.0, nr - 1.0, num=nr)
+
+    if align_corners:
+        # align_corners=True assumes that values are sampled at discrete points
+        iir = np.linspace(0.0, nr - 1.0, num=nr * r)
+    else:
+        # aling_corners=False assumes that values are sampled at centers of discrete blocks
+        iir = np.linspace(0.0 - 0.5 + 0.5 / r, nr - 1.0 + 0.5 - 0.5 / r, num=nr * r)
+        iir = np.clip(iir, 0.0, nr - 1.0)
+
+    if data_format == 'channels_last':
+        xx = np.zeros((nb, nr * r, nh))
+        for i in range(0, nb):
+            for j in range(0, nh):
+                t = np.reshape(x[i, :, j], (nr))
+                xx[i, :, j] = Interpolate1D(ir, t, iir, interpolation)
+
+    elif data_format == 'channels_first':
+        xx = np.zeros((nb, nh, nr * r))
+        for i in range(0, nb):
+            for j in range(0, nh):
+                t = np.reshape(x[i, j, :], (nr))
+                xx[i, j, :] = Interpolate1D(ir, t, iir, interpolation)
+
+    return tf.convert_to_tensor(xx, dtype=x.dtype)
+
+
+def UpInterpolate2D(x,
+                    size=(2, 2),
+                    interpolation='nearest',
+                    data_format='channels_first',
+                    align_corners=True):
+    '''
+        Functionality:
+            2D upsampling interpolation for tf
+        Author:
+            Kai Gao <nebulaekg@gmail.com>
+    '''
+
+    x = x.numpy()
+
+    if data_format == 'channels_last':
+        nb, nr, nc, nh = x.shape
+    elif data_format == 'channels_first':
+        nb, nh, nr, nc = x.shape
+
+    r = size[0]
+    c = size[1]
+    ir = np.linspace(0.0, nr - 1.0, num=nr)
+    ic = np.linspace(0.0, nc - 1.0, num=nc)
+
+    if align_corners:
+        # align_corners=True assumes that values are sampled at discrete points
+        iir = np.linspace(0.0, nr - 1.0, num=nr * r)
+        iic = np.linspace(0.0, nc - 1.0, num=nc * c)
+    else:
+        # aling_corners=False assumes that values are sampled at centers of discrete blocks
+        iir = np.linspace(0.0 - 0.5 + 0.5 / r, nr - 1.0 + 0.5 - 0.5 / r, num=nr * r)
+        iic = np.linspace(0.0 - 0.5 + 0.5 / c, nc - 1.0 + 0.5 - 0.5 / c, num=nc * c)
+        iir = np.clip(iir, 0.0, nr - 1.0)
+        iic = np.clip(iic, 0.0, nc - 1.0)
+
+    if data_format == 'channels_last':
+        xx = np.zeros((nb, nr * r, nc * c, nh))
+        for i in range(0, nb):
+            for j in range(0, nh):
+                t = np.reshape(x[i, :, :, j], (nr, nc))
+                xx[i, :, :, j] = Interpolate2D(ir, ic, t, iir, iic, interpolation)
+
+    elif data_format == 'channels_first':
+        xx = np.zeros((nb, nh, nr * r, nc * c))
+        for i in range(0, nb):
+            for j in range(0, nh):
+                t = np.reshape(x[i, j, :, :], (nr, nc))
+                xx[i, j, :, :] = Interpolate2D(ir, ic, t, iir, iic, interpolation)
+
+    return tf.convert_to_tensor(xx, dtype=x.dtype)
 
 
 def UpInterpolate3D(x,
@@ -277,35 +468,34 @@ def UpInterpolate3D(x,
                     interpolation='nearest',
                     data_format='channels_first',
                     align_corners=True):
-    """
-    3D upsampling interpolation for Tensor input.
+    '''
+        Functionality:
+            3D upsampling interpolation for tf
+        Author:
+            Kai Gao <nebulaekg@gmail.com>
+    '''
 
-    x: tf.Tensor, 5D.
-    size: tuple of ints, upsampling factors.
-    interpolation: str, one of nearest, linear, cubic, pchip
-    data_format: 'channels_first' or 'channels_last'
-    align_corners: bool
-    """
-    # WARNING: we convert to numpy inside, so this will fail in graph mode or with non-eager tensors.
-    # This is a major limitation and the user reported issues in the original thread.
-    # This implementation is for demonstration/reference and not production or graph mode ready.
+    x = x.numpy()
 
-    x_np = x.numpy()
     if data_format == 'channels_last':
-        nb, nr, nc, nd, nh = x_np.shape
-    else:
-        nb, nh, nr, nc, nd = x_np.shape
-    r, c, d = size
+        nb, nr, nc, nd, nh = x.shape
+    elif data_format == 'channels_first':
+        nb, nh, nr, nc, nd = x.shape
 
+    r = size[0]
+    c = size[1]
+    d = size[2]
     ir = np.linspace(0.0, nr - 1.0, num=nr)
     ic = np.linspace(0.0, nc - 1.0, num=nc)
     id = np.linspace(0.0, nd - 1.0, num=nd)
 
     if align_corners:
+        # align_corners=True assumes that values are sampled at discrete points
         iir = np.linspace(0.0, nr - 1.0, num=nr * r)
         iic = np.linspace(0.0, nc - 1.0, num=nc * c)
         iid = np.linspace(0.0, nd - 1.0, num=nd * d)
     else:
+        # aling_corners=False assumes that values are sampled at centers of discrete blocks
         iir = np.linspace(0.0 - 0.5 + 0.5 / r, nr - 1.0 + 0.5 - 0.5 / r, num=nr * r)
         iic = np.linspace(0.0 - 0.5 + 0.5 / c, nc - 1.0 + 0.5 - 0.5 / c, num=nc * c)
         iid = np.linspace(0.0 - 0.5 + 0.5 / d, nd - 1.0 + 0.5 - 0.5 / d, num=nd * d)
@@ -315,61 +505,462 @@ def UpInterpolate3D(x,
 
     if data_format == 'channels_last':
         xx = np.zeros((nb, nr * r, nc * c, nd * d, nh))
-        for i in range(nb):
-            for j in range(nh):
-                t = np.reshape(x_np[i, :, :, :, j], (nr, nc, nd))
+        for i in range(0, nb):
+            for j in range(0, nh):
+                t = np.reshape(x[i, :, :, :, j], (nr, nc, nd))
                 xx[i, :, :, :, j] = Interpolate3D(ir, ic, id, t, iir, iic, iid, interpolation)
-    else:
+
+    elif data_format == 'channels_first':
         xx = np.zeros((nb, nh, nr * r, nc * c, nd * d))
-        for i in range(nb):
-            for j in range(nh):
-                t = np.reshape(x_np[i, j, :, :, :], (nr, nc, nd))
+        for i in range(0, nb):
+            for j in range(0, nh):
+                t = np.reshape(x[i, j, :, :, :], (nr, nc, nd))
                 xx[i, j, :, :, :] = Interpolate3D(ir, ic, id, t, iir, iic, iid, interpolation)
 
     return tf.convert_to_tensor(xx, dtype=x.dtype)
 
 
-class MyModel(tf.keras.Model):
-    def __init__(self, size=(2,2,2), interpolation='trilinear', data_format='channels_last', align_corners=True):
-        """
-        Model wrapping the UpSampling3D with trilinear interpolation feature.
-        Defaults:
-          - size: Upsampling by 2x in each spatial dim
-          - interpolation: 'trilinear' (alias for 'linear')
-          - data_format: 'channels_last' (B, D, H, W, C)
-          - align_corners: True
-        """
-        super().__init__()
-        self.size = size
+# ################################################################################
+@keras_export('keras.layers.UpSampling1D')
+class UpSampling1D(Layer):
+    """Upsampling layer for 1D inputs.
+  Repeats each temporal step `size` times along the time axis.
+  Examples:
+  >>> input_shape = (2, 2, 3)
+  >>> x = np.arange(np.prod(input_shape)).reshape(input_shape)
+  >>> print(x)
+  [[[ 0  1  2]
+    [ 3  4  5]]
+    [[ 6  7  8]
+    [ 9 10 11]]]
+  >>> y = tf.keras.layers.UpSampling1D(size=2)(x)
+  >>> print(y)
+  tf.Tensor(
+    [[[ 0  1  2]
+      [ 0  1  2]
+      [ 3  4  5]
+      [ 3  4  5]]
+      [[ 6  7  8]
+      [ 6  7  8]
+      [ 9 10 11]
+      [ 9 10 11]]], shape=(2, 4, 3), dtype=int64)
+  Args:
+    size: Integer. Upsampling factor.
+  Input shape:
+    3D tensor with shape: `(batch_size, steps, features)`.
+  Output shape:
+    3D tensor with shape: `(batch_size, upsampled_steps, features)`.
+  """
+    def __init__(self, size=2, data_format='None', interpolation='nearest', align_corners=True, **kwargs):
+        super(UpSampling1D, self).__init__(**kwargs)
+        self.data_format = conv_utils.normalize_data_format(data_format)
+        self.size = int(size)
+        self.input_spec = InputSpec(ndim=3)
         self.interpolation = interpolation
-        self.data_format = data_format
+        if self.interpolation not in {'nearest', 'linear', 'cubic', 'pchip'}:
+            raise ValueError('`interpolation` argument should be one of `"nearest"` '
+                             'or `"linear"` '
+                             'or `"cubic"` '
+                             'or `"pchip"`.')
         self.align_corners = align_corners
 
-    @tf.function(jit_compile=True)
+    def compute_output_shape(self, input_shape):
+        input_shape = tf.TensorShape(input_shape).as_list()
+        size = self.size * input_shape[1] if input_shape[1] is not None else None
+        return tf.TensorShape([input_shape[0], size, input_shape[2]])
+
     def call(self, inputs):
-        # Use UpInterpolate3D with the given arguments
-        out = UpInterpolate3D(inputs, 
-                              size=self.size,
-                              interpolation=self.interpolation,
-                              data_format=self.data_format,
-                              align_corners=self.align_corners)
-        return out
+        return UpInterpolate1D(inputs,
+                               self.size,
+                               data_format=self.data_format,
+                               interpolation=self.interpolation,
+                               align_corners=self.align_corners)
+
+    def get_config(self):
+        config = {'size': self.size}
+        base_config = super(UpSampling1D, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
 
 
-def my_model_function():
-    # Return an instance of MyModel with default parameters
-    return MyModel()
+@keras_export('keras.layers.UpSampling2D')
+class UpSampling2D(Layer):
+    """Upsampling layer for 2D inputs.
+  Repeats the rows and columns of the data
+  by `size[0]` and `size[1]` respectively.
+  Examples:
+  >>> input_shape = (2, 2, 1, 3)
+  >>> x = np.arange(np.prod(input_shape)).reshape(input_shape)
+  >>> print(x)
+  [[[[ 0  1  2]]
+    [[ 3  4  5]]]
+    [[[ 6  7  8]]
+    [[ 9 10 11]]]]
+  >>> y = tf.keras.layers.UpSampling2D(size=(1, 2))(x)
+  >>> print(y)
+  tf.Tensor(
+    [[[[ 0  1  2]
+        [ 0  1  2]]
+      [[ 3  4  5]
+        [ 3  4  5]]]
+      [[[ 6  7  8]
+        [ 6  7  8]]
+      [[ 9 10 11]
+        [ 9 10 11]]]], shape=(2, 2, 2, 3), dtype=int64)
+  Args:
+    size: Int, or tuple of 2 integers.
+      The upsampling factors for rows and columns.
+    data_format: A string,
+      one of `channels_last` (default) or `channels_first`.
+      The ordering of the dimensions in the inputs.
+      `channels_last` corresponds to inputs with shape
+      `(batch_size, height, width, channels)` while `channels_first`
+      corresponds to inputs with shape
+      `(batch_size, channels, height, width)`.
+      It defaults to the `image_data_format` value found in your
+      Keras config file at `~/.keras/keras.json`.
+      If you never set it, then it will be "channels_last".
+    interpolation: A string, one of `nearest` or `bilinear`.
+  Input shape:
+    4D tensor with shape:
+    - If `data_format` is `"channels_last"`:
+        `(batch_size, rows, cols, channels)`
+    - If `data_format` is `"channels_first"`:
+        `(batch_size, channels, rows, cols)`
+  Output shape:
+    4D tensor with shape:
+    - If `data_format` is `"channels_last"`:
+        `(batch_size, upsampled_rows, upsampled_cols, channels)`
+    - If `data_format` is `"channels_first"`:
+        `(batch_size, channels, upsampled_rows, upsampled_cols)`
+  """
+    def __init__(self, size=(2, 2), data_format=None, interpolation='nearest', align_corners=True, **kwargs):
+        super(UpSampling2D, self).__init__(**kwargs)
+        self.data_format = conv_utils.normalize_data_format(data_format)
+        self.size = conv_utils.normalize_tuple(size, 2, 'size')
+        self.input_spec = InputSpec(ndim=4)
+        self.interpolation = interpolation
+        if self.interpolation not in {'nearest', 'bilinear', 'linear', 'cubic', 'pchip'}:
+            raise ValueError('`interpolation` argument should be one of `"nearest"` '
+                             'or `"bilinear"` '
+                             'or `"linear"` '
+                             'or `"cubic"` '
+                             'or `"pchip"`.')
+        if self.interpolation == 'bilinear':
+            self.interpolation = 'linear'
+        self.align_corners = align_corners
+
+    def compute_output_shape(self, input_shape):
+        input_shape = tensor_shape.TensorShape(input_shape).as_list()
+        if self.data_format == 'channels_first':
+            height = self.size[0] * input_shape[2] if input_shape[2] is not None else None
+            width = self.size[1] * input_shape[3] if input_shape[3] is not None else None
+            return tensor_shape.TensorShape([input_shape[0], input_shape[1], height, width])
+        else:
+            height = self.size[0] * input_shape[1] if input_shape[1] is not None else None
+            width = self.size[1] * input_shape[2] if input_shape[2] is not None else None
+            return tensor_shape.TensorShape([input_shape[0], height, width, input_shape[3]])
+
+    def call(self, inputs):
+        return UpInterpolate2D(inputs,
+                               self.size,
+                               data_format=self.data_format,
+                               interpolation=self.interpolation,
+                               align_corners=self.align_corners)
+
+    def get_config(self):
+        config = {'size': self.size, 'data_format': self.data_format, 'interpolation': self.interpolation}
+        base_config = super(UpSampling2D, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
 
 
-def GetInput():
-    # Returns a random input tensor with shape (batch_size, depth, height, width, channels)
-    # consistent with data_format 'channels_last' and expected by MyModel
-    batch_size = 1  # single batch for testing
-    depth = 8
-    height = 8
-    width = 8
-    channels = 3
-    dtype = tf.float32
-    # Construct a uniform random input tensor
-    return tf.random.uniform((batch_size, depth, height, width, channels), dtype=dtype)
+@keras_export('keras.layers.UpSampling3D')
+class UpSampling3D(Layer):
+    """Upsampling layer for 3D inputs.
+  Repeats the 1st, 2nd and 3rd dimensions
+  of the data by `size[0]`, `size[1]` and `size[2]` respectively.
+  Examples:
+  >>> input_shape = (2, 1, 2, 1, 3)
+  >>> x = tf.constant(1, shape=input_shape)
+  >>> y = tf.keras.layers.UpSampling3D(size=2)(x)
+  >>> print(y.shape)
+  (2, 2, 4, 2, 3)
+  Args:
+    size: Int, or tuple of 3 integers.
+      The upsampling factors for dim1, dim2 and dim3.
+    data_format: A string,
+      one of `channels_last` (default) or `channels_first`.
+      The ordering of the dimensions in the inputs.
+      `channels_last` corresponds to inputs with shape
+      `(batch_size, spatial_dim1, spatial_dim2, spatial_dim3, channels)`
+      while `channels_first` corresponds to inputs with shape
+      `(batch_size, channels, spatial_dim1, spatial_dim2, spatial_dim3)`.
+      It defaults to the `image_data_format` value found in your
+      Keras config file at `~/.keras/keras.json`.
+      If you never set it, then it will be "channels_last".
+  Input shape:
+    5D tensor with shape:
+    - If `data_format` is `"channels_last"`:
+        `(batch_size, dim1, dim2, dim3, channels)`
+    - If `data_format` is `"channels_first"`:
+        `(batch_size, channels, dim1, dim2, dim3)`
+  Output shape:
+    5D tensor with shape:
+    - If `data_format` is `"channels_last"`:
+        `(batch_size, upsampled_dim1, upsampled_dim2, upsampled_dim3, channels)`
+    - If `data_format` is `"channels_first"`:
+        `(batch_size, channels, upsampled_dim1, upsampled_dim2, upsampled_dim3)`
+  """
+    def __init__(self,
+                 size=(2, 2, 2),
+                 data_format=None,
+                 interpolation='nearest',
+                 align_corners=True,
+                 **kwargs):
+        super(UpSampling3D, self).__init__(**kwargs)
+        self.data_format = conv_utils.normalize_data_format(data_format)
+        self.size = conv_utils.normalize_tuple(size, 3, 'size')
+        self.input_spec = InputSpec(ndim=5)
+        self.interpolation = interpolation
+        if interpolation not in {'nearest', 'trilinear', 'linear', 'cubic', 'pchip'}:
+            raise ValueError('`interpolation` argument should be one of `"nearest"` '
+                             'or `"trilinear"` '
+                             'or `"linear"` '
+                             'or `"cubic"` '
+                             'or `"pchip"`.')
+        if self.interpolation == 'trilinear':
+            self.interpolation = 'linear'
+        self.align_corners = align_corners
 
+    def compute_output_shape(self, input_shape):
+        input_shape = tensor_shape.TensorShape(input_shape).as_list()
+        if self.data_format == 'channels_first':
+            dim1 = self.size[0] * input_shape[2] if input_shape[2] is not None else None
+            dim2 = self.size[1] * input_shape[3] if input_shape[3] is not None else None
+            dim3 = self.size[2] * input_shape[4] if input_shape[4] is not None else None
+            return tensor_shape.TensorShape([input_shape[0], input_shape[1], dim1, dim2, dim3])
+        else:
+            dim1 = self.size[0] * input_shape[1] if input_shape[1] is not None else None
+            dim2 = self.size[1] * input_shape[2] if input_shape[2] is not None else None
+            dim3 = self.size[2] * input_shape[3] if input_shape[3] is not None else None
+            return tensor_shape.TensorShape([input_shape[0], dim1, dim2, dim3, input_shape[4]])
+
+    def call(self, inputs):
+        return UpInterpolate3D(inputs,
+                               self.size,
+                               data_format=self.data_format,
+                               interpolation=self.interpolation,
+                               align_corners=self.align_corners)
+
+    def get_config(self):
+        config = {'size': self.size, 'data_format': self.data_format}
+        base_config = super(UpSampling3D, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+# ###############################################################################
+print('========================================================================')
+
+# Verify simple 2D matrix interpolation on align_corners with equal ratios
+# The result are consistent with PyTorch results
+c = np.array(range(1, 5)).reshape(1, 1, 2, 2)
+c = tf.convert_to_tensor(c, dtype=tf.float32)
+print(c)
+d1 = UpInterpolate2D(c, (2, 2), interpolation='linear', align_corners=True)
+d2 = UpInterpolate2D(c, (2, 2), interpolation='linear', align_corners=False)
+d3 = UpInterpolate2D(c, (4, 4), interpolation='linear', align_corners=True)
+d4 = UpInterpolate2D(c, (4, 4), interpolation='linear', align_corners=False)
+
+import torch
+c = np.array(range(1, 5)).reshape(1, 1, 2, 2)
+c = torch.from_numpy(c).type(torch.FloatTensor)
+m = torch.nn.Upsample(scale_factor=(2, 2), mode='bilinear', align_corners=True)
+w1 = m(c)
+m = torch.nn.Upsample(scale_factor=(2, 2), mode='bilinear', align_corners=False)
+w2 = m(c)
+m = torch.nn.Upsample(scale_factor=(4, 4), mode='bilinear', align_corners=True)
+w3 = m(c)
+m = torch.nn.Upsample(scale_factor=(4, 4), mode='bilinear', align_corners=False)
+w4 = m(c)
+
+print(' >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> up1 align=true')
+print(d1.numpy())
+print(w1.numpy())
+
+print(' >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> up1 align=false')
+print(d2.numpy())
+print(w2.numpy())
+
+print(' >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> up2 align=true')
+print(d3.numpy())
+print(w3.numpy())
+
+print(' >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> up2 align=false')
+print(d4.numpy())
+print(w4.numpy())
+
+# Verify simple 2D matrix interpolation on align_corners with unequal ratios
+# The result are consistent with PyTorch results
+c = np.array(range(1, 5)).reshape(1, 1, 2, 2)
+c = tf.convert_to_tensor(c, dtype=tf.float32)
+print(c)
+d1 = UpInterpolate2D(c, (2, 3), interpolation='linear', align_corners=True)
+d2 = UpInterpolate2D(c, (2, 3), interpolation='linear', align_corners=False)
+d3 = UpInterpolate2D(c, (4, 3), interpolation='linear', align_corners=True)
+d4 = UpInterpolate2D(c, (4, 3), interpolation='linear', align_corners=False)
+
+import torch
+c = np.array(range(1, 5)).reshape(1, 1, 2, 2)
+c = torch.from_numpy(c).type(torch.FloatTensor)
+m = torch.nn.Upsample(scale_factor=(2, 3), mode='bilinear', align_corners=True)
+w1 = m(c)
+m = torch.nn.Upsample(scale_factor=(2, 3), mode='bilinear', align_corners=False)
+w2 = m(c)
+m = torch.nn.Upsample(scale_factor=(4, 3), mode='bilinear', align_corners=True)
+w3 = m(c)
+m = torch.nn.Upsample(scale_factor=(4, 3), mode='bilinear', align_corners=False)
+w4 = m(c)
+
+print(' >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> up1 align=true')
+print(d1.numpy())
+print(w1.numpy())
+
+print(' >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> up1 align=false')
+print(d2.numpy())
+print(w2.numpy())
+
+print(' >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> up2 align=true')
+print(d3.numpy())
+print(w3.numpy())
+
+print(' >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> up2 align=false')
+print(d4.numpy())
+print(w4.numpy())
+
+print('========================================================================')
+
+# Verify 1D
+nb = 3
+nh = 2
+n1 = 40
+r = 8
+c = np.zeros(n1 * nb * nh)
+for i in range(0, n1 * nb * nh):
+    c[i] = np.math.sin(i * 0.1 * i)
+c = np.reshape(c, (nb, nh, n1))
+c = tf.convert_to_tensor(c)
+d1 = UpInterpolate1D(c, r, interpolation='nearest', data_format='channels_first')
+d2 = UpInterpolate1D(c, r, interpolation='linear', data_format='channels_first')
+d3 = UpInterpolate1D(c, r, interpolation='cubic', data_format='channels_first')
+d4 = UpInterpolate1D(c, r, interpolation='pchip', data_format='channels_first')
+
+print(c.shape)
+print(d1.shape)
+
+x = np.linspace(0.0, 1.0, num=n1)
+xx = np.linspace(0.0, 1.0, num=n1 * r)
+
+import matplotlib.pyplot as plt
+fig, axs = plt.subplots(5, 1)
+axs[0].plot(x, c[int(nb / 2.0), int(nh / 2.0), :].numpy().reshape(n1))
+axs[1].plot(xx, d1[int(nb / 2.0), int(nh / 2.0), :].numpy().reshape(n1 * r))
+axs[2].plot(xx, d2[int(nb / 2.0), int(nh / 2.0), :].numpy().reshape(n1 * r))
+axs[3].plot(xx, d3[int(nb / 2.0), int(nh / 2.0), :].numpy().reshape(n1 * r))
+axs[4].plot(xx, d4[int(nb / 2.0), int(nh / 2.0), :].numpy().reshape(n1 * r))
+axs[0].set_title('Data')
+axs[1].set_title('Nearest Neighbor Interpolation')
+axs[2].set_title('Linear Interpolation')
+axs[3].set_title('Cubic Interpolation')
+axs[4].set_title('PCHIP Interpolation')
+for i in range(0, 4):
+    axs[i].set_xticks([])
+plt.show()
+
+print('========================================================================')
+
+# Verify 2D
+n1 = 50
+n2 = 60
+r = 4
+c = np.zeros((n1, n2))
+for i in range(0, n1):
+    for j in range(0, n2):
+        c[i, j] = np.math.sin(0.1 * i + 0.5 * j)
+c = np.reshape(c, (1, n1, n2, 1))
+c = tf.convert_to_tensor(c)
+d1 = UpInterpolate2D(c, (r, r), interpolation='nearest', data_format='channels_last')
+d2 = UpInterpolate2D(c, (r, r), interpolation='linear', data_format='channels_last')
+d3 = UpInterpolate2D(c, (r, r), interpolation='cubic', data_format='channels_last')
+d4 = UpInterpolate2D(c, (r, r), interpolation='pchip', data_format='channels_last')
+
+print(c.shape)
+print(d1.shape)
+
+import matplotlib.pyplot as plt
+fig, axs = plt.subplots(3, 2)
+axs[0, 0].imshow(c.numpy().reshape(n1, n2), aspect='auto', interpolation='none')
+axs[1, 0].imshow(d1.numpy().reshape(n1 * r, n2 * r), aspect='auto', interpolation='none')
+axs[1, 1].imshow(d2.numpy().reshape(n1 * r, n2 * r), aspect='auto', interpolation='none')
+axs[2, 0].imshow(d3.numpy().reshape(n1 * r, n2 * r), aspect='auto', interpolation='none')
+axs[2, 1].imshow(d4.numpy().reshape(n1 * r, n2 * r), aspect='auto', interpolation='none')
+axs[0, 0].set_title('Data')
+axs[1, 0].set_title('Nearest Neighbor Interpolation')
+axs[1, 1].set_title('Linear Interpolation')
+axs[2, 0].set_title('Cubic Interpolation')
+axs[2, 1].set_title('PCHIP Interpolation')
+for i in range(3):
+    for j in range(2):
+        axs[i, j].set_xticks([])
+plt.show()
+
+print('========================================================================')
+
+# Verify 3D
+n1 = 40
+n2 = 30
+n3 = 20
+r = 2
+c = np.zeros((n1, n2, n3))
+for i in range(0, n1):
+    for j in range(0, n2):
+        for k in range(0, n3):
+            c[i, j, k] = np.math.sin(0.5 * i + 0.5 * j**1.2 + 0.2 * k**1.5)
+c = np.reshape(c, (1, n1, n2, n3, 1))
+c = tf.convert_to_tensor(c)
+
+for interp in ['nearest', 'linear', 'cubic', 'pchip']:
+
+    d = UpInterpolate3D(c, (r, r, r), interpolation=interp, data_format='channels_last')
+
+    print(c.shape)
+    print(d.shape)
+
+    import matplotlib.pyplot as plt
+    fig, axs = plt.subplots(3, 2)
+    axs[0, 0].imshow(c[0, :, :, int(n3 / 2.0), 0].numpy().reshape(n1, n2),
+                     aspect='auto',
+                     interpolation='none')
+    axs[0, 1].imshow(d[0, :, :, int(n3 / 2.0 * r), 0].numpy().reshape(n1 * r, n2 * r),
+                     aspect='auto',
+                     interpolation='none')
+    axs[1, 0].imshow(c[0, :, int(n2 / 2.0), :, 0].numpy().reshape(n1, n3),
+                     aspect='auto',
+                     interpolation='none')
+    axs[1, 1].imshow(d[0, :, int(n2 / 2.0 * r), :, 0].numpy().reshape(n1 * r, n3 * r),
+                     aspect='auto',
+                     interpolation='none')
+    axs[2, 0].imshow(c[0, int(n1 / 2.0), :, :, 0].numpy().reshape(n2, n3),
+                     aspect='auto',
+                     interpolation='none')
+    axs[2, 1].imshow(d[0, int(n1 / 2.0 * r), :, :, 0].numpy().reshape(n2 * r, n3 * r),
+                     aspect='auto',
+                     interpolation='none')
+    axs[0, 0].set_title('Data x1-x2')
+    axs[0, 1].set_title('Interpolation x1-x2')
+    axs[1, 0].set_title('Data x1-x3')
+    axs[1, 1].set_title('Interpolation x1-x3')
+    axs[2, 0].set_title('Data x2-x3')
+    axs[2, 1].set_title('Interpolation x2-x3')
+    for i in range(3):
+        for j in range(2):
+            axs[i, j].set_xticks([])
+    plt.suptitle(interp + ' Interpolation')
+    plt.show()

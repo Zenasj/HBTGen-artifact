@@ -1,26 +1,38 @@
-# torch.rand(1, 10, dtype=torch.float32, device='cuda')
 import torch.nn as nn
+
+3
 import torch
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.layers = nn.ModuleList([
-            nn.LayerNorm(10),
-            nn.Linear(10, 20),
-            nn.LayerNorm(20)
-        ])
+
+model = torch.nn.Linear(10, 20).cuda()
+x = torch.randn(1, 10).cuda()
+
+with torch.autocast(device_type="cuda", enabled=True): # when switch to False, it runs well
+    with torch.no_grad():
+        _ = model(x)
     
-    def forward(self, x):
-        for layer in self.layers:
-            x = layer(x)
-        return x
+    out = model(x)
+    loss = out.mean()
+    loss.backward()
 
-def my_model_function():
-    # Initialize model with CUDA and required layers
-    return MyModel().cuda()
+3
+import torch
 
-def GetInput():
-    # Generate input matching (B=1, C=10) with float32 and CUDA
-    return torch.rand(1, 10, dtype=torch.float32, device='cuda')
 
+model = torch.nn.ModuleList(
+    [torch.nn.LayerNorm(10), torch.nn.Linear(10, 20), torch.nn.LayerNorm(20)]
+).cuda()
+x = torch.randn(1, 10).cuda()
+
+with torch.autocast(device_type="cuda", enabled=True):
+    with torch.no_grad():
+        o = x
+        for layer in model:
+            o = layer(o)
+    out = x
+    for layer in model:
+        out = layer(out)
+    loss = out.mean()
+    loss.backward()
+    for layer in model:
+        print(f"{layer=}, {layer.weight.grad=}")

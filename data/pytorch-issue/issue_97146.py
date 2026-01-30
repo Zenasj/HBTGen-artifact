@@ -1,25 +1,69 @@
-# torch.randint(0, 30522, (B, S), dtype=torch.long)  # B=batch, S=sequence length
+from typing import List, Union
+import pytorch_lightning as pl
+
+import torch.nn as nn
+import os
+
 import torch
-from torch import nn
-from transformers import AutoModel
+from torch import Tensor
+from torch.distributions.distribution import Distribution
+import hydra
 
-class MyModel(nn.Module):
-    def __init__(self, model_path: str = "distilbert-base-uncased", finetune: bool = False):
+
+class DistilbertEncoderBase(pl.LightningModule):
+    def __init__(self, modelpath: str, finetune: bool = False) -> None:
         super().__init__()
-        self.text_model = AutoModel.from_pretrained(model_path)
+
+        from transformers import AutoTokenizer, AutoModel
+        from transformers import logging
+        logging.set_verbosity_error()
+        # Tokenizer
+        os.environ["TOKENIZERS_PARALLELISM"] = "false"
+        # workaround to work from cluster and local
+        rel_p = modelpath.split('/')
+        rel_p = rel_p[rel_p.index('deps'):]
+        rel_p = '/'.join(rel_p)
+        modelpath = hydra.utils.get_original_cwd() + '/' + rel_p
+
+        self.tokenizer = AutoTokenizer.from_pretrained(modelpath)
+
+        # Text model
+        self.text_model = AutoModel.from_pretrained(modelpath)
+        # Don't train the model
         if not finetune:
-            self.text_model.eval()
-            for param in self.text_model.parameters():
-                param.requires_grad_(False)
-    
-    def forward(self, input_ids, attention_mask=None):
-        outputs = self.text_model(input_ids, attention_mask=attention_mask)
-        return outputs.last_hidden_state
+            self.text_model.training = False
+            # for p in self.text_model.parameters():
+            #     p.requires_grad = False
 
-def my_model_function():
-    return MyModel(finetune=False)
+        # Then configure the model
+        self.text_encoded_dim = self.text_model.config.dim
+        self.finetune = finetune
 
-def GetInput():
-    B, S = 2, 128  # Batch size and sequence length
-    return torch.randint(0, 30522, (B, S), dtype=torch.long)
+    def train(self, mode: bool = True):
+        self.training = mode
+        for module in self.children():
+            # Don't put the model in
+            if module == self.text_model and not self.finetune:
+                continue
+            module.train(mode)
+        return self
 
+    def get_last_hidden_state(
+            self,
+            texts: List[str],
+            return_mask: bool = False) -> Union[Tensor, tuple[Tensor, Tensor]]:
+        encoded_inputs = self.tokenizer(texts,
+                                        return_tensors="pt",
+                                        padding=True)
+        output = self.text_model(**encoded_inputs.to(self.text_model.device))
+        if not return_mask:
+            return output.last_hidden_state
+        return output.last_hidden_state, encoded_inputs.attention_mask.to(
+            dtype=bool)
+
+import torch
+@torch.compile
+def f(x):
+    return x.cos().sin()
+
+f(torch.randn(5))

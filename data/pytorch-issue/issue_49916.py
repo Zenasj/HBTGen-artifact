@@ -1,46 +1,149 @@
-# torch.rand(1, 3, 224, 224, dtype=torch.float32) ← Add a comment line at the top with the inferred input shape
-
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1)
-        self.relu = nn.ReLU()
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
-        self.fc = nn.Linear(64 * 112 * 112, 1000)
+import torch
 
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.relu(x)
-        x = self.pool(x)
-        x = x.view(x.size(0), -1)
-        x = self.fc(x)
-        return x
+# ~/Documents/pytorch/data/dog.jpg
+model = torch.hub.load('pytorch/vision:v0.6.0', 'shufflenet_v2_x1_0', pretrained=True)
+model.eval()
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+# sample execution (requires torchvision)
+from PIL import Image
+from torchvision import transforms
+import pathlib
+import tempfile
+import torch.utils.mobile_optimizer
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
+input_image = Image.open('~/Documents/pytorch/data/dog.jpg')
+preprocess = transforms.Compose([
+    transforms.Resize(256),
+    transforms.CenterCrop(224),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+])
+input_tensor = preprocess(input_image)
+input_batch = input_tensor.unsqueeze(0) # create a mini-batch as expected by the model
 
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
-# print(output)
+# move the input and model to GPU for speed if available
+if torch.cuda.is_available():
+    input_batch = input_batch.to('cuda')
+    model.to('cuda')
 
-# The provided GitHub issue and comments discuss a pull request related to PyTorch's JIT (Just-In-Time) compilation and mobile optimization. The main focus is on reusing constant tensors from the JIT-compiled model in the mobile-optimized version to reduce the size of the model.
-# Since the issue does not provide a specific model or code for a neural network, I will create a simple example that demonstrates the concept of reusing constant tensors. This example will include a basic neural network model, a function to return an instance of the model, and a function to generate a valid input for the model.
-# ### Explanation:
-# 1. **MyModel Class**:
-#    - A simple convolutional neural network (CNN) with one convolutional layer, ReLU activation, max pooling, and a fully connected layer.
-#    - The input shape is assumed to be `(1, 3, 224, 224)` based on the provided test script, which processes an image.
-# 2. **my_model_function**:
-#    - Returns an instance of `MyModel`.
-# 3. **GetInput Function**:
-#    - Generates a random tensor with the shape `(1, 3, 224, 224)` to match the input expected by `MyModel`.
-# This code can be used to create a model, generate a valid input, and run the model to get the output. The model and input are designed to be compatible with the provided test script, which processes an image using a pre-trained ShuffleNet model.
+with torch.no_grad():
+    output = model(input_batch)
+# Tensor of shape 1000, with confidence scores over Imagenet's 1000 classes
+print(output[0])
+# The output has unnormalized scores. To get probabilities, you can run a softmax on it.
+print(torch.nn.functional.softmax(output[0], dim=0))
+
+traced = torch.jit.trace(model, input_batch)
+sum(p.numel() * p.element_size() for p in traced.parameters())
+tf = pathlib.Path('~/Documents/pytorch/data/data/example_debug_map_with_tensorkey.ptl')
+
+torch.jit.save(traced, tf.name)
+print(pathlib.Path(tf.name).stat().st_size)
+traced._save_for_lite_interpreter(tf.name)
+print(pathlib.Path(tf.name).stat().st_size)
+print(tf.name)
+
+import torch
+from torch.jit.mobile import _load_for_lite_interpreter
+# sample execution (requires torchvision)
+from PIL import Image
+from torchvision import transforms
+
+input_image = Image.open('~/Documents/pytorch/data/dog.jpg')
+preprocess = transforms.Compose([
+    transforms.Resize(256),
+    transforms.CenterCrop(224),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+])
+input_tensor = preprocess(input_image)
+input_batch = input_tensor.unsqueeze(0) # create a mini-batch as expected by the model
+reload_lite_model = _load_for_lite_interpreter('~/Documents/pytorch/experiment/example_debug_map_with_tensorkey.ptl')
+
+with torch.no_grad():
+    output_lite = reload_lite_model(input_batch)
+# Tensor of shape 1000, with confidence scores over Imagenet's 1000 classes
+print(output_lite[0])
+# The output has unnormalized scores. To get probabilities, you can run a softmax on it.
+print(torch.nn.functional.softmax(output_lite[0], dim=0))
+
+('constants',
+    (0.1,
+     1e-05,
+     None,
+     2,
+     1,
+     False,
+     0,
+     True,
+     False,
+     1,
+     2,
+     3,
+     ('tensor_jit_index', 4),
+     ('tensor_jit_index', 3),
+     ('tensor_jit_index', 2),
+     0.1,
+     1e-05,
+     None,
+     2,
+     1,
+     False,
+     0,
+     24,
+     True,
+     58,
+     ('tensor_jit_index', 0),
+     3,
+     ('tensor_jit_index', 1),
+     -1,
+     ('tensor_jit_index', 12),
+     ('tensor_jit_index', 11),
+     ('tensor_jit_index', 10),
+     ('tensor_jit_index', 9),
+     ('tensor_jit_index', 8),
+     ('tensor_jit_index', 7),
+     ('tensor_jit_index', 6),
+     0.1,
+     1e-05,
+     None,
+     2,
+     1,
+     False,
+     0,
+     116,
+     True,
+     ('tensor_jit_index', 5),
+     3,
+     ('tensor_jit_index', 1),
+     -1,
+     ('tensor_jit_index', 16),
+     ('tensor_jit_index', 15),
+     ('tensor_jit_index', 14),
+     0.1,
+     1e-05,
+     None,
+     2,
+     1,
+     False,
+     0,
+     232,
+     True,
+     ('tensor_jit_index', 13),
+     3,
+     ('tensor_jit_index', 1),
+     -1,
+     0.1,
+     1e-05,
+     None,
+     1,
+     0,
+     False,
+     True,
+     2,
+     3,
+     False,
+     None,
+     1)),

@@ -1,53 +1,63 @@
-# torch.rand(1, 3, 512, 512, dtype=torch.float32)  # Inferred input shape
+import os
+import sys 
+
+from infer_effdet.py import EfficientDet # the file we copied from the gist
 
 import torch
-import torch.nn as nn
+import onnx
+import numpy as np
+import cv2
 
-class EfficientDet(nn.Module):
-    def __init__(self, num_classes=6):
-        super(EfficientDet, self).__init__()
-        # Placeholder for the backbone network
-        self.backbone_net = nn.Sequential(
-            nn.Conv2d(3, 32, kernel_size=3, stride=2, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),
-            nn.ReLU()
-        )
-        # Placeholder for the BiFPN
-        self.bifpn = nn.Identity()
-        # Placeholder for the regressor and classifier
-        self.regressor = nn.Conv2d(128, 4 * num_classes, kernel_size=3, padding=1)
-        self.classifier = nn.Conv2d(128, num_classes, kernel_size=3, padding=1)
-        # Placeholder for the anchors
-        self.anchors = nn.Identity()
+model = EfficientDet(
+    num_classes=6
+)
 
-    def forward(self, x):
-        c3, c4, c5 = self.backbone_net(x), self.backbone_net(x), self.backbone_net(x)
-        p3 = self.backbone_net(x)
-        p4 = self.backbone_net(x)
-        p5 = self.backbone_net(x)
-        p6 = self.backbone_net(x)
-        p7 = self.backbone_net(x)
+model = model.eval()
+
+dummy = torch.randn(1, 3, 512, 512)
+model.backbone_net.model.set_swish(memory_efficient=False)
+
+torch.onnx.export(
+    model, 
+    dummy, 
+    "trial6.onnx", 
+    export_params=True, 
+    verbose=False,
+    opset_version=11, 
+)
+
+model.backbone_net.model.set_swish(memory_efficient=True)
+
+def forward(self, x):
+
+
+        is_training = False
+        imgs = x 
+
+        c3, c4, c5 = self.backbone_net(imgs)
+        p3 = self.conv3(c3)
+        p4 = self.conv4(c4)
+        p5 = self.conv5(c5)
+        p6 = self.conv6(c5)
+        p7 = self.conv7(p6)
 
         features = [p3, p4, p5, p6, p7]
         features = self.bifpn(features)
 
         regression = torch.cat([self.regressor(feature) for feature in features], dim=1)
         classification = torch.cat([self.classifier(feature) for feature in features], dim=1)
-        anchors = self.anchors(x)
+        anchors = self.anchors(imgs)
 
-        ret_val = torch.stack([
-            torch.zeros(64, 4), torch.zeros(64, 4), torch.zeros(64, 4)], dim=0)
+
+            
+        ret_val =  _scriptfied_func(anchors, regression, classification, imgs)
         
+        #a = ret_val[0, :, 0]
+        #b = ret_val[1, :, 0]
+        #c = ret_val[2, :]
+        #print(a)
+        #print(ret_val.shape)
+        sample_ret =  torch.stack([
+        torch.zeros(64, 4), torch.zeros(64, 4), torch.zeros(64, 4)], dim=0)
+        #print(sample_ret.shape) 
         return ret_val
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return EfficientDet()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(1, 3, 512, 512, dtype=torch.float32)
-

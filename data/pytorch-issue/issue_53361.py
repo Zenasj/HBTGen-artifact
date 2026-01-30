@@ -1,31 +1,10 @@
-import torch
-import torch.nn as nn
-
-# torch.rand(S, S, dtype=torch.float64) where S=5 (square matrix)
-class MyModel(nn.Module):
-    class LuBasedDet(torch.autograd.Function):
-        @staticmethod
-        def forward(ctx, input):
-            ctx.save_for_backward(input)
-            return torch.linalg.det(input)
-        
-        @staticmethod
-        def backward(ctx, grad_output):
-            # Placeholder for LU-based backward (actual implementation missing)
-            # Returns zero gradients for demonstration purposes
-            input, = ctx.saved_tensors
-            return torch.zeros_like(input)
-    
-    def forward(self, x):
-        det_svd = torch.linalg.det(x)  # Current implementation using SVD backward
-        det_lu = MyModel.LuBasedDet.apply(x)  # Hypothetical LU-based implementation
-        return det_svd - det_lu  # Output difference between the two methods
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Generate a 5x5 matrix on CUDA if available, else CPU (float64 as in failing test)
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    return torch.rand(5, 5, dtype=torch.float64, device=device, requires_grad=True)
-
+def sample_inputs_linalg_det(op_info, device, dtype, requires_grad):
+    kw = dict(device=device, dtype=dtype)
+    inputs = [
+        random_square_matrix_of_rank(S, S - 2, **kw),  # dim2_null
+    ]
+    # if you uncomment the following line, test_fn_gradgrad_linalg_det_cuda_float64 passes!
+    #inputs[0] = inputs[0].cpu()
+    for t in inputs:
+        t.requires_grad = requires_grad
+    return [SampleInput(t) for t in inputs]

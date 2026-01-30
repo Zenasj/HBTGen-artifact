@@ -1,37 +1,51 @@
-# tf.random.uniform((B, 1), dtype=tf.float32) ← inferred input shape from example Input(shape=(1,))
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
+from tensorflow.keras.layers import Input
+from tensorflow.keras.models import Model
+ 
+inputs = Input(shape=(1,), name='input_layer')
+outputs = tf.identity(inputs, name='test_layer')
+model = Model(inputs, outputs)
+ 
+print(model.output_names)
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # The original issue describes behavior differences between using a
-        # tf op (e.g. tf.identity) directly in Keras functional API vs using
-        # a Keras layer like Lambda or Dense for naming.
-        #
-        # To faithfully capture the explanation and best practice, this model
-        # layer wraps a tf.identity op inside a Lambda layer with a name
-        # 'test_layer' which is the recommended way to explicitly name layers
-        # when using tf ops in Keras 2.4+.
-        #
-        # This reflects the recommended approach to have stable layer naming,
-        # avoiding the legacy issue of tf op layers losing the custom name.
+['tf.identity']
 
-        self.lambda_identity = tf.keras.layers.Lambda(lambda x: tf.identity(x), name='test_layer')
+import tensorflow as tf
+from tensorflow.keras.layers import Input
+from tensorflow.keras.models import Model
+ 
+inputs = Input(shape=(1,), name='input_layer')
+outputs = tf.identity(inputs, name='test_layer')
+model = Model(inputs, outputs)
+ 
+print(model.output_names)
 
-    def call(self, inputs):
-        return self.lambda_identity(inputs)
+['tf_op_layer_test_layer']
 
+import tensorflow as tf
+from tensorflow.keras.layers import Input, Dense
+from tensorflow.keras.models import Model
+ 
+inputs = Input(shape=(1,), name='input_layer')
+outputs = Dense(1, name='test_layer')(inputs)
+model = Model(inputs, outputs)
+ 
+print(model.output_names)
 
-def my_model_function():
-    # Return an instance of MyModel with the Lambda identity layer named 'test_layer'
-    return MyModel()
+['test_layer']
 
+import tensorflow as tf
+from tensorflow.keras.layers import Input, Lambda
+from tensorflow.keras.models import Model
+ 
+inputs = Input(shape=(1,), name='input_layer')
+x = tf.identity(inputs)
+outputs = Lambda(lambda x: x, name='test_layer')(x)
+model = Model(inputs, outputs)
+ 
+print(model.output_names)
 
-def GetInput():
-    # The expected input shape is (batch_size, 1) based on the examples with Input(shape=(1,))
-    # Use float32 uniform random tensor for typical input
-    batch_size = 4  # example batch size; arbitrary positive number
-    input_shape = (batch_size, 1)
-    return tf.random.uniform(input_shape, dtype=tf.float32)
-
+['test_layer']

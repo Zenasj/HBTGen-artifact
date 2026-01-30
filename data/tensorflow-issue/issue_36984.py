@@ -1,47 +1,109 @@
-# tf.random.uniform((None,), dtype=tf.int32) ← Input shape inferred as a 1D tensor of integers matching the dataset elements (e.g., scalar integers)
+from tensorflow import keras
+
+py
+import os
+from multiprocessing import Process, Queue
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
+
+class Trainable(object):
     def __init__(self):
-        super().__init__()
-        # Following the issue's insight to use tf.data.Options to disable autotune 
-        # to avoid multiprocess hanging issues with tf.data.Dataset
-        options = tf.data.Options()
-        options.experimental_optimization.autotune = False
-        
-        # valid_handle corresponds to the "validation" dataset with options to mitigate multiprocessing issues
-        self.valid_handle = tf.data.Dataset.from_tensor_slices([1, 2, 3, 4, 5]).with_options(options)
-        
-        # train_handle corresponds to the "training" dataset
+        self.queue = Queue()
+        self.valid_handle = tf.data.Dataset.from_tensor_slices([1, 2, 3, 4, 5])  # [1, 2, 3, 4, 5]
         self.train_handle = tf.data.Dataset.from_tensor_slices([1, 2, 3, 4, 5, 6, 7, 8, 9])
 
-    def call(self, inputs):
-        # The original code uses multiprocessing.Process to consume datasets.
-        # Since multiprocessing with TF dataset is complex and not safe inside tf.function,
-        # here we simulate a simple forward pass:
-        # Just check if inputs belong to train_handle and produce an output tensor indicating dataset membership
-        
-        # inputs are expected to be integers (batched or scalar).
-        # For each input, output 1 if in train_handle else 0.
-        train_elements = tf.constant([1,2,3,4,5,6,7,8,9], dtype=inputs.dtype)
-        is_train = tf.reduce_any(tf.equal(tf.expand_dims(inputs, -1), train_elements), axis=-1)
-        
-        valid_elements = tf.constant([1,2,3,4,5], dtype=inputs.dtype)
-        is_valid = tf.reduce_any(tf.equal(tf.expand_dims(inputs, -1), valid_elements), axis=-1)
-        
-        # Output dictionary with boolean masks for train and valid membership
-        return {'is_train': is_train, 'is_valid': is_valid}
+    def eval(self, q):
+        print('Process to write: %s' % os.getpid())
+        tmp = -1
+        for parsed_record in self.valid_handle:
+            print(parsed_record)
+            tmp = parsed_record
+        self.queue.put((q + 1, tmp))
+
+    def train(self):
+        process = None
+        print('Process to read: %s' % os.getpid())
+        for context in self.train_handle:
+            if process:
+                valid_detail = self.queue.get()
+                process = None
+                print(valid_detail)
+                if 8 in valid_detail:
+                    print('Early stopping')
+                    break
+
+            process = Process(target=self.eval, args=(context.numpy(),))
+            process.start()
+            if not self.queue.empty():
+                valid_detail = self.queue.get()
+                process = None
+                print(valid_detail)
 
 
-def my_model_function():
-    # Return instance of MyModel
-    return MyModel()
+if __name__ == '__main__':
+    model = Trainable()
+    model.train()
+
+py
+import os
+from multiprocessing import Process, Queue
+
+import tensorflow as tf
+
+print(tf.version.GIT_VERSION, tf.version.VERSION)
+# v1.12.1-25210-gcafd3318ed 2.2.0-dev20200219
+
+fsns_test_file = tf.keras.utils.get_file("fsns.tfrec",
+                                         "https://storage.googleapis.com/download.tensorflow.org/data/fsns-20160927/testdata/fsns-00000-of-00001")
+
+class Trainable(object):
+
+    def __init__(self):
+        self.queue = Queue()
+        self.valid_handle = tf.data.TFRecordDataset(filenames=[fsns_test_file])
+        self.train_handle = tf.data.Dataset.from_tensor_slices([1, 2, 3, 4, 5, 6, 7, 8, 9])
+
+    def eval(self, q):
+        print('Process to write: %s' % os.getpid())
+        tmp = -1
+        for parsed_record in self.valid_handle:
+            print(parsed_record)
+            tmp = parsed_record
+        self.queue.put((q + 1, tmp))
+
+    def train(self):
+        process = None
+        print('Process to read: %s' % os.getpid())
+        for context in self.train_handle:
+            if process:
+                valid_detail = self.queue.get()
+                process = None
+                print(valid_detail)
+                if 1 in valid_detail:
+                    print('Early stopping')
+                    break
+
+            process = Process(target=self.eval, args=(context.numpy(),))
+            process.start()
+            if not self.queue.empty():
+                valid_detail = self.queue.get()
+                process = None
+                print(valid_detail)
 
 
-def GetInput():
-    # Return random tensor input that works with MyModel
-    # Since inputs are integers expected to be part of train_handle range,
-    # generate a batch of 5 random integers in [1..9]
-    return tf.random.uniform(shape=(5,), minval=1, maxval=10, dtype=tf.int32)
+if __name__ == '__main__':
+    model = Trainable()
+    model.train()
 
+def __init__(self):
+        self.queue = Queue()
+        options = tf.data.Options()
+        options.experimental_optimization.autotune = False
+        self.valid_handle = tf.data.Dataset.from_tensor_slices([1, 2, 3, 4, 5]).with_options(options)
+        self.train_handle = tf.data.Dataset.from_tensor_slices([1, 2, 3, 4, 5, 6, 7, 8, 9])
+
+if __name__ == '__main__':
+    set_start_method("spawn", force=True)
+    with get_context("spawn").Pool(1) as pool: 
+        pool.starmap

@@ -1,18 +1,11 @@
-# torch.rand(8, 4, 1, 1, dtype=torch.float32)
-import torch
-from torch import nn
+from onnxscript.function_libs.torch_lib.registration import torch_op
+from onnxscript.onnx_types import TensorType
+from onnxscript.onnx_opset import opset18 as op
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.glu = nn.GLU(dim=1)  # Split along channel dimension (C)
 
-    def forward(self, x):
-        return self.glu(x)
+@torch_op("aten::glu", trace_only=True)
+def aten_glu(self: TensorType, dim: int = -1) -> TensorType:
+    """glu(Tensor self, int dim=-1) -> Tensor"""
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(8, 4, 1, 1, dtype=torch.float32)
-
+    first, second = op.Split(self, num_outputs=2, axis=dim)
+    return op.Mul(first, op.Sigmoid(second))

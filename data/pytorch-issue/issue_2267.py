@@ -1,46 +1,38 @@
-# torch.rand(16, 6000, 256, dtype=torch.float32)
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import numpy as np
+import torch.autograd as autograd
 
-class MyModel(nn.Module):
+def Variable(data, *args, **kwargs):
+    if torch.cuda.is_available():
+        return autograd.Variable(data.cuda(), *args, **kwargs)
+    else:
+        return autograd.Variable(data, *args, **kwargs)
+
+class LSTM_MEM_LEAK(nn.Module):
+    
     def __init__(self):
-        super().__init__()
-        self.h_size = 600  # Hidden layer size from original code
-        self.e_size = 900  # Embedding size from original code
-        self.l1 = nn.Linear(256, self.e_size)  # Input layer
-        # Bidirectional LSTM with 2 layers, matches original configuration
-        self.lstm = nn.LSTM(
-            self.e_size, self.h_size,
-            num_layers=2,
-            batch_first=True,
-            bidirectional=True
-        )
-        # Output layer takes concatenated hidden states from bidirectional LSTM
-        self.l2 = nn.Linear(self.h_size * 2, 300)
-
+      
+        super(LSTM_MEM_LEAK, self).__init__()
+        self.h_size = 600
+        self.e_size = 900
+        self.l1 = nn.Linear(256, self.e_size)
+        self.lstm =nn.LSTM(self.e_size, self.h_size, batch_first = True, num_layers = 2, bidirectional = 1)
+        self.l2 = nn.Linear(self.h_size*2, 300)
+            
     def forward(self, input):
-        batch_size = input.size(0)
-        # Initialize hidden states on same device as input
-        hidden = (
-            torch.zeros(2*2, batch_size, self.h_size, device=input.device),
-            torch.zeros(2*2, batch_size, self.h_size, device=input.device)
-        )
-        # Flatten batch and sequence dimensions for linear layer
-        l1_out = F.relu(self.l1(input.view(-1, 256)))
-        # Restore sequence dimension for LSTM
-        l1_out = l1_out.view(batch_size, -1, self.e_size)
-        lstm_out, _ = self.lstm(l1_out, hidden)
-        # Flatten again for final linear layer
-        l2_out = F.relu(self.l2(lstm_out.contiguous().view(-1, self.h_size*2)))
-        return l2_out
-
-def my_model_function():
-    # Create model instance with default initialization
-    return MyModel()
-
-def GetInput():
-    # Create input tensor matching expected shape and dtype
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    return torch.rand(16, 6000, 256, dtype=torch.float32, device=device)
-
+        
+        hidden = (Variable(torch.zeros(2*2, 16, self.h_size)),
+                Variable(torch.zeros(2*2, 16, self.h_size))) 
+        l1 = F.relu(self.l1(input.view(-1, 256)))
+        lstm_out, h = self.lstm(l1.view(16, -1, self.e_size), hidden)
+        l2  = F.relu(self.l2(lstm_out.contiguous().view(-1, self.h_size*2)))
+        
+        return l2    
+    
+net = LSTM_MEM_LEAK()
+net.cuda()
+input = Variable(torch.rand(16, 6000, 256))
+print(input.requires_grad)
+out = net(input)

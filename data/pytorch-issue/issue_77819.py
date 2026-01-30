@@ -1,21 +1,16 @@
-# torch.rand(10, 3, 5), torch.rand(10, 3, 4), torch.rand(10, 4, 5)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, inputs):
-        M, batch1, batch2 = inputs
-        return torch.baddbmm(M, batch1, batch2)
+M = torch.randn(10, 3, 5)
+batch1 = torch.randn(10, 3, 4)
+batch2 = torch.randn(10, 4, 5)
+print(torch.baddbmm(M, batch1, batch2).size())
+# torch.Size([10, 3, 5])
 
-def my_model_function():
-    return MyModel()
+M = torch.randn(10, 3, 5).to("mps")
+batch1 = torch.randn(10, 3, 4).to("mps")
+batch2 = torch.randn(10, 4, 5).to("mps")
+print(torch.baddbmm(M, batch1, batch2).size())
+#RuntimeError: input tensor does not match matmul output shape
 
-def GetInput():
-    M = torch.rand(10, 3, 5)
-    batch1 = torch.rand(10, 3, 4)
-    batch2 = torch.rand(10, 4, 5)
-    return (M, batch1, batch2)
-
+torch.Size([10, 3, 5])
+torch.Size([10, 3, 5])

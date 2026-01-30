@@ -1,9 +1,10 @@
-# torch.rand(1, 3, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
-
+import torch._dynamo
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+class Model(nn.Module):
+    export = False
+
     def __init__(self, linear):
         super().__init__()
         self.m = nn.ModuleList([linear] * 3)
@@ -14,12 +15,14 @@ class MyModel(nn.Module):
                 x = mod(x)
         return x
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    linear = nn.Linear(3, 3)
-    return MyModel(linear)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(1, 3)
+@torch._dynamo.optimize("eager")
+def f(l, x):
+    layers = []
+    layers += [Model(l)]
+    m = nn.Sequential(*layers)
+    return m(x)
 
+linear = nn.Linear(3,3)
+x = torch.randn(1, 3)
+t = f(linear, x)

@@ -1,46 +1,61 @@
-# tf.random.uniform((128, 28, 28, 1), dtype=tf.float32) ← Batch size 128, 28x28 grayscale images, channels_last format
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
-import tensorflow as tf
-from tensorflow.keras import layers, utils
+3
+#!/usr/bin/env python3
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Model architecture based on the MNIST ConvNet from the issue
-        # Sequential layers unfolded into subclassed model
-        
-        # Note: input_shape (28,28,1) channels_last
-        
-        self.conv1 = layers.Conv2D(32, kernel_size=(3,3), activation='relu')
-        self.conv2 = layers.Conv2D(64, kernel_size=(3,3), activation='relu')
-        self.maxpool = layers.MaxPooling2D(pool_size=(2,2))
-        self.dropout1 = layers.Dropout(0.25)
-        self.flatten = layers.Flatten()
-        self.dense1 = layers.Dense(128, activation='relu')
-        self.dropout2 = layers.Dropout(0.5)
-        self.dense2 = layers.Dense(10, activation='softmax')  # num_classes=10
+import tensorflow.keras as keras
+from tensorflow.keras.datasets import mnist
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Dropout, Flatten
+from tensorflow.keras.layers import Conv2D, MaxPooling2D
+from tensorflow.keras import backend as K
 
-    def call(self, inputs, training=False):
-        x = self.conv1(inputs)
-        x = self.conv2(x)
-        x = self.maxpool(x)
-        x = self.dropout1(x, training=training)
-        x = self.flatten(x)
-        x = self.dense1(x)
-        x = self.dropout2(x, training=training)
-        return self.dense2(x)
+batch_size = 128
+num_classes = 10
+epochs = 12
 
-def my_model_function():
-    # Return a fresh instance
-    model = MyModel()
-    # Compile model as in training code for full compatibility
-    model.compile(
-        loss=tf.keras.losses.CategoricalCrossentropy(),
-        optimizer=tf.keras.optimizers.Adadelta(),
-        metrics=['accuracy'])
-    return model
+# input image dimensions
+img_rows, img_cols = 28, 28
 
-def GetInput():
-    # Create a batch of 128 images (batch_size) with shape 28x28, grayscale (1 channel)
-    return tf.random.uniform([128, 28, 28, 1], dtype=tf.float32)
+# the data, split between train and test sets
+(x_train, y_train), (x_test, y_test) = mnist.load_data()
 
+if K.image_data_format() == 'channels_first':
+  x_train = x_train.reshape(x_train.shape[0], 1, img_rows, img_cols)
+  x_test = x_test.reshape(x_test.shape[0], 1, img_rows, img_cols)
+  input_shape = (1, img_rows, img_cols)
+else:
+  x_train = x_train.reshape(x_train.shape[0], img_rows, img_cols, 1)
+  x_test = x_test.reshape(x_test.shape[0], img_rows, img_cols, 1)
+  input_shape = (img_rows, img_cols, 1)
+
+x_train = x_train.astype('float32')
+x_test = x_test.astype('float32')
+x_train /= 255
+x_test /= 255
+print('x_train shape:', x_train.shape)
+print(x_train.shape[0], 'train samples')
+print(x_test.shape[0], 'test samples')
+
+# convert class vectors to binary class matrices
+y_train = keras.utils.to_categorical(y_train, num_classes)
+y_test = keras.utils.to_categorical(y_test, num_classes)
+
+model = Sequential()
+model.add(Conv2D(32, kernel_size=(3, 3),activation='relu',input_shape=input_shape))
+model.add(Conv2D(64, (3, 3), activation='relu'))
+model.add(MaxPooling2D(pool_size=(2, 2)))
+model.add(Dropout(0.25))
+model.add(Flatten())
+model.add(Dense(128, activation='relu'))
+model.add(Dropout(0.5))
+model.add(Dense(num_classes, activation='softmax'))
+
+model.compile(loss=keras.losses.categorical_crossentropy,optimizer=keras.optimizers.Adadelta(),metrics=['accuracy'])
+
+model.fit(x_train, y_train,batch_size=batch_size,epochs=epochs,verbose=1,validation_data=(x_test, y_test))
+score = model.evaluate(x_test, y_test, verbose=0)
+print('Test loss:', score[0])
+print('Test accuracy:', score[1])

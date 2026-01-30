@@ -1,29 +1,48 @@
-# tf.random.uniform((B, 28, 28, 1), dtype=tf.float64) ← inferred input shape based on MNIST dataset flattened to 784 features, input dtype float64
-
 import tensorflow as tf
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # MNIST images are 28x28 grayscale images, flattened into 784 features
-        self.dense1 = tf.keras.layers.Dense(15, activation='sigmoid', input_shape=(28*28,))
-        self.dense2 = tf.keras.layers.Dense(10, activation='softmax')
+from tensorflow.keras.datasets import mnist
+from tensorflow.keras.utils import to_categorical
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Activation
+from tensorflow.keras import optimizers
 
-    def call(self, inputs):
-        # inputs expected shape: (batch_size, 784) and dtype float64 as per issue example
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        return x
+import numpy as np
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+(train_images, train_labels), _ = mnist.load_data()
 
-def GetInput():
-    # Create a random input tensor that matches MNIST flattened input shape:
-    # (batch_size, 784) with dtype float64 (float64 used in original example)
-    # Assume a small batch size for testing
-    batch_size = 16
-    # Generate random float64 tensor in range [0,1) similar to normalized MNIST input
-    return tf.random.uniform((batch_size, 28*28), dtype=tf.float64)
+num_images, img_x, img_y = train_images.shape
 
+# linearize images
+train_images = train_images.reshape( (num_images, img_x * img_y) )
+train_images = train_images.astype("float64") / 255.0
+# one-hot-encoding of labels
+train_labels = to_categorical(train_labels)
+
+
+# initialize the network
+model = Sequential()
+
+# add nodes to the network
+model.add( Dense(15, input_shape=(img_x*img_y,) # input size
+                ) )
+model.add( Activation("sigmoid") )
+
+model.add( Dense(10) )
+model.add( Activation("softmax") )
+
+# finalize the network
+model.compile( optimizer="rmsprop",
+               loss='categorical_crossentropy',
+               metrics=['acc'] )
+
+# train the network
+hist = model.fit( x=train_images, # training examples
+                  y=train_labels, # desired output
+                  epochs=10,      # number of training epochs 
+                  verbose=1)
+
+with tf.device("/gpu:0"):
+    matrix = np.ones((1024, 1024))
+    tf.linalg.matmul(matrix, matrix)

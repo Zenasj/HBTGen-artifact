@@ -1,7 +1,5 @@
-# torch.rand(1, 3, 5761, 3841, dtype=torch.float32)
-import torch
 import torch.nn as nn
-
+import torch
 def make_conv(in_dim, out_dim, kernel_size=(3, 3), stride=1,
               padding=1, activation=None, norm_type=''):
     layer = []
@@ -18,8 +16,7 @@ def make_conv(in_dim, out_dim, kernel_size=(3, 3), stride=1,
     if activation is not None:
         layer += [activation]
     return nn.Sequential(*layer)
-
-class MyModel(nn.Module):
+class AdShuffleGenerator(nn.Module):
     def __init__(self, n1=64, n2=64, n3=64, f1=1, f2=4, f3=1, n_rn=9, updown_conv=-1, activation='prelu',
                  activation_final='tanh', norm_type='SN', senet=False):
         super().__init__()
@@ -56,7 +53,6 @@ class MyModel(nn.Module):
                 layer_up += [nn.ReplicationPad2d((1, 0, 1, 0)), nn.AvgPool2d(2, stride=1)]
         self.layer_up = nn.Sequential(*layer_up)
         self.final_layer = nn.Conv2d(n2, 3, kernel_size=f3, padding=k3_padding)
-    
     def forward(self, x):
         x = self.layer0(x)
         x = self.layer_down(x)
@@ -65,10 +61,34 @@ class MyModel(nn.Module):
         if self.activation_final is not None:
             x = self.activation_final(x)
         return x
+net = AdShuffleGenerator().cuda()
+a = torch.rand(1,3, 5761, 3841).cuda()
+with torch.no_grad():
+    y_pred = net.layer0(a)
+    y_pred = net.layer_down(y_pred)
+    y_pred = net.layer_up[0](y_pred)
+    y_pred = net.layer_up[1](y_pred)
+    y_pred = net.layer_up[2](y_pred)
+print(y_pred.max())
+torch.cuda.empty_cache()
+with torch.no_grad():
+    y_pred = net.layer_up[3](y_pred)
+print(y_pred.max())
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(1, 3, 5761, 3841, dtype=torch.float32).cuda()
-
+from fastai.layers import PixelShuffle_ICNR
+class PixelShuffle_ICNR(nn.Module):
+    def __init__(self, ni:int, nf:int=None, scale:int=2, blur:bool=False, norm_type=NormType.Weight, leaky:float=None):
+        super().__init__()
+        nf = ifnone(nf, ni)
+        self.conv = conv_layer(ni, nf*(scale**2), ks=1, norm_type=norm_type, use_activ=False)
+        icnr(self.conv[0].weight)
+        self.shuf = nn.PixelShuffle(scale)
+        # Blurring over (h*w) kernel
+        # "Super-Resolution using Convolutional Neural Networks without Any Checkerboard Artifacts"
+        # - https://arxiv.org/abs/1806.02658
+        self.pad = nn.ReplicationPad2d((1,0,1,0))
+        self.blur = nn.AvgPool2d(2, stride=1)
+        self.relu = relu(True, leaky=leaky)
+    def forward(self,x):
+        x = self.shuf(self.relu(self.conv(x)))
+        return self.blur(self.pad(x)) if self.blur else x

@@ -1,22 +1,57 @@
-# torch.rand(3, dtype=torch.float32, device='cuda')  # Inferred input shape based on test case
-import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
+py
+import torch
+torch._C._jit_set_nvfuser_single_node_mode(True)
+
+class M(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.const = torch.tensor([2., 2., 2.], dtype=torch.float32, device='cuda')  # Constant tensor causing fusion issue
+        self.out = torch.tensor([1, 2, 3], dtype=torch.int64, device='cuda')
 
-    def forward(self, x):
-        # Operations involving constant tensor and fusion-prone ops
-        out = x + self.const  # Constant tensor used in computation
-        out = out + 3.0       # Additional operation to create fusion pattern
-        return out
+    def forward(self, input):
+        out = self.out
+        out = torch.nn.functional.tanhshrink(out) # disable this, it will work
+        return torch.logical_not(input, out=out)
 
-def my_model_function():
-    return MyModel()  # Returns model instance with problematic constant tensor
+input = torch.tensor([-1., 1., 1.], dtype=torch.float64, device='cuda')
 
-def GetInput():
-    # Returns random tensor matching input shape (3 elements float32)
-    return torch.rand(3, dtype=torch.float32, device='cuda')
+m = M().to('cuda')
+jit_m = torch.jit.trace(m, input)
+print(jit_m(input))
+# RuntimeError: tensor_inputs_to_check.size() INTERNAL ASSERT FAILED at "../torch/csrc/jit/codegen/cuda/graph_fuser.cpp":1558, please report a bug to PyTorch. CudaFusionGuard expects at least one tensor input
 
+py
+import torch
+torch._C._jit_set_nvfuser_single_node_mode(True)
+torch._C._jit_set_nvfuser_horizontal_mode(True)
+
+class M(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        other = torch.randint(0, 2, [4, 1], dtype=torch.bool, device='cuda')
+        alpha = 10
+
+        self.other = other
+        self.alpha = alpha
+
+    def forward(self, input):
+        other = self.other
+        alpha = self.alpha
+
+        other = torch.cos(other)
+        other = torch.mul(other, torch.tensor(-12, dtype=torch.float32, device='cuda'))
+        input = torch.nn.functional.relu(input)
+        alpha = torch.sub(alpha, torch.tensor(-13, dtype=torch.float32, device='cuda'))
+        res = input.add(other, alpha=alpha, )
+        res = torch.sin(res)
+        return res
+
+fn = M().to('cuda')
+input = torch.empty([4], dtype=torch.float32, memory_format=torch.contiguous_format, device='cuda')
+input.uniform_(0, 31)
+
+script_fn = torch.jit.script(fn)
+for i in range(10):
+    print(i)
+    script_fn(input.clone())

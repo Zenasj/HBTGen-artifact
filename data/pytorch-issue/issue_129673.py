@@ -1,16 +1,22 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Example shape: [3, 3, 3, 3]
+from typing import Dict
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Reproduces the in-place unsqueeze causing Dynamo guard error
-        v1_0 = torch.Tensor.unsqueeze_(x, dim=1)
+print("torch version: ", torch.__version__)
+inputs: Dict[str, torch.Tensor] = {'v0_0': torch.rand([3, 3, 3, 3])}
+
+class Model(nn.Module):
+    def forward(self, v0_0):
+        # v1_0 = v0_0.unsqueeze(dim=1)
+        v1_0 = torch.Tensor.unsqueeze_(v0_0, dim=1)
         return v1_0
 
-def my_model_function():
-    return MyModel()
+model = Model().to(torch.device("cpu"))
+for k, v in inputs.items():
+    inputs[k] = v.to(torch.device("cpu"))
 
-def GetInput():
-    return torch.rand(3, 3, 3, 3, dtype=torch.float32)
+print('==== Eager mode ====')
+ret_eager = model(**inputs)
 
+print('==== TorchComp mode ====')
+ret_exported = torch.compile(model)(**inputs)

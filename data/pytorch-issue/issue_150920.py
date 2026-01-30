@@ -1,0 +1,4 @@
+test_conj_view__refs_dot_cpu_complex64
+test_conj_view__refs_vdot_cpu_complex64
+test_neg_conj_view__refs_dot_cpu_complex128
+test_neg_conj_view__refs_vdot_cpu_complex128

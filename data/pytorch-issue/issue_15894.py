@@ -1,22 +1,39 @@
-# torch.rand(B, C, H, W, dtype=torch.float32, device='cuda')
+####################
+## build.py
+####################
+import os.path as osp
+
 import torch
-import torch.nn as nn
+from torch.utils.ffi import create_extension
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Custom SyncBatchNorm layer (placeholder using PyTorch's native implementation)
-        self.sync_bn = nn.SyncBatchNorm(64)  # Example: 64 channels
-        # Note: Actual implementation would require the compiled '_ext.sync_bn_lib' extension
+sources = []
+headers = []
+defines = []
+with_cuda = False
 
-    def forward(self, x):
-        return self.sync_bn(x)
+if torch.cuda.is_available():
+    print('Including CUDA code.')
+    sources += ['src/sync_bn.cpp']
+    headers += ['src/sync_bn.h']
+    defines += [('WITH_CUDA', None)]
+    with_cuda = True
 
-def my_model_function():
-    # Returns an instance using standard initialization (replace with custom weights if needed)
-    return MyModel()
+assert with_cuda
 
-def GetInput():
-    # Matches expected input shape (B, C, H, W) for SyncBatchNorm
-    return torch.rand(4, 64, 64, 64, dtype=torch.float32, device='cuda')  # Example dimensions
+current_dir = osp.dirname(osp.realpath(__file__))
+extra_objects = ['src/cuda/sync_bn_kernel.o']
+extra_objects = [osp.join(current_dir, fname) for fname in extra_objects]
 
+ffi = create_extension(
+    '_ext.sync_bn_lib',
+    headers=headers,
+    sources=sources,
+    define_macros=defines,
+    relative_to=__file__,
+    with_cuda=with_cuda,
+    extra_objects=extra_objects,
+    extra_compile_args=['/MT'],
+    libraries=['caffe2_gpu', 'cudart', '_C', 'caffe2'] )
+
+if __name__ == '__main__':
+    ffi.build()

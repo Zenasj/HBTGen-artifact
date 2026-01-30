@@ -1,41 +1,45 @@
-# torch.rand(32, 1, 512, dtype=torch.float32)
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.gru = nn.GRU(512, 512, 24)  # Matches the user's GRU configuration
+import numpy as np
+import random
 
-    def forward(self, input):
-        # Batched inference (method1)
-        h0_batch = torch.zeros(24, 1, 512, dtype=input.dtype, device=input.device)
-        output_batch, _ = self.gru(input, h0_batch)
-        
-        # Step-by-step inference (method2, replicates user's flawed h0 reset)
-        output_step = []
-        for t in range(input.size(0)):
-            h0 = torch.zeros(24, 1, 512, dtype=input.dtype, device=input.device)
-            step_input = input[t:t+1]
-            out_step, _ = self.gru(step_input, h0)
-            output_step.append(out_step)
-        output_step = torch.cat(output_step, dim=0)
-        
-        # Compare outputs per frame using torch.allclose
-        comparisons = []
-        for t in range(input.size(0)):
-            comp = torch.allclose(
-                output_batch[t:t+1],
-                output_step[t:t+1],
-                rtol=1e-05,  # Default tolerances
-                atol=1e-08
-            )
-            comparisons.append(comp)
-        return torch.tensor(comparisons, device=input.device)
+def set_seed(seed):
+    """
+    For seed to some modules.
+    :param seed: int. The seed.
+    :return:
+    """
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
+    
+set_seed(100)
 
-def my_model_function():
-    return MyModel()  # Returns the fused model with comparison logic
+grus = nn.GRU(512, 512, 24)
+grus.eval()
+input = torch.rand(32, 1, 512)
 
-def GetInput():
-    return torch.rand(32, 1, 512, dtype=torch.float32)  # Matches input shape from the issue
 
+# method1：inference a batch
+h0 = torch.zeros((24, 1, 512), dtype=input.dtype, device=input.device)
+output, _ = grus(input, h0)
+
+# method2: inference one by one for a batch
+output_s = None
+for t in range(32):
+    h0 = torch.zeros((24, 1, 512), dtype=input.dtype, device=input.device)
+    grus.eval()
+    sub_out, _ = grus(input[[t], :, :], h0)
+    if t == 0:
+        output_s = sub_out
+    else:
+        output_s = torch.cat([output_s, sub_out], dim=0)
+
+for t in range(32):
+    print(f"{t}th frame: {torch.allclose(output[[t], :, :], output_s[[t], :, :])}", end="")
+    print(f"\t{torch.mean(output[[t], :, :] - output_s[[t], :, :])}")

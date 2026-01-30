@@ -1,61 +1,160 @@
-# tf.random.uniform((B, 3), dtype=tf.int64) ← Input is integer indices tensor of shape (batch_size, 3)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
+import multiprocessing
+import os
+import portpicker
 import tensorflow as tf
 import tensorflow.keras as keras
+import tensorflow.keras.layers.experimental.preprocessing as kpl
+import tensorflow_hub as hub
+import numpy as np
+print(tf.__version__)
+
+def create_in_process_cluster(num_workers, num_ps):
+  """Creates and starts local servers and returns the cluster_resolver."""
+  worker_ports = [portpicker.pick_unused_port() for _ in range(num_workers)]
+  ps_ports = [portpicker.pick_unused_port() for _ in range(num_ps)]
+
+  cluster_dict = {}
+  cluster_dict["worker"] = ["localhost:%s" % port for port in worker_ports]
+  if num_ps > 0:
+    cluster_dict["ps"] = ["localhost:%s" % port for port in ps_ports]
+
+  cluster_spec = tf.train.ClusterSpec(cluster_dict)
+
+  # Workers need some inter_ops threads to work properly.
+  worker_config = tf.compat.v1.ConfigProto()
+  if multiprocessing.cpu_count() < num_workers + 1:
+    worker_config.inter_op_parallelism_threads = num_workers + 1
+
+  for i in range(num_workers):
+    tf.distribute.Server(
+        cluster_spec, job_name="worker", task_index=i, config=worker_config,
+        protocol="grpc")
+
+  for i in range(num_ps):
+    tf.distribute.Server(
+        cluster_spec, job_name="ps", task_index=i, protocol="grpc")
+
+  cluster_resolver = tf.distribute.cluster_resolver.SimpleClusterResolver(
+      cluster_spec, task_id=0, task_type="worker",rpc_layer="grpc")
+  return cluster_resolver
+
+# Set the environment variable to allow reporting worker and ps failure to the
+# coordinator. This is a workaround and won't be necessary in the future.
+os.environ["GRPC_FAIL_FAST"] = "use_caller"
+
+NUM_WORKERS = 3
+NUM_PS = 2
+cluster_resolver = create_in_process_cluster(NUM_WORKERS, NUM_PS)
+
+variable_partitioner = (
+    tf.distribute.experimental.partitioners.FixedShardsPartitioner(
+        num_shards=NUM_PS))
+
+strategy = tf.distribute.experimental.ParameterServerStrategy(cluster_resolver)
+
+word = "Elephant"
+sentence = "I am a sentence for which I would like to get its embedding."
+paragraph = (
+    "Universal Sentence Encoder embeddings also support short paragraphs. "
+    "There is no hard limit on how long the paragraph is. Roughly, the longer "
+    "the more 'diluted' the embedding will be.")
+messages = [word, sentence, paragraph]
+labels=["1","2","3"]
+reviews = [[1,0,0],[0,1,0],[0,0,1]]
+
+encoder=hub.load("https://tfhub.dev/google/universal-sentence-encoder/4")
+
+X_train=encoder(messages)
+
+with strategy.scope():
+  feature_lookup_layer = kpl.StringLookup(vocabulary=messages)
+
+  label_lookup_layer = kpl.StringLookup(vocabulary=labels,
+                                        num_oov_indices=0,
+                                        mask_token=None)
+
+  raw_feature_input = keras.layers.Input(
+      shape=(1,), dtype=tf.string, name="feature")
+  feature_id_input = feature_lookup_layer(raw_feature_input)
+  feature_preprocess_stage = keras.Model(
+      {"features": raw_feature_input}, feature_id_input)
+
+  raw_label_input = keras.layers.Input(
+      shape=(3,), dtype=tf.string, name="label")
+  label_id_input = label_lookup_layer(raw_label_input)
+  label_preprocess_stage = keras.Model({"label": raw_label_input}, label_id_input)
+
+examples = {"features": [word,sentence,paragraph], "label": [["1","0","0"],["0","1","0"],["0","0","1"]]}
+print(examples)
+def dataset_fn(_):
+  raw_dataset = tf.data.Dataset.from_tensor_slices(examples)
+
+  train_dataset = raw_dataset.map(
+      lambda x: (
+          {"features": feature_preprocess_stage(x["features"])},
+          label_preprocess_stage(x["label"])
+      )).shuffle(200).batch(32).repeat()
+  return train_dataset
 
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Assume the vocabulary size and embedding dims based on the example
-        # The vocab corresponds to ['Elephant', 'I am a sentence...', 'Universal Sentence Encoder ...']
-        # Plus a special OOV or mask tokens as usual in StringLookup.
-        vocab_size = 3 + 1  # inferred: 3 messages + 1 for OOV or mask token
-        embedding_dim = 20
+# These variables created under the `strategy.scope` will be placed on parameter
+# servers in a round-robin fashion.
+with strategy.scope():
+  # Create the model. The input needs to be compatible with KPLs.
+  model_input = keras.layers.Input(
+      shape=(3,), dtype=tf.int64, name="model_input")
 
-        # Embedding layer as in example
-        self.embedding = keras.layers.Embedding(
-            input_dim=vocab_size,
-            output_dim=embedding_dim,
-            mask_zero=False,  # Not explicitly mentioned, assume False
-            name="embedding_layer"
-        )
-        # Dense layer outputting a single unit with sigmoid activation for binary output
-        # The example tries to do categorical but only uses 1 unit with sigmoid.
-        # For demonstration, output 3 units with softmax to align with 3-class scenario.
-        self.dense = keras.layers.Dense(units=3, activation="softmax", name="output_dense")
+  emb_layer = keras.layers.Embedding(
+      input_dim=len(feature_lookup_layer.get_vocabulary()), output_dim=20)
+  emb_output = tf.reduce_mean(emb_layer(model_input), axis=1)
+  dense_output = keras.layers.Dense(units=1, activation="sigmoid")(emb_output)
+  model = keras.Model({"features": model_input}, dense_output)
 
-    def call(self, inputs, training=False):
-        """
-        inputs: tf.int64 tensor of shape (batch_size, 3)
-        Each row corresponds to string token ids after lookup.
-        """
-        # inputs shape: (batch_size, 3)
-        embedded = self.embedding(inputs)  # shape: (batch_size, 3, embedding_dim)
-        # Reduce mean over sequence dimension (axis=1)
-        pooled = tf.reduce_mean(embedded, axis=1)  # (batch_size, embedding_dim)
-
-        # Pass through final dense layer. Output shape: (batch_size, 3)
-        output = self.dense(pooled)
-        return output
+  optimizer = keras.optimizers.RMSprop(learning_rate=0.1)
+  accuracy = keras.metrics.Accuracy()
 
 
-def my_model_function():
-    # Return an instance of the model
-    # This model is untrained and weights randomly initialized
-    return MyModel()
+@tf.function
+def step_fn(iterator):
+
+  def replica_fn(batch_data, labels):
+    with tf.GradientTape() as tape:
+      pred = model(batch_data, training=True)
+      per_example_loss = keras.losses.CategoricalCrossentropy(
+              reduction=tf.keras.losses.Reduction.NONE)(labels, pred)
+      loss = tf.nn.compute_average_loss(per_example_loss)
+      gradients = tape.gradient(loss, model.trainable_variables)
+
+    optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+
+    actual_pred = tf.cast(tf.greater(pred, 0.5), tf.int64)
+    accuracy.update_state(labels, actual_pred)
+    return loss
+
+  batch_data, labels = next(iterator)
+  losses = strategy.run(replica_fn, args=(batch_data, labels))
+  return strategy.reduce(tf.distribute.ReduceOp.SUM, losses, axis=None)
 
 
-def GetInput():
-    # Input is a tf.int64 tensor of shape (batch_size, 3),
-    # with integer ids matching a vocabulary of size 4 (3 known words + 1 OOV)
-    # We'll generate random indices in [0, 3] inclusive.
-    batch_size = 5  # arbitrary batch size
-    input_tensor = tf.random.uniform(
-        shape=(batch_size, 3),
-        minval=0,
-        maxval=4,
-        dtype=tf.int64
-    )
-    return input_tensor
+coordinator = tf.distribute.experimental.coordinator.ClusterCoordinator(strategy)
+@tf.function
+def per_worker_dataset_fn():
+  return strategy.distribute_datasets_from_function(dataset_fn)
 
+
+per_worker_dataset = coordinator.create_per_worker_dataset(per_worker_dataset_fn)
+per_worker_iterator = iter(per_worker_dataset)
+
+num_epoches = 2
+steps_per_epoch = 1
+for i in range(num_epoches):
+  accuracy.reset_states()
+  for _ in range(steps_per_epoch):
+    coordinator.schedule(step_fn, args=(per_worker_iterator,))
+  # Wait at epoch boundaries.
+  coordinator.join()
+  print ("Finished epoch %d, accuracy is %f." % (i, accuracy.result().numpy()))

@@ -1,6 +1,7 @@
-# torch.rand(5, dtype=torch.float32)
 import torch
-from torch import nn
+torch.set_default_device('cuda')
+from triton.testing import do_bench
+
 
 class DoNothing:
     def __enter__(self):
@@ -9,15 +10,10 @@ class DoNothing:
     def __exit__(self, exc_type, exc_val, exc_tb):
         pass
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        with DoNothing():
-            x = x * 2
-        return x
+@torch.compile
+def f(x):
+    with DoNothing():
+        x = x* 2
+    return x
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.randn(5, device="cuda")
-
+f(torch.randn(5))

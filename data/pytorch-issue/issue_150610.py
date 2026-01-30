@@ -1,21 +1,27 @@
-# torch.rand(B, 10, dtype=torch.float32)
+import random
+
 import torch
-from torch import nn
+import numpy as np
+input_data = np.random.rand(10, 10)
+input_tensor = torch.from_numpy(input_data)
+input_tensor = torch.autograd.Variable(input_tensor, requires_grad=False)
+optimizer = torch.optim.Adam([{'params': input_tensor, 'weight_decay': 0.01}])
+# optimizer = torch.optim.AdamW([{'params': input_tensor, 'weight_decay': 0.01}])
+# optimizer = torch.optim.RAdam([{'params': input_tensor, 'weight_decay': 0.01}])
+optimizer.step()
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.linear = nn.Linear(10, 5)
-        # Disable gradients for all parameters to replicate the issue scenario
-        for param in self.parameters():
-            param.requires_grad_(False)
+class Optimizer:
+    r"""Base class for all optimizers.
 
-    def forward(self, x):
-        return self.linear(x)
+    .. warning::
+        Parameters need to be specified as collections that have a deterministic
+        ordering that is consistent between runs. Examples of objects that don't
+        satisfy those properties are sets and iterators over values of dictionaries.
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(10, 10, dtype=torch.float32)
-
+    Args:
+        params (iterable): an iterable of :class:`torch.Tensor` s or
+            :class:`dict` s. Specifies what Tensors should be optimized,
+            which should have grad available.
+        defaults: (dict): a dict containing default values of optimization
+            options (used when a parameter group doesn't specify them).
+    """

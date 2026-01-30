@@ -1,24 +1,13 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)
 import torch
-import torch.nn as nn
+import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Simple model to demonstrate safe nonzero usage
-        self.threshold = 0.5  # Example parameter to generate a mask
+t = torch.randint(1,10,(10,3))
+t_nonzero = torch.nonzero(F.pad(t,(0,10)))
+as_tuple  = t[(t_nonzero[:,0], t_nonzero[:,1])]
 
-    def forward(self, x):
-        # Create a boolean mask where values exceed the threshold
-        mask = x > self.threshold
-        # Use nonzero with explicit as_tuple=False to avoid deprecation warning
-        indices = torch.nonzero(mask, as_tuple=False)
-        return indices
+t = torch.randint(1,10,(10,3))
+as_tuple = t[torch.nonzero(F.pad(t,(0,10)), as_tuple=True)]
 
-def my_model_function():
-    return MyModel()
+torch.nonzero(t)
 
-def GetInput():
-    # Generate random 4D tensor (B, C, H, W)
-    return torch.rand(2, 3, 64, 64)  # Example shape (batch=2, channels=3, 64x64)
-
+t.nonzero()

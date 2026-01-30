@@ -1,21 +1,18 @@
-# torch.rand(10, 10, 5, dtype=torch.float64)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.dim = -1
-        self.sparse_grad = True
-        # The index tensor as per the issue's example (shape [6, 0, 2], dtype=torch.uint8)
-        self.register_buffer('index', torch.randint(0, 1, (6, 0, 2), dtype=torch.uint8))
+dim = -1
+sparse_grad = True
+input_tensor = torch.rand([10, 10, 5], dtype=torch.float64)
+index_tensor = torch.randint(0, 1, [6, 0, 2], dtype=torch.uint8)
 
-    def forward(self, x):
-        return torch.gather(x, self.dim, self.index, sparse_grad=self.sparse_grad)
+input = input_tensor.clone()
+index = index_tensor.clone()
+res1 = torch.gather(input, dim, index, sparse_grad=sparse_grad, )
 
-def my_model_function():
-    return MyModel()
+input = input_tensor.clone().requires_grad_()
+index = index_tensor.clone()
+res2 = torch.gather(input, dim, index, sparse_grad=sparse_grad, )
+# succeed
 
-def GetInput():
-    return torch.rand(10, 10, 5, dtype=torch.float64)
-
+res2.sum().backward()
+# floating point exception

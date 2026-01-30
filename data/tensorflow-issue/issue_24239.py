@@ -1,57 +1,96 @@
-# tf.random.uniform((4, 150, 150, 3), dtype=tf.float32)  ← Assumed input shape (batch_size=4, height=150, width=150, channels=3)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
+from keras.preprocessing.image import ImageDataGenerator
+from keras.models import Sequential
+from keras.layers import Conv2D, MaxPooling2D
+from keras.layers import Activation, Dropout, Flatten, Dense
+from keras import backend as K
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        
-        # Define the layers similar to the original Keras Sequential model given in the issue.
-        # The original model uses ReLU activations, Conv2D, MaxPooling2D, Flatten, Dense, Dropout, and sigmoid output.
-        
-        self.conv1 = tf.keras.layers.Conv2D(32, (3, 3), activation='relu', input_shape=(150, 150, 3))
-        self.pool1 = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))
-        
-        self.conv2 = tf.keras.layers.Conv2D(32, (3, 3), activation='relu')
-        self.pool2 = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))
-        
-        self.conv3 = tf.keras.layers.Conv2D(64, (3, 3), activation='relu')
-        self.pool3 = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))
-        
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(64, activation='relu')
-        self.dropout = tf.keras.layers.Dropout(0.5)
-        self.dense2 = tf.keras.layers.Dense(1, activation='sigmoid')
-        
-    def call(self, inputs, training=False):
-        x = self.conv1(inputs)
-        x = self.pool1(x)
-        
-        x = self.conv2(x)
-        x = self.pool2(x)
-        
-        x = self.conv3(x)
-        x = self.pool3(x)
-        
-        x = self.flatten(x)
-        x = self.dense1(x)
-        x = self.dropout(x, training=training)
-        x = self.dense2(x)
-        return x
+# dimensions of our images.
+img_width, img_height = 150, 150
 
-def my_model_function():
-    # Return an instance of MyModel, mimicking the original keras Sequential model architecture
-    model = MyModel()
-    # The original model was compiled with rmsprop optimizer, binary_crossentropy loss, and accuracy metric.
-    model.compile(
-        optimizer='rmsprop',
-        loss='binary_crossentropy',
-        metrics=['accuracy']
-    )
-    return model
+train_data_dir = 'D:\\My Projects\\Dataset\\dataset6_2clz\\train'
+validation_data_dir = 'D:\\My Projects\\Dataset\\dataset6_2clz\\validation'
 
-def GetInput():
-    # Returns a random batch of input images: batch size 4, 150x150 RGB images with float32 dtype in [0,1] range
-    # This matches the model's expected input shape.
-    return tf.random.uniform((4, 150, 150, 3), minval=0., maxval=1., dtype=tf.float32)
 
+
+nb_train_samples = 75
+nb_validation_samples = 50
+#epochs = 50
+#batch_size = 16
+epochs = 5
+batch_size = 4
+
+if K.image_data_format() == 'channels_first':
+    input_shape = (3, img_width, img_height)
+else:
+    input_shape = (img_width, img_height, 3)
+
+model = Sequential()
+model.add(Conv2D(32, (3, 3), input_shape=input_shape))
+model.add(Activation('relu'))
+model.add(MaxPooling2D(pool_size=(2, 2)))
+
+model.add(Conv2D(32, (3, 3)))
+model.add(Activation('relu'))
+model.add(MaxPooling2D(pool_size=(2, 2)))
+
+model.add(Conv2D(64, (3, 3)))
+model.add(Activation('relu'))
+model.add(MaxPooling2D(pool_size=(2, 2)))
+
+model.add(Flatten())
+model.add(Dense(64))
+model.add(Activation('relu'))
+model.add(Dropout(0.5))
+model.add(Dense(1))
+model.add(Activation('sigmoid'))
+
+model.compile(loss='binary_crossentropy',
+              optimizer='rmsprop',
+              metrics=['accuracy'])
+
+
+
+train_datagen = ImageDataGenerator(
+    rescale=1. / 255,
+    shear_range=0.2,
+    zoom_range=0.2,
+    horizontal_flip=True)
+
+
+test_datagen = ImageDataGenerator(rescale=1. / 255)
+
+train_generator = train_datagen.flow_from_directory(
+    train_data_dir,
+    target_size=(img_width, img_height),
+    batch_size=batch_size,
+    class_mode='binary')
+
+validation_generator = test_datagen.flow_from_directory(
+    validation_data_dir,
+    target_size=(img_width, img_height),
+    batch_size=batch_size,
+    class_mode='binary')
+
+model.fit_generator(
+    train_generator,
+    steps_per_epoch=nb_train_samples // batch_size,
+    epochs=epochs,
+    validation_data=validation_generator,
+    validation_steps=nb_validation_samples // batch_size)
+
+
+# Save tf.keras model in HDF5 format.
+keras_file = "7_try.h5"
+model.save('7_try.h5')
+
+
+# Convert to TensorFlow Lite model.
+
+converter = tf.lite.TFLiteConverter.from_keras_model_file(keras_file)
+tflite_model = converter.convert()
+open("converted_model.tflite", "wb").write(tflite_model)

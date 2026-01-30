@@ -1,81 +1,39 @@
-# tf.random.uniform((64, None), dtype=tf.int32) <- Input shape: batch=64, variable sequence length, single int32 feature per timestep
+import math
+from tensorflow import keras
+from tensorflow.keras import layers
 
+import numpy as np
 import tensorflow as tf
+print(tf.__version__)
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        self.embedding = tf.keras.layers.Embedding(64, 2048)
-        # Bidirectional GRU with 2048 units each direction, merge_mode='sum'
-        self.bi_gru = tf.keras.layers.Bidirectional(
-            tf.keras.layers.GRU(2048, return_sequences=True), merge_mode="sum"
-        )
-        # Bidirectional LSTM with 2048 units each direction, merge_mode='sum'
-        self.bi_lstm = tf.keras.layers.Bidirectional(
-            tf.keras.layers.LSTM(2048, return_sequences=True), merge_mode="sum"
-        )
-        self.dense = tf.keras.layers.Dense(10)
+def create_model(use_mask: bool) -> tf.keras.Model:
+    inputs = tf.keras.layers.Input(shape=[None], dtype=tf.int32)
+    if use_mask:
+        mask = inputs >= 0
+    else:
+        mask = None
+    h = tf.keras.layers.Embedding(64, 2048)(tf.math.maximum(inputs, 0))
+    h1 = tf.keras.layers.Bidirectional(tf.keras.layers.GRU(2048, return_sequences=True), merge_mode="sum")(h, mask=mask)
+    h2 = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(2048, return_sequences=True), merge_mode="sum")(h, mask=mask)
+    h = tf.keras.layers.Dense(10)(h1 + h2)
+    return tf.keras.Model(inputs, h)
 
-    def call(self, inputs, training=None):
-        """
-        Args:
-            inputs: int32 tensor with shape (batch_size, seq_len)
-                    - Values >=0 are valid tokens
-                    - Values <0 indicate masked positions (padding)
-        Returns:
-            Tensor of shape (batch_size, seq_len, 10)
-        """
-        # Create mask based on non-negative input tokens
-        mask = tf.math.greater_equal(inputs, 0)
+# Data
+data = tf.data.Dataset.from_tensor_slices([[j if j <= i else -1 for j in range(64)] for i in range(64)]).batch(64)
 
-        # Clamp inputs to zero for embedding indexing (to avoid negative indices)
-        clamped_inputs = tf.math.maximum(inputs, 0)
+# However, when masking is used, even prediction on GPU gives different result.
+# It also sometimes crases with the error `CUDA_ERROR_ILLEGAL_ADDRESS`.
+# The full error log is copied below.
+# If `use_mask=False` is passed, no problem happens.
 
-        # Embedding lookup
-        x = self.embedding(clamped_inputs)  # shape (batch, seq_len, 2048)
+# Models
+tf.keras.utils.set_random_seed(42)
+model = create_model(use_mask=True)
 
-        # Run bidirectional GRU with mask
-        gru_outputs = self.bi_gru(x, mask=mask)
-
-        # Run bidirectional LSTM with mask
-        lstm_outputs = self.bi_lstm(x, mask=mask)
-
-        # Sum outputs and pass through Dense
-        combined = gru_outputs + lstm_outputs
-
-        output = self.dense(combined)
-        return output
-
-def my_model_function():
-    """
-    Returns:
-        An instance of MyModel initialized.
-    """
-    # Set global seed for reproducibility to mimic issue scenario
-    tf.keras.utils.set_random_seed(42)
-    return MyModel()
-
-def GetInput():
-    """
-    Generates a random input tensor suitable for MyModel.
-    
-    Based on the issue description:
-    - Batch size: 64
-    - Sequence lengths variable, masked by input < 0
-    - Inputs are integers in range [0, 63], padding represented by -1
-    - Each batch element is a sequence padded with -1 (masking)
-    
-    Returns:
-        A (64, 64) int32 tf.Tensor with masked padding (-1).
-    """
-    batch_size = 64
-    max_seq_len = 64
-
-    # Generate a numpy array with shape (64, 64):
-    # For row i, values are from 0 to i inclusive, rest are -1 as padding.
-    import numpy as np
-    data = np.array([[j if j <= i else -1 for j in range(max_seq_len)] for i in range(batch_size)], dtype=np.int32)
-
-    # Convert to tensor
-    return tf.convert_to_tensor(data, dtype=tf.int32)
-
+# Run prediction
+gold = None
+for i in range(100):
+    result = model.predict(data, verbose=0)
+    if gold is None:
+        gold = result
+    print("Batch {}, max difference {}, mean difference {}".format(i, np.max(np.abs(gold - result)), np.mean(np.abs(gold - result))))

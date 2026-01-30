@@ -1,44 +1,66 @@
-# torch.rand(B, C, H, W, dtype=...)  # Add a comment line at the top with the inferred input shape
+from transformers import RobertaForSequenceClassification, RobertaTokenizerFast, Trainer, TrainingArguments, HfArgumentParser
+import pandas as pd
+import numpy as np
 import torch
-import torch.nn as nn
+import os
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Simplified version of RobertaForSequenceClassification
-        self.embedding = nn.Embedding(50265, 768)  # Example embedding layer
-        self.transformer = nn.TransformerEncoderLayer(d_model=768, nhead=12)
-        self.classifier = nn.Linear(768, 2)
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+os.environ['NCCL_DEBUG']='INFO'
+os.environ['NCCL_DEBUG_SUBSYS']='ALL'
+os.environ['NCCL_IB_DISABLE']='1'
+os.environ['NCCL_SOCKET_IFNAME']='eth0'
 
-    def forward(self, input_ids):
-        x = self.embedding(input_ids)
-        x = self.transformer(x)
-        x = x.mean(dim=1)  # Mean pooling
-        x = self.classifier(x)
-        return x
+tok = RobertaTokenizerFast.from_pretrained('/home/jovyan/models/roberta-large/')
+model = RobertaForSequenceClassification.from_pretrained('/home/jovyan/models/roberta-large/', num_labels=2)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+df_full = pd.read_csv('IMDB_Dataset.csv')
+print("loaded df")
+df_full = df_full.sample(frac=1).reset_index(drop=True)
+df_req =  df_full.head(1000)
+df_train = df_req.head(800)
+df_eval = df_req.tail(200)
+train_text, train_labels_raw, val_text, val_labels_raw = df_train.review.values.tolist(), df_train.sentiment.values.tolist(), df_eval.review.values.tolist(), df_eval.sentiment.values.tolist(),
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    batch_size = 10
-    seq_length = 512
-    input_ids = torch.randint(0, 50265, (batch_size, seq_length))
-    return input_ids
 
-# The issue described in the GitHub issue is related to distributed training with `torch.distributed` and `NCCL` backend. The problem was resolved by setting the environment variable `NCCL_SOCKET_IFNAME=lo`. However, the goal here is to extract and generate a single complete Python code file that includes a PyTorch model and a function to generate input for the model.
-# Since the provided code snippet does not include a custom PyTorch model but rather uses a pre-trained `RobertaForSequenceClassification` from the `transformers` library, I will create a simplified version of the model and the necessary functions to meet the requirements.
-# Here is the extracted and generated code:
-# ### Explanation:
-# 1. **MyModel Class**:
-#    - A simplified version of `RobertaForSequenceClassification` is created.
-#    - It includes an embedding layer, a transformer encoder layer, and a linear classifier.
-#    - The `forward` method processes the input through these layers and returns the output.
-# 2. **my_model_function**:
-#    - This function returns an instance of `MyModel`.
-# 3. **GetInput Function**:
-#    - This function generates a random tensor of input IDs that can be used as input to `MyModel`.
-#    - The input shape is `(batch_size, seq_length)` where `batch_size` is 10 and `seq_length` is 512.
-# This code can be used as a standalone file and should work with `torch.compile(MyModel())(GetInput())`.
+train_encodings = tok(train_text, padding=True, truncation=True, max_length=512)
+val_encodings = tok(val_text, padding=True, truncation=True, max_length=512)
+train_labels = [1 if i=='positive' else 0 for i in train_labels_raw]
+val_labels = [1 if i=='positive' else 0 for i in val_labels_raw]
+
+
+class IMDbDataset(torch.utils.data.Dataset):
+    def __init__(self, encodings, labels):
+        self.encodings = encodings
+        self.labels = labels
+
+    def __getitem__(self, idx):
+        item = {key: torch.tensor(val[idx]) for key, val in self.encodings.items()}
+        item['labels'] = torch.tensor(self.labels[idx])
+        return item
+
+    def __len__(self):
+        return len(self.labels)
+
+train_dataset = IMDbDataset(train_encodings, train_labels)
+val_dataset = IMDbDataset(val_encodings, val_labels)
+
+print("Encoding done")
+
+
+parser = HfArgumentParser(TrainingArguments)
+train_args = parser.parse_args_into_dataclasses()
+print('parser and args created')
+
+
+trainer = Trainer(
+             model=model,
+             args=train_args[0],
+             train_dataset=train_dataset,
+             eval_dataset=val_dataset
+             )
+if train_args[0].do_train:
+    print('------------TRAINING-------------')
+    trainer.train() 
+if train_args[0].do_eval:
+    print('------------EVALUATING-------------')
+    trainer.evaluate()

@@ -1,168 +1,128 @@
-# tf.random.uniform((B, S_dim), dtype=tf.float32) ← inferred input shape: batch dimension unknown, obs_dim = S_dim
-
 import tensorflow as tf
-import tensorflow_probability as tfp
+from tensorflow import keras
+from tensorflow.keras import layers
 
-# Constants used in squashing and log sigma clipping (inferred typical values, missing in original)
-LOG_SIGMA_MIN_MAX = (-20.0, 2.0)
+class SquashedGaussianActor(tf.keras.Model):
+    def __init__(
+        self, obs_dim, act_dim, hidden_sizes, name, seeds=None, **kwargs,
+    ):
+        """Squashed Gaussian actor network.
 
-# SquashBijector implements a tanh transformation to squash action outputs between [-1,1]
-class SquashBijector(tfp.bijectors.Bijector):
-    def __init__(self, validate_args=False, name="squash"):
-        super().__init__(
-            forward_min_event_ndims=0,
-            validate_args=validate_args,
-            name=name,
-            inverse_min_event_ndims=0,
-        )
+        Args:
+            obs_dim (int): The dimension of the observation space.
 
-    def _forward(self, x):
-        return tf.tanh(x)
+            act_dim (int): The dimension of the action space.
 
-    def _inverse(self, y):
-        # Clip y to prevent numerical issues with atanh near boundaries
-        y = tf.clip_by_value(y, -0.99999997, 0.99999997)
-        return tf.atanh(y)
+            hidden_sizes (list): Array containing the sizes of the hidden layers.
 
-    def _forward_log_det_jacobian(self, x):
-        # log|det(d tanh / dx)| = sum over dims of log(1 - tanh(x)^2)
-        return tf.reduce_sum(
-            tf.math.log1p(-tf.tanh(x) ** 2 + 1e-6), axis=-1
-        )  # small epsilon for numerical stability
+            name (str): The keras module name.
 
-# The combined model class encapsulates the original SquashedGaussianActor.
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
+            seeds (list, optional): The random seeds used for the weight initialization
+                and the sampling ([weights_seed, sampling_seed]). Defaults to
+                [None, None]
+        """
+        super().__init__(name=name, **kwargs)
 
-        # For demonstration, use inferred dimensions and hidden sizes from original code snippet
-        # Since obs_dim and act_dim are parameters in original, we use placeholders here.
-        # We assume:
-        # obs_dim = 6 (inferred from grad arrays in issue)
-        # act_dim = 2 (inferred from grad arrays in issue)
-        # hidden_sizes = [6, 6] as per implicit from network layers info
-        self.s_dim = 6
-        self.a_dim = 2
-        self.hidden_sizes = [6, 6]
+        # Get class parameters
+        self.s_dim = obs_dim
+        self.a_dim = act_dim
+        self._seed = seeds[0]
+        self._initializer = tf.keras.initializers.GlorotUniform(
+            seed=self._seed
+        )  # Seed weights initializer
+        self._tfp_seed = seeds[1]
 
-        # Seeds for reproducibility (inferred, using None)
-        self._seed = None
-        self._tfp_seed = None
-
-        self._initializer = tf.keras.initializers.GlorotUniform(seed=self._seed)
-
-        # Build fully connected layers sequentially
+        # Create fully connected layers
         self.net = tf.keras.Sequential(
-            [tf.keras.layers.InputLayer(dtype=tf.float32, input_shape=(self.s_dim,))]
+            [
+                tf.keras.layers.InputLayer(
+                    dtype=tf.float32, input_shape=(self.s_dim), name=name + "/input"
+                )
+            ]
         )
-        for i, hidden_size_i in enumerate(self.hidden_sizes):
+        for i, hidden_size_i in enumerate(hidden_sizes):
             self.net.add(
                 tf.keras.layers.Dense(
                     hidden_size_i,
                     activation="relu",
+                    name=name + "/l{}".format(i + 1),
                     kernel_initializer=self._initializer,
-                    name=f"l{i+1}",
                 )
             )
 
-        # Mu output head: dense layer without activation
+        # Create Mu and log sigma output layers
         self.mu = tf.keras.Sequential(
             [
-                tf.keras.layers.InputLayer(dtype=tf.float32, input_shape=(self.hidden_sizes[-1],)),
+                tf.keras.layers.InputLayer(
+                    dtype=tf.float32, input_shape=hidden_sizes[-1]
+                ),
                 tf.keras.layers.Dense(
-                    self.a_dim,
+                    act_dim,
                     activation=None,
+                    name=name + "/mu",
                     kernel_initializer=self._initializer,
-                    name="mu",
                 ),
             ]
         )
-
-        # Log sigma output head: dense layer without activation
         self.log_sigma = tf.keras.Sequential(
             [
-                tf.keras.layers.InputLayer(dtype=tf.float32, input_shape=(self.hidden_sizes[-1],)),
+                tf.keras.layers.InputLayer(
+                    dtype=tf.float32, input_shape=hidden_sizes[-1]
+                ),
                 tf.keras.layers.Dense(
-                    self.a_dim,
+                    act_dim,
                     activation=None,
+                    name=name + "/log_sigma",
                     kernel_initializer=self._initializer,
-                    name="log_sigma",
                 ),
             ]
         )
-
-        # Squash bijector instance
-        self.squash_bijector = SquashBijector()
 
     @tf.function
     def call(self, inputs):
-        """
-        Forward pass of the Squashed Gaussian Actor network with reparameterization trick.
+        """Perform forward pass."""
 
-        Inputs:
-            inputs: Tensor of shape [batch_size, s_dim]
-        Returns:
-            clipped_action: squashed sampled action 
-            clipped_mu: squashed mean action (deterministic)
-            log_prob: log probability of clipped_action under policy
-            epsilon: noise sample used for reparameterization (for debugging or further use)
-        """
+        # Retrieve inputs
         obs = inputs
 
-        # Forward pass through fully connected layers
+        # Perform forward pass through fully connected layers
         net_out = self.net(obs)
 
-        # Compute mu and log_sigma
+        # Calculate mu and log_sigma
         mu = self.mu(net_out)
         log_sigma = self.log_sigma(net_out)
-        log_sigma = tf.clip_by_value(log_sigma, LOG_SIGMA_MIN_MAX[0], LOG_SIGMA_MIN_MAX[1])
+        log_sigma = tf.clip_by_value(
+            log_sigma, LOG_SIGMA_MIN_MAX[0], LOG_SIGMA_MIN_MAX[1]
+        )
+
+        # Perform re-parameterization trick
         sigma = tf.exp(log_sigma)
 
-        # Create bijectors for reparameterization
-        affine_bijector = tfp.bijectors.Chain([
-            tfp.bijectors.Shift(mu),
-            tfp.bijectors.Scale(sigma)
-        ])
+        # Create bijectors (Used in the re-parameterization trick)
+        squash_bijector = SquashBijector()
+        affine_bijector = tfp.bijectors.Shift(mu)(tfp.bijectors.Scale(sigma))
 
-        # Construct base normal distribution for sampling
-        batch_size = tf.shape(obs)[0]
+        # Sample from the normal distribution and calculate the action
+        batch_size = tf.shape(input=obs)[0]
         base_distribution = tfp.distributions.MultivariateNormalDiag(
             loc=tf.zeros(self.a_dim), scale_diag=tf.ones(self.a_dim)
         )
-
-        # Sample epsilon noise for reparameterization
         epsilon = base_distribution.sample(batch_size, seed=self._tfp_seed)
-
-        # Apply affine transform and squash
         raw_action = affine_bijector.forward(epsilon)
-        clipped_action = self.squash_bijector.forward(raw_action)
+        clipped_a = squash_bijector.forward(raw_action)
 
-        # Construct transformed distribution object for log_prob computation
-        transform_bijector = tfp.bijectors.Chain([self.squash_bijector, affine_bijector])
-        transformed_distribution = tfp.distributions.TransformedDistribution(
-            distribution=base_distribution,
-            bijector=transform_bijector,
+        # Transform distribution back to the original policy distribution
+        reparm_trick_bijector = tfp.bijectors.Chain((squash_bijector, affine_bijector))
+        distribution = tfp.distributions.TransformedDistribution(
+            distribution=base_distribution, bijector=reparm_trick_bijector
         )
+        clipped_mu = squash_bijector.forward(mu)
 
-        # Squashed deterministic policy mean
-        clipped_mu = self.squash_bijector.forward(mu)
+        # Return network outputs and noise sample
+        return clipped_a, clipped_mu, distribution.log_prob(clipped_a), epsilon
 
-        # Compute log probability of sampled action
-        log_prob = transformed_distribution.log_prob(clipped_action)
+a_loss = GRAD_SCALE_FACTOR * (
+        labda * l_delta + alpha * tf.reduce_mean(input_tensor=log_pis)
+    )
 
-        return clipped_action, clipped_mu, log_prob, epsilon
-
-
-def my_model_function():
-    # Return an instance of MyModel. No special initialization parameters provided.
-    return MyModel()
-
-
-def GetInput():
-    # Return a random tensor input compatible with MyModel input: shape = (batch_size, s_dim)
-    # Assuming batch_size = 4 for example, s_dim = 6 (inferred)
-    batch_size = 4
-    s_dim = 6
-    input_tensor = tf.random.uniform((batch_size, s_dim), dtype=tf.float32)
-    return input_tensor
-
+a_loss = GRAD_SCALE_FACTOR * (alpha * tf.reduce_mean(input_tensor=log_pis))

@@ -1,54 +1,59 @@
-# tf.random.uniform((B, 28, 28), dtype=tf.float32) ← Input shape inferred from MNIST dataset (grayscale 28x28 images)
+import numpy as np
+from tensorflow.keras import models
 
-import tensorflow as tf
+class ActivationLogger(keras.callbacks.Callback):
+    def set_model(self, model):
+        self.model = model # Called by the parent model before training, to inform the callback of what model will be calling it
+        layer_outputs = [layer.output for layer in model.layers]
+        self.activations_model = keras.models.Model(model.input, layer_outputs) # Model instance that returns the activations of every layer
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Simple MNIST classifier model as described in the issue comments
-        self.flatten = tf.keras.layers.Flatten(input_shape=(28, 28))
-        self.dense1 = tf.keras.layers.Dense(512, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(10, activation='softmax')
+    def on_epoch_end(self, epoch, logs=None):
+        if self.validation_data is None:
+                raise RuntimeError('Requires validation_data.')
+        validation_sample = self.validation_data[0][0:1] # Obtains the first input sample of the validation data
+        activations = self.activations_model.predict(validation_sample)
+        f = open('activations_at_epoch_' + str(epoch) + '.npz', 'w') # Saves arrays to disk
+        np.savez(f, activations)
+        f.close()
+
+callbacks = [
+    keras.callbacks.TensorBoard(
+        log_dir='my_log_dir', # Location of log files
+        histogram_freq=1, # Records activation histogram every 1 epoch
+        embeddings_freq=1, # Records embedding data every 1 epoch
+    )
+]
+
+history = model.fit(x_train, y_train, 
+                epochs=20, 
+                batch_size=128, 
+                validation_split=0.2, 
+                callbacks=callbacks)
+
+# Browse to http://localhost:6006 and look at your model training
+...
+
+# A list of 2 or more callbacks that can be passed into `model.fit`
+callbacks_list = [
+        keras.callbacks.EarlyStopping(
+                monitor='acc',
+                patience=1,
+        ),
         
-        # Use a custom callback as a submodule (to demonstrate fusion and comparison)
-        self.accuracy_callback = self.MyCallback()
-        
-    def call(self, inputs, training=False):
-        x = self.flatten(inputs)
-        x = self.dense1(x)
-        output = self.dense2(x)
-        return output
-    
-    class MyCallback(tf.keras.callbacks.Callback):
-        """
-        Callback that stops training once accuracy >= 99% and prints a message.
-        Uses 'accuracy' key in logs dict to be compatible with TF 2.x versions.
-        """
-        def on_epoch_end(self, epoch, logs=None):
-            logs = logs or {}
-            acc = logs.get('accuracy')
-            if acc is not None and acc >= 0.99:
-                print("\nReached 99% accuracy so cancelling training!")
-                self.model.stop_training = True
+        keras.callbacks.ModelCheckpoint( # Saves the current weights after every epoch
+                filepath='my_model.h5',
+                monitor='val_loss',
+                save_best_only=True, # These two arguments mean you won’t overwrite the model file unless val_loss has improved
+        )
+]
 
-def my_model_function():
-    """
-    Returns an instance of MyModel.
-    """
-    model = MyModel()
-    # Compile with appropriate loss, optimizer, and metric to match the callback logs key 'accuracy'
-    model.compile(optimizer='adam',
-                  loss='sparse_categorical_crossentropy',
-                  metrics=['accuracy'])
-    return model
+model.compile(optimizer='rmsprop',
+                loss='binary_crossentropy',
+                metrics=['acc'])
 
-def GetInput():
-    """
-    Returns a random tensor input with shape (batch_size, 28, 28) matching MNIST data format.
-    The values are in [0,1), dtype float32.
-    Assumed batch size of 32 for typical usage.
-    """
-    batch_size = 32
-    # MNIST grayscale images: 28x28 single channel, normalized to [0,1]
-    return tf.random.uniform((batch_size, 28, 28), dtype=tf.float32)
-
+model.fit(x, y,
+                epochs=10,
+                batch_size=32,
+                callbacks=callbacks_list,
+                validation_data=(x_val, y_val)
+                )

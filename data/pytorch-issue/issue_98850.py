@@ -1,22 +1,26 @@
-# torch.rand(2, 3, 4), torch.rand(2, 3, 4)  # Two tensors with same shape
+import torch.nn as nn
+
+py
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
+torch.manual_seed(420)
+
+class Model(torch.nn.Module):
+
     def __init__(self):
-        super(MyModel, self).__init__()
+        super(Model, self).__init__()
 
-    def forward(self, inputs):
-        x, y = inputs
-        z = torch.cat([x, y])  # Default dim=0, which triggers the bug
+    def forward(self, x, y):
+        z = torch.cat([x, y])
         z = torch.relu(z)
         return z
 
-def my_model_function():
-    return MyModel()
+x = torch.randn(2, 3, 4)
+y = torch.randn(2, 3, 4)
 
-def GetInput():
-    x = torch.randn(2, 3, 4)
-    y = torch.randn(2, 3, 4)
-    return (x, y)
+func = Model()
 
+jit_func = torch.compile(func)
+
+print(func(x, y))
+print(jit_func(x, y))

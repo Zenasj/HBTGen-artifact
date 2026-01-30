@@ -1,17 +1,58 @@
-# torch.rand((), dtype=torch.int64)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Apply fill_ operation and check if it matches the expected value (8)
-        x.fill_(8)
-        return torch.all(x == 8)  # Returns True if fixed, False otherwise
+kernel_cpp_0 = async_compile.cpp('''
+#include "/tmp/torchinductor_root/hw/chwr6vy6e6sd25sfh42qtywkuf2emodexm2aomp3lbrcxwznfwyi.h"
+extern "C" void kernel(long* out_ptr0)
+{
+   {
+       auto tmp0 = static_cast<long>(8);
+       out_ptr0[0] = tmp0;
+   }
+}
+''')
 
-def my_model_function():
-    return MyModel()
+async_compile.wait(globals())
+del async_compile
 
-def GetInput():
-    # Return a scalar integer tensor as input
-    return torch.randint(low=0, high=10, size=(), dtype=torch.int64)
+def call(args):
+   arg0_1, = args
+   args.clear()
+   kernel_cpp_0(c_void_p(arg0_1.data_ptr()))
+   del arg0_1
+   return (buf0, )
 
+def benchmark_compiled_module():
+   from torch._dynamo.testing import rand_strided
+   from torch._inductor.utils import print_performance
+   arg0_1 = rand_strided((), (), device='cpu', dtype=torch.int64)
+   print_performance(lambda: call([arg0_1]))
+
+kernel_cpp_0 = async_compile.cpp('''
+#include "/tmp/torchinductor_root/hw/chwr6vy6e6sd25sfh42qtywkuf2emodexm2aomp3lbrcxwznfwyi.h"
+extern "C" void kernel(long* out_ptr0,
+                       long* out_ptr1)
+{
+    {
+        auto tmp0 = static_cast<long>(8);
+        out_ptr0[static_cast<long>(0)] = tmp0;
+        out_ptr1[static_cast<long>(0)] = tmp0;
+    }
+}
+''')
+
+async_compile.wait(globals())
+del async_compile
+
+def call(args):
+    arg0_1, = args
+    args.clear()
+    buf0 = empty_strided((), (), device='cpu', dtype=torch.int64)
+    kernel_cpp_0(c_void_p(buf0.data_ptr()), c_void_p(arg0_1.data_ptr()))
+    del arg0_1
+    return (buf0, )
+
+def benchmark_compiled_module():
+    from torch._dynamo.testing import rand_strided
+    from torch._inductor.utils import print_performance
+    arg0_1 = rand_strided((), (), device='cpu', dtype=torch.int64)
+    print_performance(lambda: call([arg0_1]))

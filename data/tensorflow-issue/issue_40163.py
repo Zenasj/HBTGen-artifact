@@ -1,67 +1,144 @@
-# tf.random.uniform((None, 2), dtype=tf.float32) ← Input shape is (?, 2) corresponding to concatenated x and y coordinates
+import random
 
+import numpy as np 
 import tensorflow as tf
-import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Layers configuration matching original: layers = [2, 20, 20, 20, 20, 20, 20, 20, 20, 1]
-        self.layers_sizes = [20, 20, 20, 20, 20, 20, 20, 20]
+path_save = '/home/mathewsa/stored_models/' #custom path to save network
+save_model = str(path_save)+"test_save.ckpt"
+end_it = 1000 #number of iterations
+frac_train = 1.0 #randomly sampled fraction of data to create training set
+frac_sample_train = 0.01 #randomly sampled fraction of data from training set to train in batches
+layers = [2, 20, 20, 20, 20, 20, 20, 20, 20, 1]
 
-        # Xavier initialization helper
-        def xavier_init(in_dim, out_dim):
-            stddev = np.sqrt(2/(in_dim + out_dim))
-            return tf.random.truncated_normal([in_dim, out_dim], stddev=stddev)
+#Generate training data
+len_data = 10000
+x_x = np.array([np.linspace(0.,1.,len_data)])
+x_y = np.array([np.linspace(0.,1.,len_data)]) 
+y_true = np.array([np.linspace(-1.,1.,len_data)])
 
-        # Input layer size is 2 (x, y)
-        in_dim = 2
-        self.weights = []
-        self.biases = []
-        for out_dim in self.layers_sizes:
-            w = tf.Variable(xavier_init(in_dim, out_dim), trainable=True, dtype=tf.float32)
-            b = tf.Variable(tf.zeros([out_dim], dtype=tf.float32), trainable=True)
-            self.weights.append(w)
-            self.biases.append(b)
-            in_dim = out_dim
-        # Output layer weights and bias (from last 20 to 1 output)
-        w_out = tf.Variable(xavier_init(in_dim, 1), trainable=True, dtype=tf.float32)
-        b_out = tf.Variable(tf.zeros([1], dtype=tf.float32), trainable=True)
-        self.weights.append(w_out)
-        self.biases.append(b_out)
+N_train = int(frac_train*len_data)
+idx = np.random.choice(len_data, N_train, replace=False)
 
-        # Store lb, ub placeholders to normalize inputs
-        # As the original code does normalization based on data min/max,
-        # here we will fix lb=0.0 and ub=1.0 assuming the input is normalized or scaled.
-        # This replicates:
-        # H = 2.0*(X - lb)/(ub - lb) - 1.0  # scales input to [-1,1]
-        self.lb = tf.constant([0.0, 0.0], dtype=tf.float32)
-        self.ub = tf.constant([1.0, 1.0], dtype=tf.float32)
+x_train = x_x.T[idx,:]
+y_train = x_y.T[idx,:] 
+v1_train = y_true.T[idx,:] 
 
-    def call(self, inputs):
-        # Inputs shape: (batch_size, 2)
-        # Normalize inputs to [-1, 1]
-        H = 2.0 * (inputs - self.lb) / (self.ub - self.lb) - 1.0
+sample_batch_size = int(frac_sample_train*N_train)
 
-        # Forward through hidden layers with tanh activation
-        for w, b in zip(self.weights[:-1], self.biases[:-1]):
-            H = tf.tanh(tf.matmul(H, w) + b)
-        # Output layer (linear activation)
-        out = tf.matmul(H, self.weights[-1]) + self.biases[-1]
+np.random.seed(1234)
+tf.set_random_seed(1234)
+import logging
+logging.getLogger('tensorflow').setLevel(logging.ERROR)
+tf.logging.set_verbosity(tf.logging.ERROR)
 
-        # Output shape: (batch_size, 1)
-        return out
+class NeuralNet:
+    def __init__(self, x, y, v1, layers):
+        X = np.concatenate([x, y], 1)  
+        self.lb = X.min(0)
+        self.ub = X.max(0)
+        self.X = X
+        self.x = X[:,0:1]
+        self.y = X[:,1:2] 
+        self.v1 = v1 
+        self.layers = layers 
+        self.weights_v1, self.biases_v1 = self.initialize_NN(layers) 
+        self.sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=False,
+                                                     log_device_placement=False)) 
+        self.x_tf = tf.placeholder(tf.float32, shape=[None, self.x.shape[1]])
+        self.y_tf = tf.placeholder(tf.float32, shape=[None, self.y.shape[1]]) 
+        self.v1_tf = tf.placeholder(tf.float32, shape=[None, self.v1.shape[1]])  
+        self.v1_pred = self.net(self.x_tf, self.y_tf) 
+        self.loss = tf.reduce_mean(tf.square(self.v1_tf - self.v1_pred)) 
+        self.optimizer = tf.contrib.opt.ScipyOptimizerInterface(self.loss,
+                                                                var_list=self.weights_v1+self.biases_v1,
+                                                                method = 'L-BFGS-B',
+                                                                options = {'maxiter': 50,
+                                                                           'maxfun': 50000,
+                                                                           'maxcor': 50,
+                                                                           'maxls': 50,
+                                                                           'ftol' : 1.0 * np.finfo(float).eps})
+        self.optimizer_Adam = tf.train.AdamOptimizer()
+        self.train_op_Adam_v1 = self.optimizer_Adam.minimize(self.loss, var_list=self.weights_v1+self.biases_v1) 
+        self.saver = tf.train.Saver()
+        init = tf.global_variables_initializer()  
+        self.sess.run(init)
+    def initialize_NN(self, layers):
+        weights = []
+        biases = []
+        num_layers = len(layers)
+        for l in range(0,num_layers-1):
+            W = self.xavier_init(size=[layers[l], layers[l+1]])
+            b = tf.Variable(tf.zeros([1,layers[l+1]], dtype=tf.float32), dtype=tf.float32)
+            weights.append(W)
+            biases.append(b) 
+        return weights, biases
+    def xavier_init(self, size):
+        in_dim = size[0]
+        out_dim = size[1]
+        xavier_stddev = np.sqrt(2/(in_dim + out_dim)) 
+        return tf.Variable(tf.truncated_normal([in_dim, out_dim], stddev=xavier_stddev), dtype=tf.float32)
+    def neural_net(self, X, weights, biases):
+        num_layers = len(weights) + 1
+        H = 2.0*(X - self.lb)/(self.ub - self.lb) - 1.0
+        for l in range(0,num_layers-2):
+            W = weights[l]
+            b = biases[l]
+            H = tf.tanh(tf.add(tf.matmul(H, W), b))
+        W = weights[-1]
+        b = biases[-1]
+        Y = tf.add(tf.matmul(H, W), b) 
+        return Y
+    def net(self, x, y): 
+        v1_out = self.neural_net(tf.concat([x,y], 1), self.weights_v1, self.biases_v1)
+        v1 = v1_out[:,0:1]
+        return v1
+    def callback(self, loss):
+        global Nfeval
+        print(str(Nfeval)+' - Loss in loop: %.3e' % (loss))
+        Nfeval += 1
+    def fetch_minibatch(self, x_in, y_in, v1_in, N_train_sample):  
+        idx_batch = np.random.choice(len(x_in), N_train_sample, replace=False)
+        x_batch = x_in[idx_batch,:]
+        y_batch = y_in[idx_batch,:] 
+        v1_batch = v1_in[idx_batch,:] 
+        return x_batch, y_batch, v1_batch
+    def train(self, end_it): 
+        saver = tf.train.Saver()
+        print('Stage 4.20')
+        try:
+            saver.restore(self.sess, save_model) 
+            print('Using previous model')
+        except:
+            self.Nfeval = 1
+            print('No previous model') 
+        it = 0
+        while it < end_it: 
+            x_res_batch, y_res_batch, v1_res_batch = self.fetch_minibatch(self.x, self.y, self.v1, sample_batch_size) # Fetch residual mini-batch
+            tf_dict = {self.x_tf: x_res_batch, self.y_tf: y_res_batch,
+                       self.v1_tf: v1_res_batch}
+            self.sess.run(self.train_op_Adam_v1, tf_dict)
+            self.optimizer.minimize(self.sess,
+                                    feed_dict = tf_dict,
+                                    fetches = [self.loss],
+                                    loss_callback = self.callback) 
+            it = it + 1
+        self.save_path = saver.save(self.sess, save_model)
+        print('Finishing up training and saving as: ') 
+        print(save_model) 
+    def restore_model(self, path_full_saved):
+        saver = tf.train.Saver()
+        print('Stage 4.20')
+        try:
+            saver.restore(self.sess, str(path_full_saved))
+            print('Using previous model')
+        except:
+            print('No previous model')
+    def predict(self, x_star, y_star): 
+        tf_dict = {self.x_tf: x_star, self.y_tf: y_star}
+        v1_star = self.sess.run(self.v1_pred, tf_dict)  
+        return v1_star
 
-
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-
-def GetInput():
-    # Generate a random input tensor of shape (batch_size, 2)
-    # Use batch size = 64 as reasonable default batch size
-    # Inputs lie in [0,1] for each coordinate to match normalization assumptions.
-    batch_size = 64
-    return tf.random.uniform(shape=(batch_size, 2), minval=0.0, maxval=1.0, dtype=tf.float32)
-
+model = NeuralNet(x_train, y_train, v1_train, layers)
+ 
+Nfeval = 1
+model.train(end_it)

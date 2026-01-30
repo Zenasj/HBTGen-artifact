@@ -1,58 +1,43 @@
-# tf.random.uniform((B, maxlen), dtype=tf.int32) ← input shape is a batch of sequences with length maxlen, integer token ids
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Embedding, Bidirectional, GRU, Dense, Input
+from tensorflow.keras.preprocessing.text import Tokenizer
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+from tensorflow.keras.utils import to_categorical
 
-class MyModel(tf.keras.Model):
-    def __init__(self, max_features=20000, maxlen=100, embedding_dim=100, gru_units=64, num_classes=3):
-        super().__init__()
-        # Embedding layer for integer token inputs
-        self.embedding = tf.keras.layers.Embedding(input_dim=max_features, output_dim=embedding_dim, input_length=maxlen)
-        # Two Bidirectional GRU layers - first returns sequences, second returns final state
-        self.bi_gru_1 = tf.keras.layers.Bidirectional(
-            tf.keras.layers.GRU(units=gru_units, return_sequences=True))
-        self.bi_gru_2 = tf.keras.layers.Bidirectional(
-            tf.keras.layers.GRU(units=gru_units, return_sequences=False))
-        # Output Dense layer with softmax for multi-class classification (3 classes)
-        self.classifier = tf.keras.layers.Dense(num_classes, activation='softmax')
+# Data Pre omitted
 
-    def call(self, inputs, training=False):
-        """
-        Forward pass through the model.
-        Args:
-            inputs: Tensor of shape (batch_size, maxlen), dtype int32 representing tokenized sequences
-            training: Bool, if True applies dropout/training specific layers (not used here explicitly)
-        Returns:
-            Output probabilities with shape (batch_size, num_classes)
-        """
-        x = self.embedding(inputs)            # (B, maxlen, embedding_dim)
-        x = self.bi_gru_1(x)                  # (B, maxlen, gru_units*2)
-        x = self.bi_gru_2(x)                  # (B, gru_units*2)
-        output = self.classifier(x)           # (B, num_classes)
-        return output
+# Define the model
+embedding_dim = 100
+model = Sequential([
+    Input(shape=(maxlen,)),
+    Embedding(max_features, embedding_dim),
+    Bidirectional(GRU(64, return_sequences=True)),
+    Bidirectional(GRU(64)),
+    Dense(3, activation='softmax')  # Adjusted for 3 categories
+])
 
-def my_model_function():
-    """
-    Factory function to create an instance of MyModel with typical default parameters.
-    """
-    # Default max_features and maxlen are typical values inferred from the original code snippet
-    max_features = 20000  # Typical vocabulary size for text models
-    maxlen = 100          # Sequence length to match Input(shape=(maxlen,))
-    embedding_dim = 100
-    gru_units = 64
-    num_classes = 3
-    return MyModel(max_features=max_features, maxlen=maxlen, embedding_dim=embedding_dim,
-                   gru_units=gru_units, num_classes=num_classes)
+# Compile the model
+model.compile(optimizer='adam',
+              loss='categorical_crossentropy',  # Adjusted for multi-class classification
+              metrics=['accuracy'])
 
-def GetInput():
-    """
-    Returns a random integer tensor simulating tokenized text input for MyModel.
-    Shape: (batch_size, maxlen)
-    dtype: tf.int32
-    Values between 0 and max_features-1 (vocab indices).
-    """
-    batch_size = 32       # Typical batch size for testing
-    maxlen = 100          # Must match model input sequence length
-    max_features = 20000  # Must match vocabulary size of model embedding layer
-    # Generate random integers that represent token ids
-    return tf.random.uniform(shape=(batch_size, maxlen), minval=0, maxval=max_features, dtype=tf.int32)
+# Model summary
+model.summary()
 
+# Train the model
+model.fit(train_x, train_y,
+                    batch_size=100,
+                    epochs=10,
+                    validation_data=(val_x, val_y))
+
+
+# Save the model in the native Keras format
+model.save('my_model.keras')
+
+# Load the model
+loaded_model = tf.keras.models.load_model('my_model.keras')

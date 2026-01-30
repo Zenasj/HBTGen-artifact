@@ -1,34 +1,27 @@
-# torch.rand(N, D_in, dtype=torch.float32, device='cuda')  # Add a comment line at the top with the inferred input shape
+import torch.nn as nn
 
 import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.cuda.amp import GradScaler, autocast
+N, D_in, D_out = 64, 1024, 16
+x = torch.randn(N, D_in, device='cuda')
+y = torch.randn(N, D_out, device='cuda')
 
-class MyModel(nn.Module):
-    def __init__(self, D_in, D_out):
-        super(MyModel, self).__init__()
-        self.linear = nn.Linear(D_in, D_out)
+model = torch.nn.Linear(D_in, D_out).cuda()
+optimizer = torch.optim.SGD(model.parameters(), lr=1e-2)
+loss_fn = torch.nn.MSELoss()
 
-    def forward(self, x):
-        return self.linear(x)
+# from torch.cuda.amp import GradScaler, autocast
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    D_in = 1024
-    D_out = 16
-    model = MyModel(D_in, D_out)
-    model = model.cuda()
-    return model
+from gradscaler2 import GradScaler
+scaler = GradScaler()
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    N, D_in = 64, 1024
-    x = torch.randn(N, D_in, device='cuda')
-    return x
+def run_fwd_bwd():
+    with torch.cuda.amp.autocast():
+        y_pred = model(x)
+        loss = loss_fn(y_pred, y)
+    scaler.scale(loss).backward()
+    scaler.step(optimizer)
+    optimizer.zero_grad(set_to_none=True)
+    scaler.update()
 
-# Example usage:
-# model = my_model_function()
-# input_data = GetInput()
-# output = model(input_data)
-
+for t in range(20):
+    run_fwd_bwd()

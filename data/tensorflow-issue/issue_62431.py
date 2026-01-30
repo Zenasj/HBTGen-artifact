@@ -1,51 +1,64 @@
-# tf.random.uniform((3, 5, 1, 1, 1), dtype=tf.float64)
-
+import random
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Parameters derived and inferred from the issue details:
-        filters = 2
-        kernel_size = [3, 3, 3]
-        strides = [2, 2, 2]
-        padding = "valid"
-        output_padding = None
-        data_format = "channels_last"
-        dilation_rate = [1, 1, 1]
-        activation = "relu"
-        use_bias = False
-        # kernel_initializer, bias_initializer etc. are None by default; 
-        # we keep them as None to match issue setup
-        
-        self.conv3d_transpose = tf.keras.layers.Conv3DTranspose(
-            filters=filters,
-            kernel_size=kernel_size,
-            strides=strides,
-            padding=padding,
-            output_padding=output_padding,
-            data_format=data_format,
-            dilation_rate=dilation_rate,
-            activation=activation,
-            use_bias=use_bias
-        )
+filters = 2
+kernel_size_0 = 3
+kernel_size_1 = 3
+kernel_size_2 = 3
+kernel_size = [kernel_size_0, kernel_size_1,kernel_size_2, ]
+strides_0 = 2
+strides_1 = 2
+strides_2 = 2
+strides = [
+    strides_0, strides_1,
+    strides_2, ]
+padding = "valid"
+output_padding = None
+data_format = "channels_last"
+dilation_rate_0 = 1
+dilation_rate_1 = 1
+dilation_rate_2 = 1
+dilation_rate = [dilation_rate_0,dilation_rate_1,dilation_rate_2,]
+activation = "relu"
+use_bias = False
+kernel_initializer = None
+bias_initializer = None
+kernel_regularizer = None
+bias_regularizer = None
+activity_regularizer = None
+kernel_constraint = None
+bias_constraint = None
+__input___0_tensor = tf.random.uniform([3, 5, 1, 1, 1], minval=0, maxval=0, dtype=tf.float64)
+__input___0 = tf.identity(__input___0_tensor)
+Conv3DTranspose_class = tf.keras.layers.Conv3DTranspose(filters, kernel_size, strides=strides, padding=padding, output_padding=output_padding, data_format=data_format, dilation_rate=dilation_rate, activation=activation, use_bias=use_bias, kernel_initializer=kernel_initializer, bias_initializer=bias_initializer, kernel_regularizer=kernel_regularizer, bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer, kernel_constraint=kernel_constraint, bias_constraint=bias_constraint)
 
-    def call(self, inputs):
-        return self.conv3d_transpose(inputs)
+layer = Conv3DTranspose_class
+inputs = __input___0
 
-def my_model_function():
-    return MyModel()
+r = Conv3DTranspose_class(inputs)
+theoretical, numerical = tf.test.compute_gradient(Conv3DTranspose_class, [inputs])
+print(theoretical)
+print(numerical)
 
-def GetInput():
-    # From the issue, input shape is [3, 5, 1, 1, 1], dtype=float64,
-    # minval=0, maxval=0 results in zeros, but likely the maxval 0 was a typo or to force zeros.
-    # To generate a meaningful random input tensor we use minval=0, maxval=1.
-    # Use float64 dtype to match issue.
-    input_tensor = tf.random.uniform(
-        shape=(3, 5, 1, 1, 1),
-        minval=0,
-        maxval=1,
-        dtype=tf.float64
-    )
-    return input_tensor
-
+(array([[0., 0., 0., ..., 0., 0., 0.],
+       [0., 0., 0., ..., 0., 0., 0.],
+       [0., 0., 0., ..., 0., 0., 0.],
+       ...,
+       [0., 0., 0., ..., 0., 0., 0.],
+       [0., 0., 0., ..., 0., 0., 0.],
+       [0., 0., 0., ..., 0., 0., 0.]]),)
+(array([[-0.05650689,  0.        ,  0.        , ...,  0.        ,
+         0.        ,  0.        ],
+       [-0.11539936,  0.        ,  0.        , ...,  0.        ,
+         0.        ,  0.        ],
+       [ 0.06827629,  0.        ,  0.        , ...,  0.        ,
+         0.        ,  0.        ],
+       ...,
+       [ 0.        ,  0.        ,  0.        , ...,  0.        ,
+         0.        , -0.02971415],
+       [ 0.        ,  0.        ,  0.        , ...,  0.        ,
+         0.        , -0.1242566 ],
+       [ 0.        ,  0.        ,  0.        , ...,  0.        ,
+         0.        ,  0.11878401]]),)

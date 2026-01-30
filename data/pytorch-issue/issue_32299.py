@@ -1,24 +1,67 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Assuming input shape (4, 3, 224, 224) for 4 GPUs and image-like data
-import torch
-import torch.nn as nn
+import torch.multiprocessing as mp
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1)
-        self.relu = nn.ReLU()
-        self.fc = nn.Linear(16 * 224 * 224, 10)  # Example output layer
+def main_worker(gpu, queue, event):
+    print(f'gpu {gpu} putting into queue')
+    queue.put({'gpu': gpu})
 
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.relu(x)
-        x = x.view(x.size(0), -1)
-        x = self.fc(x)
-        return x
+    print(f'gpu {gpu} waiting')
+    event.wait()
 
-def my_model_function():
-    return MyModel()
+def main():
+    num_gpus = 4
 
-def GetInput():
-    return torch.rand(4, 3, 224, 224, dtype=torch.float32)
+    queue = mp.Queue()
+    event = mp.Event()
 
+    jobs = []
+    for i in range(num_gpus):
+        p = mp.Process(target=main_worker, args=(i, queue, event))
+        p.start()
+        jobs.append(p)
+
+    print('started processes')
+
+    for i in range(num_gpus):
+        print(f'getting {i}th queue value')
+        d = queue.get()
+        print(d)
+
+    event.set()
+    for p in jobs:
+        p.join()
+
+main()
+
+import multiprocessing as mp
+
+def main_worker(gpu, queue, event):
+    print(f'gpu {gpu} putting into queue')
+    queue.put({'gpu': gpu})
+
+    print(f'gpu {gpu} waiting')
+    event.wait()
+
+def main():
+    num_gpus = 4
+
+    queue = mp.Queue()
+    event = mp.Event()
+
+    jobs = []
+    for i in range(num_gpus):
+        p = mp.Process(target=main_worker, args=(i, queue, event))
+        p.start()
+        jobs.append(p)
+
+    print('started processes')
+
+    for i in range(num_gpus):
+        print(f'getting {i}th queue value')
+        d = queue.get()
+        print(d)
+
+    event.set()
+    for p in jobs:
+        p.join()
+
+main()

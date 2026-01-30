@@ -1,27 +1,40 @@
-# torch.rand(1, 2, 1, 1, dtype=torch.float32)
-import torch
-from torch import nn
+import torch                                                    
+                                                                
+class exampleFct(torch.autograd.Function):                      
+    @staticmethod                                               
+    def forward(self, x):                                       
+        self.save_for_backward(x)                               
+        return x ** 2                                           
+                                                                
+    @staticmethod                                               
+    def backward(self, dy):                                     
+        x, = self.saved_variables                               
+        with torch.enable_grad():                               
+            y = x ** 2                                          
+            return torch.autograd.grad(y, x, dy)
+                                                                
+                                                                
+x = torch.tensor([[3, 4]], requires_grad=True)                  
+m = exampleFct.apply(x).sum().backward()                        
+print(x.grad.data)
 
-class exampleFct(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, x):
-        ctx.save_for_backward(x)
-        return x ** 2
-
-    @staticmethod
-    def backward(ctx, dy):
-        x, = ctx.saved_tensors
-        with torch.enable_grad():
-            y = x ** 2  # Re-compute forward pass inside backward
-            return torch.autograd.grad(y, x, dy)[0]  # Extract scalar from tuple
-
-class MyModel(nn.Module):
-    def forward(self, x):
-        return exampleFct.apply(x)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(1, 2, 1, 1, dtype=torch.float32)
-
+import torch                                                    
+                                                                
+class exampleFct(torch.autograd.Function):                      
+    @staticmethod                                               
+    def forward(self, x):                                       
+        y = x ** 2  
+        self.save_for_backward(x, y)  
+        return y                             
+                                         
+                                                                
+    @staticmethod                                               
+    def backward(self, dy):                                     
+        x, y = self.saved_tensors                               
+        with torch.enable_grad():                               
+            return torch.autograd.grad(y, x, dy)
+                                                                
+                                                                
+x = torch.tensor([[3, 4]], dtype=torch.float, requires_grad=True)                  
+m = exampleFct.apply(x).sum().backward()                        
+print(x.grad.data)

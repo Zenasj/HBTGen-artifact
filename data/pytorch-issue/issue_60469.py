@@ -1,26 +1,24 @@
-# torch.rand(B, 3, 224, 224, dtype=torch.float32)  # Input shape for FakeData images
+import torchvision
+
+import os
+import numpy as np
 import torch
-from torch import nn
 from torch.utils.data import DataLoader
 from torchvision.datasets import FakeData
 from torchvision.transforms import ToTensor
+import mkl
+import omp_thread_count
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.data = FakeData(size=1000, image_size=(3, 224, 224), transform=ToTensor())
-    
-    def forward(self, input):
-        # Capture initial thread counts (assuming mkl and torch are imported externally)
-        # This is a simplified version; actual thread checks would require external modules
-        # The forward simulates the thread behavior test via DataLoader interaction
-        # Return dummy tensor to satisfy torch.compile requirements
-        return input  # Pass-through for compilation compatibility
+def main():
+    print(mkl.get_max_threads(), torch.get_num_threads(), omp_thread_count.get_thread_count())
+    data = FakeData(transform=ToTensor())
+    dataloader = DataLoader(data, num_workers=4, pin_memory=True)
+    print(mkl.get_max_threads(), torch.get_num_threads(), omp_thread_count.get_thread_count())
+    for e in range(3):
+        print(f'epoch {e}:')
+        for _ in dataloader:
+            pass
+    print(mkl.get_max_threads(), torch.get_num_threads(), omp_thread_count.get_thread_count())
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Generate a random tensor matching FakeData's default output
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
-
+if __name__ == '__main__':
+    main()

@@ -1,129 +1,167 @@
-# tf.random.uniform((B, )) ← Assumed input is a batch of dicts with features from heart.csv dataset (structured tabular data)
+from tensorflow import keras
 
+#!/usr/bin/python
+
+from __future__ import absolute_import, division, print_function, unicode_literals
+
+# import comet_ml in the top of your file
+from comet_ml import Experiment
+from comet_ml import Optimizer
+import numpy as np
+import pandas as pd
 import tensorflow as tf
+import datetime
 from tensorflow import feature_column
 from tensorflow.keras import layers
+from sklearn.model_selection import train_test_split
 
-class MyModel(tf.keras.Model):
-    def __init__(self, hyper_parameters):
-        super().__init__()
-        # Define feature columns as per define_features() logic
-        self.feature_columns = []
-        # Numeric columns from dataset
-        for header in ['age', 'trestbps', 'chol', 'thalach', 'oldpeak', 'slope', 'ca']:
-            self.feature_columns.append(feature_column.numeric_column(header))
-        
-        # Bucketized column for age
-        age = feature_column.numeric_column("age")
-        age_buckets = feature_column.bucketized_column(
-            age,
-            boundaries=[18, 25, 30, 35, 40, 45, 50, 55, 60, 65]
-        )
-        # age_buckets column is defined but not appended. Keep consistent with original code: commented out
-        # self.feature_columns.append(age_buckets)
+# Add the following code anywhere in your machine learning file
 
-        # Categorical column with vocabulary for 'thal'
-        thal = feature_column.categorical_column_with_vocabulary_list(
-            'thal', ['fixed', 'normal', 'reversible']
-        )
-        
-        # Embedding column for 'thal'
-        thal_embedding = feature_column.embedding_column(
-            thal, dimension=hyper_parameters['thal_embedding_cols']
-        )
-        # thal_embedding also commented out in original, keep consistent.
-        # self.feature_columns.append(thal_embedding)
+def main():
 
-        # Crossed feature column (age_buckets X thal) with hash bucket and indicator column
-        crossed_feature = feature_column.crossed_column(
-            [age_buckets, thal], hash_bucket_size=1000
-        )
-        crossed_feature = feature_column.indicator_column(crossed_feature)
-        # Commented out in original example
-        # self.feature_columns.append(crossed_feature)
+    # Import and setup data
 
-        # Create feature layer for the feature columns
-        self.feature_layer = layers.DenseFeatures(self.feature_columns)
-        
-        # Build the sequential layers as in build_model()
-        self.dense1 = layers.Dense(hyper_parameters['nodes'], activation='relu')
-        self.dense2 = layers.Dense(hyper_parameters['nodes'], activation='relu')
-        self.dense3 = layers.Dense(hyper_parameters['nodes'], activation='relu')
-        self.dense4 = layers.Dense(hyper_parameters['nodes'], activation='relu')
-        self.output_layer = layers.Dense(1, activation='sigmoid')
+    URL = 'https://storage.googleapis.com/applied-dl/heart.csv'
+    dataframe = pd.read_csv(URL)
 
-    def call(self, inputs, training=False):
-        # inputs: dictionary of feature_name: tensor (batch)
-        x = self.feature_layer(inputs)
-        x = self.dense1(x)
-        x = self.dense2(x)
-        x = self.dense3(x)
-        x = self.dense4(x)
-        output = self.output_layer(x)
-        return output
+    # Setup training test split
 
-
-def my_model_function():
-    # Return instance of MyModel with reasonable default hyperparameters
-    hparams = {"nodes": 128, "thal_embedding_cols": 3}
-    return MyModel(hparams)
-
-
-def GetInput():
-    """
-    Return a random batched input dictionary simulating one batch of the input features 
-    for the heart dataset used in the issue.
-    
-    Dataset features include:
-    - age: numeric
-    - trestbps: numeric
-    - chol: numeric
-    - thalach: numeric
-    - oldpeak: numeric
-    - slope: numeric
-    - ca: numeric
-    - thal: categorical with 3 classes: 'fixed', 'normal', 'reversible'
-    
-    The batch size is assumed as 32.
-    
-    Since tf.keras.layers.DenseFeatures expects dict of tensors keyed by feature names,
-    we produce a dict of tf.Tensor of shape (batch_size, ) with proper dtypes.
-    
-    For categorical 'thal', it must be string tensor.
-    
-    """
+    train, test = train_test_split(dataframe, test_size=0.2)
+    train, val = train_test_split(train, test_size=0.2)
+    print(f'The training set is of length: {len(train)}')
     batch_size = 32
 
-    # Random numeric features with plausible ranges
+    train_ds = df_to_dataset(train, batch_size=batch_size)
+    val_ds = df_to_dataset(val, shuffle=False, batch_size=batch_size)
+    test_ds = df_to_dataset(test, shuffle=False, batch_size=batch_size)
 
-    import numpy as np
+    size_train_ds = get_dataset_length(df_to_dataset(train, batch_size=1, repeat=1))
+    size_test_ds = get_dataset_length(df_to_dataset(test, batch_size=1, repeat=1))
+    size_validation_ds = get_dataset_length(df_to_dataset(val, batch_size=1, repeat=1))
 
-    # For reproducibility
-    np.random.seed(0)
+    print(f' training data length is: {size_train_ds}')
+    print(f' test data length is: {size_test_ds}')
+    print(f' validation data length is: {size_validation_ds}')
+    # Configure experiment and hyperparameters to test with.
 
-    age = tf.constant(np.random.randint(18, 70, size=(batch_size,)), dtype=tf.float32)
-    trestbps = tf.constant(np.random.randint(90, 180, size=(batch_size,)), dtype=tf.float32)
-    chol = tf.constant(np.random.randint(100, 400, size=(batch_size,)), dtype=tf.float32)
-    thalach = tf.constant(np.random.randint(100, 200, size=(batch_size,)), dtype=tf.float32)
-    oldpeak = tf.constant(np.random.uniform(0.0, 6.0, size=(batch_size,)), dtype=tf.float32)
-    slope = tf.constant(np.random.randint(1, 3, size=(batch_size,)), dtype=tf.float32)
-    ca = tf.constant(np.random.randint(0, 4, size=(batch_size,)), dtype=tf.float32)
-    
-    # For categorical 'thal', randomly pick from valid vocabulary
-    thal_options = ['fixed', 'normal', 'reversible']
-    thal_np = np.random.choice(thal_options, size=(batch_size,))
-    thal = tf.constant(thal_np, dtype=tf.string)
+    hparams = {"nodes":128, "thal_embedding_cols": 3}
 
-    input_dict = {
-        'age': age,
-        'trestbps': trestbps,
-        'chol': chol,
-        'thalach': thalach,
-        'oldpeak': oldpeak,
-        'slope': slope,
-        'ca': ca,
-        'thal': thal
-    }
+    loss = fit_model(train_ds,  # <-- ERROR GETS GENERATED AROUND HERE.
+                     test_ds,
+                     val_ds,
+                     epochs=100,
+                     batch_size=batch_size,
+                     number_training_examples=size_train_ds,
+                     number_testing_examples=size_test_ds,
+                     number_validation_examples=size_validation_ds,
+                     hyper_parameters=hparams)
 
-    return input_dict
 
+    return 0
+
+def df_to_dataset(dataframe, shuffle=True, repeat=None, batch_size=32):
+    dataframe = dataframe.copy()
+    labels = dataframe.pop('target')
+    ds = tf.data.Dataset.from_tensor_slices((dict(dataframe), labels))
+    if shuffle:
+        ds = ds.shuffle(buffer_size=len(dataframe))
+    ds = ds.batch(batch_size).repeat(repeat)
+    return ds
+
+def get_dataset_length(ds):
+    """
+    This function will get the number of examples in a tf.data.Dataset. Make
+    sure that the batch size for the dataset is set to 1, otherwise this
+    function will count the number of batches in the data. 
+    """
+    return ds.reduce(np.int64(0), lambda x, _: x + 1)
+
+def define_features(hyper_parameters):
+
+    feature_columns = []
+    # numeric cols
+    for header in ['age', 'trestbps', 'chol', 'thalach', 'oldpeak', 'slope', 'ca']:
+        feature_columns.append(feature_column.numeric_column(header))
+        
+
+    # bucketized cols
+    age = feature_column.numeric_column("age")
+    age_buckets = feature_column.bucketized_column(age,
+                                                   boundaries=[18, 25, 30, 35,
+                                                               40, 45, 50, 55,
+                                                               60, 65])
+    #feature_columns.append(age_buckets)
+
+    # indicator cols
+    thal = feature_column.categorical_column_with_vocabulary_list(
+        'thal', ['fixed', 'normal', 'reversible'])
+    thal_one_hot = feature_column.indicator_column(thal)
+    #feature_columns.append(thal_one_hot)
+
+    # embedding cols
+    thal_embedding = feature_column.embedding_column(thal,
+                                                     dimension= \
+                                                     hyper_parameters['thal_embedding_cols'])
+    #feature_columns.append(thal_embedding)
+
+    # crossed cols
+    crossed_feature = feature_column.crossed_column([age_buckets, thal], hash_bucket_size=1000)
+    crossed_feature = feature_column.indicator_column(crossed_feature)
+    #feature_columns.append(crossed_feature)
+    return feature_columns
+
+def build_model(features, hyper_parameters):
+    '''
+    documentation string
+    '''
+    feature_layer = tf.keras.layers.DenseFeatures(features)
+
+    model = tf.keras.Sequential([
+        feature_layer,
+        layers.Dense(hyper_parameters['nodes'], activation='relu'),
+        layers.Dense(hyper_parameters['nodes'], activation='relu'),
+        layers.Dense(hyper_parameters['nodes'], activation='relu'),
+        layers.Dense(hyper_parameters['nodes'], activation='relu'),
+        layers.Dense(1, activation='sigmoid')
+    ])
+
+    model.compile(optimizer='adam',
+                  loss='binary_crossentropy',
+                  metrics=['accuracy'])
+
+    return model
+
+
+def fit_model(
+              train_dataset,
+              test_dataset,
+              validation_dataset,
+              epochs=None,
+              batch_size=None,
+              number_training_examples=None,
+              number_testing_examples=None,
+              number_validation_examples=None,
+              hyper_parameters=None):
+
+
+    model = build_model(define_features(hyper_parameters), hyper_parameters)
+
+    log_dir = "logs/fit/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
+
+    model.fit(train_dataset,
+              validation_data = test_dataset,
+              epochs = epochs,
+              steps_per_epoch = number_training_examples//batch_size,
+              validation_steps= number_testing_examples//batch_size,
+              callbacks = [tensorboard_callback])
+
+    # score = model.evaluate(x_test, y_test, verbose=0)[1]
+    loss, accuracy = model.evaluate(validation_dataset,
+                                    steps=number_validation_examples//batch_size,
+                                    verbose=0)
+    print(loss)
+    return loss
+
+if __name__ == "__main__":
+    main()

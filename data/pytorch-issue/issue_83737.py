@@ -1,21 +1,9 @@
-# torch.rand(B=5, C=3, H=224, W=224, dtype=torch.float32)
 import torch
 import torchvision.models as models
-from torch import nn
+from torch.profiler import profile, record_function, ProfilerActivity
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.resnet = models.resnet50()  # Base model from torchvision
-
-    def forward(self, x):
-        return self.resnet(x)
-
-def my_model_function():
-    # Return initialized ResNet50 model
-    return MyModel()
-
-def GetInput():
-    # Return CUDA tensor matching ResNet50 input requirements
-    return torch.randn(5, 3, 224, 224, dtype=torch.float32).cuda()
-
+model = models.resnet50().cuda()
+inputs = torch.randn(5, 3, 224, 224).cuda()
+with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], with_stack=True, with_modules=False) as prof:
+    model(inputs)
+print(prof.key_averages(group_by_stack_n=2).table(sort_by="self_cuda_time_total"))

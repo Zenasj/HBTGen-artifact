@@ -1,22 +1,35 @@
-# torch.rand(B, 10, dtype=torch.float32)
 import torch
 import torch.nn as nn
+import torch.jit as jit
+import torch._jit_internal as _jit
 
-class MyModel(nn.Module):
+@_jit.weak_module
+class MyWeakModule(nn.Module):
+
     __constants__ = ['linears']
 
     def __init__(self):
         super().__init__()
         self.linears = nn.ModuleList([nn.Linear(10, 10), nn.Linear(10, 10)])
 
+    @_jit.weak_script_method
     def forward(self, x):
         for linear in self.linears:
             x = linear(x)
         return x
 
-def my_model_function():
-    return MyModel()
+class MyScriptModule(jit.ScriptModule):
 
-def GetInput():
-    return torch.rand(1, 10)
+    def __init__(self):
+        super().__init__()
+        self.linear = MyWeakModule()
 
+    @jit.script_method
+    def forward(self, x):
+        return self.linear(x)
+
+if __name__ == '__main__':
+    model = MyScriptModule()
+    x = torch.rand(1, 10)
+    out = model(x)
+    print(out)

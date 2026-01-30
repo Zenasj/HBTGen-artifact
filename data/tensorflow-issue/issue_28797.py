@@ -1,32 +1,34 @@
-# tf.random.uniform((B, 28, 28, 1), dtype=tf.float32) ← inferred input shape for MNIST images preprocessed by scale()
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
+import tensorflow_datasets as tfds
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # This is the same architecture as the reported Sequential model
-        self.conv2d = tf.keras.layers.Conv2D(32, 3, activation='relu', input_shape=(28, 28, 1))
-        self.maxpool = tf.keras.layers.MaxPooling2D()
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(64, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(10, activation='softmax')
+mnist_train, mnist_test = tfds.load(name='mnist', split=[tfds.Split.TRAIN, tfds.Split.TEST], as_supervised=True)
 
-    def call(self, inputs, training=False):
-        x = self.conv2d(inputs)
-        x = self.maxpool(x)
-        x = self.flatten(x)
-        x = self.dense1(x)
-        return self.dense2(x)
+strategy = tf.distribute.MirroredStrategy()
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+def scale(image, label):
+  image = tf.cast(image, tf.float32)
+  image /= 255
 
-def GetInput():
-    # Return a random input tensor shaped (batch_size, 28, 28, 1), normalized to [0,1]
-    # Assumption: batch size 256 as used in batch from original code example
-    batch_size = 256
-    # Simulating 'scale' preprocessing by generating float32 in [0, 1]
-    return tf.random.uniform((batch_size, 28, 28, 1), minval=0., maxval=1., dtype=tf.float32)
+  return image, label
 
+train_dataset = mnist_train.map(scale).shuffle(1000).batch(256)
+test_dataset = mnist_test.map(scale).batch(256)
+
+with strategy.scope():
+  model = tf.keras.Sequential([
+      tf.keras.layers.Conv2D(32, 3, activation='relu', input_shape=(28, 28, 1)),
+      tf.keras.layers.MaxPooling2D(),
+      tf.keras.layers.Flatten(),
+      tf.keras.layers.Dense(64, activation='relu'),
+      tf.keras.layers.Dense(10, activation='softmax')
+  ])
+
+  model.compile(loss='sparse_categorical_crossentropy',
+                optimizer=tf.keras.optimizers.Adam(),
+                metrics=['accuracy'])
+
+model.fit(train_dataset, validation_data=test_dataset, epochs=10)

@@ -1,22 +1,26 @@
-# torch.rand(10, 10, dtype=torch.float32, device='cuda')  # Input shape and dtype
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.stream = torch.cuda.Stream()  # Predefined stream for custom computation
+# 1. Make a base tensor and save the data address.
+base = torch.cuda.FloatTensor([10, 10])
+data_ptr = base.data_ptr()
 
-    def forward(self, base):
-        view = base[5:]  # Create a view with storage offset > 0
-        with torch.cuda.stream(self.stream):
-            torch.cuda._sleep(50000000)  # Simulate computation on the custom stream
-        view.record_stream(self.stream)  # Record stream on the view tensor
-        return view  # Ensure the view is used to maintain reference
+# 2. Make a view tensor with storage_offset() > 0.
+view = base[5:]
 
-def my_model_function():
-    return MyModel()
+# 3. Compute something on the view tensor in a custom stream.
+stream = torch.cuda.Stream()
+with torch.cuda.stream(stream):
+    torch.cuda._sleep(50000000)
 
-def GetInput():
-    return torch.rand(10, 10, dtype=torch.float32, device='cuda')  # Matches input requirements
+# 4. Record the stream on the view tensor.
+view.record_stream(stream)
 
+# 5. Delete relevant tensors.
+del base, view
+torch.cuda.current_stream().synchronize()
+
+# 6. Make a new tensor when the computations in the stream are not finished yet.
+try_realloc = torch.cuda.FloatTensor([10, 10])
+
+# 7. The base storage may be reallocated to the new tensor.
+assert try_realloc.data_ptr() != data_ptr  # It fails!

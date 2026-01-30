@@ -1,18 +1,6 @@
-# torch.rand(B, 3, 224, 224, dtype=torch.float32)
-import torch
-import torch.nn as nn
+from torchvision import datasets, transforms
+train_set = datasets.ImageNet('./data',train=True,download=True,
+                                 transform = transforms.Compose([transforms.ToTensor()]))
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.fc = nn.Linear(3 * 224 * 224, 10)  # Dummy layer for demonstration
-
-    def forward(self, x):
-        return self.fc(x.view(x.size(0), -1))
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
-
+test_set = datasets.ImageNet('./data',train=False,download=True,
+                                 transform = transforms.Compose([transforms.ToTensor()]))

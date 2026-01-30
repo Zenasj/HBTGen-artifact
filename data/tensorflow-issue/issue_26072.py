@@ -1,30 +1,43 @@
-# tf.random.uniform((B, 28, 28), dtype=tf.float32) ← inferred input shape from MNIST data input to the example model
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
+mnist = tf.keras.datasets.mnist
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Reconstructing the MNIST classification model given in the issue
-        # Input shape: (28, 28) grayscale images
-        self.flatten = tf.keras.layers.Flatten(input_shape=(28, 28))
-        self.dense1 = tf.keras.layers.Dense(512, activation=tf.nn.relu)
-        self.dropout = tf.keras.layers.Dropout(0.2)
-        self.dense2 = tf.keras.layers.Dense(10, activation=tf.nn.softmax)
-    
-    def call(self, inputs, training=False):
-        x = self.flatten(inputs)
-        x = self.dense1(x)
-        x = self.dropout(x, training=training)
-        return self.dense2(x)
+(x_train, y_train),(x_test, y_test) = mnist.load_data()
+x_train, x_test = x_train / 255.0, x_test / 255.0
 
-def my_model_function():
-    # Return an instance of MyModel, no pretrained weights needed here
-    return MyModel()
+model = tf.keras.models.Sequential([
+  tf.keras.layers.Flatten(input_shape=(28, 28)),
+  tf.keras.layers.Dense(512, activation=tf.nn.relu),
+  tf.keras.layers.Dropout(0.2),
+  tf.keras.layers.Dense(10, activation=tf.nn.softmax)
+])
+model.compile(optimizer='adam',
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
 
-def GetInput():
-    # Return a batch of random MNIST-like inputs with shape [batch_size, 28, 28]
-    # Using a typical small batch (e.g., 32), float32 inputs normalized [0,1]
-    batch_size = 32
-    return tf.random.uniform((batch_size, 28, 28), minval=0, maxval=1, dtype=tf.float32)
+model.fit(x_train, y_train, epochs=5)
+model.evaluate(x_test, y_test)
 
+import tensorflow as tf
+import os
+os.environ['TF_CPP_MIN_VLOG_LEVEL'] = '10'
+mnist = tf.keras.datasets.mnist
+
+(x_train, y_train),(x_test, y_test) = mnist.load_data()
+x_train, x_test = x_train / 255.0, x_test / 255.0
+
+model = tf.keras.models.Sequential([
+  tf.keras.layers.Flatten(input_shape=(28, 28)),
+  tf.keras.layers.Dense(512, activation=tf.nn.relu),
+  tf.keras.layers.Dropout(0.2),
+  tf.keras.layers.Dense(10, activation=tf.nn.softmax)
+])
+model.compile(optimizer='adam',
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
+
+model.fit(x_train, y_train, epochs=5)
+model.evaluate(x_test, y_test)

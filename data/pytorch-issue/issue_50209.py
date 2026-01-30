@@ -1,18 +1,24 @@
-# torch.rand(4, dtype=torch.float32, device='cuda:0', requires_grad=True)
+py
 import torch
-from torch import nn
+from torch._vmap_internals import vmap
+import warnings
+warnings.simplefilter('ignore')
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.register_buffer('indices', torch.tensor([0, 1], device='cuda:0'))  # Fixed indices as buffer
+device = 'cuda:0'
+x = torch.randn(4, requires_grad=True, device=device)
+indices = torch.tensor([0, 1], device=device)
+y = x.gather(0, indices)
 
-    def forward(self, x):
-        return x.gather(0, self.indices)
+def vjp(v):
+    return torch.autograd.grad(y, x, v, retain_graph=True)
 
-def my_model_function():
-    return MyModel()
+vs = torch.randn(2, *y.shape, device=device)
 
-def GetInput():
-    return torch.rand(4, dtype=torch.float32, device='cuda:0', requires_grad=True)
+vmap(vjp)(vs)
+vmap(vjp)(vs)
+vmap(vjp)(vs)
 
+# This script has the following output, despite the warnings filter
+# [W BatchedFallback.cpp:63] Warning: Batching rule not implemented for aten::gather_backward falling back to slow (for loop and stack) implementation (function batchedTensorForLoopFallback)
+# [W BatchedFallback.cpp:63] Warning: Batching rule not implemented for aten::gather_backward falling back to slow (for loop and stack) implementation (function batchedTensorForLoopFallback)
+# [W BatchedFallback.cpp:63] Warning: Batching rule not implemented for aten::gather_backward falling back to slow (for loop and stack) implementation (function batchedTensorForLoopFallback)

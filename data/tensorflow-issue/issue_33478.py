@@ -1,85 +1,94 @@
-# tf.random.uniform((B, 1), dtype=tf.float32)  # Assuming batch size B=4 for example input shape of (B, 1)
-
 import tensorflow as tf
-from typing import Callable, List, Optional
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
-class MyModel(tf.keras.Model):
-    """
-    A tf.keras.Model subclass that supports registering hooks on layers to capture
-    and optionally modify intermediate inputs and outputs during the forward pass.
+model = tf.keras.Sequential([
+  tf.keras.layers.Dense(50, input_shape=(1,)),
+  tf.keras.layers.Dense(1),
+])
 
-    This design fuses the discussed ideas from the issue:
-    - Wrapping layers or monkey patching layer.call to insert hooks
-    - Hooks receive layer input and output tensors
-    - Hooks can optionally replace output tensor
-    - You can register multiple hooks per layer
+def get_call_fn(layer: tf.keras.layers.Layer) -> Callable[[tf.Tensor], tf.Tensor]:
+  old_call_fn = layer.call
+  def call(input: tf.Tensor) -> tf.Tensor:
+    output = old_call_fn(input)
+    for hook in layer._hooks:
+        hook_result = hook(input, output)
+        if hook_result is not None:
+          output = hook_result
+    return output
+  return call
 
-    The forward pass applies the hooked layers sequentially.
+for layer in model.layers:
+  layer._hooks = []
+  layer.call = get_call_fn(layer)
+  layer.register_hook = lambda hook: layer._hooks.append(hook)
 
-    This design assumes the model is simple enough to apply hooks in this manner.
-    """
+class InputOutputSaver:
+  def __call__(self, input: tf.Tensor, output: tf.Tensor) -> None:
+    self.input = input
+    self.output = output
 
-    def __init__(self):
-        super().__init__()
-        # Define a simple model for illustration with two Dense layers
-        self.dense1 = tf.keras.layers.Dense(50, input_shape=(1,), name="dense_1")
-        self.relu = tf.keras.layers.ReLU(name="relu")
-        self.dense2 = tf.keras.layers.Dense(1, name="dense_2")
+savers = {}
+for layer in model.layers:
+  saver = InputOutputSaver()
+  layer.register_hook(saver)
+  savers[layer] = saver
 
-        # Store hooks for each layer: Dict[layer] -> List[hook_fn]
-        # A hook function has signature (input_tensor, output_tensor) -> Optional[output_tensor]
-        self._hooks = {
-            self.dense1: [],
-            self.relu: [],
-            self.dense2: [],
-        }
+inps = tf.convert_to_tensor([[1.], [2.], [3.],])
+print(model(inps))
+print(savers[model.layers[0]].output)
 
-        # Patch layers for hooks on their call methods
-        for layer in self._hooks.keys():
-            self._patch_layer_call(layer)
+original_model = tf.keras.Model(inputs, outputs)
+activation_outputs = [layer.output for layer in original_model.layers]
+activation_model = tf.keras.Model(inputs, activation_outputs)
 
-    def _patch_layer_call(self, layer: tf.keras.layers.Layer):
-        # Save original call method
-        original_call = layer.call
+seq_1 = tf.keras.models.Sequential([
+  tf.keras.layers.Flatten(input_shape=(28, 28)),
+  tf.keras.layers.Dense(128),
+])
+seq_2 = tf.keras.models.Sequential([
+  tf.keras.layers.ReLU(),
+  tf.keras.layers.Dense(10)
+])
+loss_object = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+images, labels = next(iter(train_ds))
+with tf.GradientTape() as tape:
+  out = seq_1(images)
+  predictions = seq_2(out)
+  loss = loss_object(labels, predictions)
+  
+print(tape.gradient(loss, out))
 
-        def hooked_call(inputs, *args, **kwargs):
-            # Call original method
-            output = original_call(inputs, *args, **kwargs)
-            # Apply hooks in order, each can modify output
-            for hook in self._hooks[layer]:
-                hook_result = hook(inputs, output)
-                if hook_result is not None:
-                    output = hook_result
-            return output
+input_1 = tf.keras.Input((5,), name='input_1')
+dense = tf.keras.layers.Dense(units=3)
+output_1 = dense(input_1) 
+print(dense.inbound_nodes[0].input_tensors)  #<tf.Tensor 'input_1:0' shape=(None, 5) dtype=float32>
+input_2 = tf.keras.Input((5,), name='input_2')
+output_2 = dense(input_2)
+print(dense.inbound_nodes[1].input_tensors)  #<tf.Tensor 'input_2:0' shape=(None, 5) dtype=float32>
 
-        layer.call = hooked_call
+def proxy_call(input:tf.Tensor, obj:tf.keras.layers.Layer)->tf.Tensor:
+    if obj._before_call is not None:
+        obj._before_call(obj,input)
+    output = obj._old_call(input)
+    if obj._after_call is not None:
+        hook_result = obj._after_call(obj, input, output)
+        if hook_result is not None:
+            output = hook_result
+    return output
 
-    def register_hook(self, layer: tf.keras.layers.Layer,
-                      hook_fn: Callable[[tf.Tensor, tf.Tensor], Optional[tf.Tensor]]):
-        """
-        Register a hook function on a specific layer.
-        The hook function receives (input_tensor, output_tensor) and may return a new output tensor.
-        """
-        if layer not in self._hooks:
-            raise ValueError("Layer not registered in this model for hooks.")
-        self._hooks[layer].append(hook_fn)
+def hook_layer_call(layers: List[tf.keras.layers.Layer], 
+                    before_call: Callable[[tf.keras.layers.Layer, tf.Tensor],None]=None, 
+                    after_call: Callable[[tf.keras.layers.Layer, tf.Tensor, tf.Tensor],Optional[tf.Tensor]]=None):
+    for layer in layers:
+        layer._before_call = before_call
+        layer._after_call = after_call
+        layer._old_call = layer.call
+        layer.call = functools.partial(proxy_call, obj=layer)
 
-    @tf.function(jit_compile=True)
-    def call(self, inputs):
-        # Sequential forward pass with hooked layers
-        x = inputs
-        x = self.dense1(x)
-        x = self.relu(x)
-        x = self.dense2(x)
-        return x
+def print_input_output(layer:tf.keras.layers.Layer, input:tf.Tensor, output:tf.Tensor):
+    print(input, output)
 
-
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-
-def GetInput():
-    # Generate a random input tensor with batch size 4 and input dim 1 (as per model input)
-    return tf.random.uniform((4, 1), dtype=tf.float32)
-
+# suppose you have a model(such as a tf.keras.Sequential instance)
+hook_layer_call(model.layers, after_call=print_input_output)

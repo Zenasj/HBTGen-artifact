@@ -1,32 +1,22 @@
-# torch.rand(1, 4, 64, 64, dtype=torch.float16)  # UNet input shape (B, C, H, W) for SDXL
-
+from diffusers import AutoPipelineForText2Image
 import torch
-import torch.nn as nn
+import matplotlib.pyplot as plt
+import time
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Simplified UNet-like structure to mimic the compiled model
-        self.conv_block = nn.Sequential(
-            nn.Conv2d(4, 320, kernel_size=3, padding=1),  # SDXL UNet has 320 channels in some layers
-            nn.GroupNorm(32, 320),
-            nn.SiLU(),
-            nn.Conv2d(320, 320, kernel_size=3, padding=1),
-        )
-        # Placeholder for attention layers (common in UNet but simplified here)
-        self.attn = nn.Identity()  # Actual implementation may vary
-        
-    def forward(self, x):
-        x = self.conv_block(x)
-        x = self.attn(x)
-        return x
+torch.cuda.empty_cache()
+torch.cuda.reset_peak_memory_stats()
 
-def my_model_function():
-    # Initialize model with half-precision as in the original issue
-    model = MyModel().to(dtype=torch.float16)
-    return model
+pipe = AutoPipelineForText2Image.from_pretrained("stabilityai/sdxl-turbo", torch_dtype=torch.float16, variant="fp16")
+pipe.to("cuda")
 
-def GetInput():
-    # Generate random latent tensor matching SDXL UNet input shape
-    return torch.rand(1, 4, 64, 64, dtype=torch.float16)
+prompt = "A cinematic shot of a baby racoon wearing an intricate italian priest robe."
+guidance_scale = 7.5  # Set the guidance scale to your desired value
 
+pipe.unet = torch.compile(pipe.unet, mode="max-autotune", fullgraph=True)
+pipe.vae.decode = torch.compile(pipe.vae.decode, mode="max-autotune", fullgraph=True)
+
+start_time = time.time()
+image = pipe(prompt=prompt, num_inference_steps=30, guidance_scale=guidance_scale).images[0]
+end_time = time.time()
+elapsed_time = end_time - start_time
+gpu_memory_used = torch.cuda.max_memory_allocated() / 1024**3  # Convert to GB

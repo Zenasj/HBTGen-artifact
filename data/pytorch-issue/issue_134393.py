@@ -1,24 +1,26 @@
-# torch.rand(B, 3, 28, 28, dtype=torch.float32)
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+import multiprocessing
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Simple CNN structure to demonstrate FSDP usage
-        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1)
-        self.fc = nn.Linear(16 * 28 * 28, 10)  # For 28x28 input images
+def fn():
+    tmp_list = ['a', 'b', 'c', 'd', 'a', 'c']
+    print(set(tmp_list))
 
-    def forward(self, x):
-        x = F.relu(self.conv1(x))
-        x = x.view(x.size(0), -1)
-        return self.fc(x)
+if __name__ == '__main__':
+    p_list = []
+    for i in range(10):
+        p = multiprocessing.Process(target=fn)
+        p_list.append(p)
+        p.start()
 
-def my_model_function():
-    return MyModel()
+    for p in p_list:
+        p.join()
 
-def GetInput():
-    # 4x3x28x28 input matching the CNN's expected dimensions
-    return torch.rand(4, 3, 28, 28, dtype=torch.float32)
-
+{'a', 'c', 'd', 'b'}
+{'b', 'a', 'c', 'd'}
+{'b', 'a', 'd', 'c'}
+{'a', 'c', 'b', 'd'}
+{'a', 'd', 'c', 'b'}
+{'b', 'a', 'c', 'd'}
+{'c', 'a', 'b', 'd'}
+{'d', 'a', 'b', 'c'}
+{'d', 'a', 'b', 'c'}
+{'b', 'c', 'a', 'd'}

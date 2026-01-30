@@ -1,32 +1,32 @@
 import torch
 import torch.nn as nn
-from torch.quantization import QuantStub, DeQuantStub
 
-# torch.rand(B, 3, H, W, dtype=torch.float)
-class MyModel(nn.Module):
-    def __init__(self):
+class Model(nn.Module):
+
+    def __init__(self, in_channels, out_channels, kernel_size, stride, padding):
         super().__init__()
-        in_channels = 3
-        out_channels = 5
-        kernel_size = 3
-        stride = 1
-        padding = (1, 2)  # Original padding parameter from the issue
         self.conv = nn.Sequential(
-            nn.ConstantPad2d(padding * 2, 0),  # Applies (1,2,1,2) padding
-            nn.Conv2d(in_channels, out_channels, kernel_size, stride)
-        )
+                nn.ConstantPad2d(padding*2, 0),
+                nn.Conv2d(in_channels, out_channels, kernel_size, stride)
+            )
+        
         self.quant = QuantStub()
         self.dequant = DeQuantStub()
 
     def forward(self, x):
         x = self.quant(x)
-        x = self.conv(x)
-        return self.dequant(x)
+        return self.dequant(self.conv(x))
 
-def my_model_function():
-    return MyModel()
+in_channels, out_channels, kernel_size, stride, padding = 3, 5, 3, 1, (1,2)
+model = Model(3, 5, 3, 1, (1,2))
+model.qconfig = torch.quantization.default_qconfig
+torch.quantization.prepare(model, inplace=True)
 
-def GetInput():
-    # Returns a random tensor with shape (B=1, C=3, H=64, W=64)
-    return torch.rand(1, 3, 64, 64, dtype=torch.float)
+# Calibrate first
+evaluate(model, criterion, data_loader, neval_batches=num_calibration_batches)
 
+# Convert to quantized model
+torch.quantization.convert(model, inplace=True)
+
+# Evaluation (Quantized) 
+top1, top5 = evaluate(model, criterion, data_loader_test, neval_batches=num_eval_batches) #This line gives error.

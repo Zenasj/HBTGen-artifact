@@ -1,23 +1,33 @@
-# (torch.rand(2, dtype=torch.bool), torch.rand(2, dtype=torch.bool), torch.rand(2, dtype=torch.bool))
 import torch
-from torch import nn
+a = torch.tensor([True, False], device='cuda')
+res = torch.where(a > 0)
+print(res)
 
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        condition, x, y = inputs
-        # Convert BoolTensors to int to bypass missing where implementation for bool
-        x_int = x.to(torch.int)
-        y_int = y.to(torch.int)
-        result_int = torch.where(condition, x_int, y_int)
-        return result_int.to(torch.bool)
 
-def my_model_function():
-    return MyModel()
+a = torch.tensor([True, False], device='cpu')
+res = torch.where(a > 0)
+print(res)
 
-def GetInput():
-    # Generate random BoolTensors of shape (2,)
-    condition = torch.rand(2) > 0.5
-    x = torch.rand(2) > 0.5
-    y = torch.rand(2) > 0.5
-    return (condition, x, y)
+import torch
+a = torch.tensor([True, False], device='cuda')
+x = torch.tensor([True, True], device='cuda')
+y = torch.tensor([False, False], device='cuda')
+res = torch.where(a, x, y)
 
+import torch
+a = torch.tensor([True, False], device='cpu')
+x = torch.tensor([True, True], device='cpu')
+y = torch.tensor([False, False], device='cpu')
+res = torch.where(a, x, y)
+
+import torch
+a = torch.tensor([True, False], device='cpu')
+x = torch.tensor([True, True], device='cpu')
+y = torch.tensor([False, False], device='cpu')
+res = torch.where(a, x, y)
+
+import torch
+a = torch.tensor([True, False], device='cuda')
+x = torch.tensor([True, True], device='cuda')
+y = torch.tensor([False, False], device='cuda')
+res = torch.where(a, x, y)

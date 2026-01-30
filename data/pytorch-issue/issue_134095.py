@@ -1,12 +1,11 @@
-# torch.rand(B, C, dtype=torch.float32)
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def __init__(self):
+class TestDummyModel(torch.nn.Module):
+    def __init__(self) -> None:
         super().__init__()
-        torch.manual_seed(0)  # Matches original model initialization
+        torch.manual_seed(0)
         self.net1 = nn.Linear(8, 16)
         self.net2 = nn.Linear(16, 32)
         self.net3 = nn.Linear(32, 64)
@@ -19,13 +18,34 @@ class MyModel(nn.Module):
         x = F.relu(self.net4(x))
         return x
 
-def my_model_function():
-    # Returns initialized model on CUDA (matches original test setup)
-    model = MyModel()
-    model.cuda()
-    return model
+    def get_input(self):
+        return torch.rand(8, 8, device="cuda")
 
-def GetInput():
-    # Returns CUDA tensor matching the model's expected input
-    return torch.rand(8, 8, device="cuda")
 
+class FsdpTpSaveLoadTest(DTensorTestBase):
+    @property
+    def world_size(self):
+        gpu_num = torch.cuda.device_count()
+        return gpu_num if gpu_num % 2 == 0 and gpu_num > 4 else 4
+
+    @with_comms
+    def test_save_load(self):
+        dummy_model = TestDummyModel().cuda()
+        mesh_2d = init_device_mesh(
+            self.device_type,
+            (2, self.world_size // 2),
+            mesh_dim_names=("dp", "tp"),
+        )
+        tp_mesh = mesh_2d["tp"]
+        dp_mesh = mesh_2d["dp"]
+        parallelize_plan = {
+            "net1": ColwiseParallel(),
+            "net2": RowwiseParallel(),
+        }
+        model = parallelize_module(dummy_model, tp_mesh, parallelize_plan)
+        model = FSDP(model, device_mesh=dp_mesh, use_orig_params=False)
+
+        options = StateDictOptions(full_state_dict=True, cpu_offload=True)
+        state_dict = get_model_state_dict(model, options=options)
+        print(f'!!! rank {self.rank}: {len(state_dict) = }', flush=True)
+        set_model_state_dict(model, state_dict, options=options)

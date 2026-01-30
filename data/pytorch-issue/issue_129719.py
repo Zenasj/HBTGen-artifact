@@ -1,15 +1,21 @@
-# (torch.rand(1), torch.rand(1)) ← inferred input shape
+import torch.nn as nn
+
 import torch
-from torch import nn
+import os
+from torch.fx.experimental.proxy_tensor import make_fx
 
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        x, y = inputs
-        return x + y
+class M(torch.nn.Module):
+    def forward(self, x, y):
+        return x+ y
 
-def my_model_function():
-    return MyModel()
+inp = torch.rand(1)
+inp2 = torch.rand(1)
+args = (inp, inp2)
 
-def GetInput():
-    return (torch.rand(1), torch.rand(1))
+gm = make_fx(M(), tracing_mode="symbolic")(inp, inp2)
+print(gm)
+so = torch._inductor.aot_compile(gm, args)
 
+gm = torch.export.export(M(), args).module()
+print(gm)
+so = torch._inductor.aot_compile(gm, args)

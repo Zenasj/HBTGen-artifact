@@ -1,20 +1,21 @@
-# torch.rand(16, 256, 512, 512, dtype=torch.float16) ← Add a comment line at the top with the inferred input shape
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv_layer = nn.Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), dtype=torch.float16)
+import time
+import torch
 
-    def forward(self, x):
-        return self.conv_layer(x)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand([16, 256, 512, 512], dtype=torch.float16) - 0.5
-
+conv_layer = torch.nn.Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), dtype=torch.float16)
+input_tensor = torch.rand([16, 256, 512, 512]).to(conv_layer.weight.dtype) - 0.5
+with torch.profiler.profile(
+        activities=[
+            torch.profiler.ProfilerActivity.CPU,
+            torch.profiler.ProfilerActivity.CUDA,
+        ],
+    ) as prof:
+    with torch.no_grad():
+        for i in range(2):
+            start = time.time()
+            out = conv_layer(input_tensor)
+            end = time.time()
+            print(f"time costs: {end-start} s")
+print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))

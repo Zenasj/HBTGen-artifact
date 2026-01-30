@@ -1,45 +1,102 @@
-# tf.random.uniform((B, H, W, C), dtype=tf.float32) ← Input shape is assumed as (batch_size, 180, 180, 3)
+import random
+from tensorflow import keras
 
 import tensorflow as tf
+import tensorflow_datasets as tfds
 from tensorflow.keras import layers
 
-class MyModel(tf.keras.Model):
-    def __init__(self, num_classes=5):  # tf_flowers dataset has 5 classes
-        super().__init__()
-        # This model reflects the Keras Sequential model architecture described in the issue:
-        self.conv1 = layers.Conv2D(16, 3, padding='same', activation='relu')
-        self.pool1 = layers.MaxPooling2D()
-        self.conv2 = layers.Conv2D(32, 3, padding='same', activation='relu')
-        self.pool2 = layers.MaxPooling2D()
-        self.conv3 = layers.Conv2D(64, 3, padding='same', activation='relu')
-        self.pool3 = layers.MaxPooling2D()
-        self.flatten = layers.Flatten()
-        self.fc1 = layers.Dense(128, activation='relu')
-        self.out = layers.Dense(num_classes)
+(train_datasets, val_ds, test_ds), metadata = tfds.load(
+    'tf_flowers',
+    split=['train[:80%]', 'train[80%:90%]', 'train[90%:]'],
+    with_info=True,
+    as_supervised=True,
+)
 
-    def call(self, inputs, training=False):
-        x = self.conv1(inputs)
-        x = self.pool1(x)
-        x = self.conv2(x)
-        x = self.pool2(x)
-        x = self.conv3(x)
-        x = self.pool3(x)
-        x = self.flatten(x)
-        x = self.fc1(x)
-        x = self.out(x)
-        return x
+num_classes = metadata.features['label'].num_classes
+IMG_SIZE = 180
+batch_size = 32
+AUTOTUNE = tf.data.AUTOTUNE
 
-def my_model_function():
-    # Return a MyModel instance initialized for 5 classes (tf_flowers dataset)
-    return MyModel(num_classes=5)
 
-def GetInput():
-    # Returns a random float tensor simulating a batch of images from tf_flowers dataset
-    # Assumed batch size is 32, image size 180x180, 3 channels as per issue code
-    batch_size = 32
-    height = 180
-    width = 180
-    channels = 3
-    # Random values between 0 and 1 to simulate normalized images
-    return tf.random.uniform((batch_size, height, width, channels), dtype=tf.float32)
+def resize_and_rescale(image, label):
+  image = tf.cast(image, tf.float32)
+  image = tf.image.resize(image, [IMG_SIZE, IMG_SIZE])
+  image = (image / 255.0)
+  return image, label
 
+
+def augment(image_label, seed):
+  image, label = image_label
+  image, label = resize_and_rescale(image, label)
+  image = tf.image.resize_with_crop_or_pad(image, IMG_SIZE + 6, IMG_SIZE + 6)
+  # Make a new seed.
+  new_seed = tf.random.experimental.stateless_split(seed, num=1)[0, :]
+  # Random crop back to the original size.
+  image = tf.image.stateless_random_crop(
+      image, size=[IMG_SIZE, IMG_SIZE, 3], seed=seed)
+  # Random brightness.
+  image = tf.image.stateless_random_brightness(
+      image, max_delta=0.5, seed=new_seed)
+  image = tf.clip_by_value(image, 0, 1)
+  return image, label
+
+
+# Create a generator.
+rng = tf.random.Generator.from_seed(123, alg='philox')
+
+
+# Create a wrapper function for updating seeds.
+def f(x, y):
+  seed = rng.make_seeds(2)[0]
+  image, label = augment((x, y), seed)
+  return image, label
+
+
+train_ds = (
+    train_datasets
+    .shuffle(1000)
+    .map(f, num_parallel_calls=AUTOTUNE)
+    .batch(batch_size)
+    .prefetch(AUTOTUNE)
+)
+
+
+val_ds = (
+    val_ds
+    .map(resize_and_rescale, num_parallel_calls=AUTOTUNE)
+    .batch(batch_size)
+    .prefetch(AUTOTUNE)
+)
+
+test_ds = (
+    test_ds
+    .map(resize_and_rescale, num_parallel_calls=AUTOTUNE)
+    .batch(batch_size)
+    .prefetch(AUTOTUNE)
+)
+
+
+model = tf.keras.Sequential([
+  layers.Conv2D(16, 3, padding='same', activation='relu'),
+  layers.MaxPooling2D(),
+  layers.Conv2D(32, 3, padding='same', activation='relu'),
+  layers.MaxPooling2D(),
+  layers.Conv2D(64, 3, padding='same', activation='relu'),
+  layers.MaxPooling2D(),
+  layers.Flatten(),
+  layers.Dense(128, activation='relu'),
+  layers.Dense(num_classes)
+])
+
+
+model.compile(optimizer='adam',
+              loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+              metrics=['accuracy'])
+
+
+epochs=5
+history = model.fit(
+  train_ds,
+  validation_data=val_ds,
+  epochs=epochs
+)

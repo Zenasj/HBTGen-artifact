@@ -1,24 +1,34 @@
-# tf.random.uniform((B, 10), dtype=tf.float32) ← inferred input shape based on model input_shape=[10]
+from tensorflow import keras
+from tensorflow.keras import layers
+
+tf.keras.experimental.export_saved_model(
+    model, file_path,
+    serving_only=True,
+    input_signature=[tf.TensorSpec(shape=[None, None, None, 3], dtype=tf.float32)]
+)
 
 import tensorflow as tf
+dataset1 = tf.data.Dataset.from_tensor_slices([[10, 11], [12, 13], [14, 15], [16, 17]])
+dataset2 = tf.data.Dataset.from_tensor_slices([[21, 22], [23, 24], [25, 26], [27, 28]])
+sample_dataset = tf.data.experimental.sample_from_datasets(
+  [dataset1, dataset2], weights=[0.5, 0.5], seed=43)
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Simple Sequential model with one Dense layer as in provided example
-        self.dense = tf.keras.layers.Dense(1, input_shape=[10])
+my_strategy = tf.distribute.MirroredStrategy(["GPU:0", "CPU:0"])
+with my_strategy.scope():
+  @tf.function
+  def distribute_train_epoch(dataset):
+    for x in dataset:
+      my_strategy.run(print, args=(x,))
+  # Create a tf.keras model.
+  model = tf.keras.Sequential()
+  model.add(tf.keras.layers.Dense(1, input_shape=[10]))
+  model.summary()
 
-    def call(self, inputs, training=False):
-        # Forward pass through dense layer
-        return self.dense(inputs)
+    # Save the tf.keras model in the SavedModel format.
+  path = 'simple_keras_model'
+  tf.compat.v1.keras.experimental.export_saved_model(model, path)
+  dist_dataset = my_strategy.experimental_distribute_dataset(sample_dataset)
 
-def my_model_function():
-    # Return an initialized instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor matching the input shape expected by MyModel
-    # Shape: (batch_size=4, features=10), dtype float32
-    # batch size chosen arbitrary to allow demonstration compatible with the model
-    return tf.random.uniform((4, 10), dtype=tf.float32)
-
+for _ in range(2):
+  print("------------------")
+  distribute_train_epoch(dist_dataset)

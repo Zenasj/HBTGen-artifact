@@ -1,38 +1,29 @@
-# torch.rand(1, 8, 5, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
+import torch.nn as nn
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        x = x[..., :4]
-        atten = F.softmax(x, dim=1)
-        return atten
+print(torch.__version__)
+x = torch.rand(1, 8, 5).to('mps')
+x = x[..., :4]
+print(x[..., 0])
+atten = F.softmax(x, dim=1)
+print(atten[..., 0])
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+x = x.to('cpu')
+atten = F.softmax(x, dim=1)
+print(atten[..., 0])
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(1, 8, 5, dtype=torch.float32)
+import torch
 
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor.to('mps')).to('cpu')
-# print(output)
+print(torch.__version__)
 
-# ### Explanation:
-# - **Input Shape**: The input shape is inferred from the issue as `torch.rand(1, 8, 5, dtype=torch.float32)`.
-# - **MyModel Class**:
-#   - The `forward` method slices the input tensor along the last dimension and applies a softmax operation.
-# - **my_model_function**:
-#   - Returns an instance of `MyModel`.
-# - **GetInput**:
-#   - Generates a random tensor with the shape `(1, 8, 5)` to match the input expected by `MyModel`.
-# This code is designed to be used with `torch.compile(MyModel())(GetInput())` and should work without errors.
+x = torch.rand(1, 8, 5).to('mps')
+print(x[..., 0])
+
+x = x.to('cpu')
+print(x[..., 0])
+
+tensor([[0.4302, 0.5965, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000, 0.0000]],
+       device='mps:0')
+tensor([[0.4302, 0.5965, 0.0185, 0.1836, 0.2624, 0.7493, 0.2166, 0.9861]])

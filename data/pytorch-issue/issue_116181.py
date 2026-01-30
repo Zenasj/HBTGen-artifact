@@ -1,37 +1,35 @@
-# torch.rand(1, 16, dtype=torch.long)
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Simplified embedding and output layer for GPT-J-like model
-        self.embedding = nn.Embedding(10000, 128)  # Example vocab size and embedding dim
-        self.linear = nn.Linear(128, 10000)  # Output layer for token probabilities
+from transformers import AutoTokenizer, GPTJForCausalLM
 
-    def forward(self, input_ids):
-        # Forward pass: embedding → linear projection
-        embeddings = self.embedding(input_ids)
-        return self.linear(embeddings)
+tokenizer = AutoTokenizer.from_pretrained("hf-internal-testing/tiny-random-gptj")
+model = GPTJForCausalLM.from_pretrained("hf-internal-testing/tiny-random-gptj")
+inputs = tokenizer("Hello, my dog is cute", return_tensors="pt")
+outputs = model(**inputs, labels=inputs["input_ids"])
+input_ids = inputs["input_ids"]
 
-    def generate(self, input_ids, max_length=200, do_sample=True, temperature=0.9):
-        # Simple greedy/temperature sampling for demonstration
-        outputs = input_ids
-        for _ in range(max_length - input_ids.shape[1]):
-            next_token_logits = self(outputs[:, -1:])  # Predict next token
-            if do_sample:
-                next_token_logits = next_token_logits / temperature
-                probs = torch.softmax(next_token_logits, dim=-1)
-                next_token = torch.multinomial(probs, 1)
-            else:
-                next_token = torch.argmax(next_token_logits, dim=-1)
-            outputs = torch.cat([outputs, next_token], dim=1)
-        return outputs
+start_time = time.time()
+print("cpu.................")
+fn_cpu = torch.compile(model)
+with torch.no_grad():
+    output_cpu = fn_cpu.generate(input_ids, do_sample=True, temperature=0.9, max_length=200)
+print(output_cpu)
+print("--- %s pytorch with compile CPU seconds ---" % (time.time() - start_time))
+torch._dynamo.reset()
 
-def my_model_function():
-    return MyModel()
+from transformers import AutoTokenizer, GPTJForCausalLM
 
-def GetInput():
-    # Returns input_ids tensor matching expected shape
-    return torch.randint(0, 10000, (1, 16), dtype=torch.long)
+tokenizer = AutoTokenizer.from_pretrained("hf-internal-testing/tiny-random-gptj")
+model = GPTJForCausalLM.from_pretrained("hf-internal-testing/tiny-random-gptj")
+inputs = tokenizer("Hello, my dog is cute", return_tensors="pt")
+outputs = model(**inputs, labels=inputs["input_ids"])
+input_ids = inputs["input_ids"]
 
+start_time = time.time()
+print("cpu.................")
+fn_cpu = torch.compile(model)
+with torch.no_grad():
+    output_cpu = fn_cpu(**inputs)
+print(output_cpu)
+print("--- %s pytorch with compile CPU seconds ---" % (time.time() - start_time))
+torch._dynamo.reset()

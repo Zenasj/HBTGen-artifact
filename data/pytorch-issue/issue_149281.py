@@ -1,26 +1,19 @@
-# torch.rand(32, 64, 39, dtype=torch.float32)
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.linear = nn.Linear(39, 6)  # Matches input_dim=39 and output_dim=6 from the issue
+sequence_size = 32
+env_size = 64
+input_dim = 39
+hidden_dim = 64
+output_dim = 6
+device = "cuda"
 
-    def forward(self, x):
-        # Compute full batch output
-        full_output = self.linear(x)
-        # Compute sliced input (first batch element) output
-        sliced_x = x[0]  # Take first element in batch dimension
-        sliced_output = self.linear(sliced_x)
-        # Return difference between [0,0] of full output and [0] of sliced output (as in original print statements)
-        return full_output[0, 0] - sliced_output[0]  # Directly outputs the discrepancy tensor
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
 
-def my_model_function():
-    model = MyModel()
-    model.to("cuda")  # Replicate original CUDA setup
-    return model
+batch_input = torch.randn((sequence_size, env_size, input_dim), dtype=torch.float32, device=device)
 
-def GetInput():
-    return torch.randn((32, 64, 39), dtype=torch.float32, device="cuda")  # Matches issue's tensor shape and device
-
+model = nn.Linear(in_features=input_dim, out_features=output_dim, device=device)
+batch_output = model(batch_input)
+print("big batch together:", batch_output[0,0])
+print("smaller batch:", model(batch_input[0])[0])

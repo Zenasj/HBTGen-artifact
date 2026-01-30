@@ -1,18 +1,10 @@
-# torch.rand(1, 1, 1, 128, dtype=torch.float32), ... (input is a tuple of two tensors)
 import torch
-from torch import nn
+from torch import _dynamo as torchdynamo
 
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        x, y = inputs
-        stacked = torch.stack([x.float(), y.float()], dim=-1)
-        return torch.view_as_complex(stacked)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    x = torch.rand(1, 1, 1, 128, dtype=torch.float32)
-    y = torch.rand(1, 1, 1, 128, dtype=torch.float32)
-    return (x, y)
-
+@torchdynamo.optimize()
+def reduce_example(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    """Applies the rotary embedding to the query and key tensors."""
+    x_out = torch.view_as_complex(torch.stack([x.float(), y.float()], dim=-1))
+    return x_out
+for _ in range(100):
+    reduce_example(torch.randn(1,1,1,128), torch.randn(1,1,1,128))

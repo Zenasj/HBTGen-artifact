@@ -1,22 +1,14 @@
+import os
 import torch
-import torch.nn as nn
+import torch.distributed as dist
+import torch.utils.benchmark as benchmark
 
-# torch.rand(1, 1, 1024, 1024, dtype=torch.float32)
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Dummy convolution layer to satisfy the model structure
-        self.conv = nn.Conv2d(1, 1, kernel_size=1)
+os.environ['CUDA_VISIBLE_DEVICES'] = os.environ['LOCAL_RANK']
+dist.init_process_group(backend="nccl")
 
-    def forward(self, x):
-        return self.conv(x)
+x = torch.randn(1024, 1024, device='cuda')
 
-def my_model_function():
-    # Initialize the model with dummy weights
-    model = MyModel()
-    return model
-
-def GetInput():
-    # Generate input matching the expected 4D tensor shape
-    return torch.randn(1, 1, 1024, 1024, device='cuda')
-
+if dist.get_rank() == 0:
+    dist.send(x[0], 1)
+elif dist.get_rank() == 1:
+    dist.recv(x[0], 0)

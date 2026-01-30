@@ -1,15 +1,16 @@
-# torch.rand(5), torch.rand(3, dtype=torch.float)  # Input is a tuple of two 1D tensors
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        x, y = inputs
-        return torch.einsum('i,j->ij', x, y)
+def has_torch_function(
+    vt: "torch._dynamo.variables.base.VariableTracker",
+    tx: "torch._dynamo.symbolic_convert.InstructionTranslatorBase",
+) -> bool:
+    from torch._dynamo.variables import UserDefinedObjectVariable
+    from torch._dynamo.variables.torch_function import TensorWithTFOverrideVariable
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return (torch.rand(5), torch.rand(3))
-
+    if vt.has_unpack_var_sequence(tx):
+        return any(has_torch_function(v, tx) for v in vt.unpack_var_sequence(tx))
+    else:
+        return isinstance(vt, TensorWithTFOverrideVariable) or (
+            isinstance(vt, UserDefinedObjectVariable)
+            and hasattr(vt.value, "__torch_function__")
+        )

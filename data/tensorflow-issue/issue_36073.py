@@ -1,34 +1,41 @@
-# tf.random.uniform((B, 1), dtype=tf.float32) ← Inferring input shape as (batch_size, 1) from provided sample input (1,1)
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
+import numpy as np
 
 class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Dense layer with kernel initializer "ones" and trainable set False as in original code
-        self.dense = tf.keras.layers.Dense(100, kernel_initializer="ones", trainable=False)
-        # Dropout layer with rate 0.5
-        self.dropout = tf.keras.layers.Dropout(0.5)
+
+  def __init__(self):
+
+    super(MyModel, self).__init__()
+
+    self.dense = tf.keras.layers.Dense(100, kernel_initializer="ones", trainable=False)
+    self.dropout = tf.keras.layers.Dropout(0.5)
+
+
+  def call(self, inputs, training=False):
+
+    x = self.dense(inputs)
+
+    if training:
+      x = self.dropout(x, training=training)
+
+    x = tf.reshape(tf.reduce_sum(x)/100., [1, 1]) # If we dont reshape, we get RuntimeError: Attempted to aggregate unsupported object 1.0.
     
-    def call(self, inputs, training=False):
-        # Pass inputs through dense layer
-        x = self.dense(inputs)
-        
-        # Apply dropout only during training
-        if training:
-            x = self.dropout(x, training=training)
-        
-        # Reduce sum of all elements in x, normalize by 100 to get average,
-        # then reshape to [1,1] as per original example to avoid runtime issues
-        x = tf.reshape(tf.reduce_sum(x) / 100., [1, 1])
+    return x
 
-        return x
+model = MyModel()
 
-def my_model_function():
-    # Return instance of MyModel
-    return MyModel()
+def loss(y_true, y_pred):
+    return y_pred
 
-def GetInput():
-    # Generate random input tensor with shape (1,1) and float32 matching the example x = np.ones((1,1), dtype=np.float32)
-    return tf.random.uniform((1,1), dtype=tf.float32)
+model.compile(optimizer="sgd", loss=loss)
 
+x = np.ones((1, 1), dtype=np.float32)
+
+print("Predicting :")
+print(model.predict(x)) # No dropout, output is 1 as expected
+
+print("Training :")
+print(model.train_on_batch(x)) # dropout should put half of the activations of model.dense to 0, so I expect this value to be 0.5

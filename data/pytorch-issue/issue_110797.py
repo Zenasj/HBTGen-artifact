@@ -1,10 +1,10 @@
-# torch.rand(B, C, H, W, dtype=torch.float32) ← Add a comment line at the top with the inferred input shape
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+import torch
+
+class M(torch.nn.Module):
     def __init__(self, linear, encode=False):
-        super().__init__()
+        super().__init__()  # graph breaks
         self.linear = linear
         self.encode = encode
         self.linear.requires_grad_(False)
@@ -20,12 +20,18 @@ class MyModel(nn.Module):
             y = y.sum()
         return y
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
+x = torch.rand(5, 5, dtype=torch.float32, device="cuda", requires_grad=True)
+
+def train(x, encode=True):
     linear = torch.nn.Linear(5, 5, device="cuda")
-    return MyModel(linear, encode=True)
+    # linear.requires_grad_(False)
+    m = M(linear, encode=encode)
+    with torch.cuda.amp.autocast(enabled=False):
+        y = m(x)
+        y.backward()
+    return m.linear.weight.grad
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(5, 5, dtype=torch.float32, device="cuda", requires_grad=True)
+print(train(x, True))
 
+compiled = torch.compile(train, dynamic=True)
+print(compiled(x, True))

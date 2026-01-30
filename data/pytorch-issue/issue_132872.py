@@ -1,51 +1,35 @@
-# torch.rand(1, 3, 224, 224, dtype=torch.float32)  # Inferred input shape based on common model inputs
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Submodule for convit_base's problematic component
-        self.convit_sub = nn.Sequential(
-            nn.Linear(3, 16),  # Example pos_proj layer
-            nn.ReLU()
-        )
-        # Register buffer to replicate rel_indices issue
-        self.register_buffer('rel_indices', torch.zeros(1, 1, 1, 3), persistent=False)  # Must be buffer for constant folding
+add_3: "f32[64, 16, 196, 196]" = torch.ops.aten.add.Tensor(mul_3, _frozen_param195)
 
-        # Submodule for detectron2's ResNet-like structure with varying strides
-        self.detectron_sub = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1),  # First layer
-            nn.BatchNorm2d(64),
-            nn.ReLU(),
-            nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),  # Varying stride to trigger symbolic shape issues
-            nn.BatchNorm2d(128),
-            nn.ReLU()
-        )
+add_3: "f32[64, 16, 196, 196]" = torch.ops.aten.add.Tensor(mul_3, mul_4);
 
-    def forward(self, x):
-        # Process through convit's path
-        pos_score = self.convit_sub(self.rel_indices.expand(x.size(0), -1, -1, -1))
-        pos_score = pos_score.permute(0, 3, 1, 2)
-        
-        # Process through detectron's path with stride variations
-        detectron_out = self.detectron_sub(x)
-        
-        # Comparison logic (placeholder - actual implementation depends on model outputs)
-        # This could involve checking tensor properties or outputs between submodules
-        # For demonstration, return both outputs
-        return pos_score, detectron_out
+B, N, C = x.shape
+pos_score = self.rel_indices.expand(B, -1, -1, -1)
+pos_score = self.pos_proj(pos_score).permute(0, 3, 1, 2)
+attn = (1. - torch.sigmoid(gating)) * patch_score + torch.sigmoid(gating) * pos_score
 
-def my_model_function():
-    # Initialize model with required parameters
-    model = MyModel()
-    # Initialize weights (simplified)
-    for m in model.modules():
-        if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
-            nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-    return model
+self.pos_proj = nn.Linear(3, num_heads)
+self.rel_indices: torch.Tensor = torch.zeros(1, 1, 1, 3)
+# if we use self.register_buffer("rel_indices", torch.zeros(1, 1, 1, 3), False) in bad commit, the regression will disppear
 
-def GetInput():
-    # Return random input matching expected shape (1, 3, 224, 224)
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
+def forward(self, x):
+        B, N, C = x.shape
+        if self.rel_indices is None or self.rel_indices.shape[1] != N:
+            self.rel_indices = self.get_rel_indices(N)
 
+def get_rel_indices(self, num_patches: int) -> torch.Tensor:
+        img_size = int(num_patches ** .5)
+        rel_indices = torch.zeros(1, num_patches, num_patches, 3)
+        ind = torch.arange(img_size).view(1, -1) - torch.arange(img_size).view(-1, 1)
+        indx = ind.repeat(img_size, img_size)
+        indy = ind.repeat_interleave(img_size, dim=0).repeat_interleave(img_size, dim=1)
+        indd = indx ** 2 + indy ** 2
+        rel_indices[:, :, :, 2] = indd.unsqueeze(0)
+        rel_indices[:, :, :, 1] = indy.unsqueeze(0)
+        rel_indices[:, :, :, 0] = indx.unsqueeze(0)
+        device = self.qk.weight.device
+        return rel_indices.to(device)
+
+mkldnn:_conv_pointwise

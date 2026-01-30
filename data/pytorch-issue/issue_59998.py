@@ -1,25 +1,35 @@
-# torch.rand(1, dtype=torch.float32)  # Dummy input shape; actual optimization uses model's internal complex parameter
-import torch
-from torch import nn
+import torch as t
+from matplotlib import pyplot as plt
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Complex-valued parameter being optimized (shape [1] as in original example)
-        self.complex_param = nn.Parameter(torch.tensor([1], dtype=torch.complex64, requires_grad=True))
-        # Stub to encapsulate comparison logic (though issue focuses on single model's optimizer bug)
-        self.dummy_submodule = nn.Identity()  # Placeholder for any future fused models
-        
-    def forward(self, x):
-        # Dummy forward pass (original issue's loss doesn't use input)
-        # Returns parameter for demonstration purposes
-        return self.complex_param
+complex_param = t.tensor([1],dtype=t.complex64, requires_grad=True)
 
-def my_model_function():
-    # Returns model instance with complex parameter initialized as in original example
-    return MyModel()
+# We will optimize on the mean squared error from a 1j
+target = 1j
 
-def GetInput():
-    # Returns dummy input (original issue's loss doesn't use input, but required by code structure)
-    return torch.rand(1)  # Matches the input shape comment above
+def calc_loss(x):
+    return t.abs(x - target)**2
 
+optimizer = t.optim.Adam([complex_param], lr=0.001)
+
+n = 10000
+values = t.zeros(n, dtype=t.complex64)
+for i in range(n):
+    optimizer.zero_grad()
+    loss = calc_loss(complex_param)
+    loss.backward()
+    optimizer.step()
+    values[i] = complex_param.detach()
+
+
+# Plot the results
+plt.plot(values.real, label='Real Part')
+plt.plot(values.imag, label='Imaginary Part')
+plt.legend()
+plt.xlabel('Iteration')
+plt.ylabel('Complex Parameter')
+plt.title('Optimization Progress with as-implemented Adam')
+plt.show()
+
+exp_avg_sq.mul_(beta2).addcmul_(grad, grad, value=1 - beta2)
+
+exp_avg_sq.mul_(beta2).addcmul_(grad, grad.conj(), value=1 - beta2)

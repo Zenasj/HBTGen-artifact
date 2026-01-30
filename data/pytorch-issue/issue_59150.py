@@ -1,18 +1,6 @@
-# torch.rand(2, 2, dtype=torch.float32)
 import torch
-from torch import nn
-
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        # Correct usage of torch.tile with named 'dims' parameter
-        return torch.tile(x, dims=(2, 2))
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(2, 2, dtype=torch.float32)
-
+print(torch.__version__)  # '1.8.1+cu111'
+y = torch.tensor([[1, 2], [3, 4]])
+torch.tile(y, (2, 2))  # this works
+torch.tile(input=y, reps=(2, 2))  # TypeError: tile() missing 1 required positional arguments: "dims"
+torch.tile(input=y, dims=(2, 2))  # this works, but should not

@@ -1,27 +1,27 @@
-# torch.rand(1, dtype=torch.float32)
 import torch
-import torch.distributed as dist
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
+def run(i, *args):
+    print("I WAS SPAWNED BY:", args[0])
     
-    def forward(self, x):
-        # Reproduces distributed communication logic from the issue's run() function
-        if dist.is_available() and dist.is_initialized():
-            if dist.get_rank() == 0:
-                x += 100
-                dist.send(tensor=x, dst=1)
-            else:
-                dist.recv(tensor=x, src=0)
-        return x
+    tsr = torch.zeros(1)
+    
+    if args[0] == 0:
+        tsr += 100
+        dist.send(tsr, dst=1)
+    else:
+        dist.recv(tsr)
+        print ("RECEIVED VALUE =", tsr)
 
-def my_model_function():
-    # Returns the model instance (no weights required for distributed comms)
-    return MyModel()
-
-def GetInput():
-    # Matches the input shape used in the original issue's code
-    return torch.zeros(1, dtype=torch.float32)
-
+if __name__ == '__main__':
+    
+    # Initialize Process Group
+    dist.init_process_group(backend="mpi")
+    
+    mp.set_start_method('spawn')    
+    
+    # get current process information
+    world_size = dist.get_world_size()
+    rank = dist.get_rank()
+    
+    # spawn sub-processes
+    mp.spawn(run, args=(rank, world_size,), nprocs=1)

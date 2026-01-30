@@ -1,22 +1,15 @@
-# torch.rand(2, 3, dtype=torch.float)
 import torch
-import torch.nn as nn
+import numpy as np
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Problematic approach (in-place PyTorch)
-        x_pt = x.clone()
-        x_pt -= x_pt[:, 0].unsqueeze(1)
-        
-        # Correct approach (non-in-place, mimics NumPy behavior)
-        x_np = x - x[:, 0].unsqueeze(1)
-        
-        # Return comparison result as a boolean tensor
-        return torch.tensor([torch.allclose(x_pt, x_np, atol=1e-5)], dtype=torch.bool)
+A = torch.Tensor([[1,2,3], [4,5,6]])
+B = A.numpy().copy()
 
-def my_model_function():
-    return MyModel()
+print(A) # [[1,2,3],[4,5,6]]
+print(B) # [[1,2,3],[4,5,6]]
 
-def GetInput():
-    return torch.rand(2, 3, dtype=torch.float)
+# Subtract first column from all columns
+A -= A[:,0][:,np.newaxis] # or unsqueeze(1)
+B -= B[:,0][:,np.newaxis]
 
+print(A) # [[0,2,3],[0,5,6]] (unexpected result / bug)
+print(B) # [[0,1,2],[0,1,2]] (this is expected result in my opinion)

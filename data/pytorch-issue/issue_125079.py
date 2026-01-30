@@ -1,34 +1,38 @@
-# torch.rand(33, 4096, dtype=torch.bfloat16)
+import os
 import torch
-import torch.nn as nn
 import torch.distributed as dist
+import torch.multiprocessing as mp
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.rank = dist.get_rank() if dist.is_initialized() else 0
-        self.device = torch.device(f"cuda:{self.rank}")
-        # Submodules to handle send/recv logic (placeholder for distributed comparison)
-        self.sender = nn.Sequential()  # No actual send in forward, handled via distributed APIs
-        self.receiver = nn.Sequential()  # No actual recv in forward, handled via distributed APIs
+def run(rank, size):
+    """ Distributed function to be implemented later. """
+    device = torch.device(f"cuda:{rank}")
+    if rank == 0:
+        tens = torch.ones([33, 4096], dtype=torch.bfloat16, device=device)
+        tens2 = 2 * torch.ones([33, 4096], dtype=torch.bfloat16, device=device)
+        dist.send(tens2, dst=1, tag=0)
+        dist.send(tens, dst=1, tag=1)
+    else:
+        tens = torch.empty([33, 4096], dtype=torch.bfloat16, device=device)
+        tens2 = torch.empty([33, 4096], dtype=torch.bfloat16, device=device)
+        dist.recv(tens, src=0, tag=1)
+        dist.recv(tens2, src=0, tag=0)
+        print (f'{tens}, {tens2}')
 
-    def forward(self, x):
-        # Simulate tag-based send/recv comparison (requires distributed setup)
-        if self.rank == 0:
-            # Sender logic (sends x with tag 0 and another tensor with tag 1)
-            # This is a simplified placeholder; actual send must be outside forward
-            pass
-        else:
-            # Receiver logic (checks if tensors match expected tags)
-            # Returns boolean indicating if received tensors match expected values
-            return torch.tensor([False], device=self.device)  # Default placeholder
-        return x  # Return input as dummy output
+def init_process(rank, size, fn, backend='nccl'):
+    """ Initialize the distributed environment. """
+    os.environ['MASTER_ADDR'] = '127.0.0.1'
+    os.environ['MASTER_PORT'] = '29501'
+    dist.init_process_group(backend, rank=rank, world_size=size)
+    fn(rank, size)
 
-def my_model_function():
-    # Initialize model with dummy weights (distributed setup must be external)
-    return MyModel()
+if __name__ == "__main__":
+    size = 2
+    processes = []
+    mp.set_start_method("spawn")
+    for rank in range(size):
+        p = mp.Process(target=init_process, args=(rank, size, run))
+        p.start()
+        processes.append(p)
 
-def GetInput():
-    # Return a random tensor matching the input expected by MyModel (shape and dtype)
-    return torch.rand(33, 4096, dtype=torch.bfloat16, device=torch.device("cuda"))
-
+    for p in processes:
+        p.join()

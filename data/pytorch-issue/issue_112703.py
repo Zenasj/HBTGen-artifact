@@ -1,15 +1,23 @@
-# torch.rand(8, dtype=torch.float32)
 import torch
 import torch.nn as nn
+import traceback
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        new_input = torch.rand(8, dtype=torch.float32, device=x.device)
-        return torch.asinh(new_input, out=x)
+def forward(x, device):
+  x = torch.asinh(out=x, input=torch.rand([8], dtype=torch.float32).to('cpu'))        
+  return x
 
-def my_model_function():
-    return MyModel()
+input_tensor = torch.rand([8], dtype=torch.float32).to('cpu')
+cuda_tensor = input_tensor.clone().to('cuda')
+no_op_info = forward(input_tensor, 'cpu')
+print("build succeded")
+op_info = torch.compile(forward, mode='max-autotune',fullgraph=False,dynamic=True)(cuda_tensor, 'cuda')
 
-def GetInput():
-    return torch.rand(8, dtype=torch.float32)
-
+same_val = torch.allclose(no_op_info.to('cpu'), 
+                        op_info.to('cpu'), 
+                        rtol=1e-3, atol=1e-3, 
+                        equal_nan=True)
+if same_val == False : 
+    print("BUGBUG DIFFERENTIAL")
+    raise ValueError('diff value')
+else :
+    print("no_error")

@@ -1,75 +1,19 @@
-# tf.random.uniform((None, 28, 28), dtype=tf.float32) ← Input shape is (batch_size, 28, 28) matching MNIST data
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
 from tensorflow_addons.utils import types
 from typeguard import typechecked
 
-class MyModel(tf.keras.Model):
-    """
-    This class encapsulates the GradientAccumulator optimizer logic as a standalone Keras Model subclass.
-    Since the original issue revolves around a ResourceVariable GC bug in the context of
-    GradientAccumulator optimizer used on MNIST data with input shape (28, 28).
 
-    Here, we implement the core GradientAccumulator as a custom optimizer,
-    wrapped inside this 'MyModel' which allows integration and comparison if needed.
-
-    The original code snippet was an optimizer class and a model defined separately.
-    To meet requirements, we embed the essential custom optimizer inside this model class,
-    and implement a call method to perform a forward pass on the input tensor.
-
-    Note:
-    - The input tensor shape is assumed (batch, 28, 28).
-    - Model architecture is a simple MNIST classifier sequential model.
-    - The bug fix from the discussion is applied: change (self.iterations+1) to self.iterations in tf.cond.
-    """
-
-    def __init__(self):
-        super().__init__()
-        # Define the simple MNIST classifier model layers
-        self.flatten = tf.keras.layers.Flatten(input_shape=(28, 28))
-        self.dense1 = tf.keras.layers.Dense(128, activation='relu')
-        self.dropout = tf.keras.layers.Dropout(0.2)
-        self.dense2 = tf.keras.layers.Dense(10)
-
-        # Instantiate the GradientAccumulator optimizer wrapping Adam
-        # Using default accum_steps=4 as per original
-        self.optimizer = GradientAccumulator(
-            tf.keras.optimizers.Adam(),
-            accum_steps=4,
-            name="GradientAccumulator"
-        )
-
-        # Loss function compatible with output logits and integer labels
-        self.loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
-
-    def call(self, inputs, training=False):
-        """
-        Forward pass of the model.
-        """
-        x = self.flatten(inputs)
-        x = self.dense1(x)
-        x = self.dropout(x, training=training)
-        logits = self.dense2(x)
-        return logits
-
-    def train_step(self, data):
-        """
-        Custom train_step to demonstrate GradientAccumulator usage logic.
-        This method is not strictly required, but shows how the optimizer would be used.
-        """
-        x, y = data
-
-        with tf.GradientTape() as tape:
-            logits = self(x, training=True)
-            loss = self.loss_fn(y, logits)
-
-        # Compute gradients
-        gradients = tape.gradient(loss, self.trainable_variables)
-        grads_and_vars = zip(gradients, self.trainable_variables)
-
-        # Apply gradients via the GradientAccumulator optimizer
-        self.optimizer.apply_gradients(grads_and_vars)
-        return {"loss": loss}
+physical_devices = tf.config.list_physical_devices('GPU')
+tf.config.set_logical_device_configuration(
+    physical_devices[0],
+    [tf.config.LogicalDeviceConfiguration(memory_limit=1024),
+    tf.config.LogicalDeviceConfiguration(memory_limit=1024)])
+l_devices = tf.config.list_logical_devices('GPU')
 
 @tf.keras.utils.register_keras_serializable(package="Addons")
 class GradientAccumulator(tf.keras.optimizers.Optimizer):
@@ -83,15 +27,20 @@ class GradientAccumulator(tf.keras.optimizers.Optimizer):
         name: str = "GradientAccumulator",
         **kwargs,
     ):
-        r"""
-        Construct a new GradientAccumulator optimizer.
+        r"""Construct a new GradientAccumulator optimizer.
 
         Args:
             optimizer: str or `tf.keras.optimizers.Optimizer` that will be
                 used to compute and apply gradients.
             accum_steps: int > 0. Update gradient in every accumulation steps.
-            name: Optional name for the operations created when applying gradients.
-            **kwargs: keyword arguments. Allowed to be {`clipnorm`, `clipvalue`, `lr`, `decay`}.
+            name: Optional name for the operations created when applying
+                gradients. Defaults to "GradientAccumulator".
+            **kwargs: keyword arguments. Allowed to be {`clipnorm`,
+                `clipvalue`, `lr`, `decay`}. `clipnorm` is clip gradients by
+                norm; `clipvalue` is clip gradients by value, `decay` is
+                included for backward compatibility to allow time inverse
+                decay of learning rate. `lr` is included for backward
+                compatibility, recommended to use `learning_rate` instead.
         """
         super().__init__(name, **kwargs)
         self._optimizer = tf.keras.optimizers.get(optimizer)
@@ -144,10 +93,8 @@ class GradientAccumulator(tf.keras.optimizers.Optimizer):
             )
             return tf.group(train_op, reset_op)
 
-        # Bug fix applied here from issue discussion:
-        # change (self.iterations+1) to self.iterations to fix ResourceVariable GC bug
         apply_op = tf.cond(
-            (self.iterations) % self._accum_steps == 0, _apply, lambda: tf.no_op()
+            (self.iterations+1) % self._accum_steps == 0, _apply, lambda: tf.no_op()
         )
         return apply_op
 
@@ -176,7 +123,7 @@ class GradientAccumulator(tf.keras.optimizers.Optimizer):
             return tf.group(train_op, reset_op)
 
         apply_op = tf.cond(
-            (self.iterations) % self._accum_steps == 0, _apply, lambda: tf.no_op()
+            (self.iterations+1) % self._accum_steps == 0, _apply, lambda: tf.no_op()
         )
         return apply_op
 
@@ -229,17 +176,34 @@ class GradientAccumulator(tf.keras.optimizers.Optimizer):
         )
         return cls(optimizer, **config)
 
-def my_model_function():
-    """
-    Return an instance of MyModel with GradientAccumulator optimizer internally configured.
-    """
-    return MyModel()
 
-def GetInput():
-    """
-    Return a random tensor input matching the input expected by MyModel:
-    A batch of greyscale MNIST-like images with shape (batch_size=1, height=28, width=28).
-    Using float32 as the dtype matching typical model input.
-    """
-    return tf.random.uniform((1, 28, 28), dtype=tf.float32)
+def main():
+    for precision_policy in ['mixed_float16']:
+        print('#' * 72)
+        print(f'Setting precision-policy to "{precision_policy}"')
 
+        tf.keras.mixed_precision.set_global_policy(precision_policy)
+        strategy = tf.distribute.MirroredStrategy(devices=l_devices)
+
+        with strategy.scope():
+            mnist = tf.keras.datasets.mnist
+
+            (x_train, y_train), (x_test, y_test) = mnist.load_data()
+            x_train, x_test = x_train / 255.0, x_test / 255.0
+
+            model = tf.keras.models.Sequential([
+                tf.keras.layers.Flatten(input_shape=(28, 28)),
+                tf.keras.layers.Dense(128, activation='relu'),
+                tf.keras.layers.Dropout(0.2),
+                tf.keras.layers.Dense(10)
+            ])
+
+            loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+            model.compile(optimizer=GradientAccumulator(tf.keras.optimizers.Adam()),
+                          loss=loss_fn,
+                          metrics=['accuracy'])
+            model.fit(x_train, y_train, epochs=5)
+
+
+if __name__ == '__main__':
+    main()

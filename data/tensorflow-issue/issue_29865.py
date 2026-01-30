@@ -1,27 +1,18 @@
-# tf.random.uniform((32, 10), dtype=tf.float32) ← Input shape inferred from numpy array shape (1000,10) batched by 32 for tf.data.Dataset
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Recreating the Sequential model structure described in the issue
-        self.dense1 = tf.keras.layers.Dense(32, input_shape=(10,), name="dense_1")
-        self.dense2 = tf.keras.layers.Dense(32, name="dense_2")
-        self.dense3 = tf.keras.layers.Dense(1, name="dense_3")
+data = np.random.randn(1000, 10)
+targets = np.random.randn(1000, 1)
+ds = tf.data.Dataset.from_tensor_slices(data).batch(32)
 
-    def call(self, inputs, training=None):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        output = self.dense3(x)
-        return output
+model = tf.keras.Sequential()
+model.add(tf.keras.layers.Dense(32, input_dim=10))
+model.add(tf.keras.layers.Dense(32))
+model.add(tf.keras.layers.Dense(1))
 
-def my_model_function():
-    # Instantiate the model, no pretrained weights mentioned
-    return MyModel()
-
-def GetInput():
-    # Return input matching the expected input shape (32, 10) as per batching in dataset in issue
-    # Using tf.random.uniform similar to numpy random.randn usage in the original issue example
-    return tf.random.uniform((32, 10), dtype=tf.float32)
-
+model.compile(optimizer="rmsprop", loss="mse")
+model.fit(ds, steps_per_epoch=10, validation_data=(data, targets), batch_size=32)

@@ -1,16 +1,19 @@
-# torch.rand(1, dtype=torch.float32)  # Input is a dummy tensor (not used by model)
+import random
+
 import torch
-from torch import nn
+def model(shape, generator):
+      return torch.randn([1, 4, 64, 64], generator=generator, device="cuda:0")
+model = torch.compile(model)
+x = model((1, 3, 64, 64), None)
+print(x)
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Reproduces the error scenario with generator=None and dtype=torch.float16
-        return torch.randn([1, 4, 64, 64], generator=None, device="cuda:0", dtype=torch.float16)
+@register_lowering(aten.randn)
+def randn(*args, **kwargs):
+    if kwargs.get("generator", None) is not None:
+        return fallback_randn_generator(*args, **kwargs)
+    elif config.fallback_random:
+        return fallback_randn_default(*args, **kwargs)
+    raise AssertionError("should have been handled in replace_random.py")
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Returns dummy input (not used by model, but required for interface)
-    return torch.rand(1, dtype=torch.float32)
-
+# fallback to eager for random/dropout, this is slow but useful for debugging
+fallback_random = True

@@ -1,27 +1,25 @@
-# torch.rand(B, 3, 128, 128, dtype=torch.float32)
+py
+import multiprocessing, logging
+logger = multiprocessing.log_to_stderr()
+logger.setLevel(multiprocessing.SUBDEBUG)
+
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1)
-        self.relu = nn.ReLU()
-        self.pool = nn.MaxPool2d(2, 2)
-        self.fc = nn.Linear(16 * 64 * 64, 100)  # Adjusted for pooling dimensions
 
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.relu(x)
-        x = self.pool(x)  # Added pooling to reduce spatial dimensions
-        x = x.view(x.size(0), -1)
-        x = self.fc(x)
-        return x
+class Dataset:
+    def __len__(self):
+        return 23425
 
-def my_model_function():
-    return MyModel()
+    def __getitem__(self, idx):
+        return torch.randn(3, 128, 128), idx % 100
 
-def GetInput():
-    B = 64  # Matches DataLoader's batch_size=64
-    return torch.rand(B, 3, 128, 128, dtype=torch.float32)
 
+ds = Dataset()
+trdl = torch.utils.data.DataLoader(ds, batch_size=64, num_workers=300, pin_memory=True, shuffle=True)
+
+for e in range(1000):
+    for ii, (x, y) in enumerate(trdl):
+        print(f'tr {e: 5d} {ii: 5d} avg y={y.mean(dtype=torch.double).item()}')
+        if ii % 2 == 0:
+            print("="*200 + "BEFORE ERROR" + "="*200)
+            1/0

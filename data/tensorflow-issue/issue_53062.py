@@ -1,34 +1,47 @@
-# tf.random.uniform((B, H, W, C), dtype=tf.float32) ← Inferred typical input: batch of images with shape (batch, height, width, channels)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Simple MNIST-like classification model per user example snippet
-        # This model mirrors the Sequential model from the issue's tested code with CC 3.0 enabled
-        self.flatten = tf.keras.layers.Flatten(input_shape=(28, 28))
-        self.dense1 = tf.keras.layers.Dense(128, activation='relu')
-        self.dropout = tf.keras.layers.Dropout(0.2)
-        self.dense2 = tf.keras.layers.Dense(10)  # 10 classes
+import tensorflow as tf
+print("TensorFlow version:", tf.__version__)
+tf.config.list_physical_devices('GPU')
+print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
 
-    def call(self, inputs, training=False):
-        x = self.flatten(inputs)
-        x = self.dense1(x)
-        if training:
-            x = self.dropout(x, training=training)
-        x = self.dense2(x)
-        return x
+import tensorflow as tf
 
-def my_model_function():
-    # Return an instance of the model suitable for compilation/training inference
-    model = MyModel()
-    # Compile with the loss and optimizer setup used in the example
-    loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
-    model.compile(optimizer='adam', loss=loss_fn, metrics=['accuracy'])
-    return model
+print("TensorFlow version:", tf.__version__)
 
-def GetInput():
-    # Generates random input tensor matching the MNIST grayscale image with shape (batch=1, 28, 28)
-    # dtype float32 and normalized in [0, 1]
-    return tf.random.uniform((1, 28, 28), minval=0, maxval=1, dtype=tf.float32)
+tf.config.list_physical_devices('GPU')
+print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
 
+mnist = tf.keras.datasets.mnist
+
+(x_train, y_train), (x_test, y_test) = mnist.load_data()
+x_train, x_test = x_train / 255.0, x_test / 255.0
+
+model = tf.keras.models.Sequential([
+  tf.keras.layers.Flatten(input_shape=(28, 28)),
+  tf.keras.layers.Dense(128, activation='relu'),
+  tf.keras.layers.Dropout(0.2),
+  tf.keras.layers.Dense(10)
+])
+
+predictions = model(x_train[:1]).numpy()
+tf.nn.softmax(predictions).numpy()
+loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+loss_fn(y_train[:1], predictions).numpy()
+model.compile(optimizer='adam',
+              loss=loss_fn,
+              metrics=['accuracy'])
+
+model.fit(x_train, y_train, epochs=5)
+model.evaluate(x_test,  y_test, verbose=2)
+
+probability_model = tf.keras.Sequential([
+  model,
+  tf.keras.layers.Softmax()
+])
+
+probability_model(x_test[:5])

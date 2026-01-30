@@ -1,22 +1,19 @@
 import torch
-import torch.nn as nn
 
-# torch.rand(32, 10, dtype=torch.float32)  # Inferred input shape from typical neural network examples
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.linear = nn.Linear(10, 5)  # Example layer matching input shape
-        self.optimizer = None  # Placeholder for optimizer reference (not part of model structure)
+def custom_aot_backend(gm, example_inputs):
+    functorch.compile.config.use_functionalize = True
+    functorch.compile.config.use_fake_tensor = use_fake
+    return aot_autograd(
+        fw_compiler=custom_compiler_inner,
+        bw_compiler=custom_compiler_inner,
+    )(gm, example_inputs)
 
-    def forward(self, x):
-        return self.linear(x)
+model_compiled = torch.compile(model, backend=custom_aot_backend)
 
-def my_model_function():
-    model = MyModel()
-    model.linear.weight.data.normal_(0, 1)  # Initialize weights for reproducibility
-    model.linear.bias.data.zero_()
-    return model
-
-def GetInput():
-    return torch.randn(32, 10, dtype=torch.float32)  # Matches the input shape comment
-
+def iteration(x, y):
+    optimizer.zero_grad()
+    result = model_compiled(x)
+    loss = result.sum().abs()
+    loss.backward()
+    optimizer.step()
+    return loss, result

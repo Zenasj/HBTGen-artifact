@@ -1,20 +1,11 @@
-# Two input tensors: torch.rand(2,3, device='cuda'), torch.rand(3,3, device='cuda')
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, inputs):
-        mat1, mat2 = inputs
-        return torch.mm(mat1, mat2)
+print(torch.__version__)
+print(torch.cuda.get_device_name(0))
+print(torch.version.cuda)
 
-def my_model_function():
-    return MyModel()
+mat1 = torch.randn(2,3).to(0)
+mat2 = torch.randn(3,3).to(0)
 
-def GetInput():
-    mat1 = torch.randn(2, 3).cuda()
-    mat2 = torch.randn(3, 3).cuda()
-    return (mat1, mat2)
-
+y = torch.mm(mat1, mat2)
+print(y)

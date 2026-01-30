@@ -1,43 +1,33 @@
-# tf.random.uniform((B, 3))  ← Based on the example input shape [None, 3] given for model inputs
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Two simple submodels both taking inputs of shape (None, 3) and outputting a scalar per example
-        self.model1 = tf.keras.Sequential([
-            tf.keras.layers.Dense(1)
-        ])
-        self.model2 = tf.keras.Sequential([
-            tf.keras.layers.Dense(1)
-        ])
-        # Fusion layer concatenates outputs of model1 and model2, followed by tanh activated dense layer
-        self.concat = tf.keras.layers.Concatenate()
-        self.final_dense = tf.keras.layers.Dense(1, activation='tanh')
+# Create first model
+model1 = tf.keras.Sequential()
+model1.add(tf.keras.layers.Dense(1))
+model1.compile()
+model1.build([None,3])
 
-        # Build models explicitly with input shape (None, 3)
-        self.model1.build(input_shape=(None, 3))
-        self.model2.build(input_shape=(None, 3))
+# Create second model
+model2 = tf.keras.Sequential()
+model2.add(tf.keras.layers.Dense(1))
+model2.compile()
+model2.build([None,3])
 
-    def call(self, inputs, training=False):
-        # inputs is expected to be a list or tuple of two tensors: [input_to_model1, input_to_model2]
-        x1, x2 = inputs
-        out1 = self.model1(x1)
-        out2 = self.model2(x2)
-        fusion = self.concat([out1, out2])
-        out = self.final_dense(fusion)
-        return out
 
-def my_model_function():
-    # Return an instance of MyModel (weights uninitialized randomly)
-    return MyModel()
+# Concatenate
+fusion_model = tf.keras.layers.Concatenate()([model1.output, model2.output])
+t = tf.keras.layers.Dense(1, activation='tanh')(fusion_model)
+model = tf.keras.models.Model(inputs=[model1.input, model2.input], outputs=t)
+model.compile()
 
-def GetInput():
-    # Provide matching random input tensors for model1 and model2 inputs - shape (batch_size, 3)
-    # We use batch_size=4 as a small example
-    batch_size = 4
-    input1 = tf.random.uniform((batch_size, 3), dtype=tf.float32)
-    input2 = tf.random.uniform((batch_size, 3), dtype=tf.float32)
-    return [input1, input2]
+#Datasets
+ds1 = tf.data.Dataset.from_tensors(([1,2,3],1))
+ds2 = tf.data.Dataset.from_tensors(([1,2,3], 2))
 
+print(ds1)
+print(ds2)
+# Fit
+model.fit([ds1,ds2])

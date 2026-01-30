@@ -1,10 +1,10 @@
-# torch.randint(4 * 10**6, (B,), dtype=torch.long)
 import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
+class SomeModel(nn.Module):
+
     def __init__(self):
-        super(MyModel, self).__init__()
+        super(SomeModel, self).__init__()
         dim = 5
         n = 4 * 10 ** 6
         self.emb = nn.Embedding(n, dim)
@@ -17,10 +17,11 @@ class MyModel(nn.Module):
     def forward(self, input):
         return self.seq(input)
 
-def my_model_function():
-    return MyModel()
+model = SomeModel()
 
-def GetInput():
-    B = 2  # Batch size (adjustable)
-    return torch.randint(4 * 10**6, (B,), dtype=torch.long)
+dummy_input = torch.tensor([2], dtype=torch.long)
+dummy_input
 
+torch.onnx.export(model, dummy_input, "model.onnx", verbose=True)
+
+n = int(1.1 * 10 ** 8)

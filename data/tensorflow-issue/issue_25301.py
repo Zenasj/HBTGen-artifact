@@ -1,49 +1,47 @@
-# tf.random.uniform((B, 28, 28, 1), dtype=tf.float32) ← Input shape inferred from MNIST images reshaped to (28,28,1)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
+
+trained_model.save_weights(output_weights)
+
+tf.keras.backend.clear_session()
+tf.keras.backend.set_learning_phase(0)    # This is the important part
+eval_model = model_build_function()
+eval_model.load_weights(output_weights, by_name=True)
 
 import tensorflow as tf
+import tensorflow.keras.optimizers as optimizers
+import tensorflow.keras.losses as losses
+from tensorflow.keras.datasets import mnist
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        reg_weight = 0.00001
-        regularizers = tf.keras.regularizers
-        
-        # Equivalent model from the issue, sequential layers converted to functional style within subclass
-        self.reshape = tf.keras.layers.Reshape((28, 28, 1), input_shape=(28, 28))
-        self.conv1 = tf.keras.layers.Conv2D(
-            32, kernel_size=(3, 3), activation='relu',
-            kernel_regularizer=regularizers.l1(reg_weight), use_bias=False)  # use_bias=False for BN compatibility
-        self.conv2 = tf.keras.layers.Conv2D(
-            64, (3, 3), activation='relu',
-            kernel_regularizer=regularizers.l1(reg_weight), use_bias=False)  # use_bias=False to follow with BN
-        self.bn = tf.keras.layers.BatchNormalization(fused=True)  # fused batch norm as per discussion
-        self.pool = tf.keras.layers.MaxPooling2D(pool_size=(2, 2))
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(
-            128, activation='relu',
-            kernel_regularizer=regularizers.l1(reg_weight))
-        self.dense2 = tf.keras.layers.Dense(
-            10, activation='softmax',
-            kernel_regularizer=regularizers.l1(reg_weight))
+(train_x, train_y), _ = mnist.load_data()
 
-    def call(self, inputs, training=False):
-        # Model forward pass replicating the original issue's model
-        x = self.reshape(inputs)
-        x = self.conv1(x)
-        x = self.conv2(x)
-        x = self.bn(x, training=training)
-        x = self.pool(x)
-        x = self.flatten(x)
-        x = self.dense1(x)
-        x = self.dense2(x)
-        return x
+from tensorflow.keras.layers import *
+from tensorflow.keras.models import *
+regularizers = tf.keras.regularizers
 
-def my_model_function():
-    # Instantiate and return the model
-    return MyModel()
+reg_weight = 0.00001
 
-def GetInput():
-    # Return a random tensor input matching MNIST images reshaped to (28, 28, 1)
-    # Batch size = 1 for simplicity
-    return tf.random.uniform((1, 28, 28), dtype=tf.float32)
+model = Sequential()
+model.add(Reshape((28, 28, 1), input_shape=(28, 28)))
+model.add(Conv2D(32, kernel_size=(3, 3),
+                 activation='relu',
+                 input_shape=(28,28,1),
+                 kernel_regularizer=regularizers.l1(reg_weight)))
+model.add(Conv2D(64, (3, 3), activation='relu', kernel_regularizer=regularizers.l1(reg_weight)))
+model.add(BatchNormalization())
+model.add(MaxPooling2D(pool_size=(2, 2)))
+model.add(Flatten())
+model.add(Dense(128, activation='relu', kernel_regularizer=regularizers.l1(reg_weight)))
+model.add(Dense(10, activation='softmax', kernel_regularizer=regularizers.l1(reg_weight)))
 
+model.compile(optimizer=optimizers.Adam(), loss='categorical_crossentropy', metrics=['accuracy'])
+
+train_x = train_x[:100, :, :]
+train_y = train_y[:100]
+model.fit(train_x, tf.keras.utils.to_categorical(train_y), batch_size=64, epochs=2, verbose=1)
+model.save("/tmp/25301.h5")
+converter = tf.lite.TFLiteConverter.from_keras_model_file("/tmp/25301.h5")
+tfl = converter.convert()
+print(len(tfl))

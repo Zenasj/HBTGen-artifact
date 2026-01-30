@@ -1,22 +1,22 @@
-# torch.rand(5, dtype=torch.float32)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.weight = nn.Parameter(torch.randn(10, 5))  # Matches test's weight shape (10,5)
-        self.bias = nn.Parameter(torch.randn(10))       # Matches test's bias shape (10)
+@torch.compile(backend="eager")
+def f():
+    for _ in range(4):
+        i = torch.randn(2, 3) # torch.tensor([[400], [500]], dtype=torch.float32)
+        j = torch.randn(2, 3) # torch.tensor([[200], [300]], dtype=torch.float32)
+        def c():
+            print("graph break")
+            loss = (i + j).sum()
+            return loss
+        init_val = c().item()
+        def s():
+            print("step")
+            i.sub_(1)
+            j.sub_(1)
+        for _ in range(3):
+            c()
+            s()
+        assert c().item() < init_val
 
-    def forward(self, x):
-        # Compute loss as per test's closure
-        return (self.weight.mv(x) + self.bias).pow(2).sum()
-
-def my_model_function():
-    # Returns model instance with parameters initialized via __init__
-    return MyModel()
-
-def GetInput():
-    # Returns input tensor matching test's inpt (shape 5)
-    return torch.randn(5, dtype=torch.float32)
-
+    f()

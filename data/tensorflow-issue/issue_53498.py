@@ -1,42 +1,41 @@
-# tf.sparse.SparseTensor with dense shape (B, 40, 1), dtype=tf.float32
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
-import tensorflow as tf
+from models.model_attention import AttentionModel
 import numpy as np
+import tensorflow as tf
+from tensorflow.keras.layers import LSTM, Dropout, Dense
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # SequenceFeatures expects a list of feature_columns describing sparse sequence inputs
-        self.features = [
-            tf.feature_column.sequence_numeric_column('f1', dtype=tf.float32),
-            tf.feature_column.sequence_numeric_column('f2', dtype=tf.float32)
-        ]
-        self.seq_feature_layer = tf.keras.experimental.SequenceFeatures(self.features)
-        self.lstm = tf.keras.layers.LSTM(128, return_sequences=False)
-        self.dropout = tf.keras.layers.Dropout(0.2)
-        self.dense = tf.keras.layers.Dense(1, activation='tanh')
 
-    def call(self, inputs, training=False):
-        # The inputs dict expects SparseTensor entries 'f1' and 'f2'
-        x, _ = self.seq_feature_layer(inputs)
-        x = self.lstm(x)
-        x = self.dropout(x, training=training)
-        x = self.dense(x)
-        return x
+inputs = {'f1': tf.keras.layers.Input(name='f1', sparse=True, shape=(40, 1), dtype='float32'),
+          'f2': tf.keras.layers.Input(name='f2', sparse=True, shape=(40, 1), dtype='float32')}
 
-def my_model_function():
-    return MyModel()
+features = [tf.feature_column.sequence_numeric_column('f1', dtype=tf.float32),
+            tf.feature_column.sequence_numeric_column('f2', dtype=tf.float32)]
 
-def GetInput():
-    batch = 4  # example batch size, must match training batch size
-    # Create random dense numpy arrays, then convert to SparseTensors, simulating sparse sequence inputs
-    dense_f1 = np.random.random((batch, 40, 1)).astype(np.float32)
-    dense_f2 = np.random.random((batch, 40, 1)).astype(np.float32)
-    
-    # Convert dense to SparseTensor representations
-    sparse_f1 = tf.sparse.from_dense(dense_f1)
-    sparse_f2 = tf.sparse.from_dense(dense_f2)
-    
-    # Return a dict of SparseTensors matching model input signature
-    return {'f1': sparse_f1, 'f2': sparse_f2}
+input_layer, _ = tf.keras.experimental.SequenceFeatures(features)(inputs)
+lstm_out = LSTM(128, return_sequences=False)(input_layer)
+lstm_out = Dropout(0.2)(lstm_out)
+lstm_out = Dense(1, activation='tanh')(lstm_out)
+model = tf.keras.models.Model(inputs, lstm_out)
+model.compile(loss='mse', metrics='mae', optimizer='Adam')
 
+
+def gen():
+    batch = 4
+    while True:
+        x1 = tf.sparse.from_dense(np.random.random((batch, 40, 1)))
+        x2 = tf.sparse.from_dense(np.random.random((batch, 40, 1)))
+        x = {'f1': x1, 'f2': x2}
+        y = np.random.random((batch, 1))
+        yield x, y
+
+
+x, y = gen().__next__()
+# x, y yielded from generator works
+model.fit(x, y, epochs=2, verbose=2)
+g = gen()
+# TypeError: Input must be a SparseTensor.
+model.fit(g, steps_per_epoch=2, epochs=2, verbose=2, validation_data=g, validation_steps=2)

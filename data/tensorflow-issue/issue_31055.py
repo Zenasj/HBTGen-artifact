@@ -1,74 +1,69 @@
-# tf.random.uniform((B, 224, 224, 3), dtype=tf.float32)
+import math
 import tensorflow as tf
-import tensorflow_hub as hub
+from tensorflow import keras
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        mobilenet_url = 'https://tfhub.dev/google/tf2-preview/mobilenet_v2/feature_vector/4'
-        self.mobilenet_layer = hub.KerasLayer(mobilenet_url, trainable=False)
-        self.classifier = tf.keras.layers.Dense(units=1, activation=tf.nn.sigmoid, name='prediction')
+mobilenet_url = 'https://tfhub.dev/google/tf2-preview/mobilenet_v2/feature_vector/4'
 
-    def call(self, inputs, training=False):
-        features = self.mobilenet_layer(inputs)
-        logits = self.classifier(features)
-        return logits
+input = l.Input(shape=(224,224,3), name='input_image')
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+mobilenet = hub.KerasLayer(mobilenet_url)(input)
+logits = l.Dense(units=1, activation=tf.nn.sigmoid, name='prediction')(mobilenet)
 
-def GetInput():
-    # Return a tensor simulating a batch of raw JPEG images bytes, here we create random float images as a proxy
-    # but since the model expects float images of shape (B,224,224,3), dtype float32,
-    # we generate random float tensors in that shape.
-    # Assumption: Batch size 4 for example.
-    batch_size = 4
-    # Inputs are normalized float images of shape (224,224,3)
-    return tf.random.uniform((batch_size, 224, 224, 3), minval=0, maxval=1, dtype=tf.float32)
+model = tf.keras.Model(inputs=input, outputs=logits)
 
-
-# Additionally, we provide a serving function example that performs the preprocessing pipeline shown in the issue:
-# This function is not part of the required output but reflects the documented approach to combine raw JPEG string input 
-# preprocessing inside a tf.function for serving.
-
-# The serving input signature expects a vector of strings (raw jpeg bytes).
-# The function decodes, converts, resizes, then passes through the model.
+tf.saved_model.save(model, 'export/mobilenet_finetuned')
 
 @tf.function(input_signature=[tf.TensorSpec(shape=[None], dtype=tf.string)])
 def serving(input_image):
-    # input_image: 1D tf.string tensor of jpeg-encoded images
+    def _input_to_feature(img):
+        img = tf.io.decode_jpeg(img, channels=3)
+        img = tf.image.convert_image_dtype(img, tf.float32)
+        return img
+    img = tf.map_fn(_input_to_feature, input_image)
+    img = tf.image.resize_with_pad(img, 224, 224)
+    return model.predict({ 'input_image': img })
 
-    def _input_to_feature(img_bytes):
-        img = tf.io.decode_jpeg(img_bytes, channels=3)
-        img = tf.image.convert_image_dtype(img, tf.float32)  # scale to [0,1]
+tf.saved_model.save(model, export_dir='export/transformed_for_serving', signatures=serving)
+
+@tf.function(input_signature=[tf.TensorSpec(shape=[None], dtype=tf.string)])
+def serving(input_image):
+
+    # Convert bytes of jpeg input to float32 tensor for model
+    def _input_to_feature(img):
+        img = tf.io.decode_jpeg(img, channels=3)
+        img = tf.image.convert_image_dtype(img, tf.float32)
         img = tf.image.resize_with_pad(img, 224, 224)
         return img
+    img = tf.map_fn(_input_to_feature, input_image, dtype=tf.float32)
 
-    img_batch = tf.map_fn(_input_to_feature, input_image, dtype=tf.float32)
-    model = my_model_function()
-    predictions = model(img_batch)  # (B, 1)
+    # Predict
+    predictions = model(img)
 
-    # Squeeze the last dim to get (B,)
+    with open('export/idx2class.pkl', 'rb') as f:
+        class_names = pickle.load(f)
+        class_names = tf.constant(class_names, dtype=tf.string)
+
+    # Single output for model so collapse final axis for vector output
     predictions = tf.squeeze(predictions, axis=-1)
 
-    # Example class_names hardcoded here for illustration (normally loaded from file 'idx2class.pkl')
-    class_names = tf.constant(["cat", "dog"], dtype=tf.string)
+    # Predictions are output from sigmoid so float32 in range 0 -> 1
+    # Round to integers for predicted class and string lookup for class name
+    prediction_integers = tf.cast(tf.math.round(predictions), tf.int32)
+    predicted_classes = tf.map_fn(lambda idx: class_names[idx], prediction_integers, dtype=tf.string)
 
-    # Round sigmoid outputs: <0.5 -> 0, >=0.5 -> 1
-    pred_ints = tf.cast(tf.math.round(predictions), tf.int32)
-
-    # Lookup string class names according to predicted indices
-    predicted_classes = tf.map_fn(lambda idx: class_names[idx], pred_ints, dtype=tf.string)
-
-    # Probability adjustment: for class 0 (cat), prob = 1 - sigmoid output, for class 1 (dog), prob = sigmoid output
+    # Convert sigmoid output for probability
+    # 1 (dog) will remain at logit output
+    # 0 (cat) will be 1.0 - logit to give probability
     def to_probability(logit):
-        # Using tf.cond for graph compat
-        return tf.cond(logit < 0.5, lambda: 1.0 - logit, lambda: logit)
-    class_probabilities = tf.map_fn(to_probability, predictions, dtype=tf.float32)
+        if logit < 0.5:
+            return 1.0 - logit
+        else:
+            return logit
+    class_probability = tf.map_fn(to_probability, predictions, dtype=tf.float32)
 
     return {
         'classes': predicted_classes,
-        'probabilities': class_probabilities
+        'probabilities': class_probability
     }
 
+tf.saved_model.save(model, export_dir='export/transformed_for_serving', signatures=serving)

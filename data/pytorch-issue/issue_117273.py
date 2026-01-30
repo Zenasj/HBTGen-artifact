@@ -1,69 +1,66 @@
 import ctypes as c
 import torch
-from torch import nn
 
-# torch.rand(B, 1, dtype=torch.int32)
+float_p    = c.POINTER(c.c_float)
+longlong_p = c.POINTER(c.c_longlong)
+
 class DLTensor(c.Structure):
     _fields_ = [
-        ('data', c.POINTER(c.c_float)),
+        ('data', float_p),
         ('device_type', c.c_int),
         ('device_id', c.c_int),
         ('ndim', c.c_int),
         ('code', c.c_uint8),
         ('bits', c.c_uint8),
         ('lanes', c.c_uint16),
-        ('shape', c.POINTER(c.c_longlong)),
-        ('strides', c.POINTER(c.c_longlong)),
+        ('shape', longlong_p),
+        ('strides', longlong_p),
         ('byte_offset', c.c_ulonglong),
         ('ctx', c.c_void_p),
         ('deleter', c.CFUNCTYPE(None, c.c_void_p))
-    ]
+    ]    
 
 @c.CFUNCTYPE(None, c.c_void_p)
 def deleter(tensor):
     print('Deleter called!')
 
-class MyModel(nn.Module):
-    def forward(self, input_size):
-        size = input_size.item()
-        tensor = DLTensor()
-        
-        if size != 0:
-            data = (c.c_float * size)()
-            for i in range(size):
-                data[i] = c.c_float(i)
-        else:
-            data = None
 
-        shape = (c.c_longlong * 1)()
-        shape[0] = size
+def make_tensor(size):
+    tensor = DLTensor()
 
-        strides = (c.c_longlong * 1)()
-        strides[0] = 1
+    if size != 0:
+        data = (c.c_float * size)()
+        for i in range(size):
+            data[i] = c.c_float(i)
+    else:
+        data = None
 
-        tensor.data = data
-        tensor.device_type = 1  # CPU
-        tensor.device_id = 0
-        tensor.ndim = 1
-        tensor.code = 2  # float
-        tensor.lanes = 1
-        tensor.bits = 32
-        tensor.shape = shape
-        tensor.strides = strides
-        tensor.ctx = 0
-        tensor.deleter = deleter  # Set the deleter
+    shape = (c.c_longlong * 1)()
+    shape[0] = size
 
-        capsule = c.pythonapi.PyCapsule_New(
-            c.cast(c.pointer(tensor), c.c_void_p),
-            b'dltensor',
-            None
-        )
-        return torch.utils.dlpack.from_dlpack(capsule)
+    strides = (c.c_longlong * 1)()
+    strides[0] = 1
 
-def my_model_function():
-    return MyModel()
+    tensor.data = data
+    tensor.device_type = 1 # cpu
+    tensor.device_id = 0
+    tensor.ndim = 1
+    tensor.code = 2 # float
+    tensor.lanes = 1
+    tensor.bits = 32
+    tensor.shape = shape
+    tensor.strides = strides
+    tensor.ctx = 0
+    tensor.deleter = deleter
 
-def GetInput():
-    # Returns a tensor indicating the size (e.g., 0 to trigger the bug)
-    return torch.tensor([0], dtype=torch.int32)
 
+    c.pythonapi.PyCapsule_New.argtypes = [c.c_void_p, c.c_char_p, c.c_void_p]
+    c.pythonapi.PyCapsule_New.restype = c.py_object
+
+    capsule = c.pythonapi.PyCapsule_New(c.cast(c.pointer(tensor), c.c_void_p), b'dltensor', None)
+
+    a = torch.utils.dlpack.from_dlpack(capsule)
+    print(a)
+
+
+make_tensor(5)

@@ -1,63 +1,68 @@
-# tf.random.uniform((B, 224, 224, 3), dtype=tf.float32) ← Input batch shape for image data
+class MobileNetDeepEstimator:
+    def __init__(self, image_size, alpha, num_neu, weights=None):
 
-import tensorflow as tf
-from tensorflow.keras.layers import Input, GlobalAveragePooling2D, Dropout, Dense
-from tensorflow.keras.models import Model
-from tensorflow.keras.applications import MobileNet
+        """if K.image_dim_ordering() == "th":
+            logging.debug("image_dim_ordering = 'th'")
+            self._channel_axis = 1
+            self._input_shape = (3, image_size, image_size)
+        else:"""
+        if (1==1):
+            logging.debug("image_dim_ordering = 'tf'")
+            self._channel_axis = -1
+            self._input_shape = (image_size, image_size, 3)
+            self.alpha = alpha
+            self.num_neu = num_neu
+            self.weights = weights
+            self.FC_LAYER_SIZE = 1024
 
-# This model fuses the described MobileNet-based estimator for gender and age.
-# Input: batch of images shape (B, 224, 224, 3), float32 normalized
-# Output: tuple of two tensors (gender_probs, age_probs) with shapes (B,2), (B,21)
-#
-# This matches the original design: MobileNet base, GAP, dropout, dense, then two outputs.
+    def __call__(self):
+        logging.debug("Creating model...")
 
-class MyModel(tf.keras.Model):
-    def __init__(self, image_size=224, alpha=1.0, num_neu=21, dropout_rate=0.5, fc_layer_size=1024, weights='imagenet'):
-        super().__init__()
-        self._input_shape = (image_size, image_size, 3)
-        self.alpha = alpha
-        self.num_neu = num_neu
-        self.dropout_rate = dropout_rate
-        self.fc_layer_size = fc_layer_size
+        inputs = Input(shape=self._input_shape)
+        model_mobilenet = MobileNet(input_shape=self._input_shape, alpha=self.alpha, depth_multiplier=1, dropout=1e-3,
+                                    include_top=False, weights=self.weights, input_tensor=None, pooling=None)
 
-        # MobileNet base without top layers; will output feature map (7,7,1024) for alpha=1
-        self.mobilenet_base = MobileNet(input_shape=self._input_shape,
-                                        alpha=alpha,
-                                        include_top=False,
-                                        weights=weights,
-                                        pooling=None)  # no pooling, output (7,7,1024)
+        x = model_mobilenet(inputs)
 
-        self.global_avg_pool = GlobalAveragePooling2D()
-        self.dropout = Dropout(dropout_rate)
-        self.dense1 = Dense(fc_layer_size, activation='relu')
-        # Two output heads
-        self.gender_dense = Dense(2, activation='softmax', name='gender')
-        self.age_dense = Dense(num_neu, activation='softmax', name='age')
+        feat_a = GlobalAveragePooling2D()(x)
+        feat_a = Dropout(0.5)(feat_a)
+        feat_a = Dense(self.FC_LAYER_SIZE, activation="relu")(feat_a)
 
-    def call(self, inputs, training=False):
-        x = self.mobilenet_base(inputs)
-        x = self.global_avg_pool(x)
-        x = self.dropout(x, training=training)
-        x = self.dense1(x)
+        pred_g_softmax = Dense(2, activation='softmax', name='gender')(feat_a)
+        pred_a_softmax = Dense(self.num_neu, activation='softmax', name='age')(feat_a)
 
-        gender_pred = self.gender_dense(x)
-        age_pred = self.age_dense(x)
+        model = Model(inputs=inputs, outputs=[pred_g_softmax, pred_a_softmax])
 
-        return gender_pred, age_pred
+        return model
 
+hist = tpu_model.fit_generator(
+        image_generator.flow(mode='train'),
+        steps_per_epoch=int(len(train_keys) / batch_size),
+        epochs=nb_epochs,
+        callbacks=callbacks,
+        validation_data=image_generator.flow('val'),
+        validation_steps=int(len(val_keys) / batch_size)
+    )
 
-def my_model_function():
-    # Return a fresh MyModel instance with default weights='imagenet'
-    # (Weights can be set None or a filepath in practice.)
-    return MyModel()
+def _get_next_batch(output_generator, mode):
+  """Retrieves the next batch of input data."""
+  try:
+    generator_output = next(output_generator)
+  except (errors.OutOfRangeError, StopIteration):
+    # Returning `None` will trigger looping to stop.
+    logging.warning('Your dataset iterator ran out of data.')
+    return None
+  if not isinstance(generator_output, tuple):
+    if mode == 'predict':
+      # Always wrap in a tuple.
+      return (generator_output,)
+    else:
+      raise ValueError('Output of generator should be '
+                       'a tuple `(x, y, sample_weight)` '
+                       'or `(x, y)`. Found: ' + str(generator_output))
 
-
-def GetInput():
-    # Generate a batch of 10 random inputs shaped (10,224,224,3), float32 in range [0,1]
-    # which matches the expected input for MyModel
-    B = 10
-    H, W, C = 224, 224, 3
-    # Using uniform distribution to simulate inputs; 
-    # in practice these would be preprocessed images
-    return tf.random.uniform((B, H, W, C), dtype=tf.float32)
-
+if not hasattr(generator_output, '__len__'):
+                    raise ValueError('Output of generator should be '
+                                     'a tuple `(x, y, sample_weight)` '
+                                     'or `(x, y)`. Found: ' +
+                                     str(generator_output))

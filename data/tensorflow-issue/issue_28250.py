@@ -1,52 +1,53 @@
-# tf.random.uniform((B, None), dtype=tf.int64) ← Input shape is (batch_size, variable_sequence_length), dtype int64 for token ids
-
+import math
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
 
-class MyModel(tf.keras.Model):
+vocab_size=2
+label_size = 2
+class Model(tf.keras.Model):
     def __init__(self):
         super().__init__()
-        vocab_size = 2
-        label_size = 2
-        embedding_dim = 100
-        lstm_units = 100
-
-        # Embedding layer with trainable=True (simulating the trainable embedding usage)
-        self.word_embedding = tf.keras.layers.Embedding(vocab_size, embedding_dim, trainable=True)
-        # Bidirectional LSTM Encoder
-        self.encoder = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(lstm_units, return_sequences=True))
-        # Classifier layer producing logits for each token position
+        self.word_embedding = tf.keras.layers.Embedding(vocab_size, 100, trainable=True)
+        self.encoder = tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(100, return_sequences=True))
         self.classifier = tf.keras.layers.Dense(label_size)
-
+        
     def call(self, word_ids):
-        """
-        word_ids: tf.Tensor of shape [batch_size, variable_seq_len], dtype int64
-        """
-        x = self.word_embedding(word_ids)  # shape: [B, seq_len, embedding_dim]
-        x = self.encoder(x)                 # shape: [B, seq_len, lstm_units * 2]
-        x = self.classifier(x)              # shape: [B, seq_len, label_size]
+        x = self.word_embedding(word_ids)
+        x = self.encoder(x)
+        x = self.classifier(x)
         return x
 
-def my_model_function():
-    # Return an instance of MyModel with trainable embedding layer
-    return MyModel()
 
-def GetInput():
-    """
-    Produce a batch input tensor of shape (batch_size, variable_seq_len), dtype int64, matching vocab_size=2.
+loss_object = tf.keras.losses.SparseCategoricalCrossentropy(
+    from_logits=True, reduction='none')
 
-    Uses padded batch with variable length sequences to simulate the original issue.
-    Here we create batch_size=1 batches with sequences of different lengths.
-    We'll just produce one tensor compatible as input to MyModel.
-    """
-    # We create a batch with batch size 1 and variable sequence length with padding.
+def loss_function(real, pred):
+    real = tf.reshape(real, (-1,))
+    pred = tf.reshape(pred, (-1, pred.shape[-1]))
+    mask = tf.math.logical_not(tf.math.equal(real, 0))
+    loss_ = loss_object(real, pred)
 
-    # For demonstration, produce a batch with seq_len=4 (max length),
-    # sequence contains token ids in range [0, 1]
-    batch_size = 1
-    max_seq_len = 4
-    
-    # Example sequence: [1,1,1,1], dtype int64
-    input_tensor = tf.constant([[1, 1, 1, 1]], dtype=tf.int64)
+    mask = tf.cast(mask, dtype=loss_.dtype)
+    loss_ *= mask
 
-    return input_tensor
+    return tf.reduce_mean(loss_)
 
+
+def accuracy(y_true, y_pred):
+    y_pred = tf.argmax(tf.reshape(y_pred, (-1, y_pred.shape[-1])), axis=-1)
+    y_true = tf.reshape(y_true, (-1,))
+    y_pred = y_pred[y_true > 0]
+    y_true = y_true[y_true > 0]
+    return tf.metrics.categorical_accuracy(y_true[y_true > 0], y_pred[y_true > 0])
+
+
+model = Model()
+model.compile(optimizer=tf.optimizers.Adam(), loss=loss_function, metrics=[accuracy])
+model.fit(dataset)
+
+def generator():
+    for data in zip([[1, 1, 1], [1, 1, 1, 1]], [[2, 2, 2], [2, 2, 2, 2]]):
+        yield data
+dataset = tf.data.Dataset.from_generator(generator, output_types=(tf.int64, tf.int64))
+dataset = dataset.padded_batch(1, ((None,), (None,)))

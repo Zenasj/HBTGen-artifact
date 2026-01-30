@@ -1,15 +1,25 @@
-# Two input tensors of shape (10,): torch.rand(10), torch.rand(10, dtype=torch.float32)
 import torch
-from torch import nn
+import torch._dynamo
 
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        x, y = inputs
-        return (x + y) * x
+providers = [
+    (
+        "CUDAExecutionProvider",
+        {
+            "device_id": 0,
+            "arena_extend_strategy": "kNextPowerOfTwo",
+            "gpu_mem_limit": 2 * 1024 * 1024 * 1024,
+            "do_copy_in_default_stream": True,
+        },
+    ),
+    "CPUExecutionProvider",
+]
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    return (torch.rand(10), torch.rand(10))
+@torch.compile(backend="onnxrt", options={"providers": providers})
+def foo(x, y):
+    return (x + y) * x
 
+
+if __name__ == "__main__":
+    a, b = torch.randn(10), torch.ones(10)
+    print(foo(a, b))

@@ -1,40 +1,43 @@
-# tf.random.uniform((128,), dtype=tf.int32) ← Input is a 1D tensor with 128 elements, as from dataset tf.data.Dataset.from_tensor_slices(list(range(128)))
-
+py
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # No layers needed for a simple step doubling function
-        # Using a method step that doubles input
+@tf.function
+def run_epoch(dataset, step):
+    print('retrace')
+    for X in dataset:
+        step(X)
 
+class Model:
     def step(self, X):
-        # Simply multiply input tensor elements by 2
         return X * 2
 
-    def call(self, inputs):
-        # For demonstration, this simulates the epoch loop behavior from the issue
-        # inputs: a tensor representing a batch (or sequence) of input values
-        # We simulate the autograph loop by iterating over inputs and applying step
-        # In practice, passing the method as an argument leads to retracing issues.
-        # Here, we demonstrate safe usage by calling self.step directly inside call.
-        outputs = []
-        # Using tf.map_fn for vectorized behavior and to keep TF graph-friendly
-        outputs = tf.map_fn(self.step, inputs)
-        return outputs
+dataset = tf.data.Dataset.from_tensor_slices(list(range(128)))
+model = Model()
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+for i in range(20):
+    # leads to retrace of run_epoch due to non-identity model.step
+    # (i.e. `model.step is not model.step`)
+    run_epoch(dataset, model.step)
 
-def GetInput():
-    # Return random input tensor to simulate dataset from 0 to 127
-    # Match the input shape expected: one-dimensional tensor of 128 elements
-    # Using tf.random.uniform to generate int32 tensor in range [0,128)
-    return tf.random.uniform(
-        shape=(128,),
-        minval=0,
-        maxval=128,
-        dtype=tf.int32,
-    )
+for i in range(20):
+    # passing the entire `model` avoids the retrace.
+    run_epoch(dataset, model)
 
+py
+import timeit, types, tensorflow as tf
+
+class Model:
+  def step(self):
+    pass
+
+m = Model()
+timeit.timeit('m.step is m.step', number=1_000_000, globals={'m': m})
+timeit.timeit('m.step == m.step', number=1_000_000, globals={'m': m})
+# still fairly fast
+timeit.timeit('var == var if type(var) == types.MethodType else var is var', number=1_000_000, globals={'var': m.step, 'types': types})
+
+@tf.function
+def graph(model):
+  pass
+
+timeit.timeit('graph(m)', number=1_000, globals={'graph': graph, 'm': m})

@@ -1,24 +1,15 @@
-# torch.rand(256, 256, dtype=torch.float, requires_grad=True)
 import torch
-from torch import nn
+from resource import *
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        
-    def forward(self, X):
-        S = X.size(0)
-        Z = X.sum(1, keepdim=True) + torch.linspace(-S, S, S, device=X.device)
-        Y = X * torch.erf(Z).sum(1, keepdim=True)
-        mat = Y.t().mm(Y)
-        inv_mat = torch.inverse(mat)
-        loss = inv_mat.sum() + Y.sum()
-        return loss
 
-def my_model_function():
-    return MyModel()
+S = 256
+X = torch.randn(S, S, requires_grad=True)
 
-def GetInput():
-    S = 256
-    return torch.randn(S, S, dtype=torch.float, requires_grad=True)
+for i in range(10000):
+    if i % 100 == 0:
+        print(i, '\t', getrusage(RUSAGE_SELF).ru_maxrss, 'kB used')
 
+    Z = X.sum(1, True) + torch.linspace(-S, S, S)
+    Y = X * torch.erf(Z).sum(1, True)
+    loss = Y.t().mm(Y).inverse().sum() + Y.sum()
+    loss.backward()

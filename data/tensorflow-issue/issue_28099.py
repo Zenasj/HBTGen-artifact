@@ -1,33 +1,34 @@
-# tf.random.uniform((None,), dtype=tf.int32) ← Based on example: inputs are scalar int32 tensors (batch dim None assumed)
-
 import tensorflow as tf
+from tensorflow.tools import graph_transforms
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # This model mimics the logic of the example `MyTrackable`'s test_func from the issue:
-        # It takes two scalar int32 tensors, returns a dict with 'sum' and 'difference'.
-        # We implement the test_func logic directly here.
+tf.enable_eager_execution()
 
+# Define a simple model with an extra op
+class MyTrackable(tf.train.Checkpoint):
     @tf.function(input_signature=[tf.TensorSpec(shape=None, dtype=tf.int32),
                                   tf.TensorSpec(shape=None, dtype=tf.int32)])
-    def call(self, first_arg, second_arg):
+    def test_func(self, first_arg, second_arg):
         result1 = first_arg + second_arg
         result2 = first_arg - second_arg
-        # The original example had an unused constant "dead_code" node.
-        # We omit that here as it is dead code.
+        tf.constant(42., name="dead_code")
         return {"sum": result1, "difference": result2}
+    
+before_dir = "./model_before"
+after_dir = "./model_after"
 
-def my_model_function():
-    # Return an instance of MyModel.
-    return MyModel()
+tf.saved_model.save(MyTrackable(), before_dir)
 
-def GetInput():
-    # Return a tuple of inputs matching the input_signature of MyModel.call.
-    # Assume scalar int32 inputs.
-    # Batch dimension is not explicitly used in the example,
-    # so producing scalar tensors is consistent.
-    first = tf.random.uniform(shape=(), minval=0, maxval=10, dtype=tf.int32)
-    second = tf.random.uniform(shape=(), minval=0, maxval=10, dtype=tf.int32)
-    return (first, second)
+one = tf.constant(1, dtype=tf.int32)
+two = tf.constant(2, dtype=tf.int32)
+model_before = tf.saved_model.load_v2(before_dir)
+print("Result before: {}".format(
+    model_before.signatures["serving_default"](first_arg=two, second_arg=one)))
+print("Contains dead code before: {}".format( 
+    str("dead_code" in str(model_before.signatures["serving_default"].graph.as_graph_def()))))
 
+graph_transforms.TransformSavedModel(before_dir, after_dir, ["strip_unused_nodes(type=float32)"])
+model_after = tf.saved_model.load_v2(after_dir)
+print("Result after: {}".format(
+    model_after.signatures["serving_default"](first_arg=two, second_arg=one)))
+print("Contains dead code after: {}".format( 
+    str("dead_code" in str(model_after.signatures["serving_default"].graph.as_graph_def()))))

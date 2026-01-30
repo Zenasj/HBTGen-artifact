@@ -1,17 +1,12 @@
-# torch.randint(256, size=(1024, 2048), dtype=torch.int64)
+# Modified from https://github.com/pytorch/pytorch/tree/main/torch/distributed/_tensor
+# to run this file (i.e. dtensor_example.py):
+# torchrun --standalone --nnodes=1 --nproc-per-node=1 dtensor_example.py
+import os
 import torch
-from torch import nn
+from torch.distributed._tensor import init_device_mesh, Shard, distribute_tensor
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-    
-    def forward(self, x):
-        return x << 4  # Reproduces the bitwise shift operation causing the error
+mesh = init_device_mesh("cuda", (int(os.environ["WORLD_SIZE"]),))
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.randint(256, size=(1024, 2048), dtype=torch.int64)
-
+big_tensor = torch.randint(256, size=(1024, 2048))
+my_dtensor = distribute_tensor(big_tensor, mesh, [Shard(dim=0)])
+my_dtensor << 4

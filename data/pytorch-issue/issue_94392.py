@@ -1,8 +1,9 @@
-# torch.rand(2, 4, dtype=torch.float32)
+from timm.optim import Lamb
+
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+class Repro(nn.Module):
     def __init__(self):
         super().__init__()
         self.linear1 = nn.Linear(4, 4)
@@ -18,9 +19,12 @@ class MyModel(nn.Module):
         loss.backward()
         optimizer.step()
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    return torch.rand(2, 4, dtype=torch.float32)
+if __name__ == "__main__":
+    model = Repro().cuda()
+    optimizer = Lamb(model.parameters())
+    opt = torch.compile(model.train_step, backend='eager')
+    data = torch.rand(2, 4).cuda()
 
+    for i in range(2):
+        opt(data, optimizer)

@@ -1,18 +1,13 @@
-# torch.rand(1, 1, 32, 32, dtype=torch.float32)
 import torch
-import torch.nn as nn
+import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.conv = nn.Conv2d(1, 2, 3)  # Matches input channels=1 and kernel size 3
+@torch._dynamo.optimize("eager")
+def foo(inp, w):
+    return F.conv2d(inp, w)
 
-    def forward(self, x):
-        return self.conv(x)
+inp = torch.rand((1, 1, 32, 32))
+w = torch.rand((1, 2, 3, 3))
+#                  |
+#                  |--------- incorrect shape!
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(1, 1, 32, 32, dtype=torch.float32)
-
+foo(inp, w)

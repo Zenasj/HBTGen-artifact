@@ -1,41 +1,32 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
-
 import torch
 import torch.nn as nn
 import math
 
-class MyModel(nn.Module):
-    def __init__(self, in_features, out_features, dropout_rate=0.5):
-        super(MyModel, self).__init__()
-        self.fc1 = nn.Linear(in_features, out_features)
-        self.relu = nn.ReLU()
-        self.dropout = nn.Dropout(p=dropout_rate)
-        self.fc2 = nn.Linear(out_features, out_features)
-        
-        # Initialize the weights of the first linear layer using the new dropout initialization
-        self._initialize_weights(self.fc1, dropout_rate)
+def dropout_(tensor, p=0, mode='fan_in', nonlinearity='dropout_relu'):
+    r"""Fills the input `Tensor` with values according to the method
+    described in "Critical initialisation for deep signal propagation in
+noisy rectifier neural networks" - Pretorius, A. et al. (2018). The resulting tensor will have values sampled from
+    :math:`\mathcal{N}(0, \text{std})` where
 
-    def _initialize_weights(self, module, p):
-        if isinstance(module, nn.Linear):
-            fan_in, _ = nn.init._calculate_fan_in_and_fan_out(module.weight)
-            gain = math.sqrt(2 * (1 - p))
-            std = gain / math.sqrt(fan_in)
-            with torch.no_grad():
-                module.weight.normal_(0, std)
-    
-    def forward(self, x):
-        x = self.fc1(x)
-        x = self.relu(x)
-        x = self.dropout(x)
-        x = self.fc2(x)
-        return x
+    .. math::
+        \text{std} = \sqrt{\frac{2 \times (1-p)}{\text{fan\_in}}}
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel(in_features=100, out_features=50, dropout_rate=0.5)
+    Args:
+        tensor: an n-dimensional `torch.Tensor`
+        p: probability of an element to be zeroed. This should be set equal to the dropout rate p in the subsequent dropout layer. 
+        mode: either 'fan_in' (default) or 'fan_out'. Choosing `fan_in`
+            preserves the magnitude of the variance of the weights in the
+            forward pass. Choosing `fan_out` preserves the magnitudes in the
+            backwards pass.
+        nonlinearity: the non-linear function (`nn.functional` name),
+            recommended to use only with 'relu'.
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    B, C, H, W = 1, 1, 10, 10  # Example batch size, channels, height, and width
-    return torch.rand(B, C, H, W, dtype=torch.float32).view(B, -1)  # Flatten the input to match the linear layer
-
+    Examples:
+        >>> w = torch.empty(3, 5)
+        >>> nn.init.dropout_(w, p=0.6, mode='fan_in', nonlinearity='relu')
+    """
+    fan = _calculate_correct_fan(tensor, mode)
+    gain = calculate_gain(nonlinearity, p)
+    std = gain / math.sqrt(fan)
+    with torch.no_grad():
+        return tensor.normal_(0, std)

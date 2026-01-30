@@ -1,27 +1,29 @@
-# torch.rand(B, 1024, 1000, dtype=torch.float32)
+import torch.nn as nn
+
+import numpy as np
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.linear = nn.Linear(1000, 1010)  # Matches the model structure from the issue
-    
-    def forward(self, x):
-        # Compute full forward pass
-        y_full = self.linear(x)
-        # Compute sliced input (first 16 elements along batch dimension) and its forward pass
-        x_slice = x[:16]
-        y_slice = self.linear(x_slice)
-        # Compute maximum absolute difference between y_full's first 16 elements and y_slice
-        diff = torch.max(torch.abs(y_full[:16] - y_slice))
-        return diff  # Returns a scalar tensor indicating discrepancy
 
-def my_model_function():
-    # Returns an instance of MyModel with default initialization (PyTorch's Linear layer)
-    return MyModel()
+def test(x):
+    model = torch.nn.Linear(1000, 1010)
 
-def GetInput():
-    # Generates a tensor matching the input shape and dtype used in the issue's test code
-    return torch.randn(32, 1024, 1000, dtype=torch.float32)
+    x = x.cpu()
+    model.cpu()
+    y_cpu = model(x)
 
+    x = x.cuda()
+    model.cuda()
+    y_gpu = model(x)
+    print("cpu vs cuda: ", torch.allclose(y_cpu, y_gpu.cpu()))
+    print("cpu vs cuda: ",
+          np.max(np.abs(y_cpu.detach().cpu().numpy() - y_gpu.detach().cpu().numpy())))
+
+    a, b = torch.testing._compare_tensors_internal(
+            y_cpu, y_gpu.cpu(), rtol=0, atol=0, equal_nan=False)
+    if not a:
+        print(b)
+
+x = torch.randn(32, 1024, 1000)
+test(x)
+x = torch.randn(32, 1024, 1000) + 100
+test(x)

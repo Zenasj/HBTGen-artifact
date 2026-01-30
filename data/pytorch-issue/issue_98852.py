@@ -1,27 +1,23 @@
-# torch.rand(2, 10, dtype=torch.float32)
+py
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+torch.manual_seed(420)
+
+class Net(nn.Module):
+
     def __init__(self):
-        super(MyModel, self).__init__()
+        super(Net, self).__init__()
         self.relu = nn.ReLU()
-        self.f = nn.Sequential(
-            nn.Linear(10, 20),
-            self.relu,
-            nn.Linear(20, 30),
-            self.relu,
-            nn.Linear(30, 40),
-            self.relu,
-        )
+        self.f = nn.Sequential(nn.Linear(10, 20), self.relu, nn.Linear(20, 30), self.relu, nn.Linear(30, 40), self.relu)
 
     def forward(self, x):
         x = self.f(x)
         return x
+input_tensor = torch.randn(2, 10)
 
-def my_model_function():
-    return MyModel()
+func = Net()
+jit_func = torch.compile(func)
 
-def GetInput():
-    return torch.randn(2, 10, dtype=torch.float32)
-
+print(func(input_tensor))
+print(jit_func(input_tensor))

@@ -1,27 +1,34 @@
-# tf.constant with shape (3,) as input dictionary values for features 'first_feature' and 'second_feature'
+import random
+from tensorflow import keras
+from tensorflow.keras import models
+
+import subprocess
 import tensorflow as tf
 
+inputs = {
+    "first_feature": tf.constant([1, 2, 3]),
+    "second_feature": tf.constant([4, 5, 6]),
+}
+
 class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # This model does not really depend on inputs - it returns a random tensor of shape (3, 1)
-        # This mimics the example from the issue where output is tf.random.uniform([3, 1])
-    
     def call(self, inputs, training=None):
-        # inputs is expected to be a dictionary with keys 'first_feature' and 'second_feature',
-        # each a tensor of shape (3,) as per the example
-        return tf.random.uniform([3, 1], dtype=tf.float32)
+        return tf.random.uniform([3, 1])
 
-def my_model_function():
-    # Instantiate MyModel - no weights or special initialization needed
-    return MyModel()
+model = MyModel()
+model.compile(optimizer="sgd", loss="mse")
+model.fit(inputs, tf.constant([7, 8, 9]))
+model.save("model")
+dict_model_def = subprocess.check_output("saved_model_cli show --dir model --tag_set serve --signature_def serving_default".split())
+print("MODEL")
+print(dict_model_def.decode("utf-8"))
 
-def GetInput():
-    # Provide a dictionary input with keys 'first_feature' and 'second_feature'
-    # Each is a tensor of shape (3,), matching the example in the GitHub issue
-    # Values are int32 as in the example [1,2,3] and [4,5,6]
-    return {
-        "first_feature": tf.constant([1, 2, 3], dtype=tf.int32),
-        "second_feature": tf.constant([4, 5, 6], dtype=tf.int32),
-    }
+print("RESTORED MODEL")
+restored_model = tf.keras.models.load_model("model")
+restored_model.save("restored_model")
+restored_model_def = subprocess.check_output("saved_model_cli show --dir restored_model --tag_set serve --signature_def serving_default".split())
+print(restored_model_def.decode("utf-8"))
 
+(({'first_feature': TensorSpec(shape=(3,), dtype=tf.int32, name='inputs/first_feature'),
+   'second_feature': TensorSpec(shape=(3,), dtype=tf.int32, name='inputs/second_feature')},
+  None),
+ {})

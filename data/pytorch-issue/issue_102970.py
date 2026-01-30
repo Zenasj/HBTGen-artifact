@@ -1,30 +1,20 @@
-# torch.rand(1, dtype=torch.float32)  # Inferred input shape from the issue
-
+py
 import torch
-from torch import nn
-
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.foo = Foo.apply
-
-    def forward(self, x):
-        return self.foo(x)
 
 class Foo(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x):
-        ctx.save_for_backward(x)
         return x
 
     @staticmethod
     def backward(ctx, gx):
-        x, = ctx.saved_tensors
         return gx * 0.5
 
-def my_model_function():
-    return MyModel()
+x = torch.randn([], requires_grad=True)
 
-def GetInput():
-    return torch.randn([], requires_grad=True)
+def f(x):
+    return Foo.apply(x)
 
+y = torch.compile(f)(x)
+result, = torch.autograd.grad(y, x)
+print(result)  # 1.0, but should be 0.5

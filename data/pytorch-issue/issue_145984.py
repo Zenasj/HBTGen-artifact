@@ -1,21 +1,21 @@
-# torch.rand(5000000, 256, dtype=torch.bfloat16, device="cuda")
-import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
+import torch
+
+class Model(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.fc = nn.Linear(256, 16)
+        self.fc = torch.nn.Linear(256, 16)
 
     def forward(self, x):
         return self.fc(x)
 
-def my_model_function():
-    model = MyModel()
-    model.eval()
-    model.to(dtype=torch.bfloat16, device="cuda")
-    return model
 
-def GetInput():
-    return torch.rand(5000000, 256, dtype=torch.bfloat16, device="cuda")
+model = Model().eval().to(device="cuda", dtype=torch.bfloat16)
+input = torch.zeros(10 * 500_000, 256).to(device="cuda", dtype=torch.bfloat16)
 
+exported_program = torch.export.export(
+    model,
+    args=(input,),
+)
+torch._inductor.aoti_compile_and_package(exported_program, inductor_configs={"max_autotune": True})

@@ -1,36 +1,52 @@
-# torch.rand(B, 3, 128, 128, dtype=torch.float32)
-import torch
 import torch.nn as nn
 
-class WindowAttention(nn.Module):
-    def forward(self, x):
-        return x  # Dummy implementation to mimic the original
+import os
+import torch
+import torch.distributed as dist
+from timm.models.swin_transformer_v2 import SwinTransformerV2, WindowAttention
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.patch_embed = nn.Conv2d(3, 128, kernel_size=4, stride=4)  # Matches patch_size=4
-        self.window_attn = WindowAttention()
-        # Compile the problematic submodule's forward method as in the original issue
-        self.window_attn.forward = torch.compile(self.window_attn.forward)
-        # Add minimal dummy layers to mimic SwinTransformerV2 structure
-        self.layers = nn.Sequential(
-            nn.Linear(128, 128),  # Stub for transformer blocks
-            nn.ReLU()
-        )
+def main():
+    # Initialize the distributed environment
+    dist.init_process_group(backend='nccl')  # Use NCCL backend
+    rank = dist.get_rank()
+    world_size = dist.get_world_size()
+    
+    # Set the device
+    if torch.cuda.is_available():
+        device = torch.device(f"cuda:{rank}")
+        torch.cuda.set_device(device)
+    else:
+        device = torch.device("cpu")
+    
+    print(f"Running on rank {rank} out of {world_size} processes, device: {device}")
 
-    def forward(self, x):
-        x = self.patch_embed(x)
-        x = self.window_attn(x)
-        # Dummy forward pass continuation
-        x = self.layers(x.mean(dim=(-2, -1)))  # Global average pool + linear
-        return x
+    # Compile WindowAttention.forward
+    WindowAttention.forward = torch.compile(WindowAttention.forward)
 
-def my_model_function():
-    # Disable DDP optimization in Dynamo to avoid the error (as per user fix)
-    torch._dynamo.config.optimize_ddp = False
-    return MyModel()
+    # Create the model
+    model = SwinTransformerV2(
+        img_size=(128, 128),
+        depths=(2, 2, 18, 2),
+        window_size=8,
+        patch_size=4,
+        embed_dim=128,
+        num_heads=(4, 8, 16, 32),
+        num_classes=0,
+        in_chans=3
+    ).to(device)
 
-def GetInput():
-    return torch.rand(1, 3, 128, 128, dtype=torch.float32)
+    # Wrap the model with DistributedDataParallel
+    ddp_model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[rank] if torch.cuda.is_available() else None)
 
+    # Create a sample input tensor
+    im = torch.empty(1, 3, 128, 128).to(device)
+
+    # Forward pass
+    output = ddp_model(im)
+    print(f"Rank {rank}: Output shape: {output.shape}")
+
+    # Clean up
+    dist.destroy_process_group()
+
+if __name__ == "__main__":
+    main()

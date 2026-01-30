@@ -1,157 +1,165 @@
-# tf.random.uniform((B, T, 1), dtype=tf.float64)  # Based on input shape (batch, time_step=100, CityFactorNum=1)
+import random
 
+# coding:utf-8
+import numpy as np
+import matplotlib.pyplot as plt
 import tensorflow as tf
+from tensorflow import keras
+import tensorflow.keras.layers as layers
+import numpy as np
+from tensorflow.keras.utils import plot_model
 
-class Linear(tf.keras.layers.Layer):
-    def __init__(self, CityNum, CityFactorNum):   
-        super(Linear, self).__init__()
-        self.CityNum = CityNum    
-        self.CityFactorNum = CityFactorNum
+from tensorflow.keras.utils import plot_model
+from tensorflow.keras import layers
+tf.keras.backend.set_floatx('float64')
+#%%###################################################################
+# y(n) = func_g(x)y(n-1) + X\beta + \alpha
+###############################################################
+def func_g (x):
+    v = np.sin(x)
+    return v
+########################################################
+#%% deine the neutron for X\beta + alpha
+############################################
+class Linear(layers.Layer):
 
-    def build(self, input_shape):
-        # beta shape: (CityFactorNum, 1)
-        self.beta  = self.add_weight(shape=(self.CityFactorNum, 1),  initializer='random_normal', trainable=True)
-        # alpha shape: (CityNum,)
-        self.alpha = self.add_weight(shape=(self.CityNum,),        initializer='random_normal', trainable=True)
+  def __init__(self, CityNum, CityFactorNum):   
+    self.CityNum = CityNum    
+    self.CityFactorNum = CityFactorNum
+    super(Linear, self).__init__()
+    
+  def build(self, input_shape):
+    self.beta  = self.add_weight(shape=(self.CityFactorNum, 1),  initializer='random_normal', trainable=True)
+    self.alpha = self.add_weight(shape=(self.CityNum,),        initializer='random_normal', trainable=True)
 
-    def call(self, X):
-        # X shape assumed (batch, time, CityFactorNum)
-        # Take X[:,1:] corresponding to time steps 1:end 
-        # Add alpha broadcasted on batch dimension
-        # Note: In original code, indexing uses tf.dtypes.cast(X[0,0], tf.int32), 
-        # which seems like a bug or placeholder. We'll omit that cast part, as it is not meaningful for computation.
-        # So implement the core linear form: tf.matmul(X[:,1:], beta) + alpha
-        # Because X is time series of shape (batch, T, CityFactorNum), we consider X[:,1:,...]
-        # We'll assume input X shape is (batch, time, CityFactorNum)
-        # We apply matmul on last two dims: (batch, time-1, CityFactorNum) @ (CityFactorNum,1) => (batch, time-1, 1)
-        x_slice = X[:, 1:, :]
-        v = tf.matmul(x_slice, self.beta)  # shape (batch, time-1, 1)
-        # alpha shape (CityNum,), broadcast on batch and time-1 dims as needed.
-        # To add alpha with shape (CityNum,), we need to broadcast correctly.
-        # But the input shape and alpha dimensions do not match time dimension. Original code is unclear here.
-        # We assume CityNum corresponds to some feature dimension, so we need to broadcast or reduce dims.
-        # Due to ambiguity, we simplify and just add alpha first element as scalar bias across all.
-        # (This is a logical simplification since original behavior is not fully clear.)
-        alpha_scalar = self.alpha[0] if self.CityNum > 0 else 0.0
-        return v + alpha_scalar
-
+  def call(self, X):
+    v = tf.matmul( X[:,1:], self.beta)  + self.alpha[ tf.dtypes.cast( X[0,0], tf.int32 ) ]
+    return v
+#############################################33
+#%% define rnn cell node
+###############################################
 class MinimalRNNCell(tf.keras.layers.Layer):
     def __init__(self, units, CityNum, CityFactorNum, **kwargs):
-        super(MinimalRNNCell, self).__init__(**kwargs)
         self.units = units
-        self.state_size = 1  # Fix to 1 matching new_state shape and get_initial_state
+        self.state_size = 100
         self.CityNum = CityNum    
         self.CityFactorNum = CityFactorNum
+        super(MinimalRNNCell, self).__init__(**kwargs)
 
     def build(self, input_shape):
-        # input_shape is a list of shapes for the input tuple [X_input, U_input]
-        # We infer shape for convenience if needed; here not strictly necessary.
         
-        # Parameters beta and alpha shapes adapted to 1D vectors as per original
         self.beta  = self.add_weight(shape=(self.CityNum,),  initializer='random_normal', trainable=True)
         self.alpha = self.add_weight(shape=(self.CityFactorNum-1,), initializer='random_normal', trainable=True)
         
-        # Several dense layers applied sequentially on U_input
-        self.dense_1  = tf.keras.layers.Dense(32, activation='tanh')
-        self.dense_2  = tf.keras.layers.Dense(64, activation='tanh')
-        self.dense_3  = tf.keras.layers.Dense(64, activation='tanh')
-        self.dense_4  = tf.keras.layers.Dense(64, activation='tanh')
-        self.dense_5  = tf.keras.layers.Dense(1)
+        self.dense_1  = layers.Dense(32, activation='tanh')
+        self.dense_2  = layers.Dense(64, activation='tanh')
+        self.dense_3  = layers.Dense(64, activation='tanh')
+        self.dense_4  = layers.Dense(64, activation='tanh')
+        self.dense_5= layers.Dense(1)
+
         
         self.Xbeta_Add_alpha = Linear(self.CityNum, self.CityFactorNum)
                 
-        super(MinimalRNNCell, self).build(input_shape)
+        self.built = True
     
-    def get_initial_state(self, inputs=None, batch_size=None, dtype=None):
-        # Correct initial state shape: (batch_size, state_size)
-        # state_size=1, so initial state shape = (batch_size, 1)
-        # Use tf.ones with shape (batch_size, state_size)
-        if batch_size is None:
-            # fallback - dynamic batch size unknown, return tensor with shape (1, state_size)
-            batch_size = 1
-        if dtype is None:
-            dtype = tf.float32
-        initial_state = tf.ones((batch_size, self.state_size), dtype=dtype)
-        return [initial_state]
+    def get_initial_state(self, inputs, batch_size=None, dtype=None):
+        initial_states = []
+        initial_states = [tf.ones(1)]
+
+        return tuple(initial_states)
+        
 
     def call(self, inputs, states):
-        # Inputs: tuple of two tensors: (X_input, U_input)
-        # States: list with a single tensor of shape (batch_size, state_size=1)
-        X_input = inputs[0]  # Shape (batch_size, time_step?, CityFactorNum)
-        U_input = inputs[1]  # Shape (batch_size, time_step?, UFactorNum)
-        
-        s1 = states[0]  # shape (batch_size, 1)
-        
-        # Process U_input through 5 dense layers
+ 
+        X_input = inputs[0]
+        U_input = inputs[1]
+     
+        s1 = states[0] 
+
         gU = self.dense_1(U_input)
         gU = self.dense_2(gU)
         gU = self.dense_3(gU)
         gU = self.dense_4(gU)
-        gU = self.dense_5(gU)  # shape (batch_size, some_dim, 1)
-        
-        # Xbeta_Add_alpha expects input shape that matches linear layer
+        gU = self.dense_5(gU)
         X = self.Xbeta_Add_alpha(U_input)
-        
-        # Compute dot product along appropriate axes between gU and s1
-        # - gU shape: (batch_size, some_dim, 1)
-        # - s1 shape: (batch_size, 1)
-        # The original code uses layers.dot with axes=1
-        
-        # We interpret this as batch-wise dot of last dims
-        # Reshape s1 to match dims for dot: (batch_size, 1, 1)
-        s1_expanded = tf.expand_dims(s1, axis=1)  # (batch_size, 1, 1)
-        # Use tf.reduce_sum or tf.linalg.matmul to mimic dot
-        # Multiply element-wise and sum on axis=1
-        gUZ = tf.reduce_sum(gU * s1_expanded, axis=1, keepdims=True)  # shape (batch_size,1,1)
 
-        gUZX = gUZ + tf.expand_dims(X, axis=1)  # broadcast add X to match shape
+        gUZ  = layers.dot( [gU, s1], axes=1, name = 'dot')
+        gUZX = layers.add( [gUZ, X], name = 'add')
+    
+        output = [gUZ, gUZX]
+        new_state = [gUZX]
         
-        output = [gUZ, gUZX]  # output is a list of two tensors
-        new_state = [gUZX[:,0,:]]  # new_state shape (batch_size, 1)
-
         return output, new_state
 
+#########################################
+#%% define model 
+sample_num = 2000
+time_step = 100
+CityNum, CityFactorNum = 100, 1
+UFactorNum = 1
+#############################################
+def rnn_model (CityNum, CityFactorNum, time_step):
+    
+    input_X = tf.keras.Input(shape=[time_step, CityFactorNum])
+    input_U = tf.keras.Input(shape=[time_step, UFactorNum])
+    
+    
+    
+    cells = MinimalRNNCell(1, CityNum, CityFactorNum)
+    
+    #rnn = tf.keras.layers.RNN(cells, return_sequences=True)(input)
+    #out = tf.keras.layers.Dense(units=1)(rnn)
 
-class MyModel(tf.keras.Model):
-    def __init__(self, CityNum=100, CityFactorNum=1, time_step=100, UFactorNum=1):
-        super(MyModel, self).__init__()
-        self.CityNum = CityNum
-        self.CityFactorNum = CityFactorNum
-        self.time_step = time_step
-        self.UFactorNum = UFactorNum
-        
-        self.cell = MinimalRNNCell(1, self.CityNum, self.CityFactorNum)
-        self.rnn = tf.keras.layers.RNN(self.cell, return_sequences=True)
-        self.output_dense = tf.keras.layers.Dense(1)
-        
-    def call(self, inputs):
-        # inputs is expected to be a list/tuple of two tensors: [X, U]
-        # X shape: (batch, time_step, CityFactorNum)
-        # U shape: (batch, time_step, UFactorNum)
-        rnn_out = self.rnn(inputs)
-        out = self.output_dense(rnn_out)
-        return out
+    out = tf.keras.layers.RNN(cells, return_sequences=True)([input_X, input_U])
+    out = tf.keras.layers.Dense(1)(out)
+    
+    
+    
+    model = tf.keras.Model(inputs=[input_X, input_U], outputs=out)
+    plot_model(model, to_file='model.png')
+    
+    model.summary()
+    model.compile(optimizer='rmsprop',  loss=['mse'],  metrics=['mse'])
+    
+    return model 
 
-def my_model_function():
-    # Return an instance of MyModel with default parameters matching example
-    return MyModel()
+################################################################
+#%% set the test data
+##(sample_num,  time_step_num, units)
+######################################################################
+sample_num = 2000
+time_step = 100
+CityNum, CityFactorNum = 100, 1
 
-def GetInput():
-    # Creates valid random input tuple [X, U] matching MyModel input shapes
-    batch_size = 1
-    time_step = 100
-    CityFactorNum = 1
-    UFactorNum = 1
+X = np.random.uniform(-10,10, size=(sample_num,time_step,1))
+Y = np.zeros((sample_num,time_step,1))
 
-    # Use float64 as in original code
-    X = tf.random.uniform((batch_size, time_step, CityFactorNum), dtype=tf.float64)
-    U = tf.random.uniform((batch_size, time_step, UFactorNum), dtype=tf.float64)
+#for i1 in range()
 
-    # Convert to float32 since layers Dense default to float32 unless overridden
-    # Alternatively, make Dense layers use float64; 
-    # For simplicity, cast inputs to float32 since Keras layers commonly expect that
-    X = tf.cast(X, tf.float32)
-    U = tf.cast(U, tf.float32)
 
-    return [X, U]
+for i1 in range(sample_num):
+    for i2 in range(1,time_step):
+        for i3 in range(1):
+            Y[i1, i2, i3] = func_g(X[i1, i2, i3]) +  Y[i1, i2-1, i3]
 
+#-----------------------------------------------------------------------
+model = rnn_model (CityNum, CityFactorNum, time_step)
+model.fit(X, Y, batch_size = 100, epochs = 50)
+#----------------------------------------------------------------------
+start = np.random.uniform(-10,10, size=(1,time_step,1))
+start = np.linspace(-10,10,time_step)
+start = np.reshape(start, (1,time_step,1))
+next = model.predict(start)
+
+
+plt.plot(start[0,:,0], next[0,:,0],'rs')
+################################################################
+#%% true solution 
+##############################################################
+next = next
+for i1 in range(1):
+    for i2 in range(1,time_step):
+        for i3 in range(1):
+            next[i1, i2, i3] = func_g(start[i1, i2, i3]) + next[i1, i2-1, i3]
+
+plt.plot(start[0,:,0], next[0,:,0],'bo')

@@ -1,22 +1,26 @@
-# torch.rand(3, dtype=torch.float32)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.model_a = nn.Identity()  # Placeholder for first model
-        self.model_b = nn.Identity()  # Placeholder for second model
+tensor1 = torch.tensor([0., 1., 2.])
+tensor2 = torch.tensor([0., 1., 2.])
 
-    def forward(self, x):
-        out_a = self.model_a(x)
-        out_b = self.model_b(x)
-        # Compare outputs using torch.isclose with rtol and atol as integers (valid case from the issue)
-        return torch.isclose(out_a, out_b, rtol=3, atol=4)
+                                          # ↓↓↓↓↓↓↓↓↓↓↓
+torch.isclose(input=tensor1, other=tensor2, rtol=4.+0.j) # Error
 
-def my_model_function():
-    return MyModel()
+                                          # ↓↓↓↓↓↓↓↓↓↓↓
+torch.isclose(input=tensor1, other=tensor2, atol=3.+0.j) # Error
 
-def GetInput():
-    return torch.rand(3, dtype=torch.float32)
+import torch
 
+tensor1 = torch.tensor([0., 1., 2.])
+tensor2 = torch.tensor([0., 1., 2.])
+
+                                          # ↓↓↓↓↓↓  ↓↓↓↓↓↓
+torch.isclose(input=tensor1, other=tensor2, rtol=3, atol=4)
+# tensor([True, True, True])
+                                          # ↓↓↓↓↓↓↓↓↓  ↓↓↓↓↓↓↓↓↓↓
+torch.isclose(input=tensor1, other=tensor2, rtol=False, atol=False)
+# tensor([True, True, True])
+
+import torch
+
+torch.__version__ # '2.5.1'

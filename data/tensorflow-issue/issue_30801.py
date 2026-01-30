@@ -1,61 +1,71 @@
-# tf.random.uniform((batch_size, 224, 224, 3), dtype=tf.float32)
-import tensorflow as tf
 import numpy as np
+import random
+import tensorflow as tf
+from tensorflow import keras
 
-# The original issue describes a custom data generator yielding batches of images
-# with shape (batch_size, 224, 224, 3) and labels as one-hot vectors over 11 classes.
-# However, the main discussion involves memory leak behavior with multiprocessing
-# in Keras fit_generator and data pipelines. There is no direct model code,
-# but it references usage of resnet50 preprocessing, so we assume a typical image
-# classification model architecture for the input size and label shape.
+class DataGenerator(tf.keras.utils.Sequence):
+    def __init__(self, affect_net_dir, data_file, batch_size, aug=True):
+        self.affect_net_dir = affect_net_dir
+        with FileIO(os.path.join(self.affect_net_dir, data_file), 'r') as fr:
+            self.data = pd.read_csv(fr)
+        self.batch_size = batch_size
+        self.aug = aug
+        self.indexes = np.arange(self.data.shape[0])
+        np.random.shuffle(self.indexes)
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Using a simple backbone model with input shape (224, 224, 3)
-        # and output classes=11 as per the DataGenerator labels.
-        # We use tf.keras.applications.ResNet50 as feature extractor,
-        # including preprocessing (the generator already does this),
-        # so here we just build from inputs without preprocessing layer.
+    @property
+    def steps(self):
+        return int(np.floor(self.data.shape[0] / self.batch_size))
 
-        # Instantiate the base ResNet50 model without top layers, weights=None for simplicity
-        self.backbone = tf.keras.applications.ResNet50(
-            include_top=False,
-            weights=None,
-            input_shape=(224, 224, 3),
-            pooling='avg',  # Global average pooling after final conv block
-        )
-        self.classifier = tf.keras.layers.Dense(11, activation='softmax')
+    def __getitem__(self, index):
+        batch_indexes = self.indexes[index * self.batch_size: (index + 1) * self.batch_size]
 
-    def call(self, inputs, training=False):
-        # inputs shape: (batch_size, 224, 224, 3), preprocessed externally as per resnet50
-        x = self.backbone(inputs, training=training)
-        x = self.classifier(x)
-        return x
+        x = np.zeros(shape=(self.batch_size, 224, 224, 3))
+        y = np.zeros(shape=(self.batch_size, 11))
 
+        for i, b_index in enumerate(batch_indexes):
+            file_path = self.data.iloc[b_index]['subDirectory_filePath']
+            with FileIO(os.path.join(self.affect_net_dir, file_path), 'rb') as fr:
+                face_img = Image.open(BytesIO(fr.read()))
+            face_x = self.data.iloc[b_index]['face_x']
+            face_y = self.data.iloc[b_index]['face_y']
+            face_width = self.data.iloc[b_index]['face_width']
+            face_height = self.data.iloc[b_index]['face_height']
+            expression = self.data.iloc[b_index]['expression']
+            # crop face from image
+            face_img = face_img.crop([face_x, face_y, face_x + face_width, face_y + face_height])
+            face_img = face_img.resize(size=(224, 224), resample=Image.LANCZOS)
+            face_img = tf.keras.preprocessing.image.img_to_array(face_img)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+            # face augmentation if needed
+            if self.aug:
+                if np.random.rand() >= 0.5:
+                    face_img = face_aug.random_brightness(face_img)
+                if np.random.rand() >= 0.5:
+                    face_img = face_aug.random_hue(face_img)
+                if np.random.rand() >= 0.5:
+                    face_img = face_aug.random_saturation(face_img)
+                if np.random.rand() >= 0.5:
+                    face_img = face_aug.random_contrast(face_img)
+                if np.random.rand() >= 0.5:
+                    face_img = face_aug.horizontal_mirror(face_img)
 
+            x[i] = face_img
+            y[i] = tf.keras.utils.to_categorical(expression, num_classes=11)
 
-def GetInput():
-    # Return a random tensor input matching expected input to MyModel
-    # (batch_size, 224, 224, 3), float32, values roughly in resnet50 preprocessing range
-    batch_size = 8  # reasonable batch size for input example
-    # ResNet50 preprocessing expects pixels scaled to mode:
-    # preprocess_input for resnet50 converts RGB to BGR, zero-centers each color channel.
-    # For simplicity, generate random uint8 [0,255] and apply preprocessing here.
+        return tf.keras.applications.resnet50.preprocess_input(x), y
 
-    # Create uint8 random images in [0,255]
-    x_uint8 = tf.random.uniform((batch_size, 224, 224, 3), minval=0, maxval=256, dtype=tf.int32)
-    x_uint8 = tf.cast(x_uint8, tf.uint8)
+    def __len__(self):
+        return int(np.floor(self.data.shape[0] / self.batch_size))
 
-    # Convert to float32 for preprocessing
-    x_float = tf.cast(x_uint8, tf.float32)
+epochs = 80
 
-    # Apply resnet50 preprocessing (BGR zero-centering)
-    x_preprocessed = tf.keras.applications.resnet50.preprocess_input(x_float)
-
-    return x_preprocessed
-
+history = model.fit_generator(
+    train_data_gen,
+    steps_per_epoch=int(np.ceil(train_data_gen.n / float(batch_size))),
+    epochs=epochs,
+    validation_data=val_data_gen,
+    validation_steps=int(np.ceil(val_data_gen.n / float(batch_size))),
+    use_multiprocessing=True,
+    workers=3,
+)

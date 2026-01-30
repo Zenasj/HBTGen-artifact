@@ -1,33 +1,47 @@
-# tf.random.uniform((1, 28000), dtype=tf.float32) ← Inferred input shape from issue examples
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        size = 28000
-        
-        # Following issue discussion, wrap kernel initializer in tf.function to reduce memory usage in TF 2.x
-        glorot_uniform_init = tf.keras.initializers.glorot_uniform()
-        # Wrap the __call__ method of the initializer instance to keep the benefit of tf.function while preserving init behavior
-        self.wrapped_initializer = tf.function(glorot_uniform_init, autograph=False)
+# tf.config.gpu.set_per_process_memory_growth(True)
 
-        # Create Dense layer with the wrapped initializer to prevent large memory spikes on init
-        self.dense = tf.keras.layers.Dense(
-            units=size,
-            kernel_initializer=self.wrapped_initializer
-        )
+size = 28000
 
-    def call(self, inputs, training=False):
-        return self.dense(inputs)
+inputs = tf.keras.Input((size,), dtype='float32')
+outputs = tf.keras.layers.Dense(size)(inputs)
+model = tf.keras.models.Model(inputs=inputs, outputs=outputs)
 
+model.predict(np.ones((1, size,), dtype=np.float32))
 
-def my_model_function():
-    # Instantiate MyModel
-    return MyModel()
+print('complete')
 
+while True:
+    pass
 
-def GetInput():
-    # Generate input tensor matching (batch_size=1, input_dim=28000) with float32 type
-    return tf.random.uniform((1, 28000), dtype=tf.float32)
+import keras
+import numpy as np
 
+size = 28000
+
+inputs = keras.Input((size,), dtype='float32')
+outputs = keras.layers.Dense(size)(inputs)
+model = keras.models.Model(inputs=inputs, outputs=outputs)
+
+model.predict(np.ones((1, size,), dtype=np.float32))
+
+print('complete')
+
+while True:
+    pass
+
+a = tf.ones((size, size))
+b = a + 1
+c = b + 1
+
+size = 40000  # Slightly larger b/c I was testing on a GPU w/ 16 GB
+init_fn = tf.keras.initializers.glorot_uniform()
+init_fn = tf.function(init_fn, autograph=False) # <== This is what prevents the OOM (Comment it out to test)
+layer = tf.keras.layers.Dense(size, kernel_initializer=init_fn)
+layer.build((size,))

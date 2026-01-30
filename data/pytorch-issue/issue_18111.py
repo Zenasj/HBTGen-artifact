@@ -1,21 +1,14 @@
-# torch.rand(2, 3, dtype=torch.float32)
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        # Convert dense input to sparse tensor, which triggers derivative issue if requires_grad=True
-        sparse_x = x.to_sparse()
-        # Compute loss based on sparse tensor values to require gradient computation
-        return sparse_x.values().sum()
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Create a 2x3 tensor with requires_grad=True to trigger backward pass through to_sparse()
-    return torch.randn(2, 3, dtype=torch.float32, requires_grad=True)
-
+a = torch.randn(2, 3).requires_grad_(False).to_sparse().requires_grad_(True)
+a
+tensor(indices=tensor([[0, 0, 0, 1, 1, 1],
+[0, 1, 2, 0, 1, 2]]),
+values=tensor([-1.6929, -0.6308, 1.0252, 1.2527, 0.9184, 1.7817]),
+size=(2, 3), nnz=6, layout=torch.sparse_coo, requires_grad=True)
+a = torch.randn(2, 3).requires_grad_(True).to_sparse().requires_grad_(True)
+a
+tensor(indices=tensor([[0, 0, 0, 1, 1, 1],
+[0, 1, 2, 0, 1, 2]]),
+values=tensor([ 0.3564, 1.5703, 1.2693, -0.4577, 0.7191, -1.0451]),
+size=(2, 3), nnz=6, layout=torch.sparse_coo, grad_fn=NotImplemented)

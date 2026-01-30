@@ -1,45 +1,116 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # B: batch size, C: channels, H: height, W: width
+python
+from config import GPT2_PATH # the path to GPT2 checkpoint
+from transformers import GPT2Tokenizer
+from datasets import load_dataset
+from torch.utils.data import DataLoader
+from transformers import PreTrainedTokenizer
+from typing import Any
+from functools import partial
+
+def collate(tokeniser: PreTrainedTokenizer, max_length: int, batch: list) -> Any:
+    batch = [sample['text'] for sample in batch]
+    return tokeniser.batch_encode_plus(batch, padding=True, max_length=max_length, truncation=True, return_tensors='pt')
+
+tokeniser: GPT2Tokenizer = GPT2Tokenizer.from_pretrained(GPT2_PATH)
+tokeniser.pad_token = tokeniser.eos_token_id
+dataset = load_dataset('c4', 'en.noblocklist', split='train', streaming=True)
+dataloader = DataLoader(dataset, batch_size=1024, num_workers=12, drop_last=True, collate_fn=partial(collate, tokeniser, 100), prefetch_factor=4)
+
+i = 0
+for batch in dataloader:
+    i += 1
+    if i > 100:
+        break
 
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
+import torchvision
+import torchvision.datasets as datasets
+import torchvision.transforms as transforms
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, stride=1, padding=1)
-        self.conv2 = nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1)
-        self.fc1 = nn.Linear(32 * 56 * 56, 128)
-        self.fc2 = nn.Linear(128, 10)
 
-    def forward(self, x):
-        x = F.relu(self.conv1(x))
-        x = F.max_pool2d(x, 2)
-        x = F.relu(self.conv2(x))
-        x = F.max_pool2d(x, 2)
-        x = x.view(x.size(0), -1)
-        x = F.relu(self.fc1(x))
-        x = self.fc2(x)
-        return x
+trans = transforms.Compose([
+        transforms.Resize(256),
+        transforms.CenterCrop(224),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                             std=[0.229, 0.224, 0.225])
+    ])
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+dataset = datasets.FakeData(size=10000, transform=trans)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # Assuming input shape (B, C, H, W) where B=4, C=3, H=224, W=224
-    return torch.rand(4, 3, 224, 224, dtype=torch.float32)
 
-# The issue described in the GitHub post is related to the performance of the `DataLoader` when using PyTorch, and it is not about a specific PyTorch model. However, I can still generate a complete Python code file that includes a simple model and a function to generate input data, as per your requirements.
-# Since the issue is more about the DataLoader and the order of imports, I will create a simple model and a corresponding `GetInput` function. The model will be a basic CNN for image classification, and the `GetInput` function will generate a random tensor that matches the expected input shape for the model.
-# Here is the complete Python code file:
-# ### Explanation:
-# 1. **Model Definition**:
-#    - `MyModel` is a simple CNN with two convolutional layers followed by two fully connected layers.
-#    - The input shape is assumed to be `(B, C, H, W)` where `B` is the batch size, `C` is the number of channels, `H` is the height, and `W` is the width. For this example, `B=4`, `C=3`, `H=224`, and `W=224`.
-# 2. **my_model_function**:
-#    - This function returns an instance of `MyModel`.
-# 3. **GetInput**:
-#    - This function generates a random tensor with the shape `(4, 3, 224, 224)` to match the expected input shape of the model.
-# This code can be used as a starting point for further development or testing. If you need to incorporate the DataLoader and the specific issue described in the GitHub post, you would need to add additional code to handle the DataLoader and the order of imports.
+loader = torch.utils.data.DataLoader(
+    dataset, batch_size=8, shuffle=True,
+    num_workers=12, pin_memory=True, sampler=None)
+
+i = 0
+for d in loader:
+    print("Batch {}".format(i))
+    i += 1
+
+transformers
+
+torch
+
+python
+import transformers # imported but not used
+
+import torch
+import torchvision.datasets as datasets
+import torchvision.transforms as transforms
+
+
+trans = transforms.Compose([
+        transforms.Resize(256),
+        transforms.CenterCrop(224),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                             std=[0.229, 0.224, 0.225])
+    ])
+
+dataset = datasets.FakeData(size=10000, transform=trans)
+
+
+loader = torch.utils.data.DataLoader(
+    dataset, batch_size=128, shuffle=True,
+    num_workers=12, sampler=None)
+
+i = 0
+for d in loader:
+    print("Batch {}".format(i))
+    i += 1
+# take 23.6 seconds
+
+torch
+
+transformers
+
+python
+import torch
+import torchvision.datasets as datasets
+import torchvision.transforms as transforms
+
+import transformers # imported after the torch
+
+trans = transforms.Compose([
+        transforms.Resize(256),
+        transforms.CenterCrop(224),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                             std=[0.229, 0.224, 0.225])
+    ])
+
+dataset = datasets.FakeData(size=10000, transform=trans)
+
+
+loader = torch.utils.data.DataLoader(
+    dataset, batch_size=128, shuffle=True,
+    num_workers=12, sampler=None)
+
+i = 0
+for d in loader:
+    print("Batch {}".format(i))
+    i += 1
+# takes only 5.4 seconds
+
+torch

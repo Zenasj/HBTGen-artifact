@@ -1,56 +1,110 @@
-# tf.random.uniform((3,), dtype=tf.int32), tf.random.uniform((), dtype=tf.int32), tf.random.uniform((3,), dtype=tf.int32)
-import tensorflow as tf
+import random
+from tensorflow import keras
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Encapsulate the two model variants as submodules
-        # Model1: mul3 = (inp3 * (inp2*inp1)) * (inp3 * (inp2*inp1))
-        # Model2: mul3 = inp3 * ((inp1*inp2) * (inp3 * (inp1*inp2)))
-        # Both return mul3 and tf.abs(mul3)
-    
+import tensorflow as tf
+import os
+import numpy as np
+
+class Model1(tf.keras.Model):
     @tf.function(jit_compile=True)
     def __call__(self, inp1, inp2, inp3):
-        # Compute Model1 output
-        mul1_left = tf.multiply(inp1, inp2)
-        mul1_right = tf.multiply(inp3, mul1_left)
-        mul1 = tf.multiply(mul1_right, mul1_right)
-        abs1 = tf.abs(mul1)
+        # inp3*(inp2*inp1)*(inp3*(inp2*inp1))
+        mul3 = tf.multiply(tf.multiply(inp3, tf.multiply(inp1, inp2)), tf.multiply(inp3, tf.multiply(inp1, inp2)))
+        _abs = tf.abs(mul3)
+        return mul3, _abs
 
-        # Compute Model2 output
-        mul2_left = tf.multiply(inp1, inp2)
-        mul2_right = tf.multiply(inp3, mul2_left)
-        mul2 = tf.multiply(inp3, tf.multiply(mul2_left, mul2_right))
-        abs2 = tf.abs(mul2)
+class Model2(tf.keras.Model):
+    @tf.function(jit_compile=True)
+    def __call__(self, inp1, inp2, inp3):
+        # inp3 * ((inp1*inp2)*(inp3*(inp1*inp2)))
+        mul3 = tf.multiply(inp3, tf.multiply(tf.multiply(inp1, inp2), tf.multiply(inp3, tf.multiply(inp1, inp2))))
+        _abs = tf.abs(mul3)
+        return mul3, _abs
 
-        # Compare outputs: return boolean mask where abs1 and abs2 are close within tolerance
-        # This highlights discrepancy shown in the issue
-        close_mul = tf.experimental.numpy.isclose(mul1, mul2, rtol=1e-3, atol=1e-3)
-        close_abs = tf.experimental.numpy.isclose(abs1, abs2, rtol=1e-3, atol=1e-3)
+with tf.device(tf.config.list_logical_devices('GPU')[0].name):
+    inputs = [
+    tf.random.uniform(shape=[3], minval=-100, maxval=100, dtype=tf.int32),
+    tf.random.uniform(shape=[], minval=-100, maxval=100, dtype=tf.int32),
+    tf.random.uniform(shape=[3], minval=-100, maxval=100, dtype=tf.int32),
+    ]
+    model1 = Model1()
+    model2 = Model2()
+    tf.config.run_functions_eagerly(True)
+    out1 = model1(*inputs)
+    out2 = model2(*inputs)
+    print(f'=========eager_output(version:{tf.__version__})================')
+    try :
+        for i in range(min(len(out1),len(out2))):
+            np.testing.assert_allclose(out1[i].numpy(), out2[i].numpy(), rtol=0.001, atol=0.001, err_msg=f'at checking {i}th')
+        print("XLA_eager does not trigger assertion")
+    except AssertionError as e:
+        print("XLA_eager triggers assertion")
+        print(e)
+    tf.config.run_functions_eagerly(False)
+    out1 = model1(*inputs)
+    out2 = model2(*inputs)
+    print(f'=========compiled_output(version:{tf.__version__})================')
+    try :
+        for i in range(min(len(out1),len(out2))):
+            np.testing.assert_allclose(out1[i].numpy(), out2[i].numpy(), rtol=0.001, atol=0.001, err_msg=f'at checking {i}th')
+        print("XLA_complie does not trigger assertion")
+    except AssertionError as e:
+        print("XLA_complie triggers assertion")
+        print(e)
 
-        # Return the model outputs plus comparison masks
-        # Shape is preserved from mul1/mul2 which is same as input shapes
-        return {
-            'mul_model1': mul1,
-            'abs_model1': abs1,
-            'mul_model2': mul2,
-            'abs_model2': abs2,
-            'close_mul': close_mul,
-            'close_abs': close_abs
-        }
+from typing import Dict
+import tensorflow as tf
+import pickle
+import os
+import numpy as np
 
-def my_model_function():
-    # Return instance of MyModel with no weights or init params
-    return MyModel()
+class Model1(tf.keras.Model):
+    def __init__(self):
+        super().__init__()
 
-def GetInput():
-    # Generate input tuple (inp1, inp2, inp3) matching shapes and dtypes expected by MyModel
-    # Based on issue:
-    # inp1: tensor shape [3], dtype tf.int32 uniformly sampled [-100, 100)
-    # inp2: scalar tensor (), dtype tf.int32 uniformly sampled [-100, 100)
-    # inp3: tensor shape [3], dtype tf.int32 uniformly sampled [-100, 100)
-    inp1 = tf.random.uniform(shape=[3], minval=-100, maxval=100, dtype=tf.int32)
-    inp2 = tf.random.uniform(shape=[], minval=-100, maxval=100, dtype=tf.int32)
-    inp3 = tf.random.uniform(shape=[3], minval=-100, maxval=100, dtype=tf.int32)
-    return (inp1, inp2, inp3)
+    @tf.function(jit_compile=True)
+    def __call__(self, inp1, inp2):
+        # Forward pass logic using TensorFlow operations
+        _abs = tf.abs(tf.multiply(tf.multiply(inp1, inp2), tf.multiply(inp1, inp2)))
+        return _abs
 
+class Model2(tf.keras.Model):
+    def __init__(self):
+        super().__init__()
+
+    @tf.function(jit_compile=True)
+    def __call__(self, inp1, inp2):
+        # Forward pass logic using TensorFlow operations
+        _abs = tf.abs(tf.multiply(inp1, tf.multiply(inp2, tf.multiply(inp1, inp2))))
+        return _abs
+
+inputs = [
+tf.cast(tf.random.uniform(shape=[11], minval=-128, maxval=128, dtype=tf.int32), tf.int16),
+tf.cast(tf.random.uniform(shape=[], minval=-128, maxval=128, dtype=tf.int32), tf.int16),
+]
+model1 = Model1()
+model2 = Model2()
+device = "gpu"
+with tf.device(device):
+    tf.config.run_functions_eagerly(True)
+    out1 = model1(*inputs)
+    out2 = model2(*inputs)
+    print(f'=========eager_output(version:{tf.__version__})================')
+    try :
+        for i in range(min(len(out1),len(out2))):
+            np.testing.assert_allclose(out1[i].numpy(), out2[i].numpy(), rtol=0.001, atol=0.001, err_msg=f'at checking {i}th')
+        print("XLA_eager does not trigger assertion")
+    except AssertionError as e:
+        print("XLA_eager triggers assertion")
+        print(e)
+    tf.config.run_functions_eagerly(False)
+    out1 = model1(*inputs)
+    out2 = model2(*inputs)
+    print(f'=========compiled_output(version:{tf.__version__})================')
+    try :
+        for i in range(min(len(out1),len(out2))):
+            np.testing.assert_allclose(out1[i].numpy(), out2[i].numpy(), rtol=0.001, atol=0.001, err_msg=f'at checking {i}th')
+        print("XLA_complie does not trigger assertion")
+    except AssertionError as e:
+        print("XLA_complie triggers assertion")
+        print(e)

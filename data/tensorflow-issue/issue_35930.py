@@ -1,24 +1,68 @@
-# tf.random.uniform((B,), dtype=tf.float32) ← The model's weights have shape (inp1,) and (inp2,)
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self, inp1=100, inp2=200):
-        super(MyModel, self).__init__()
-        self.x1 = self.add_weight(name='w1', shape=[inp1], initializer='random_normal')
-        self.x2 = self.add_weight(name='w2', shape=[inp2], initializer='random_normal')
-
-    def call(self, x):
-        # This model's call simply returns the input unchanged as per original code
+class Model(keras.Model):
+    def __init__(self, inp1, inp2):
+        super(Model, self).__init__()
+        self.x1 = self.add_weight('w1',[inp1])
+        self.x2 = self.add_weight('w2',[inp2])
+    def call(self,x):
         return x
+# load_weights method works when save format is 'tf
+x = Model(100,200)
+x.save_weights('temp.tmp',save_format='tf')
+old = x.weights[0][0].numpy()
+print(old)
+x = Model(100,200)
+x.load_weights('temp.tmp')
+new = x.weights[0][0].numpy()
+print(new)
+print(old==new)
 
-def my_model_function():
-    # Return an instance of MyModel with default input sizes 100 and 200
-    return MyModel()
+# load_weights method does not work when save format is 'h5'
+x = Model(100,200)
+x.save_weights('temp.h5',save_format='h5')
+old = x.weights[0][0].numpy()
+print(old)
+x = Model(100,200)
+x.load_weights('temp.h5')
+new = x.weights[0][0].numpy()
+print(new)
+print(old==new)
 
-def GetInput():
-    # According to original code, call accepts an arbitrary input and returns it.
-    # The model does not specify concrete input shape requirements,
-    # so return a random float32 tensor of shape (1,) as a minimal dummy input.
-    # This shape works with the call method that returns input as is.
-    return tf.random.uniform((1,), dtype=tf.float32)
+class Model(keras.Model):
+    def __init__(self, inp1, inp2):
+        super(Model, self).__init__()
+        self.x1 = self.add_weight('w1',[inp1])
+        self.x2 = self.add_weight('w2',[inp2])
+    def call(self,x):
+        return x
+# load_weights method works when save format is 'tf
+x = Model(100,200)
+x.save_weights('temp.tmp',save_format='tf')
+old = x.weights[0][0].numpy()
+x.weights[0].assign(tf.zeros_like(x.weights[0]))
+print(old)
+x.load_weights('temp.tmp')
+new = x.weights[0][0].numpy()
+print(new)
+print(old==new)
 
+# load_weights method does not work when save format is 'h5'
+x = Model(100,200)
+x.save_weights('temp.h5',save_format='h5')
+old = x.weights[0][0].numpy()
+x.weights[0].assign(tf.zeros_like(x.weights[0]))
+print(old)
+x.load_weights('temp.h5')
+new = x.weights[0][0].numpy()
+print(new)
+print(old==new)
+
+def load_weights(model,save_path):
+    hf = h5py.File(save_path, 'r')
+    for i in model.trainable_weights:
+        res = hf.get(i.name)
+        res = tf.convert_to_tensor(np.array(res))
+        if res.shape == i.shape:
+            i.assign(res)

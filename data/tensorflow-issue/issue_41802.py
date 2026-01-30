@@ -1,49 +1,99 @@
-# tf.random.uniform((20, 150, 150, 3), dtype=tf.float32) ← batch_size=20, image size 150x150 with 3 channels (RGB)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
+import os
+import zipfile
 import tensorflow as tf
+from tensorflow.keras.optimizers import RMSprop
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Sequential-like CNN architecture for binary classification (cats vs dogs)
-        self.conv1 = tf.keras.layers.Conv2D(32, (3,3), activation='relu', input_shape=(150, 150, 3))
-        self.pool1 = tf.keras.layers.MaxPooling2D(2, 2)
-        self.conv2 = tf.keras.layers.Conv2D(64, (3,3), activation='relu')
-        self.pool2 = tf.keras.layers.MaxPooling2D(2, 2)
-        self.conv3 = tf.keras.layers.Conv2D(128, (3,3), activation='relu')
-        self.pool3 = tf.keras.layers.MaxPooling2D(2, 2)
-        self.conv4 = tf.keras.layers.Conv2D(128, (3,3), activation='relu')
-        self.pool4 = tf.keras.layers.MaxPooling2D(2, 2)
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(512, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(1, activation='sigmoid')  # Binary output (sigmoid)
+print(tf.__version__)
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+path ='/media/jake/mark-4tb3/input/datasets/cats_and_dogs_filtered/'
 
-    def call(self, inputs, training=False):
-        x = self.conv1(inputs)
-        x = self.pool1(x)
-        x = self.conv2(x)
-        x = self.pool2(x)
-        x = self.conv3(x)
-        x = self.pool3(x)
-        x = self.conv4(x)
-        x = self.pool4(x)
-        x = self.flatten(x)
-        x = self.dense1(x)
-        x = self.dense2(x)
-        return x
+train_dir = os.path.join(path + 'train')
+validation_dir = os.path.join(path + 'validation')
+base_dir = path + 'cats_and_dogs_filtered/'
+# Directory with our training cat pictures
+train_cats_dir = os.path.join(train_dir, 'cats')
+train_dogs_dir = os.path.join(validation_dir,'dogs')
+validation_cats_dir = os.path.join(validation_dir,'cats')
+validation_dogs_dir = os.path.join(validation_dir,'dogs')
 
-def my_model_function():
-    model = MyModel()
-    # Compile model with RMSprop optimizer as per original
-    model.compile(
-        loss='binary_crossentropy',
-        optimizer=tf.keras.optimizers.RMSprop(learning_rate=1e-4),
-        metrics=['accuracy']
-    )
-    return model
 
-def GetInput():
-    # Return random batch of images with the expected input shape (20 images, 150x150 RGB)
-    # Using float32 dtype normalized similar to rescale=1./255 (between 0 and 1)
-    return tf.random.uniform(shape=(20, 150, 150, 3), minval=0, maxval=1, dtype=tf.float32)
+model = tf.keras.models.Sequential([
+    tf.keras.layers.Conv2D(32, (3,3), activation='relu', input_shape=(150, 150, 3)),
+    tf.keras.layers.MaxPooling2D(2, 2),
+    tf.keras.layers.Conv2D(64, (3,3), activation='relu'),
+    tf.keras.layers.MaxPooling2D(2,2),
+    tf.keras.layers.Conv2D(128, (3,3), activation='relu'),
+    tf.keras.layers.MaxPooling2D(2,2),
+    tf.keras.layers.Conv2D(128, (3,3), activation='relu'),
+    tf.keras.layers.MaxPooling2D(2,2),
+    tf.keras.layers.Flatten(),
+    tf.keras.layers.Dense(512, activation='relu'),
+    tf.keras.layers.Dense(1, activation='sigmoid')
+])
 
+
+model.compile(loss='binary_crossentropy',
+              optimizer=RMSprop(lr=1e-4),
+              metrics=['accuracy'])
+
+# All images will be rescaled by 1./255
+train_datagen = ImageDataGenerator(rescale=1./255)
+test_datagen = ImageDataGenerator(rescale=1./255)
+
+# Flow training images in batches of 20 using train_datagen generator
+train_generator = train_datagen.flow_from_directory(
+        train_dir,  # This is the source directory for training images
+        target_size=(150, 150),  # All images will be resized to 150x150
+        batch_size=20,
+        # Since we use binary_crossentropy loss, we need binary labels
+        class_mode='binary')
+
+# Flow validation images in batches of 20 using test_datagen generator
+validation_generator = test_datagen.flow_from_directory(
+        validation_dir,
+        target_size=(150, 150),
+        batch_size=10,
+        class_mode='binary')
+
+history = model.fit(
+      train_generator,
+      steps_per_epoch=100,  # 2000 images = batch_size * steps
+      epochs=100,
+      validation_data=validation_generator,
+      validation_steps=10,  # 1000 images = batch_size * steps
+      verbose=2)
+print('start')
+import matplotlib.pyplot as plt
+acc = history.history['accuracy']
+val_acc = history.history['val_accuracy']
+loss = history.history['loss']
+val_loss = history.history['val_loss']
+
+epochs = range(len(acc))
+
+plt.plot(epochs, acc, 'bo', label='Training accuracy')
+plt.plot(epochs, val_acc, 'b', label='Validation accuracy')
+plt.title('Training and validation accuracy')
+
+plt.figure()
+
+plt.plot(epochs, loss, 'bo', label='Training Loss')
+plt.plot(epochs, val_loss, 'b', label='Validation Loss')
+plt.title('Training and validation loss')
+plt.legend()
+
+plt.show()
+
+# Flow training images in batches of 20 using train_datagen generator
+train_generator = train_datagen.flow_from_directory(
+        train_dir,  # This is the source directory for training images
+        target_size=(150, 150),  # All images will be resized to 150x150
+        batch_size=20,
+        # Since we use binary_crossentropy loss, we need binary labels
+        class_mode='binary')

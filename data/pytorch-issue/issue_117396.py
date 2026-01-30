@@ -1,27 +1,27 @@
-# torch.rand(B, 40, 2048, 128, dtype=torch.bfloat16)  # Input shape for Llama-13B with sequence length 2k
+import torch.nn as nn
 
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
+import time
+import torch.nn.functional as f
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        
-    def forward(self, x):
+def _time():
+    torch.cuda.synchronize()
+    return time.time()
+
+bsizes = [1,2,4,8,16]
+times = {b:0 for b in bsizes}
+for bsize in bsizes:
+    print(f"Benchmarking bsize {bsize}...")
+    for _ in range(100):
+        # tensor size for Llama-13B, sequence length 2k
+        inp = torch.randn(bsize, 40, 2048, 128).bfloat16().cuda()
+        _start = _time()
         with torch.backends.cuda.sdp_kernel(
             enable_flash=True,
             enable_math=False,
             enable_mem_efficient=False,
         ):
-            return F.scaled_dot_product_attention(x, x, x, is_causal=True)
-
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    bsize = 1  # Example batch size, can be adjusted
-    return torch.randn(bsize, 40, 2048, 128, dtype=torch.bfloat16).cuda()
-
+            f.scaled_dot_product_attention(inp, inp, inp, is_causal=True)
+        times[bsize] += _time() - _start
+for b in times:
+    print(f"Bsize {b}, time:"+"{:.2f}".format(times[b]))

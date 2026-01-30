@@ -1,26 +1,31 @@
-# torch.rand(1, 3, 224, 224, dtype=torch.float32)
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+import os
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+
+import torch
+torch.set_num_threads(1)
+torch.set_num_interop_threads(1)
+
+conv2d_pt = torch.nn.Conv2d(
+    128, 128,
+    (7, 7),
+    stride=(1, 1),
+    padding=(0, 0), groups=1, bias=True
+)
+
+class ConvNet(torch.nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv = nn.Conv2d(
-            in_channels=3, 
-            out_channels=64, 
-            kernel_size=(7, 7), 
-            stride=(2, 2), 
-            padding=(3, 3), 
-            groups=1, 
-            bias=True
-        )
+        super(ConvNet, self).__init__()
+        self.conv2d = conv2d_pt
 
     def forward(self, x):
-        return self.conv(x)
+        return self.conv2d(x)
 
-def my_model_function():
-    return MyModel()
+model = ConvNet()
 
-def GetInput():
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
-
+torch._C._set_mkldnn_enabled(False)
+x = torch.ones((64, 128, 256, 256))
+for _ in range(100):
+    model(x)

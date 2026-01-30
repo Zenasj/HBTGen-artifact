@@ -1,19 +1,18 @@
-# torch.randint(0, 256, (4,), dtype=torch.uint8)
-import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
+import torch
+
+class BasicModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        
-    def forward(self, x):
-        # Reproduces the error by using an int scalar in bitwise OR
-        return x | 7  # Equivalent to original issue's tensor.__or__(7)
 
-def my_model_function():
-    return MyModel()
+    def forward(self, tensor, scalar):
+        tensor = tensor.__or__(scalar)
+        return tensor
 
-def GetInput():
-    # Matches the input expected by MyModel: 1D tensor of 4 elements (uint8)
-    return torch.randint(0, 256, (4,), dtype=torch.uint8)
-
+if __name__ == "__main__":
+    tensor = torch.tensor([7, 2, 3, 4], dtype=torch.uint8)
+    model = BasicModule()
+    model = torch.compile(model)
+    fwd_res = model(tensor, 7)
+    print(fwd_res)

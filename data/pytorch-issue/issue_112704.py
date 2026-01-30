@@ -1,20 +1,26 @@
-# torch.rand(3, dtype=torch.float32) ← Add a comment line at the top with the inferred input shape
-
 import torch
 import torch.nn as nn
+import traceback
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        return torch.special.sinc(x)
+def forward(x, device):
+  x = torch.special.sinc(out=x, input=torch.rand([3], dtype=torch.float32).to('cpu'))             
+  return x
+inf = float('inf')
+nan = float('nan')
+is_valid = True
+input_tensor = torch.rand([3], dtype=torch.float32).to('cpu')
+cuda_tensor = input_tensor.clone().to('cuda')
+no_op_info = forward(input_tensor, 'cpu')
+print("build succeded")
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+op_info = torch.compile(forward, mode='max-autotune',fullgraph=False,dynamic=True)(cuda_tensor, 'cuda')
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(3, dtype=torch.float32)
-
+same_val = torch.allclose(no_op_info.to('cpu'), 
+                        op_info.to('cpu'), 
+                        rtol=1e-3, atol=1e-3, 
+                        equal_nan=True)
+if same_val == False : 
+    print("BUGBUG DIFFERENTIAL")
+    raise ValueError('diff value')
+else :
+    print("no_error")

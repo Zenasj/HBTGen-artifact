@@ -1,21 +1,48 @@
-# torch.rand(B, 2, 1, dtype=torch.float32)
 import torch
-from torch import nn
+print(torch.__version__)
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        a, b = x.chunk(2, dim=1)  # Split into two tensors along the second dimension
-        a = a.squeeze(1)          # Reshape to (B, 1)
-        b = b.squeeze(1)          # Reshape to (B, 1)
-        # Compute distances using both methods
-        d1 = torch.cdist(a, b, p=2, compute_mode="use_mm_for_euclid_dist")
-        d2 = torch.cdist(a, b, p=2, compute_mode="donot_use_mm_for_euclid_dist")
-        return d1 - d2  # Return the difference between the two methods
+# Normal behavior
+a = torch.tensor([[5000]]).float()
+b = torch.tensor([[6500]]).float()
+d1 = torch.cdist(a, b, p=2, compute_mode="use_mm_for_euclid_dist")
+d2 = torch.cdist(a, b, p=2, compute_mode="donot_use_mm_for_euclid_dist")
 
-def my_model_function():
-    return MyModel()
+print(a)
+print(b)
+print(d1)
+print(d2)
 
-def GetInput():
-    B = 1  # Match batch size from examples
-    return torch.rand(B, 2, 1, dtype=torch.float32) * 1e6  # Scale to large values to trigger numerical issues
+print()
 
+# Buggy behavior
+a = torch.tensor([[512695]]).float()
+b = torch.tensor([[512804]]).float()
+d1 = torch.cdist(a, b, p=2, compute_mode="use_mm_for_euclid_dist")
+d2 = torch.cdist(a, b, p=2, compute_mode="donot_use_mm_for_euclid_dist")
+
+print(a)
+print(b)
+print(d1)
+print(d2)
+
+a = torch.tensor([[512695]]).double()
+b = torch.tensor([[512804]]).double()
+d1 = torch.cdist(a, b, p=2, compute_mode="use_mm_for_euclid_dist")
+d2 = torch.cdist(a, b, p=2, compute_mode="donot_use_mm_for_euclid_dist")
+
+a = torch.tensor([[386784556587]]).double()
+b = torch.tensor([[386783820152]]).double()
+d1 = torch.cdist(a, b, p=2, compute_mode="use_mm_for_euclid_dist")
+d2 = torch.cdist(a, b, p=2, compute_mode="donot_use_mm_for_euclid_dist")
+
+print(a)
+print(b)
+print(a - b)
+print(d1)
+print(d2)
+
+tensor([[3.8678e+11]], dtype=torch.float64)
+tensor([[3.8678e+11]], dtype=torch.float64)
+tensor([[736435.]], dtype=torch.float64)
+tensor([[736448.9539]], dtype=torch.float64)
+tensor([[736435.]], dtype=torch.float64)

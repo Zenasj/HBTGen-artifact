@@ -1,19 +1,48 @@
-# torch.rand(N, dtype=torch.float32)  # Input is a 1D tensor
-import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
+a = torch.empty((0,)).view(1, -1)
+print(a.shape)
+
+def patch_view_opset9():
+    """Patch view to never use Flatten
+    Issue: https://github.com/pytorch/pytorch/issues/34390
+    """
+    import torch.onnx.symbolic_helper as sym_help
+    import torch.onnx.symbolic_opset9
+
+    # noinspection PyProtectedMember
+    def view(g, self, size):
+        size = sym_help._maybe_get_const(size, 'is')
+        if sym_help._is_value(size):
+            shape = size
+        else:
+            shape = g.op("Constant", value_t=torch.LongTensor(size))
+        return g.op("Reshape", self, shape)
+
+    torch.onnx.symbolic_opset9.view = view
+
+import torch
+import onnxruntime as rt
+
+class Module(torch.nn.Module):
+    def forward(self, x, ):
         x = x.view(-1, 2)
         x = x.view(1, -1)
         return x
 
-def my_model_function():
-    return MyModel()
+model = Module()
+x = torch.empty((0,))
+print(model(x).shape)
 
-def GetInput():
-    # Generate a random 1D tensor with even length to satisfy the view operations
-    # Uses a random size between 0 and 10 (even numbers only) to test edge cases
-    size = torch.randint(0, 6, (1,)).item() * 2  # Ensure even number of elements
-    return torch.rand(size)
+torch.onnx.export(model, torch.ones(2), '/mnt/output/gr/test.onnx',
+                  verbose=True,
+                  input_names=['data'],
+                  output_names=['output'],
+                  opset_version=11,
+                  dynamic_axes={'data': {0: 'l'}})
 
+sess=rt.InferenceSession("/mnt/output/gr/test.onnx")
+outputs = sess.run(['output'], {
+    'data': x.numpy(),
+})
+print(outputs[0].shape)

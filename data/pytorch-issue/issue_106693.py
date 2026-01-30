@@ -1,17 +1,19 @@
-# torch.rand(3, 3, 2, 2, dtype=torch.float32)  # Inferred input shape from issue's sample
 import torch
-from torch import nn
+import random
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        
-    def forward(self, x):
-        return x.unsqueeze_(1)  # In-place unsqueeze operation causing FX graph issue
+import numpy as np
+np.random.seed(1335087076)
+# device = "cpu"
+tensor_0 = torch.from_numpy(np.random.uniform(0.0, 1.0, size=[3, 3, 2, 2])).to(torch.float32).requires_grad_(False)
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    return torch.rand(3, 3, 2, 2, dtype=torch.float32)
+def basic(tensor_0):
+    # export XMLIR_XDNN_PYTORCH_CHECK_ENABLE_FALLBACK_BOOL=0
+    tensor_3 = tensor_0.unsqueeze_(1)
+    return tensor_3
 
+dynamo_res = torch.compile(basic, backend="inductor")(tensor_0.clone())
+
+cpu_res = basic(tensor_0.clone())
+
+print("res: ", dynamo_res.shape, cpu_res.shape)

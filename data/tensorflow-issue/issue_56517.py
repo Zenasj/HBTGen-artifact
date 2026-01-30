@@ -1,45 +1,96 @@
-# tf.random.uniform((B, None), dtype=tf.int32) ← input shape batch size by variable length sequence
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
+import functools
+import os
+
+import numpy as np
 import tensorflow as tf
+from tensorflow.python.data.ops.options import AutoShardPolicy
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Embedding layer: input_dim=5000 (vocab size), output_dim=64 (embedding dim)
-        self.embedding = tf.keras.layers.Embedding(input_dim=5000, output_dim=64)
-        # Dense layer projecting to vocab logits (5000)
-        self.dense = tf.keras.layers.Dense(5000)
-    
-    def call(self, inputs, training=False):
-        # inputs: shape (batch_size, seq_length), dtype int32 (token indices)
-        x = self.embedding(inputs)   # shape (batch_size, seq_length, 64)
-        x = self.dense(x)            # shape (batch_size, seq_length, 5000)
-        return x
+NUM_TRAIN_SAMPLES = 1000
+NUM_DEV_SAMPLES = 10
 
-def my_model_function():
-    # Return an instance of MyModel, compiled with Adam optimizer and sparse categorical crossentropy loss
-    model = MyModel()
-    model.compile(
-        loss='sparse_categorical_crossentropy',
-        optimizer=tf.keras.optimizers.Adam()
-    )
-    return model
+def get_dataset(split: str, batch_size: int, max_length: int = 64):
+    # Number generator
+    def generator():
+        for i in range(num_samples):
+            _dims = np.random.randint(low=1, high=max_length, size=1)
+            x = np.zeros(_dims, dtype=np.int32) + np.random.randint(low=1, high=5000, size=1)
+            y = np.zeros(_dims, dtype=np.int32) + np.random.randint(low=1, high=5000, size=1)
+            yield {'sources': x, 'targets': y}
 
-def GetInput():
-    # Return a random batched integer tensor of shape (batch_size, variable_length)
-    # Matching the input of MyModel: variable length sequences of int32 tokens from [1, 5000)
-    batch_size = 16  # example batch size
-    max_length = 64  # max length for sequences
-    # Random lengths for sequences in batch (simulate variable length sequences)
-    lengths = tf.random.uniform(shape=(batch_size,), minval=1, maxval=max_length+1, dtype=tf.int32)
-    # Build ragged batch of sequences with random token ids
-    # To create a dense padded tensor, pad with zeros
-    sequences = []
-    for length in lengths.numpy():
-        seq = tf.random.uniform(shape=(length,), minval=1, maxval=5000, dtype=tf.int32)
-        sequences.append(seq)
-    ragged_input = tf.ragged.constant(sequences, dtype=tf.int32)
-    # Pad to max_length (64) for dense tensor input (0 padding)
-    dense_input = ragged_input.to_tensor(default_value=0, shape=[batch_size, max_length])
-    return dense_input
+    assert split in ("train", "dev")
+    is_training = split == "train"
 
+    num_samples = NUM_TRAIN_SAMPLES if is_training else NUM_DEV_SAMPLES
+    options = tf.data.Options()
+    options.experimental_distribute.auto_shard_policy = AutoShardPolicy.DATA
+    options.experimental_deterministic = False
+    dataset = tf.data.Dataset.from_generator(
+        lambda: generator(),
+        output_signature={
+            'sources': tf.TensorSpec(shape=(None,), dtype=tf.int32),
+            'targets': tf.TensorSpec(shape=(None,), dtype=tf.int32)
+        }
+    ).with_options(options=options)
+
+    dataset = dataset.padded_batch(batch_size=batch_size)
+
+    def map_to_example(example):
+        sources, targets = example['sources'], example['targets']
+        return sources, targets
+
+    dataset = dataset.map(map_to_example, num_parallel_calls=tf.data.AUTOTUNE)
+
+    if is_training:
+        dataset = dataset.shuffle(buffer_size=256)
+
+    return dataset.repeat().prefetch(tf.data.AUTOTUNE)
+
+
+def main():
+    max_length = 64
+
+    train_batch_size = 64
+    valid_batch_size = 16
+
+    # noinspection PyArgumentEqualDefault
+    strategy = tf.distribute.MirroredStrategy(devices=["GPU:0", "GPU:1"])
+    with strategy.scope():
+        optimizer = tf.keras.optimizers.Adam()
+        # Model
+        inputs = tf.keras.layers.Input(shape=(None,), dtype=tf.int32)
+        x = inputs
+        x = tf.keras.layers.Embedding(input_dim=5000,
+                                      output_dim=64)(x)
+        x = tf.keras.layers.Dense(5000)(x)
+        model = tf.keras.Model(inputs=inputs, outputs=x)
+        model.compile(loss='sparse_categorical_crossentropy', optimizer=optimizer)
+        model.summary()
+
+        train_data = get_dataset(
+            split="train",
+            batch_size=train_batch_size,
+            max_length=max_length
+        )
+
+        valid_data = get_dataset(
+            split="dev",
+            batch_size=valid_batch_size,
+            max_length=max_length,
+        )
+
+        model.fit(
+            train_data,
+            epochs=200,
+            steps_per_epoch=5000,
+            validation_data=valid_data,
+            validation_steps=3
+        )
+
+
+if __name__ == '__main__':
+    main()

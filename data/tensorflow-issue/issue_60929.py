@@ -1,30 +1,39 @@
-# tf.random.uniform((1, 2), dtype=tf.float32)  ← inferred from input x1 shape [1,2] and dtype float32
+from tensorflow import keras
 
 import tensorflow as tf
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Weight matrix shape: (2,2)
-        self.w = tf.Variable([[3., 4.],
-                              [5., 6.]])
-        # Bias shape: (1,), original issue shows this shape causing TFLite failure
-        # To avoid TFLite bias broadcast error, bias shape should match output dimension (2)
-        # But here we keep original bias shape to replicate scenario.
-        self.b = tf.Variable([3.])
-    
-    @tf.function(input_signature=[tf.TensorSpec(shape=[1, 2], dtype=tf.float32)])
-    def call(self, x):
-        # Perform matmul: shape (1,2) x (2,2) -> (1,2)
-        # Add bias of shape (1,), which normally broadcasts in TF, but fails in TFLite due to strict check.
-        return tf.matmul(x, self.w) + self.b
+x1 = tf.constant([1., 2.], shape=[1, 2])
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+class Model(tf.keras.Model):
+  def __init__(self):
+    super(Model, self).__init__()
+    self.w = tf.Variable([[3., 4.], [5., 6.]])
+    self.b = tf.Variable([3.])
+  @tf.function(input_signature=[tf.TensorSpec(x1.shape, x1.dtype)])
+  def call(self, x):
+    return tf.matmul(x, self.w) + self.b
 
-def GetInput():
-    # Return a random input tensor matching shape [1, 2] and dtype float32
-    # Using uniform random values for general testing
-    return tf.random.uniform((1, 2), dtype=tf.float32)
 
+m = Model()
+print('Keras mode output: ', m(x1).numpy())
+
+converter = tf.lite.TFLiteConverter.from_keras_model(m)
+tflite_model = converter.convert()
+def _evaluateTFLiteModel(tflite_model, input_data):
+    interpreter = tf.lite.Interpreter(model_content=tflite_model)
+    interpreter.allocate_tensors()
+
+    input_details = interpreter.get_input_details()
+    output_details = interpreter.get_output_details()
+
+    for i in range(len(input_data)):
+        interpreter.set_tensor(input_details[i]['index'], input_data[i])
+
+    interpreter.invoke()
+
+    output_data = [interpreter.get_tensor(output_details[i]['index'])
+                   for i in range(len(output_details))]
+    return output_data
+
+print('Lite mode output: ', _evaluateTFLiteModel(tflite_model,[x1])[0])

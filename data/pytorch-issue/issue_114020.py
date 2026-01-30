@@ -1,58 +1,122 @@
-# torch.rand(1, 1, 1, 26, 1, dtype=torch.float16)
-import torch
 import torch.nn as nn
 
-class Model0(torch.nn.Module):
-    def __init__(self, v5_0):
-        super().__init__()
-        self.v5_0 = v5_0
-
-    def forward(self, *args):
-        getitem = args[0]
-        mul = torch.mul(getitem, self.v5_0)
-        softmax = torch.softmax(mul, dim=0)
-        div = torch.div(getitem, softmax)
-        return (div,)
-
-class Model1(torch.nn.Module):
-    def __init__(self, v5_0):
-        super().__init__()
-        self.v5_0 = v5_0
-
-    def forward(self, *args):
-        getitem = args[0]
-        mul = torch.mul(getitem, self.v5_0)
-        cat = torch.cat((mul, mul), dim=0)
-        softmax = torch.softmax(mul, dim=0)
-        div = torch.div(getitem, softmax)
-        return (cat, div)
-
-class MyModel(nn.Module):
+class Model0():
     def __init__(self):
         super().__init__()
-        self.p0 = torch.nn.Parameter(
-            torch.empty([3, 42, 7, 26, 1], dtype=torch.float16),
-            requires_grad=False
-        )
-        self.model0 = Model0(self.p0)
-        self.model1 = Model1(self.p0)
+        self.v5_0 = p0
 
-    def forward(self, x):
-        out0 = self.model0(x)
-        out1 = self.model1(x)
-        div0 = out0[0]
-        div1 = out1[1]
-        # Comparison logic using rtol=1, atol=0
-        mask = torch.abs(div0 - div1) <= (1 * torch.abs(div1))
-        all_close = torch.all(mask)
-        return torch.tensor([all_close], dtype=torch.bool)
+    def forward(self, *args):
+        _args = args
+        v5_0 = self.v5_0
+        getitem = _args[0];  _args = None
+        mul = torch.mul(getitem, v5_0);  v5_0 = None
+        softmax = torch.softmax(mul, dim = 0);  mul = None
+        div = torch.div(getitem, softmax);  getitem = softmax = None
+        return (div,)
 
-def my_model_function():
-    model = MyModel()
-    # Initialize p0 with random values to avoid uninitialized parameters
-    torch.nn.init.uniform_(model.p0)
-    return model
+class Model1():
+    def __init__(self):
+        super().__init__()
+        self.v5_0 = p0
 
-def GetInput():
-    return torch.rand(1, 1, 1, 26, 1, dtype=torch.float16)
+    def forward(self, *args):
+        _args = args
+        v5_0 = self.v5_0
+        getitem = _args[0];  _args = None
+        mul = torch.mul(getitem, v5_0);  v5_0 = None
+        cat = torch.cat((mul, mul), dim = 0)
+        softmax = torch.softmax(mul, dim = 0);  mul = None
+        div = torch.div(getitem, softmax);  getitem = softmax = None
+        return (cat, div)
 
+import numpy as np
+import pickle
+from numpy import testing
+import torch
+
+DEVICE='cuda'
+
+p0 = torch.nn.Parameter(torch.empty([3, 42, 7, 26, 1], dtype=torch.float16), requires_grad=False).to(DEVICE)
+
+class Model0(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.v5_0 = p0
+
+    def forward(self, *args):
+        _args = args
+        v5_0 = self.v5_0
+        getitem = _args[0];  _args = None
+        mul = torch.mul(getitem, v5_0);  v5_0 = None
+        softmax = torch.softmax(mul, dim = 0);  mul = None
+        div = torch.div(getitem, softmax);  getitem = softmax = None
+        return (div,)
+
+model_0 = Model0()
+output_names_0 = ['v2_0']
+
+class Model1(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.v5_0 = p0
+
+    def forward(self, *args):
+        _args = args
+        v5_0 = self.v5_0
+        getitem = _args[0];  _args = None
+        mul = torch.mul(getitem, v5_0);  v5_0 = None
+        cat = torch.cat((mul, mul), dim = 0)
+        softmax = torch.softmax(mul, dim = 0);  mul = None
+        div = torch.div(getitem, softmax);  getitem = softmax = None
+        return (cat, div)
+
+model_1 = Model1()
+output_names_1 = ['v3_0', 'v2_0']
+
+input_data = np.array([[4.93 ], [6.395], [3.941], [5.33 ], [5.223], [4.2  ], [6.742], [3.314], [3.26 ], [3.852], [6.477], [4.535], [3.424], [6.36 ], [5.527], [4.312], [3.479], [3.201], [5.8  ], [4.87 ], [3.701], [6.848], [6.13 ], [6.953], [3.725], [3.23 ]], dtype=np.float16)
+input_data_0 = [input_data]
+
+optmodel_0 = torch.compile(model_0, fullgraph=True, backend='inductor', mode=None)
+model_out_0 = optmodel_0(*[torch.from_numpy(v).to(DEVICE) for v in input_data_0])
+model_out_0 = [v.to(DEVICE).detach() for v in model_out_0] if isinstance(model_out_0, tuple) else [model_out_0.to(DEVICE).detach()]
+model_out_0 = [v.cpu().resolve_conj().numpy() if v.is_conj() else v.cpu().numpy() for v in model_out_0]
+output_0 = dict(zip(output_names_0, model_out_0))
+
+input_data_1 = [input_data]
+
+optmodel_1 = torch.compile(model_1, fullgraph=True, backend='inductor', mode=None)
+model_out_1 = optmodel_1(*[torch.from_numpy(v).to(DEVICE) for v in input_data_1])
+model_out_1 = [v.to(DEVICE).detach() for v in model_out_1] if isinstance(model_out_1, tuple) else [model_out_1.to(DEVICE).detach()]
+model_out_1 = [v.cpu().resolve_conj().numpy() if v.is_conj() else v.cpu().numpy() for v in model_out_1]
+output_1 = dict(zip(output_names_1, model_out_1))
+output_name_dict = {'v2_0': 'v2_0'}
+
+print('=========================')
+try:
+    for tensor_name_0, tensor_name_1 in output_name_dict.items():
+        testing.assert_allclose(output_0[tensor_name_0], output_1[tensor_name_1], rtol=1, err_msg=f'at {tensor_name_0}, {tensor_name_1}')
+    print("torch_complie does not trigger assertion")
+except AssertionError as e:
+    print("torch_complie triggers assertion")
+    print(e)
+print('=========================')
+
+model_out_0 = model_0(*[torch.from_numpy(v).to(DEVICE) for v in input_data_0])
+model_out_0 = [v.to(DEVICE).detach() for v in model_out_0] if isinstance(model_out_0, tuple) else [model_out_0.to(DEVICE).detach()]
+model_out_0 = [v.cpu().resolve_conj().numpy() if v.is_conj() else v.cpu().numpy() for v in model_out_0]
+output_0 = dict(zip(output_names_0, model_out_0))
+
+model_out_1 = model_1(*[torch.from_numpy(v).to(DEVICE) for v in input_data_1])
+model_out_1 = [v.to(DEVICE).detach() for v in model_out_1] if isinstance(model_out_1, tuple) else [model_out_1.to(DEVICE).detach()]
+model_out_1 = [v.cpu().resolve_conj().numpy() if v.is_conj() else v.cpu().numpy() for v in model_out_1]
+output_1 = dict(zip(output_names_1, model_out_1))
+
+print('=========================')
+try:
+    for tensor_name_0, tensor_name_1 in output_name_dict.items():
+        testing.assert_allclose(output_0[tensor_name_0], output_1[tensor_name_1], rtol=1, err_msg=f'at {tensor_name_0}, {tensor_name_1}')
+    print("torch_eager does not trigger assertion")
+except AssertionError as e:
+    print("torch_eager triggers assertion")
+    print(e)
+print('=========================')

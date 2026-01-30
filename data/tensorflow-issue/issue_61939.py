@@ -1,53 +1,67 @@
-# tf.constant(702.89) is scalar input (shape=()), but simplified for demonstration
-# Input shape: () scalar float32
+from tensorflow import keras
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
+"""
+Without Autocluster
+"""
+class Model(tf.keras.Model):
     def __init__(self):
-        super(MyModel, self).__init__()
-        # Single trainable variable as in original code
-        self.v3_weight = tf.Variable(123.45, dtype=tf.float32)
+        super(Model, self).__init__()
+        self.v3_weight = tf.Variable(123.45)
 
-    @tf.function(jit_compile=True)
-    def call(self, x):
-        # Perform multiplication with -0.0 
-        # Return result in two modes: naive and with tf.function to demonstrate difference
-        # Since direct demonstration is limited here, we emulate the behavior by computing both
-        # 1) multiplication without @tf.function (emulated here as direct ops)
-        # 2) multiplication with @tf.function(jit_compile=True) - which keeps -0.0 sign
-        
-        # Multiply the weight by -0.0 explicitly
-        multiplied = self.v3_weight * (-0.0)
+    def call(self, x1):
+        x4 = (self.v3_weight * (- 0.0))
+        return x4
+m = Model()
+x = tf.constant(702.89)
+print(m(x)) # tf.Tensor(-0.0, shape=(), dtype=float32)
 
-        # Compute reciprocals to show difference between -0.0 and 0.0 cases:
-        # Naive behavior (simulated without jit)
-        def eager_multiply():
-            return self.v3_weight * (-0.0)
+"""
+With Autocluster
+"""
+import os
+os.environ['TF_XLA_FLAGS'] = '--tf_xla_auto_jit=2 --tf_xla_cpu_global_jit'
+class Model(tf.keras.Model):
+    def __init__(self):
+        super(Model, self).__init__()
+        self.v3_weight = tf.Variable(123.45)
+    
+    @tf.function
+    def call(self, x1):
+        x4 = (self.v3_weight * (- 0.0))
+        return x4
+m = Model()
+x = tf.constant(702.89)
+print(m(x)) # tf.Tensor(0.0, shape=(), dtype=float32)
 
-        # With XLA/autocluster jit behavior typically treating -0.0 as +0.0:
-        # For simulation, we cast multiplied to +0.0 by abs to emulate autocluster effect
-        def xla_behavior():
-            return 1.0 / tf.math.abs(multiplied)  # yields +inf instead of -inf
+py
+class Model(tf.keras.Model):
+    def __init__(self):
+        super(Model, self).__init__()
+        self.v3_weight = tf.Variable(123.45)
 
-        # Reciprocal with sign preserved (expected with jit_compile=True)
-        reciprocal_preserve_sign = 1.0 / multiplied  # yields -inf because multiplied is -0.0
+    def call(self, x1):
+        x4 = (self.v3_weight * (- 0.0))
+        x4 = 1 / x4
+        return x4
+m = Model()
+x = tf.constant(702.89)
+print(m(x)) # tf.Tensor(-inf, shape=(), dtype=float32)
 
-        # reciprocal with sign lost (simulating autocluster behavior)
-        reciprocal_autocluster = 1.0 / tf.math.abs(multiplied)  # yields +inf
+py
+import os
+os.environ['TF_XLA_FLAGS'] = '--tf_xla_auto_jit=2 --tf_xla_cpu_global_jit'
+class Model(tf.keras.Model):
+    def __init__(self):
+        super(Model, self).__init__()
+        self.v3_weight = tf.Variable(123.45)
 
-        # Output dictionary with all values (for demonstration, output as tuple)
-        # Note: In practice model returns a single tensor. Here we return a float32 tensor vector with 3 values:
-        # [multiplied, reciprocal_preserve_sign, reciprocal_autocluster]
-        # This fusion demonstrates differences in sign handling between normal and autoclustered cases.
-        out = tf.stack([multiplied, reciprocal_preserve_sign, reciprocal_autocluster])
-        return out
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Return a scalar tensor matching input shape expected by MyModel.call (scalar float32)
-    # From the issue, the input is essentially arbitrary and not used in calculation
-    return tf.constant(702.89, dtype=tf.float32)
-
+    @tf.function
+    def call(self, x1):
+        x4 = (self.v3_weight * (- 0.0))
+        x4 = 1 / x4
+        return x4
+m = Model()
+x = tf.constant(702.89)
+print(m(x)) # tf.Tensor(inf, shape=(), dtype=float32)

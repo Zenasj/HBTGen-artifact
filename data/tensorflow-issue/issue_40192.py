@@ -1,44 +1,73 @@
-# tf.random.uniform((B, max_len), dtype=tf.int32) ← Input shape is (batch_size, sequence_length)
-import tensorflow as tf
+from tensorflow.keras import layers
 
-class MyModel(tf.keras.Model):
-    def __init__(self, vocab_size=50, embedding_dim=32, max_len=9):
-        super().__init__()
-        # Based on the code in the issue:
-        # vocab_size=50, embedding_dim=32 (changed from toy example),
-        # max_len inferred from max length of padded sequences (original max_len was max_len + 2)
-        # We keep max_len=9 from tensor example: max_len = max(len(x) for x in seqs)+2
-        self.embedding = tf.keras.layers.Embedding(vocab_size, embedding_dim, input_length=max_len)
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(32)
-        self.dropout1 = tf.keras.layers.Dropout(0.2)
-        self.dense2 = tf.keras.layers.Dense(32)
-        self.dropout2 = tf.keras.layers.Dropout(0.2)
-        self.output_layer = tf.keras.layers.Dense(1, activation='sigmoid')
+model = keras.Sequential()
 
-    def call(self, inputs, training=False):
-        x = self.embedding(inputs)
-        x = self.flatten(x)
-        x = self.dense1(x)
-        x = self.dropout1(x, training=training)
-        x = self.dense2(x)
-        x = self.dropout2(x, training=training)
-        return self.output_layer(x)
+model.add(keras.layers.Embedding(vocab_size, 2, input_length = max_len))
+model.add(keras.layers.Flatten())             
+model.add(keras.layers.Dense(1, activation = 'sigmoid'))
 
-def my_model_function():
-    # Return an instance of MyModel using the same vocab_size and max_len as in the example
-    vocab_size = 50
-    # max_len inferred from example docs padding, for robustness we set max_len=9 as in example
-    max_len = 9
-    embedding_dim = 32
-    return MyModel(vocab_size=vocab_size, embedding_dim=embedding_dim, max_len=max_len)
+import numpy as np
+import tensorflow.keras as keras
 
-def GetInput():
-    # Returns a random int32 tensor shaped (batch_size, max_len) with vocab indices for the model input
-    batch_size = 14  # same as training samples in the issue
-    max_len = 9      # must match model input_length
-    vocab_size = 50  # must match model vocab_size
-    # Generate random integer sequences between 1 and vocab_size-1 (0 is usually reserved for padding)
-    # dtype int32 as required by Embedding layer input
-    return tf.random.uniform((batch_size, max_len), minval=1, maxval=vocab_size, dtype=tf.int32)
+from tensorflow.keras.preprocessing.sequence import pad_sequences
 
+import matplotlib.pyplot as plt
+plt.style.use('fivethirtyeight')
+
+# Define docs
+docs = [
+    'Amazing!',
+    'Well done!',
+    'Great job!',
+    'Good job',
+    'Nicely done!',
+    'Amazing job!',
+    'Not bad!',
+    'Very poor.',
+    'Not well',
+    'Not very well written',
+    'Purely bad',
+    'It\'s not good.',
+    'Very badly done',
+    'Very bad'
+]
+    
+# Define labels
+labels = np.array([1] * 7 + [0] * 7)
+
+# Tokenize the docs
+vocab_size = 50
+
+tokenizer = keras.preprocessing.text.Tokenizer(vocab_size, oov_token = '<UNK>')
+tokenizer.fit_on_texts(docs)
+
+seqs = tokenizer.texts_to_sequences(docs)
+
+# Pad sequences
+max_len = max([len(x) for x in seqs]) + 2
+
+padded_seqs = pad_sequences(seqs, 
+                            maxlen  = max_len, 
+                            padding = 'post')
+
+model = keras.Sequential()
+
+model.add(keras.layers.Embedding(vocab_size, 32, input_length = max_len))
+model.add(keras.layers.Flatten())              # We need to flatten the array before the dense layer
+model.add(keras.layers.Dense(32))
+model.add(keras.layers.Dropout(.2))
+model.add(keras.layers.Dense(32))
+model.add(keras.layers.Dropout(.2))
+model.add(keras.layers.Dense(1, activation = 'sigmoid'))
+
+# Compile the model
+model.compile(optimizer = 'adam', 
+              loss      = 'binary_crossentropy', 
+              metrics   = ['accuracy'])
+
+# Fit the model
+model.fit(padded_seqs, labels, epochs = 150, verbose = 10)
+
+# Note that after all the model fits the data and loss goes down as expected:
+# plt.plot(model.history.history['accuracy'])
+plt.plot(model.history.history['loss'])

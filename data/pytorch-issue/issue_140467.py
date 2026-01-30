@@ -1,17 +1,31 @@
-# torch.rand(64, 1024, 8, 64, dtype=torch.half, device='cuda')  # Inferred input shape
+import torch.nn as nn
+
+Python
 import torch
-from torch import nn
+from torch.nn.functional import scaled_dot_product_attention
+from torch.nn.attention import SDPBackend, sdpa_kernel
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-    
-    def forward(self, x):
-        return torch.nn.functional.scaled_dot_product_attention(x, x, x)
+q = torch.randn(64, 1024, 8, 64, dtype=torch.half, device='cuda')
+print(torch._C._get_sdp_priority_order())
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.randn(64, 1024, 8, 64, dtype=torch.half, device='cuda')
-
+orders = [[SDPBackend.CUDNN_ATTENTION, SDPBackend.MATH, SDPBackend.EFFICIENT_ATTENTION],
+          [SDPBackend.MATH, SDPBackend.CUDNN_ATTENTION, SDPBackend.EFFICIENT_ATTENTION],
+          [SDPBackend.EFFICIENT_ATTENTION, SDPBackend.CUDNN_ATTENTION, SDPBackend.MATH]]
+import time
+times = list()
+for order in orders:
+    print(order)
+    with sdpa_kernel(order, set_priority=True):
+        scaled_dot_product_attention(q, q, q)
+    torch.cuda.synchronize()
+    t0 = time.perf_counter()
+    with sdpa_kernel(order, set_priority=True):
+        scaled_dot_product_attention(q, q, q)
+    torch.cuda.synchronize()
+    t1 = time.perf_counter()
+    times.append(t1 - t0)
+print(times)
+assert times[0] < times[1]
+assert times[0] > times[2]
+assert times[1] > times[2]
+print(torch._C._get_sdp_priority_order())

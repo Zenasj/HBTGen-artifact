@@ -1,4 +1,52 @@
-# tf.random.uniform((samples,), dtype=tf.float32) ← Input is a scalar int64 tensor indicating number of samples
+import tensorflow as tf
+import tensorflow_probability as tfp
+tfd = tfp.distributions 
+
+class Test(tf.Module):
+  def __init__(self):
+    self.log_likes_list = None
+    self.i = tf.constant(0)
+
+  @tf.function
+  def __call__(self, samples):
+
+    @tf.function
+    def rnd():
+        return tfd.Normal(0,1).sample()+ tfd.Normal(3,1).sample()
+      
+    if self.log_likes_list is None:
+        self.log_likes_list = tf.TensorArray(tf.float32, size=samples) 
+
+    def cond(x,i):
+        return tf.less(i, samples) 
+
+    def body(x,i):
+        #x=x.write(i,tfm.reduce_sum(tfd.Normal(rnd(), 1).log_prob(0.4)))
+        # AttributeError: 'TensorArray' object has no attribute 'mark_used'
+        x.write(i,tfm.reduce_sum(tfd.Normal(rnd(), 1).log_prob(0.4))).mark_used()
+        return x, i+1 
+
+    self.log_likes_list, i = tf.while_loop(cond, body, [self.log_likes_list, self.i])
+
+    self.log_likes = self.log_likes_list.stack()
+
+    self.log_like = tfm.reduce_mean(self.log_likes)
+
+    loss = self.log_like
+
+    return loss
+
+
+T= Test()
+t= T(5)
+
+T.log_likes, T.log_like, 
+# the code in below is not running 
+T.log_likes_list.stack()
+
+import tensorflow_probability as tfp
+tfd = tfp.distributions
+tfm = tf.math
 
 import tensorflow as tf
 import tensorflow_probability as tfp
@@ -6,76 +54,43 @@ import tensorflow_probability as tfp
 tfd = tfp.distributions
 tfm = tf.math
 
-class MyModel(tf.keras.Model):
-    def __init__(self, max_samples=100):
-        super().__init__()
-        # Store max_samples as max capacity for state Variables
-        self.max_samples = max_samples
+class Test(tf.Module):
+  def __init__(self, max_samples=100):
+    # Variables to store things across tf.function boundaries (that are not returns/args)
+    self.i = tf.Variable(0, dtype=tf.int64)
+    self.max_samples = max_samples
+    self.log_likes = tf.Variable(tf.zeros([max_samples]))
+    self.log_like = tf.Variable(0.0)
 
-        # Variables to hold state across tf.function calls
-        # Use int64 for GPU compatibility as noted in the issue discussion
-        self.i = tf.Variable(0, dtype=tf.int64, trainable=False)
-        # Pre-allocate tensor to hold log-likelihood values, zeros initial
-        self.log_likes = tf.Variable(tf.zeros([max_samples], dtype=tf.float32), trainable=False)
-        # Scalar variable to hold mean log_likelihood across runs
-        self.log_like = tf.Variable(0.0, dtype=tf.float32, trainable=False)
+  @tf.function(jit_compile=True) 
+  def __call__(self, samples):
 
-    @tf.function(jit_compile=True)
-    def call(self, samples):
-        # samples: scalar tf.Tensor int64 number of samples to process
-        
-        # Inner sampling function: sum of two independent Normals
-        def rnd():
-            return tfd.Normal(0., 1.).sample() + tfd.Normal(3., 1.).sample()
+    def rnd():
+        return tfd.Normal(0,1).sample()+ tfd.Normal(3,1).sample()
 
-        # Initialize a TensorArray to hold per-sample log-likelihoods
-        # Size initially samples converted to int32 (required by TensorArray API)
-        x = tf.TensorArray(tf.float32, size=tf.cast(samples, tf.int32))
-        # Read current iteration index from self.i (state Variable)
-        i = self.i.read_value()
+    # Read things from outside tf.function
+    x = tf.TensorArray(tf.float32, size=tf.cast(samples, tf.int32))
+    i = self.i.read_value()
 
-        # Unstack previously stored values of log_likes into x
-        # Note: x must be large enough to hold all samples to avoid shape errors
-        x = x.unstack(self.log_likes.read_value())
+    x = x.unstack(self.log_likes.read_value())
+    while i < samples:
+      # Always assign back to `x` after `x.write`
+      x = x.write(tf.cast(i, tf.int32),
+                  tfm.reduce_sum(tfd.Normal(rnd(), 1).log_prob(0.4)))
+      i += 1
 
-        # Loop from i until samples, computing new log-likelihood samples
-        while i < samples:
-            # Write the computed log-prob at index i and assign back to x
-            x = x.write(
-                tf.cast(i, tf.int32),
-                tfm.reduce_sum(tfd.Normal(rnd(), 1.).log_prob(0.4))
-            )
-            i += 1
+    log_likes = x.stack()
+    log_like = tfm.reduce_mean(log_likes)
+    loss = tfm.reduce_mean(log_like)
 
-        # Stack the TensorArray contents to get the current log-likes vector
-        log_likes = x.stack()
+    # Put things back
+    self.i.assign(i)
+    padded = tf.pad(log_likes, [[0, self.max_samples - samples]])
+    self.log_likes.assign(padded)
+    self.log_like.assign(log_like)
 
-        # Compute mean log likelihood across all samples
-        log_like = tfm.reduce_mean(log_likes)
-
-        # loss defined as mean log_like (same here, scalar)
-        loss = tfm.reduce_mean(log_like)
-
-        # Update variables with current iteration, padded log_likes and mean log_like
-        self.i.assign(i)
-
-        # Pad log_likes if samples < max_samples so assignment shape matches variable shape
-        padded = tf.pad(log_likes, [[0, self.max_samples - samples]])
-        self.log_likes.assign(padded)
-
-        self.log_like.assign(log_like)
-
-        return loss
+    return loss
 
 
-def my_model_function():
-    # Return an instance of MyModel with default max_samples=100
-    return MyModel()
-
-
-def GetInput():
-    # Return input tensor compatible with MyModel's __call__
-    # It expects a scalar int64 tensor indicating number of samples to process
-    # For demonstration, return 5 samples
-    return tf.constant(5, dtype=tf.int64)
-
+T= Test()
+t = T(tf.constant(100, dtype=tf.int64))

@@ -1,21 +1,22 @@
-# torch.rand(1, dtype=torch.int64)
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, t):
-        # Extract scalar value from tensor input
-        t_val = t.item()
-        indices = torch.arange(0, t_val, dtype=torch.int64)
-        return torch.nn.functional.one_hot(indices)
+torch.nn.functional.one_hot(torch.arange(0, t, dtype=torch.int64))
 
-def my_model_function():
-    return MyModel()
+import torch
+from test_utils import cpu
+torch._dynamo.config.specialize_int=False
+def test_one_hot():
+    input_shapes = [
+        (16),
+        (10),
+        (11),
+        (4)
+    ]
+    def wrapper_fn(t):
+        t2 = torch.nn.functional.one_hot(torch.arange(0, t, dtype=torch.int64))
+        return t2
 
-def GetInput():
-    # Generate a random integer between 1 and 20 as the input tensor
-    return torch.randint(1, 21, (1,), dtype=torch.int64)
+    f_cpu = torch.compile(wrapper_fn, dynamic=True)
 
+    for shape in input_shapes:
+        y_cpu = f_cpu(shape)

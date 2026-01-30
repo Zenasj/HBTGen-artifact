@@ -1,50 +1,71 @@
-# tf.random.uniform((B, T, D_in), dtype=tf.float32) ← typical input shape for LSTM inputs (batch, time, features)
+import math
+from tensorflow.keras import layers
 
+# in call()
+self.add_update(self.step.assign_add(1))
+
+# in __init__()
+self._step = None
+
+@property
+def step(self):
+    """Variable. The current layer time step."""
+    if self._step is None:
+        self._step = self.add_weight(
+            "step",
+            shape=[],
+            dtype=dtypes.int64,
+            trainable=False,
+            aggregation=tf_variables.VariableAggregation.ONLY_FIRST_REPLICA)
+    return self._step
+
+# instead of self._step and @property def step, add below to __init__
+self.step = K.variable(0, dtype='int64', name='step')
+
+# -*- coding: utf-8 -*-
 import tensorflow as tf
-from tensorflow.keras import backend as K
-from tensorflow.keras.layers import Layer, RNN, InputSpec
-from tensorflow.keras import activations, initializers, regularizers, constraints
-from tensorflow.python.util import nest
-from tensorflow.python.framework import tensor_shape
-from tensorflow.python.ops import array_ops, math_ops, nn
-from tensorflow.python.framework import ops
-from tensorflow.python.keras.utils import tf_utils
-from tensorflow.python.ops import control_flow_util
+from tensorflow.python.distribute import distribution_strategy_context
 from tensorflow.python.eager import context
+from tensorflow.python.framework import tensor_shape, ops
+from tensorflow.python.framework import dtypes
+from tensorflow.python.keras import activations
+from tensorflow.python.keras import backend as K
+from tensorflow.python.keras import constraints
+from tensorflow.python.keras import initializers
+from tensorflow.python.keras import regularizers
+from tensorflow.python.keras.engine.base_layer import Layer
+from tensorflow.python.keras.engine.input_spec import InputSpec
+from tensorflow.python.keras.utils import generic_utils
+from tensorflow.python.keras.utils import tf_utils
+from tensorflow.python.ops import array_ops, state_ops, math_ops
+from tensorflow.python.ops import nn
+from tensorflow.python.ops import variables as tf_variables
+from tensorflow.python.ops.logging_ops import print_v2 as tf_print
+from tensorflow.python.ops import control_flow_util
+from tensorflow.python.platform import tf_logging as logging
+from tensorflow.python.training.tracking import base as trackable
+from tensorflow.python.training.tracking import data_structures
+from tensorflow.python.util import nest
+from tensorflow.python.util.tf_export import keras_export
+from tensorflow.keras.layers import RNN
+from tensorflow.python.keras.layers.recurrent import DropoutRNNCellMixin
 
-# Adapted from TensorFlow 1.14 LSTMCell with step counter in states & optional recurrent batch normalization.
-# This is a fused model (cell+wrapper) representing the core idea in the issue with step counter in states.
-
-# Helper to return caching device compatible with graph/eager mode
-def _caching_device(rnn_cell):
-    if context.executing_eagerly():
-        return None
-    if not getattr(rnn_cell, '_enable_caching_device', False):
-        return None
-    if control_flow_util.IsInWhileLoop(ops.get_default_graph()):
-        return None
-    if rnn_cell._dtype_policy.should_cast_variables:
-        return None
-    return lambda op: op.device
-
-
-class MyModel(tf.keras.Model):
-    def __init__(self, units=32, rbn_configs=None, max_inference_steps=20, **kwargs):
-        super().__init__(**kwargs)
-        # Instantiate the custom LSTM layer with counter in states, optionally recurrent batch norm
-        self.lstm = LSTM(
-            units=units,
-            rbn_configs=rbn_configs or {},
-            max_inference_steps=max_inference_steps,
-            return_sequences=False,  # return single output (last)
-            return_state=False
-        )
-
-    def call(self, inputs, training=None):
-        return self.lstm(inputs, training=training)
+import warnings
+import collections
+import numpy as np
+import sys
 
 
-class LSTMCell(Layer):
+RECURRENT_DROPOUT_WARNING_MSG = (
+    'RNN `implementation=2` is not supported when `recurrent_dropout` is set. '
+    'Using `implementation=1`.')
+
+RECURRENT_BATCHNORM_WARNING_MSG = (
+    'RNN `implementation=2` is not supported when `rbn_configs` '
+    'is set. Using `implementation=1`.')
+
+
+class LSTMCell(DropoutRNNCellMixin, Layer):
     def __init__(self,
                  units,
                  activation='tanh',
@@ -63,56 +84,56 @@ class LSTMCell(Layer):
                  dropout=0.,
                  recurrent_dropout=0.,
                  implementation=1,
-                 rbn_configs={},
-                 max_inference_steps=20,
+                  rbn_configs={},
                  **kwargs):
-        super().__init__(**kwargs)
+        super(LSTMCell, self).__init__(**kwargs)
         self.units = units
         self.activation = activations.get(activation)
         self.recurrent_activation = activations.get(recurrent_activation)
         self.use_bias = use_bias
-
+    
         self.kernel_initializer = initializers.get(kernel_initializer)
         self.recurrent_initializer = initializers.get(recurrent_initializer)
         self.bias_initializer = initializers.get(bias_initializer)
         self.unit_forget_bias = unit_forget_bias
-
+    
         self.kernel_regularizer = regularizers.get(kernel_regularizer)
         self.recurrent_regularizer = regularizers.get(recurrent_regularizer)
         self.bias_regularizer = regularizers.get(bias_regularizer)
-
+    
         self.kernel_constraint = constraints.get(kernel_constraint)
         self.recurrent_constraint = constraints.get(recurrent_constraint)
         self.bias_constraint = constraints.get(bias_constraint)
-
+    
         self.dropout = min(1., max(0., dropout))
         self.recurrent_dropout = min(1., max(0., recurrent_dropout))
         if self.recurrent_dropout != 0 and implementation != 1:
-            # Enforce implementation 1 (dynamic loop) if recurrent dropout or rbn active
+            logging.debug(RECURRENT_DROPOUT_WARNING_MSG)
             self.implementation = 1
         elif rbn_configs and implementation != 1:
+            logging.debug(RECURRENT_BATCHNORM_WARNING_MSG)
             self.implementation = 1
         else:
             self.implementation = implementation
-
-        # State size includes h, c, and the step counter as a scalar int64
-        self.state_size = [self.units, self.units, 1]
+        # tuple(_ListWrapper) was silently dropping list content in at least 
+        # 2.7.10, and fixed after 2.7.16. Converting the state_size to wrapper
+        # around NoDependency(), so that the base_layer.__setattr__ will not
+        # convert it to ListWrapper. Down the stream, self.states will be a list
+        # since it is generated from nest.map_structure with list, and 
+        # tuple(list) will work properly.
+        self.state_size = data_structures.NoDependency([self.units, 
+                                                        self.units, 1])
         self.output_size = self.units
 
-        self.recurrent_batchnorm = bool(rbn_configs)
-        self.rbn_configs = rbn_configs or {}
-        self.max_inference_steps = max_inference_steps
-        self.max_inference_step = K.constant(max_inference_steps - 1, dtype='int64')
-        self._decay = K.constant(1.0 - self.rbn_configs.get('bn_momentum', 0.99),
-                                 dtype='float32')
-
+        #######################################################################
+        self.recurrent_batchnorm = bool(rbn_configs != {})
         if self.recurrent_batchnorm:
-            self.__init_recurrent_batchnorm(self.rbn_configs)
+            self.__init__recurrent_batchnorm(rbn_configs)
 
+    @tf_utils.shape_type_conversion
     def build(self, input_shape):
-        input_dim = input_shape[-1]
         default_caching_device = _caching_device(self)
-
+        input_dim = input_shape[-1]
         self.kernel = self.add_weight(
             shape=(input_dim, self.units * 4),
             name='kernel',
@@ -120,198 +141,294 @@ class LSTMCell(Layer):
             regularizer=self.kernel_regularizer,
             constraint=self.kernel_constraint,
             caching_device=default_caching_device)
-
         self.recurrent_kernel = self.add_weight(
             shape=(self.units, self.units * 4),
             name='recurrent_kernel',
             initializer=self.recurrent_initializer,
             regularizer=self.recurrent_regularizer,
             constraint=self.recurrent_constraint,
-            caching_device=default_caching_device)
-
+            caching_device=default_caching_device)            
+    
         if self.use_bias:
-            if self.unit_forget_bias:
-                def bias_initializer(_, *args, **kwargs):
-                    return K.concatenate([
-                        self.bias_initializer((self.units,), *args, **kwargs),
-                        initializers.Ones()((self.units,), *args, **kwargs),
-                        self.bias_initializer((self.units * 2,), *args, **kwargs),
-                    ])
-            else:
-                bias_initializer = self.bias_initializer
-            self.bias = self.add_weight(
-                shape=(self.units * 4,),
-                name='bias',
-                initializer=bias_initializer,
-                regularizer=self.bias_regularizer,
-                constraint=self.bias_constraint,
-                caching_device=default_caching_device)
+          if self.unit_forget_bias:
+    
+            def bias_initializer(_, *args, **kwargs):
+              return K.concatenate([
+                  self.bias_initializer((self.units,), *args, **kwargs),
+                  initializers.Ones()((self.units,), *args, **kwargs),
+                  self.bias_initializer((self.units * 2,), *args, **kwargs),
+              ])
+          else:
+            bias_initializer = self.bias_initializer
+          self.bias = self.add_weight(
+              shape=(self.units * 4,),
+              name='bias',
+              initializer=bias_initializer,
+              regularizer=self.bias_regularizer,
+              constraint=self.bias_constraint,
+              caching_device=default_caching_device)              
         else:
-            self.bias = None
-
+          self.bias = None
+          
         if self.recurrent_batchnorm:
             self.build_recurrent_bn(input_shape)
+        self.built = True       
 
-        self.built = True
+    def _compute_carry_and_output(self, x, h_tm1, c_tm1, step, training):
+        """Computes carry and output using split kernels."""
+        x_i, x_f, x_c, x_o = x
+        h_tm1_i, h_tm1_f, h_tm1_c, h_tm1_o = h_tm1
+        
+        z0 = K.dot(h_tm1_i, self.recurrent_kernel[:, :self.units])
+        z1 = K.dot(h_tm1_f, self.recurrent_kernel[:, self.units:self.units * 2])
+        z2 = K.dot(h_tm1_c, self.recurrent_kernel[:, self.units * 2:
+                                                  self.units * 3])
+        z3 = K.dot(h_tm1_o, self.recurrent_kernel[:, self.units * 3:])
+        if self.recurrent_batchnorm:
+            z0 = self.recurrent_bn(z0, 'recurrent_i', step, training)
+            z1 = self.recurrent_bn(z1, 'recurrent_f', step, training)
+            z2 = self.recurrent_bn(z2, 'recurrent_c', step, training)
+            z3 = self.recurrent_bn(z3, 'recurrent_o', step, training)
+        
+        i = self.recurrent_activation(x_i + z0)
+        f = self.recurrent_activation(x_f + z1)
+        c = f * c_tm1 + i * self.activation(x_c + z2)
+        o = self.recurrent_activation(x_o + z3)
+        if self.recurrent_batchnorm:
+            c = self.recurrent_bn(c, 'cell', step, training)
+        return c, o
 
+    def get_initial_state(self, inputs=None, batch_size=None, dtype=None):
+        if batch_size is None or dtype is None:
+            raise ValueError(
+                ("'batch_size and dtype cannot be None while constructing "
+                  "initial state: 'batch_size={}, dtype={}'").format(
+                    batch_size, dtype))
+	    
+        def create_zeros(unnested_state_size):
+            flat_dims = tensor_shape.as_shape(unnested_state_size).as_list()
+            if len(flat_dims) == 1 and flat_dims[0] == 1:
+                # return array_ops.zeros(flat_dims, dtype='int64')
+                return tf.constant(0, dtype='int64')
+            else:
+                return array_ops.zeros([batch_size] + flat_dims, 
+                                        dtype=dtype)
+        return nest.map_structure(create_zeros, self.state_size)
+        
+        
     def call(self, inputs, states, training=None):
         h_tm1 = states[0]  # previous memory state
         c_tm1 = states[1]  # previous carry state
-        step = states[2]   # scalar int64 step counter
-
+        step  = states[2]
+        # step  = math_ops.cast(states[2], 'int64')
+        # t=tf.timestamp()
+	    
         dp_mask = self.get_dropout_mask_for_cell(inputs, training, count=4)
-        rec_dp_mask = self.get_recurrent_dropout_mask_for_cell(h_tm1, training, count=4)
-
+        rec_dp_mask = self.get_recurrent_dropout_mask_for_cell(
+            h_tm1, training, count=4)
+	    
         if 0 < self.dropout < 1.:
             inputs_i = inputs * dp_mask[0]
             inputs_f = inputs * dp_mask[1]
             inputs_c = inputs * dp_mask[2]
             inputs_o = inputs * dp_mask[3]
         else:
-            inputs_i = inputs_f = inputs_c = inputs_o = inputs
-
-        k_i, k_f, k_c, k_o = array_ops.split(self.kernel, 4, axis=1)
+            inputs_i = inputs
+            inputs_f = inputs
+            inputs_c = inputs
+            inputs_o = inputs
+        k_i, k_f, k_c, k_o = array_ops.split(
+            self.kernel, num_or_size_splits=4, axis=1)
+        
         x_i = K.dot(inputs_i, k_i)
         x_f = K.dot(inputs_f, k_f)
         x_c = K.dot(inputs_c, k_c)
         x_o = K.dot(inputs_o, k_o)
-
         if self.recurrent_batchnorm:
             x_i = self.recurrent_bn(x_i, 'kernel_i', step, training)
             x_f = self.recurrent_bn(x_f, 'kernel_f', step, training)
             x_c = self.recurrent_bn(x_c, 'kernel_c', step, training)
             x_o = self.recurrent_bn(x_o, 'kernel_o', step, training)
-
         if self.use_bias:
-            b_i, b_f, b_c, b_o = array_ops.split(self.bias, 4, axis=0)
+            b_i, b_f, b_c, b_o = array_ops.split(
+                self.bias, num_or_size_splits=4, axis=0)
             x_i = K.bias_add(x_i, b_i)
             x_f = K.bias_add(x_f, b_f)
             x_c = K.bias_add(x_c, b_c)
             x_o = K.bias_add(x_o, b_o)
-
+	  
         if 0 < self.recurrent_dropout < 1.:
             h_tm1_i = h_tm1 * rec_dp_mask[0]
             h_tm1_f = h_tm1 * rec_dp_mask[1]
             h_tm1_c = h_tm1 * rec_dp_mask[2]
             h_tm1_o = h_tm1 * rec_dp_mask[3]
         else:
-            h_tm1_i = h_tm1_f = h_tm1_c = h_tm1_o = h_tm1
-
+            h_tm1_i = h_tm1
+            h_tm1_f = h_tm1
+            h_tm1_c = h_tm1
+            h_tm1_o = h_tm1
+            
         x = (x_i, x_f, x_c, x_o)
-        h_tm1_tuple = (h_tm1_i, h_tm1_f, h_tm1_c, h_tm1_o)
-        c, o = self._compute_carry_and_output(x, h_tm1_tuple, c_tm1, step, training)
+        h_tm1 = (h_tm1_i, h_tm1_f, h_tm1_c, h_tm1_o)
+        c, o = self._compute_carry_and_output(x, h_tm1, c_tm1, step, training)
         h = o * self.activation(c)
-        # Increment step counter (int64 scalar)
-        next_step = step + 1
-        return h, [h, c, next_step]
+        
+#        @tf.function
+#        def notify(a, b):
+#            if tf.math.greater(a, b):
+#                tf.print(tf.timestamp() - self.t)
+#        notify(self.max_inference_step, math_ops.cast(step, 'int64'))
+#        self.t = tf.timestamp()
+        return h, [h, c, step + 1]
 
-    def _compute_carry_and_output(self, x, h_tm1, c_tm1, step, training):
-        x_i, x_f, x_c, x_o = x
-        h_tm1_i, h_tm1_f, h_tm1_c, h_tm1_o = h_tm1
+    # def _get_bn_vars(self, op_name):
+    #     gate_name = ''
+    #     if 'cell' not in op_name:
+    #         gate_name = op_name[-2:]
+    #         op_name = op_name[:-2]
+    #     return [getattr(self, op_name + '_' + var_name + gate_name) 
+    #             for var_name in 
+    #             ('beta', 'gamma', 'moving_mean', 'moving_variance')]
 
-        z0 = K.dot(h_tm1_i, self.recurrent_kernel[:, :self.units])
-        z1 = K.dot(h_tm1_f, self.recurrent_kernel[:, self.units:self.units * 2])
-        z2 = K.dot(h_tm1_c, self.recurrent_kernel[:, self.units * 2:self.units * 3])
-        z3 = K.dot(h_tm1_o, self.recurrent_kernel[:, self.units * 3:])
-
-        if self.recurrent_batchnorm:
-            z0 = self.recurrent_bn(z0, 'recurrent_i', step, training)
-            z1 = self.recurrent_bn(z1, 'recurrent_f', step, training)
-            z2 = self.recurrent_bn(z2, 'recurrent_c', step, training)
-            z3 = self.recurrent_bn(z3, 'recurrent_o', step, training)
-
-        i = self.recurrent_activation(x_i + z0)
-        f = self.recurrent_activation(x_f + z1)
-        c = f * c_tm1 + i * self.activation(x_c + z2)
-        o = self.recurrent_activation(x_o + z3)
-
-        if self.recurrent_batchnorm:
-            c = self.recurrent_bn(c, 'cell', step, training)
-
-        return c, o
-
-    def get_initial_state(self, inputs=None, batch_size=None, dtype=None):
-        if batch_size is None or dtype is None:
-            raise ValueError("'batch_size and dtype cannot be None.")
-
-        # Create zeros for h and c states, and scalar zero int64 for step counter
-        def create_zeros(size):
-            dims = tensor_shape.as_shape(size).as_list()
-            if len(dims) == 1 and dims[0] == 1:
-                return tf.constant(0, dtype='int64')
-            else:
-                return tf.zeros([batch_size] + dims, dtype=dtype)
-
-        return nest.map_structure(create_zeros, self.state_size)
-
-    def get_dropout_mask_for_cell(self, inputs, training, count):
-        if self.dropout <= 0:
-            return [None] * count
-        return _generate_dropout_mask(tf.ones_like(inputs), self.dropout, training, count)
-
-    def get_recurrent_dropout_mask_for_cell(self, h_tm1, training, count):
-        if self.recurrent_dropout <= 0:
-            return [None] * count
-        return _generate_dropout_mask(tf.ones_like(h_tm1), self.recurrent_dropout, training, count)
+    def _get_bn_vars(self, op_name):
+        return [getattr(self, op_name + '_' + var_name) for var_name in
+                ('gamma', 'beta', 'moving_mean', 'moving_variance')]
 
     def recurrent_bn(self, inputs_t, op_name, step, training=None):
         training = self._get_training_value(training)
         beta, gamma, moving_mean, moving_variance = self._get_bn_vars(op_name)
 
         @tf.function
-        def compute_bn(inputs_t, step, beta, gamma, moving_mean, moving_variance, training):
-            # Use moving averages or update them if training and step < max_inf_step
-            def true_fn():
+        def outs(inputs_t, step, beta, gamma, moving_mean, moving_variance,
+                 training):
+            if tf.math.less(step, self.max_inference_step) and (
+                    training != False):
                 mean_t, variance_t = self._get_stats_and_maybe_update(
                     inputs_t, step, moving_mean, moving_variance, training)
-                return nn.batch_normalization(inputs_t, mean_t, variance_t,
-                                             beta, gamma, self.rbn_configs.get('bn_epsilon', 1e-3))
+                # tf.print(step, end='x')
+            else:
+                # tf.print(step, end="_")
+                mean_t = K.stop_gradient(moving_mean[-1])
+                variance_t = K.stop_gradient(moving_variance[-1])
+                beta = K.stop_gradient(beta)
+                gamma = K.stop_gradient(gamma)
 
-            def false_fn():
-                return nn.batch_normalization(inputs_t,
-                                             moving_mean[-1], moving_variance[-1],
-                                             beta, gamma, self.rbn_configs.get('bn_epsilon', 1e-3))
-
-            cond = tf.math.logical_and(training, tf.math.less(step, self.max_inference_step))
-            return tf_utils.smart_cond(cond, true_fn, false_fn)
-
-        outputs = compute_bn(inputs_t, step, beta, gamma, moving_mean, moving_variance, training)
+            return nn.batch_normalization(inputs_t, mean_t, variance_t,
+                                          beta, gamma, self.bn_epsilon)
+    
+        outputs = outs(inputs_t, step, beta, gamma, moving_mean,
+                       moving_variance, training)
         outputs.set_shape(inputs_t.shape)
         return outputs
+                # mean_t, variance_t = (moving_mean[-1], moving_variance[-1])
+        # return K.stop_gradient(outputs)
 
-    def _get_bn_vars(self, op_name):
-        return [getattr(self, op_name + '_' + var_name)
-                for var_name in ('gamma', 'beta', 'moving_mean', 'moving_variance')]
+            # mean_t, variance_t = tf_utils.smart_cond(
+            #     tf.math.less(step, self.max_inference_step),
+            #     lambda: self._get_stats_and_maybe_update(
+            #         inputs_t, step, moving_mean, moving_variance, training),
+            #     lambda: (moving_mean[-1], moving_variance[-1]),
+            #     )
+            
+        # train_step_exceeds_max_inference = tf.math.logical_and(
+        #     training, tf.math.greater(step, self.max_inference_step))
+        # train_step_exceeds_max_inference = tf.math.greater(
+        #     step, self.max_inference_step)
 
-    def _get_stats_and_maybe_update(self, inputs_t, step, moving_mean, moving_variance, training):
-        moving_mean_t = moving_mean[step:step + 1]
-        moving_variance_t = moving_variance[step:step + 1]
+        # mean_t, variance_t = tf.cond(
+        #     train_step_exceeds_max_inference,
+        #     lambda: (moving_mean[-1], moving_variance[-1]),
+        #     lambda: self._get_stats_and_maybe_update(
+        #         inputs_t, step, moving_mean, moving_variance, training)
+        #     )
 
+    def _get_stats_and_maybe_update(self, inputs_t, step, 
+                                    moving_mean, moving_variance, training):
+        moving_mean_t = moving_mean[step:step+1] 
+        moving_variance_t = moving_variance[step:step+1]
+        
         return tf_utils.smart_cond(training,
-                                   lambda: self._update_moving_avgs_and_get_batch_stats(
-                                       inputs_t, moving_mean_t, moving_variance_t, training),
-                                   lambda: (moving_mean_t, moving_variance_t))
+                       lambda: self._update_moving_avgs_and_get_batch_stats(
+                           inputs_t, moving_mean_t, moving_variance_t, training),
+                       lambda: (moving_mean_t, moving_variance_t))
 
-    def _update_moving_avgs_and_get_batch_stats(self, inputs_t, moving_mean_t, moving_variance_t, training):
-        mean_t, variance_t = nn.moments(inputs_t, axes=[0], keepdims=False)
+        # mean_t = tf_utils.smart_cond(
+        #     training,
+        #     lambda: mean_t,
+        #     lambda: ops.convert_to_tensor_v2(moving_mean_t))
+        # variance_t = tf_utils.smart_cond(
+        #       training,
+        #       lambda: variance_t,
+        #       lambda: ops.convert_to_tensor_v2(moving_variance_t))
+
+    def _update_moving_avgs_and_get_batch_stats(self, inputs_t, moving_mean_t,
+                                                moving_variance_t, training):
+        mean_t, variance_t = nn.moments(inputs_t, axes=[0], keep_dims=False)
         self._assign_moving_average(moving_mean_t, mean_t)
         self._assign_moving_average(moving_variance_t, variance_t)
         return mean_t, variance_t
 
-    def _assign_moving_average(self, variable, value):
-        with K.name_scope('AssignMovingAvg'):
-            with ops.colocate_with(variable):
-                update_delta = (variable - tf.cast(value, variable.dtype)) * self._decay
-                variable.assign(variable - update_delta)
+        # new_mean_t, new_variance_t = mean_t, variance_t
+
+        # if self._support_zero_size_input():
+        #     inputs_size = array_ops.size(inputs_t)
+        # else:
+        #     inputs_size = None
+
+        # def _do_update(var, value):
+        #     """Compute the updates for mean and variance."""
+        #     return self._assign_moving_average(var, value, self.bn_momentum,
+        #                                        inputs_size)
+        # def mean_update():
+        #     return _do_update(moving_mean_t, new_mean_t)
+    
+        # def variance_update():
+        #     return _do_update(moving_variance_t, new_variance_t)
+
+        # self.add_update(mean_update)
+        # self.add_update(variance_update)
+
+            # true_branch = lambda: _do_update(moving_mean_t, new_mean_t)
+            # false_branch = lambda: moving_mean_t
+            # return tf_utils.smart_cond(training, true_branch, false_branch)
+
+            # true_branch = lambda: _do_update(moving_variance_t, new_variance_t)
+            # false_branch = lambda: moving_variance_t
+            # return tf_utils.smart_cond(training, true_branch, false_branch)
 
     def _get_training_value(self, training=None):
         if training is None:
             training = K.learning_phase()
         return tf.cast(training, tf.bool)
+        # return K.stop_gradient(tf.cast(training, tf.bool))
+
+    def _assign_moving_average(self, variable, value):#, momentum, inputs_size):
+        with K.name_scope('AssignMovingAvg') as scope:
+            with ops.colocate_with(variable):
+                update_delta = (variable - math_ops.cast(value, variable.dtype)
+                                ) * self._decay
+                variable.assign(math_ops.sub(variable, update_delta), name=scope)
+
+                # if decay.dtype != variable.dtype.base_dtype:
+                #     decay = math_ops.cast(decay, variable.dtype.base_dtype)
+
+                # return state_ops.assign_sub(variable, update_delta, name=scope)
+
+                # if inputs_size is not None:
+                #     update_delta = array_ops.where(inputs_size > 0, update_delta,
+                #                                    K.zeros_like(update_delta))
+
+    # def _moments(self, inputs, reduction_axes, keep_dims):
+    #     mean, variance = nn.moments(inputs, reduction_axes, keep_dims=keep_dims)
+    #     if self._support_zero_size_input():
+    #         inputs_size = array_ops.size(inputs)
+    #         mean = array_ops.where(inputs_size > 0, mean, K.zeros_like(mean))
+    #         variance = array_ops.where(inputs_size > 0, variance,
+    #                                    K.zeros_like(variance))
+    #     return mean, variance
+        # return K.stop_gradient(mean), K.stop_gradient(variance)
 
     def build_recurrent_bn(self, input_shape):
-        default_caching_device = _caching_device(self)
-
         def _build_steps_variable(var_fullname, fullname):
             return self.add_weight(
                 shape=(self.max_inference_steps, self.units),
@@ -322,34 +439,60 @@ class LSTMCell(Layer):
 
         def _build_variable(var_fullname, fullname):
             return self.add_weight(
-                shape=(1, self.units),
-                name=fullname,
-                initializer=getattr(self, var_fullname + '_initializer'),
-                regularizer=getattr(self, var_fullname + '_regularizer'),
-                constraint=getattr(self, var_fullname + '_constraint'),
-                trainable=True,
-                caching_device=default_caching_device)
-
-        for weight_name in ('kernel', 'recurrent', 'cell'):
-            gate_names = ('_i', '_f', '_c', '_o') if weight_name != 'cell' else ('',)
+                        shape=(1, self.units),
+                        name=fullname,
+                        initializer=getattr(self, var_fullname + '_initializer'),
+                        regularizer=getattr(self, var_fullname + '_regularizer'),
+                        constraint=getattr(self, var_fullname + '_constraint'),
+                        trainable=True,
+                        caching_device=default_caching_device)
+        
+        default_caching_device = _caching_device(self)
+        
+        for weight_name in ('kernel', 'recurrent', 'cell'):    
+            gate_names = ('_i', '_f', '_c', '_o'
+                          ) if weight_name != 'cell' else ('',)
             for gate_name in gate_names:
                 op_name = weight_name + gate_name
-                for var_name in ('gamma', 'beta', 'moving_mean', 'moving_variance'):
+                for var_name in ('gamma', 'beta', 'moving_mean', 
+                                 'moving_variance'):
                     fullname = op_name + '_' + var_name
                     var_fullname = weight_name + '_' + var_name
-
+                    args = (var_fullname, fullname)
+    
                     if 'moving' in var_name:
-                        setattr(self, fullname, _build_steps_variable(var_fullname, fullname))
+                        setattr(self, fullname, _build_steps_variable(*args))
                     else:
-                        setattr(self, fullname, _build_variable(var_fullname, fullname))
+                        setattr(self, fullname, _build_variable(*args))
 
-    def __init_recurrent_batchnorm(self, configs):
+    
+    def __init__recurrent_batchnorm(self, configs):
+        def _validate_configs(configs, default_configs):
+            for key in configs:
+                if key not in default_configs:
+                    raise ValueError("unknown kwarg: `%s`" % key)
+            for key in ('max_inference_steps_frac', 'bn_epsilon'):
+                if getattr(self, key) < 0:
+                    raise ValueError("%s cannot be negative" % key)
+            if self.steps_in is None:
+                raise ValueError("must set `steps_in`; use K.int_shape(x)[1], "
+                                  "where `x` is input to layer")
+
+        def _init_initializers(default_configs):
+            for key in default_configs:
+                if 'initializer' in key:
+                    val = getattr(self, key)
+                    if isinstance(val, float):
+                        setattr(self, key, initializers.Constant(val))
+                    else:
+                        setattr(self, key, initializers.get(val))
+
         default_configs = dict(
             steps_in=None,
             max_inference_steps_frac=1,
-            bn_epsilon=1e-3,
-            bn_momentum=0.99,
-            kernel_gamma_initializer=0.1,
+            bn_epsilon=1e-3,  # keras BN default
+            bn_momentum=.99,
+            kernel_gamma_initializer=0.1,  ## TODO: check 0.1
             kernel_gamma_regularizer=None,
             kernel_gamma_constraint=None,
             kernel_beta_initializer='zeros',
@@ -357,7 +500,7 @@ class LSTMCell(Layer):
             kernel_beta_constraint=None,
             kernel_moving_mean_initializer='zeros',
             kernel_moving_variance_initializer=0.1,
-            recurrent_gamma_initializer=0.1,
+            recurrent_gamma_initializer=0.1,  ## TODO: check 0.1
             recurrent_gamma_regularizer=None,
             recurrent_gamma_constraint=None,
             recurrent_beta_initializer='zeros',
@@ -373,11 +516,67 @@ class LSTMCell(Layer):
             cell_beta_constraint=None,
             cell_moving_mean_initializer='zeros',
             cell_moving_variance_initializer=0.1,
-        )
+              )
         for key, val in default_configs.items():
             setattr(self, key, configs.get(key, val))
-        # max_inference_steps calculated externally in constructor
 
+        _validate_configs(configs, default_configs)
+        _init_initializers(default_configs)
+        self.max_inference_steps = int(self.max_inference_steps_frac * 
+                                        self.steps_in)
+        self.max_inference_step = K.constant(self.max_inference_steps - 1,
+                                             dtype='int64', 
+                                             name='max_inference_step')
+        self._decay = K.constant(1.0 - self.bn_momentum, 
+                                 dtype='float32', name='decay')
+                
+    def _support_zero_size_input(self):
+        return distribution_strategy_context.has_strategy() and getattr(
+            distribution_strategy_context.get_strategy().extended,
+            'experimental_enable_get_next_as_optional', False)
+
+    def get_config(self):  ##TODO
+        config = {
+            'units':
+                self.units,
+            'activation':
+                activations.serialize(self.activation),
+            'recurrent_activation':
+                activations.serialize(self.recurrent_activation),
+            'use_bias':
+                self.use_bias,
+            'kernel_initializer':
+                initializers.serialize(self.kernel_initializer),
+            'recurrent_initializer':
+                initializers.serialize(self.recurrent_initializer),
+            'bias_initializer':
+                initializers.serialize(self.bias_initializer),
+            'unit_forget_bias':
+                self.unit_forget_bias,
+            'kernel_regularizer':
+                regularizers.serialize(self.kernel_regularizer),
+            'recurrent_regularizer':
+                regularizers.serialize(self.recurrent_regularizer),
+            'bias_regularizer':
+                regularizers.serialize(self.bias_regularizer),
+            'kernel_constraint':
+                constraints.serialize(self.kernel_constraint),
+            'recurrent_constraint':
+                constraints.serialize(self.recurrent_constraint),
+            'bias_constraint':
+                constraints.serialize(self.bias_constraint),
+            'dropout':
+                self.dropout,
+            'recurrent_dropout':
+                self.recurrent_dropout,
+            'implementation':
+                self.implementation
+        }
+        base_config = super(LSTMCell, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+
+
+@keras_export(v1=['keras.layers.LSTM'])
 class LSTM(RNN):
     def __init__(self,
                  units,
@@ -403,21 +602,20 @@ class LSTM(RNN):
                  go_backwards=False,
                  stateful=False,
                  unroll=False,
-                 rbn_configs={},
-                 max_inference_steps=20,
                  **kwargs):
         if implementation == 0:
-            implementation = 1  # deprecated
-
-        self.cell = LSTMCell(
+            logging.warning('`implementation=0` has been deprecated, '
+                            'and now defaults to `implementation=1`.'
+                            'Please update your layer call.')
+        cell = LSTMCell(
             units,
             activation=activation,
             recurrent_activation=recurrent_activation,
             use_bias=use_bias,
             kernel_initializer=kernel_initializer,
             recurrent_initializer=recurrent_initializer,
-            bias_initializer=bias_initializer,
             unit_forget_bias=unit_forget_bias,
+            bias_initializer=bias_initializer,
             kernel_regularizer=kernel_regularizer,
             recurrent_regularizer=recurrent_regularizer,
             bias_regularizer=bias_regularizer,
@@ -427,49 +625,353 @@ class LSTM(RNN):
             dropout=dropout,
             recurrent_dropout=recurrent_dropout,
             implementation=implementation,
-            rbn_configs=rbn_configs,
-            max_inference_steps=max_inference_steps
-        )
-        super().__init__(
-            self.cell,
+            rbn_configs=kwargs.pop('rbn_configs', {})
+            )
+        super(LSTM, self).__init__(
+            cell,
             return_sequences=return_sequences,
             return_state=return_state,
             go_backwards=go_backwards,
             stateful=stateful,
             unroll=unroll,
             **kwargs)
-
         self.activity_regularizer = regularizers.get(activity_regularizer)
         self.input_spec = [InputSpec(ndim=3)]
-
+	    
     def call(self, inputs, mask=None, training=None, initial_state=None):
         self.cell.reset_dropout_mask()
         self.cell.reset_recurrent_dropout_mask()
-        return super().call(inputs, mask=mask, training=training, initial_state=initial_state)
+        return super(LSTM, self).call(
+            inputs, mask=mask, training=training, initial_state=initial_state)
+	    
+    def _validate_state_spec(self, cell_state_sizes, init_state_specs):
+        """Validate the state spec between the initial_state and the state_size.
+	    
+        Args:
+          cell_state_sizes: list, the `state_size` attribute from the cell.
+          init_state_specs: list, the `state_spec` from the initial_state that is
+            passed in `call()`.
+	    
+        Raises:
+          ValueError: When initial state spec is not compatible with the state size.
+        """
+        validation_error = ValueError(
+            'An `initial_state` was passed that is not compatible with '
+            '`cell.state_size`. Received `state_spec`={}; '
+            'however `cell.state_size` is '
+            '{}'.format(init_state_specs, cell_state_sizes))
+        flat_cell_state_size = nest.flatten(cell_state_sizes)
+        flat_state_spec = nest.flatten(init_state_specs)
+	    
+        if len(flat_cell_state_size) != len(flat_state_spec):
+            raise validation_error
+        for i in range(len(flat_cell_state_size)):
+            state_spec_shape = flat_state_spec[i].shape
+            if len(state_spec_shape) == 1:
+                if not (tensor_shape.TensorShape(
+                    # Check scalar case first
+                    state_spec_shape[0]).is_compatible_with(
+                        tensor_shape.TensorShape(flat_cell_state_size[i]))):
+                    raise validation_error
+                continue
+            if not tensor_shape.TensorShape(
+                # Ignore the first axis for init_state which is for batch
+                state_spec_shape[1:]).is_compatible_with(
+                    tensor_shape.TensorShape(flat_cell_state_size[i])):
+                raise validation_error
 
     @property
     def units(self):
         return self.cell.units
-
-
+	    
+    @property
+    def activation(self):
+        return self.cell.activation
+	    
+    @property
+    def recurrent_activation(self):
+        return self.cell.recurrent_activation
+	    
+    @property
+    def use_bias(self):
+        return self.cell.use_bias
+	    
+    @property
+    def kernel_initializer(self):
+        return self.cell.kernel_initializer
+	    
+    @property
+    def recurrent_initializer(self):
+        return self.cell.recurrent_initializer
+	    
+    @property
+    def bias_initializer(self):
+        return self.cell.bias_initializer
+	    
+    @property
+    def unit_forget_bias(self):
+        return self.cell.unit_forget_bias
+	    
+    @property
+    def kernel_regularizer(self):
+        return self.cell.kernel_regularizer
+	    
+    @property
+    def recurrent_regularizer(self):
+        return self.cell.recurrent_regularizer
+	    
+    @property
+    def bias_regularizer(self):
+        return self.cell.bias_regularizer
+	    
+    @property
+    def kernel_constraint(self):
+        return self.cell.kernel_constraint
+	    
+    @property
+    def recurrent_constraint(self):
+        return self.cell.recurrent_constraint
+	    
+    @property
+    def bias_constraint(self):
+        return self.cell.bias_constraint
+	    
+    @property
+    def dropout(self):
+        return self.cell.dropout
+	    
+    @property
+    def recurrent_dropout(self):
+        return self.cell.recurrent_dropout
+	    
+    @property
+    def implementation(self):
+        return self.cell.implementation
+	    
+    def get_config(self):  ## TODO
+        config = {
+            'units':
+                self.units,
+            'activation':
+                activations.serialize(self.activation),
+            'recurrent_activation':
+                activations.serialize(self.recurrent_activation),
+            'use_bias':
+                self.use_bias,
+            'kernel_initializer':
+                initializers.serialize(self.kernel_initializer),
+            'recurrent_initializer':
+                initializers.serialize(self.recurrent_initializer),
+            'bias_initializer':
+                initializers.serialize(self.bias_initializer),
+            'unit_forget_bias':
+                self.unit_forget_bias,
+            'kernel_regularizer':
+                regularizers.serialize(self.kernel_regularizer),
+            'recurrent_regularizer':
+                regularizers.serialize(self.recurrent_regularizer),
+            'bias_regularizer':
+                regularizers.serialize(self.bias_regularizer),
+            'activity_regularizer':
+                regularizers.serialize(self.activity_regularizer),
+            'kernel_constraint':
+                constraints.serialize(self.kernel_constraint),
+            'recurrent_constraint':
+                constraints.serialize(self.recurrent_constraint),
+            'bias_constraint':
+                constraints.serialize(self.bias_constraint),
+            'dropout':
+                self.dropout,
+            'recurrent_dropout':
+                self.recurrent_dropout,
+            'implementation':
+                self.implementation
+        }
+        base_config = super(LSTM, self).get_config()
+        del base_config['cell']
+        return dict(list(base_config.items()) + list(config.items()))
+	    
+    @classmethod
+    def from_config(cls, config):
+        if 'implementation' in config and config['implementation'] == 0:
+          config['implementation'] = 1
+        return cls(**config)
+    
 def _generate_dropout_mask(ones, rate, training=None, count=1):
-    def dropped_inputs():
-        return K.dropout(ones, rate)
+  def dropped_inputs():
+    return K.dropout(ones, rate)
 
-    if count > 1:
-        return [K.in_train_phase(dropped_inputs, ones, training=training) for _ in range(count)]
-    return K.in_train_phase(dropped_inputs, ones, training=training)
+  if count > 1:
+    return [
+        K.in_train_phase(dropped_inputs, ones, training=training)
+        for _ in range(count)
+    ]
+  return K.in_train_phase(dropped_inputs, ones, training=training)
 
 
-def my_model_function():
-    # Return an instance of MyModel with default params
-    return MyModel()
+def _standardize_args(inputs, initial_state, constants, num_constants):
+  """Standardizes `__call__` to a single list of tensor inputs.
 
-def GetInput():
-    # Return a random tensor input of shape (batch=2, time=5, features=10)
-    # matching the default input expected by MyModel (with units=32)
-    batch_size = 2
-    time_steps = 5
-    features = 10
-    return tf.random.uniform(shape=(batch_size, time_steps, features), dtype=tf.float32)
+  When running a model loaded from a file, the input tensors
+  `initial_state` and `constants` can be passed to `RNN.__call__()` as part
+  of `inputs` instead of by the dedicated keyword arguments. This method
+  makes sure the arguments are separated and that `initial_state` and
+  `constants` are lists of tensors (or None).
 
+  Arguments:
+    inputs: Tensor or list/tuple of tensors. which may include constants
+      and initial states. In that case `num_constant` must be specified.
+    initial_state: Tensor or list of tensors or None, initial states.
+    constants: Tensor or list of tensors or None, constant tensors.
+    num_constants: Expected number of constants (if constants are passed as
+      part of the `inputs` list.
+
+  Returns:
+    inputs: Single tensor or tuple of tensors.
+    initial_state: List of tensors or None.
+    constants: List of tensors or None.
+  """
+  if isinstance(inputs, list):
+    # There are several situations here:
+    # In the graph mode, __call__ will be only called once. The initial_state
+    # and constants could be in inputs (from file loading).
+    # In the eager mode, __call__ will be called twice, once during
+    # rnn_layer(inputs=input_t, constants=c_t, ...), and second time will be
+    # model.fit/train_on_batch/predict with real np data. In the second case,
+    # the inputs will contain initial_state and constants as eager tensor.
+    #
+    # For either case, the real input is the first item in the list, which
+    # could be a nested structure itself. Then followed by initial_states, which
+    # could be a list of items, or list of list if the initial_state is complex
+    # structure, and finally followed by constants which is a flat list.
+    assert initial_state is None and constants is None
+    if num_constants:
+      constants = inputs[-num_constants:]
+      inputs = inputs[:-num_constants]
+    if len(inputs) > 1:
+      initial_state = inputs[1:]
+      inputs = inputs[:1]
+
+    if len(inputs) > 1:
+      inputs = tuple(inputs)
+    else:
+      inputs = inputs[0]
+
+  def to_list_or_none(x):
+    if x is None or isinstance(x, list):
+      return x
+    if isinstance(x, tuple):
+      return list(x)
+    return [x]
+
+  initial_state = to_list_or_none(initial_state)
+  constants = to_list_or_none(constants)
+
+  return inputs, initial_state, constants
+
+
+def _is_multiple_state(state_size):
+  """Check whether the state_size contains multiple states."""
+  return (hasattr(state_size, '__len__') and
+          not isinstance(state_size, tensor_shape.TensorShape))
+
+
+def _generate_zero_filled_state_for_cell(cell, inputs, batch_size, dtype):
+  if inputs is not None:
+    batch_size = array_ops.shape(inputs)[0]
+    dtype = inputs.dtype
+  return _generate_zero_filled_state(batch_size, cell.state_size, dtype)
+
+
+def _generate_zero_filled_state(batch_size_tensor, state_size, dtype):
+  """Generate a zero filled tensor with shape [batch_size, state_size]."""
+  if batch_size_tensor is None or dtype is None:
+    raise ValueError(
+        'batch_size and dtype cannot be None while constructing initial state: '
+        'batch_size={}, dtype={}'.format(batch_size_tensor, dtype))
+
+  def create_zeros(unnested_state_size):
+    flat_dims = tensor_shape.as_shape(unnested_state_size).as_list()
+    init_state_size = [batch_size_tensor] + flat_dims
+    return array_ops.zeros(init_state_size, dtype=dtype)
+
+  if nest.is_sequence(state_size):
+    return nest.map_structure(create_zeros, state_size)
+  else:
+    return create_zeros(state_size)
+
+if 1:
+    # def normalize_inference():  ## TODO - check consistency w/ paper
+    #     return K.batch_normalization(
+    #         inputs_t,
+    #         moving_mean_t,
+    #         moving_variance_t,
+    #         beta,
+    #         gamma,
+    #         axis=-1,
+    #         epsilon=self.bn_epsilon)
+
+    # normed_training, mean_t, variance_t = K.normalize_batch_in_training(
+    #     inputs_t, gamma, beta, reduction_axes, epsilon=self.bn_epsilon)
+
+    # if K.backend() != 'cntk':
+    #     variance_t *= batch_size / (batch_size - (1 + self.bn_epsilon))
+    
+    # ## TODO: check if zero_debias is OK w/ recurrent bn
+    # self.add_update([K.moving_average_update(moving_mean_t, mean_t, 
+    #                               self.bn_momentum),
+    #                  K.moving_average_update(moving_variance_t, variance_t, 
+    #                               self.bn_momentum)],
+    #                 inputs_t)
+
+    # # Pick the normalized form corresponding to the training phase.
+    # return K.in_train_phase(normed_training,
+    #                         normalize_inference,
+    #                         training=training)
+    pass
+
+def _caching_device(rnn_cell):
+  """Returns the caching device for the RNN variable.
+
+  This is useful for distributed training, when variable is not located as same
+  device as the training worker. By enabling the device cache, this allows
+  worker to read the variable once and cache locally, rather than read it every
+  time step from remote when it is needed.
+
+  Note that this is assuming the variable that cell needs for each time step is
+  having the same value in the forward path, and only gets updated in the
+  backprop. It is true for all the default cells (SimpleRNN, GRU, LSTM). If the
+  cell body relies on any variable that gets updated every time step, then
+  caching device will cause it to read the stall value.
+
+  Args:
+    rnn_cell: the rnn cell instance.
+  """
+  if context.executing_eagerly():
+    # caching_device is not supported in eager mode.
+    return None
+  if not getattr(rnn_cell, '_enable_caching_device', False):
+    return None
+  # Don't set a caching device when running in a loop, since it is possible that
+  # train steps could be wrapped in a tf.while_loop. In that scenario caching
+  # prevents forward computations in loop iterations from re-reading the
+  # updated weights.
+  if control_flow_util.IsInWhileLoop(ops.get_default_graph()):
+    logging.warn('Variable read device caching has been disabled because the '
+                'RNN is in tf.while_loop loop context, which will cause '
+                'reading stalled value in forward path. This could slow down '
+                'the training due to duplicated variable reads. Please '
+                'consider updating your code to remove tf.while_loop if '
+                'possible.')
+    return None
+  if rnn_cell._dtype_policy.should_cast_variables:
+    logging.warn('Variable read device caching has been disabled since it '
+                'doesn\'t work with the mixed precision API. This is '
+                'likely to cause a slowdown for RNN training due to '
+                'duplicated read of variable for each timestep, which '
+                'will be significant in a multi remote worker setting. '
+                'Please consider disabling mixed precision API if '
+                'the performance has been affected.')
+    return None
+  # Cache the value on the device that access the variable.
+  return lambda op: op.device

@@ -1,21 +1,9 @@
-# torch.rand(4, dtype=torch.complex64)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Compute original MPS-abs (potentially buggy) and patched version
-        original = x.abs()
-        patched = torch.sqrt(
-            torch.pow(x.real, 2) + torch.pow(x.imag, 2) + 1e-12
-        )
-        # Return boolean indicating if outputs match within tolerance
-        return torch.all(torch.isclose(original, patched, atol=1e-5))
+with torch.device("cpu"):
+    print(torch.ones((2,), dtype=torch.complex64).abs())
+    
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Generate random complex64 tensor matching the test case dimensions
-    return torch.randn(4, dtype=torch.complex64)
-
+with torch.device("mps"):
+    print(torch.ones((2,), dtype=torch.complex64).abs())
+    print(torch.tensor([1.0 + 0.0j, 0.0 + 10.0j, 100.0 + 0.0j, 1000.0 + 0.0j]).abs())

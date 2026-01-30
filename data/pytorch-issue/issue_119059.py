@@ -1,15 +1,4 @@
-# torch.rand(4, 128, requires_grad=True)  # Inferred input shape
-
 import torch
-from torch import nn
-
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.linear = UseNeedsInputGradFunction.apply
-
-    def forward(self, x):
-        return self.linear(x)
 
 class UseNeedsInputGradFunction(torch.autograd.Function):
     @staticmethod
@@ -22,10 +11,9 @@ class UseNeedsInputGradFunction(torch.autograd.Function):
             return grad_output
         return None
 
-def my_model_function():
-    return MyModel()
+def linear(x):
+    return UseNeedsInputGradFunction.apply(x)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(4, 128, requires_grad=True)
-
+linear = torch.compile(linear)
+x = torch.randn(4, 128, requires_grad=True)
+y = linear(x)

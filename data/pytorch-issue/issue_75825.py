@@ -1,20 +1,22 @@
-import torch
-from torch import nn
+import torch.nn as nn
 
-# torch.rand(B, 3, 10, dtype=torch.float32)
-class MyModel(nn.Module):
+import torch
+from torch.ao.quantization.quantize_fx import prepare_fx
+
+class Model(torch.nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv = nn.Conv1d(3, 3, 3)
-        self.relu = nn.ReLU()
+        super(Model, self).__init__()
+        self.conv = torch.nn.Conv1d(3, 3, 3)
+        self.relu = torch.nn.ReLU()
     def forward(self, x):
         x = self.conv(x)
         x = self.relu(x)
         return x
 
-def my_model_function():
-    return MyModel()
+m = Model().eval()
+qconfig_dict = torch.ao.quantization.get_default_qconfig_dict("fbgemm")
+prepare_fx(m, qconfig_dict)
 
-def GetInput():
-    return torch.rand(1, 3, 10, dtype=torch.float32)
-
+# Workaround:
+# qconfig_dict = {"": torch.ao.quantization.get_default_qconfig("fbgemm")}
+# prepare_fx(m, qconfig_dict)

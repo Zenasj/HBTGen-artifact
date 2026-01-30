@@ -1,59 +1,35 @@
-# tf.random.uniform((B, 500, 5), dtype=tf.float32) ← inferred input shape from example: (batch, timesteps=500, features=5)
+import random
+from tensorflow import keras
 
 import tensorflow as tf
-from tensorflow.keras import layers, backend as K
+from keras import layers
+import numpy as np
 
-class Masked_MAE(tf.keras.metrics.Metric):
-    def __init__(self, name='masked_mae', mean=0, std=1.0, **kwargs):
-        super(Masked_MAE, self).__init__(name=name, **kwargs)
-        # Store scaling factor
-        self.mean = mean
-        self.std = std
-        self.factor = self.std
-        self.total = self.add_weight(name='total', initializer='zeros')
-        self.count = self.add_weight(name='count', initializer='zeros')
+input_layer = layers.Input(shape=(500, 5))
+input_lstm = layers.LSTM(30, return_sequences=True)(input_layer)
+output1 = layers.Dense(1)(input_lstm)
+output2 = layers.Dense(1)(input_lstm)
 
-    def update_state(self, y_true, y_pred, sample_weight=None):
-        if sample_weight is not None:
-            # Create mask: 1.0 where sample_weight!=0, else 0.0
-            mask = K.cast(K.not_equal(sample_weight, 0), K.floatx())
-            # Expand mask dims to broadcast over y_true last dimension
-            mask = tf.expand_dims(mask, axis=-1)
-            multp = tf.cast(tf.shape(y_true)[-1], dtype=K.floatx())
-        else:
-            mask = tf.ones_like(y_true, dtype=K.floatx())
-            multp = 1.0
-        masked_error = K.abs(y_true - y_pred) * mask
-        self.total.assign_add(K.sum(masked_error))
-        self.count.assign_add(K.sum(mask) * multp)
+model = tf.keras.Model(inputs=input_layer, outputs=[output1, output2])
 
-    def result(self):
-        return tf.math.divide_no_nan(self.total, self.count) * self.factor
+model.compile(optimizer="adam", run_eagerly=False, sample_weight_mode='temporal', loss="mse", metrics=[["mae"], ["mae"]])
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Define layers similar to the original example
-        self.lstm = layers.LSTM(30, return_sequences=True)
-        self.dense1 = layers.Dense(1, name='dense_output1')
-        self.dense2 = layers.Dense(1, name='dense_output2')
 
-        # Instantiate custom masked MAE metric for both outputs
-        self.masked_mae_1 = Masked_MAE(name='masked_mae_1')
-        self.masked_mae_2 = Masked_MAE(name='masked_mae_2')
+#dataset
+x = np.random.random((2000, 500, 5))
 
-    def call(self, inputs, training=False):
-        x = self.lstm(inputs)
-        out1 = self.dense1(x)
-        out2 = self.dense2(x)
-        return out1, out2
+sample_weights = np.ones(x.shape[:-1])
+amnt_zeros = np.random.choice(500, 2000)
+for idx, zeros in enumerate(amnt_zeros):
+    sample_weights[idx, -zeros:] = 0.0
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+x = x*sample_weights[...,None]
+y1 = ((np.sum(x, axis=-1) + 20) * sample_weights)[..., None]
+y2 = ((np.sum(x, axis=-1) + 10) * sample_weights)[...,None]
 
-def GetInput():
-    # Return a random input tensor of shape (batch=2, 500, 5) with dtype float32
-    # The batch size 2 is arbitrary but must be >0; 2 chosen to demonstrate batching
-    return tf.random.uniform((2, 500, 5), dtype=tf.float32)
 
+#masked y3 data is increased drasically to show the wrong calculation of the metrics
+y2_testsample_weights = np.full_like(y2, -50000) * ((sample_weights - 1)[...,None])
+y2 = y2 + y2_testsample_weights
+
+history = model.fit(x=x, y=[y1, y2], sample_weight=sample_weights, epochs=500)

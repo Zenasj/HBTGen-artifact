@@ -1,23 +1,46 @@
-# torch.rand(B, 10, dtype=torch.float32, requires_grad=True)
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.fc1 = nn.Linear(10, 5)
-        self.relu = nn.ReLU()
-        self.fc2 = nn.Linear(5, 1)
+# forward pass has not RPC
+loss = ...
 
-    def forward(self, x):
-        x = self.fc1(x)
-        x = self.relu(x)
-        x = self.fc2(x)
-        return x
+# thread 1
+loss.backward()
 
-def my_model_function():
-    return MyModel()
+# thread 2
+with dist_autograd.context() as context_id:
+  dist_autograd.backward(context_id, [loss])
 
-def GetInput():
-    return torch.rand(2, 10, dtype=torch.float32, requires_grad=True)
+# thread 1
+with dist_autograd.context() as context_id:
+  with ddp.no_sync():
+    for _ in range(5):
+      loss = ddp(input).sum()
+      dist_autograd.backward(context_id, [loss])
+  loss = ddp(input).sum()
+  dist_autograd.backward(context_id, [loss])
 
+# thread 2
+with dist_autograd.context() as context_id:
+  with ddp.no_sync():
+    for _ in range(5):
+      loss = ddp(input).sum()
+      dist_autograd.backward(context_id, [loss])
+  loss = ddp(input).sum()
+  dist_autograd.backward(context_id, [loss])
+
+input = torch.rand(10, requires_grad=True)
+common = model1(input)
+
+# thread1
+with dist_autograd.context() as context_id:
+    loss = model2(common).sum()
+    dist_autograd.backward(context_id, [loss])
+
+# thread2
+with dist_autograd.context() as context_id:
+    loss = model2(common).sum()
+    dist_autograd.backward(context_id, [loss])
+
+# thread3
+loss = model3(common).sum()
+loss.backward()

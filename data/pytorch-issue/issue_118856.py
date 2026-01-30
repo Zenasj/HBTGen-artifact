@@ -1,20 +1,20 @@
-# torch.rand(1, dtype=torch.float)  # Dummy input tensor
+@onlyNativeDeviceTypes
+@dtypes(torch.float)
+def test_grad_scaling_unscale_sparse(self, device, dtype):
+    device = torch.device(device)
+    i = torch.tensor([[0, 1, 1],
+                      [2, 0, 2]], device=device, dtype=torch.int64)
+    v = torch.tensor([16., 32., 64.], device=device, dtype=torch.float)
+    s = torch.sparse_coo_tensor(i, v, torch.Size([2, 3]), device=device, dtype=dtype)
+
 import torch
-from torch import nn
+def compile_test():
+    device = torch.device("cpu")
+    i = torch.tensor([[0, 1, 1],
+                        [2, 0, 2]], device=device, dtype=torch.int64)
+    v = torch.tensor([16., 32., 64.], device=device, dtype=torch.float)
+    s = torch.sparse_coo_tensor(i, v, torch.Size([2, 3]), device=device, dtype=torch.float)
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        device = x.device
-        # Reproduce the sparse tensor creation that triggers the Dynamo error
-        indices = torch.tensor([[0, 1, 1], [2, 0, 2]], device=device, dtype=torch.int64)
-        values = torch.tensor([16., 32., 64.], device=device, dtype=torch.float)
-        sparse_tensor = torch.sparse_coo_tensor(indices, values, torch.Size([2, 3]), device=device, dtype=torch.float)
-        return sparse_tensor
+my_fn = torch.torch._dynamo.optimize("eager", nopython=False)(compile_test)
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Return a dummy tensor to satisfy input requirements
-    return torch.rand(1, dtype=torch.float)
-
+my_fn()

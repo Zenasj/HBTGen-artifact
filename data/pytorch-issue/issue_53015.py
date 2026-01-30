@@ -1,33 +1,21 @@
-import torch
 import torch.nn as nn
 
-# torch.rand(3, dtype=torch.float32)
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.original = MinimalExampleOriginal()
-        self.fixed = FixedExample()
-    
-    def forward(self, x):
-        _, corr_orig = self.original(x)
-        _, corr_fixed = self.fixed(x)
-        return torch.stack([corr_orig, corr_fixed])
+import torch
 
-class MinimalExampleOriginal(nn.Module):
+class MinimalExample(torch.nn.Module):
+    def __init__(self):
+        super(MinimalExample, self).__init__()
+
     def forward(self, x):
         perm = torch.randperm(x.numel())
-        correct = torch.tensor(perm.dtype == torch.int64, dtype=torch.bool)
-        return x[perm], correct
+        print(perm)
+        return x[perm]
 
-class FixedExample(nn.Module):
-    def forward(self, x):
-        perm = torch.randperm(x.numel(), dtype=torch.int64)
-        correct = torch.tensor(perm.dtype == torch.int64, dtype=torch.bool)
-        return x[perm], correct
+model = MinimalExample()
+x = torch.rand(3)
+# works fine
+print(model(x))
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(3)
-
+jit_model = torch.jit.script(model)
+# error!
+print(jit_model(x))

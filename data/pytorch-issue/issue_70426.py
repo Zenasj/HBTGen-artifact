@@ -1,52 +1,97 @@
-# torch.rand(B, 1, 28, 28, dtype=torch.float32)
+import torch.nn as nn
+import torch.nn.functional as F
+import torchvision
+
+import torch
+from torchmetrics import Accuracy
+
+device = torch.device("cuda:0")
+
+num_samples = 1000
+num_classes = 34
+
+Y = torch.ones(num_samples).long().to(device)
+X = torch.zeros(num_samples, num_classes).to(device)
+
+accuracy = Accuracy(average="none", num_classes=num_classes).to(device)
+
+accuracy(X, Y)
+
 import torch
 from torch import nn
-from torchmetrics import Accuracy
+from torch.nn import functional as F
+from torch.utils.data import DataLoader
+from torch.utils.data import random_split
+from torchvision.datasets import MNIST
+from torchvision import transforms
 import pytorch_lightning as pl
 
-class MyModel(pl.LightningModule):
+
+class LitAutoEncoder(pl.LightningModule):
     def __init__(self):
         super().__init__()
         self.encoder = nn.Sequential(
-            nn.Linear(28 * 28, 64),
-            nn.ReLU(),
-            nn.Linear(64, 3)
-        )
+                nn.Linear(28 * 28, 64),
+                nn.ReLU(),
+                nn.Linear(64, 3))
         self.decoder = nn.Sequential(
-            nn.Linear(3, 64),
-            nn.ReLU(),
-            nn.Linear(64, 28 * 28)
-        )
-    
+                nn.Linear(3, 64),
+                nn.ReLU(),
+                nn.Linear(64, 28 * 28))
+
     def forward(self, x):
-        embedding = self.encoder(x.view(x.size(0), -1))
+        embedding = self.encoder(x)
         return embedding
-    
-    def training_step(self, batch, batch_idx):
-        # Problematic code causing the error (as per the user's test snippet)
-        device = self.device
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
+        return optimizer
+
+    def training_step(self, train_batch, batch_idx):
+        ###### test snippet
+        import torch
+        from torchmetrics import Accuracy
+
+        device = torch.device("cuda:0")
+
         num_samples = 1000
         num_classes = 34
-        Y = torch.ones(num_samples, dtype=torch.long, device=device)
-        X = torch.zeros(num_samples, num_classes, device=device)
+
+        Y = torch.ones(num_samples).long().to(device)
+        X = torch.zeros(num_samples, num_classes).to(device)
+
         accuracy = Accuracy(average="none", num_classes=num_classes).to(device)
-        accuracy(X, Y)  # Triggers computation during step
-        
-        # Original autoencoder training logic
-        x, y = batch
+
+        accuracy(X, Y)
+        ###### test snippet
+        x, y = train_batch
+
         x = x.view(x.size(0), -1)
         z = self.encoder(x)
         x_hat = self.decoder(z)
-        loss = nn.MSELoss()(x_hat, x)
+        loss = F.mse_loss(x_hat, x)
         self.log('train_loss', loss)
         return loss
-    
-    def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=1e-3)
 
-def my_model_function():
-    return MyModel()
+    def validation_step(self, val_batch, batch_idx):
+        x, y = val_batch
+        x = x.view(x.size(0), -1)
+        z = self.encoder(x)
+        x_hat = self.decoder(z)
+        loss = F.mse_loss(x_hat, x)
+        self.log('val_loss', loss)
 
-def GetInput():
-    return torch.rand(32, 1, 28, 28, dtype=torch.float32)
 
+# data
+dataset = MNIST('', train=True, download=True, transform=transforms.ToTensor())
+mnist_train, mnist_val = random_split(dataset, [55000, 5000])
+
+train_loader = DataLoader(mnist_train, batch_size=32)
+val_loader = DataLoader(mnist_val, batch_size=32)
+
+# model
+model = LitAutoEncoder()
+
+# training
+trainer = pl.Trainer(gpus="1", limit_train_batches=0.5, max_epochs=1)
+trainer.fit(model, train_loader, val_loader)

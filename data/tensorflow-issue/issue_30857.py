@@ -1,39 +1,49 @@
-# tf.random.uniform((B, 224, 224, 3), dtype=tf.float32) ← batch size B is dynamic, images are 224x224 RGB
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
+
+Yes
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Base feature extractor: ResNet50 (no weights, no top)
-        self.base_model = tf.keras.applications.ResNet50(
-            input_shape=(224, 224, 3), include_top=False, weights=None)
-        
-        # Global max pooling to reduce spatial dimensions
-        self.pool = tf.keras.layers.GlobalMaxPooling2D()
-        
-        # Dropout for regularization
-        self.dropout = tf.keras.layers.Dropout(0.4)
-        
-        # Final classification layer with 9 classes, softmax activation
-        self.pred = tf.keras.layers.Dense(9, activation='softmax')
+################ Data
+def _parse_fn2(fn, label):
+    img = tf.random.uniform([224, 224, 3])
+    return img, label
 
-    def call(self, inputs, training=False):
-        # inputs: image tensor with shape [B, 224, 224, 3], dtype float32 assumed
-        x = self.base_model(inputs, training=training)
-        x = self.pool(x)
-        x = self.dropout(x, training=training)
-        x = self.pred(x)
-        return x
+train_data2 = tf.data.Dataset.from_tensor_slices(
+  (tf.random.uniform([100]), tf.random.uniform([100], maxval=9, dtype=tf.dtypes.int32))
+)
 
+val_data2 = tf.data.Dataset.from_tensor_slices(
+  (tf.random.uniform([100]), tf.random.uniform([100], maxval=9, dtype=tf.dtypes.int32))
+)
+train_data2 = (train_data2.map(_parse_fn2)).batch(32)
+val_data2 = (val_data2.map(_parse_fn2)).batch(32)
 
-def my_model_function():
-    # Return a fresh instance of MyModel
-    return MyModel()
+############### Model
+IMG_SHAPE = (224, 224, 3)
 
+base_model = tf.keras.applications.ResNet50(input_shape=IMG_SHAPE,include_top=False, weights=None)
+base_model.trainable = True
+maxpool_layer = tf.keras.layers.GlobalMaxPooling2D()
+prediction_layer = tf.keras.layers.Dense(9, activation='softmax')
 
-def GetInput():
-    # Return a random batch input tensor matching the input expected by MyModel
-    # Here we choose a batch size of 32 to be consistent with the example
-    return tf.random.uniform(shape=(32, 224, 224, 3), dtype=tf.float32)
+model = tf.keras.Sequential([
+    base_model,
+    maxpool_layer,
+    tf.keras.layers.Dropout(0.4),
+    prediction_layer
+])
 
+model.compile(optimizer=tf.keras.optimizers.Adam(lr=0.01), loss='categorical_crossentropy', metrics=['accuracy'])
+
+model.summary()
+history = model.fit(train_data2.repeat(),
+                epochs=100,
+                steps_per_epoch = 50,
+                validation_data=val_data2.repeat(),
+                validation_steps=10,
+                class_weight={0:1,1:1,2:1,3:1,4:1,5:1,6:1,7:1,8:1,9:1},
+                callbacks = [])

@@ -1,150 +1,103 @@
-# tf.random.uniform((batch_size, 2), dtype=tf.int32) ← input is pair of [user_id, item_id] indices, each a scalar int32
+import random
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
+Python
+# -*- coding:utf-8 -*-
+
+import numpy as np
 import tensorflow as tf
-from tensorflow.keras import layers, regularizers, initializers
+from tensorflow import keras
+from tensorflow.keras.regularizers import l1, l2
+from tensorflow.keras.layers import Embedding, Input, Dense, Lambda, Flatten
 
-class MyModel(tf.keras.Model):
-    def __init__(self,
-                 num_users=1_000_000,
-                 num_items=100_000,
-                 mf_dim=10,
-                 layers_units=[10],
-                 reg_layers=[0.0],
-                 reg_mf=0.0,
-                 alpha=0.5):
-        super().__init__()
-        assert len(layers_units) == len(reg_layers), "Regularizers must match layers count"
+def get_model(num_users, num_items, mf_dim=10, layers=[10], reg_layers=[0], reg_mf=0, alpha=0.5):
+  assert len(layers) == len(reg_layers)
+  num_layer = len(layers) #Number of layers in the MLP
+  
+  # Input variables
+  user_input = Input(shape=(1,), dtype='int32', name = 'user_input')
+  item_input = Input(shape=(1,), dtype='int32', name = 'item_input')
+  
+  # Embedding layer
+  MF_Embedding_User = Embedding(input_dim = num_users, output_dim = mf_dim, name = 'mf_embedding_user', 
+                                embeddings_initializer = keras.initializers.RandomNormal(mean=0.0, stddev=0.01, seed=None), embeddings_regularizer = l2(reg_mf), 
+                                input_length=1)
+  MF_Embedding_Item = Embedding(input_dim = num_items, output_dim = mf_dim, name = 'mf_embedding_item', 
+                                embeddings_initializer = keras.initializers.RandomNormal(mean=0.0, stddev=0.01, seed=None), embeddings_regularizer = l2(reg_mf), 
+                                input_length=1)
 
-        self.num_users = num_users
-        self.num_items = num_items
-        self.mf_dim = mf_dim
-        self.alpha = alpha
-        self.layers_units = layers_units
-        self.reg_layers = reg_layers
+  MLP_Embedding_User = Embedding(input_dim = num_users, output_dim = int(layers[0]/2), name = "mlp_embedding_user", 
+                                  embeddings_initializer = keras.initializers.RandomNormal(mean=0.0, stddev=0.01, seed=None), embeddings_regularizer = l2(reg_layers[0]), 
+                                  input_length=1)
+  MLP_Embedding_Item = Embedding(input_dim = num_items, output_dim = int(layers[0]/2), name = 'mlp_embedding_item', 
+                                  embeddings_initializer = keras.initializers.RandomNormal(mean=0.0, stddev=0.01, seed=None), embeddings_regularizer = l2(reg_layers[0]), 
+                                  input_length=1)
 
-        # Embeddings for matrix factorization (MF) part
-        self.mf_embedding_user = layers.Embedding(
-            input_dim=num_users,
-            output_dim=mf_dim,
-            embeddings_initializer=initializers.RandomNormal(mean=0.0, stddev=0.01),
-            embeddings_regularizer=regularizers.l2(reg_mf),
-            input_length=1,
-            name='mf_embedding_user'
-        )
-        self.mf_embedding_item = layers.Embedding(
-            input_dim=num_items,
-            output_dim=mf_dim,
-            embeddings_initializer=initializers.RandomNormal(mean=0.0, stddev=0.01),
-            embeddings_regularizer=regularizers.l2(reg_mf),
-            input_length=1,
-            name='mf_embedding_item'
-        )
+  # MF part
+  mf_user_latent = Flatten()(MF_Embedding_User(user_input))
+  mf_item_latent = Flatten()(MF_Embedding_Item(item_input))
+  mf_vector = keras.layers.Multiply()([mf_user_latent, mf_item_latent])
 
-        # Embeddings for MLP part, output dim is half of first MLP layer units
-        self.mlp_embedding_user = layers.Embedding(
-            input_dim=num_users,
-            output_dim=layers_units[0] // 2,
-            embeddings_initializer=initializers.RandomNormal(mean=0.0, stddev=0.01),
-            embeddings_regularizer=regularizers.l2(reg_layers[0]),
-            input_length=1,
-            name='mlp_embedding_user'
-        )
-        self.mlp_embedding_item = layers.Embedding(
-            input_dim=num_items,
-            output_dim=layers_units[0] // 2,
-            embeddings_initializer=initializers.RandomNormal(mean=0.0, stddev=0.01),
-            embeddings_regularizer=regularizers.l2(reg_layers[0]),
-            input_length=1,
-            name='mlp_embedding_item'
-        )
+  # MLP part
+  mlp_user_latent = Flatten()(MLP_Embedding_User(user_input))
+  mlp_item_latent = Flatten()(MLP_Embedding_Item(item_input))
+  mlp_vector = keras.layers.Concatenate(axis=-1)([mlp_user_latent, mlp_item_latent])
 
-        # Dense layers for MLP
-        self.mlp_layers = []
-        for idx in range(1, len(layers_units)):
-            self.mlp_layers.append(
-                layers.Dense(
-                    units=layers_units[idx],
-                    activation='relu',
-                    kernel_regularizer=regularizers.l2(reg_layers[idx]),
-                    bias_regularizer=regularizers.l2(reg_layers[idx]),
-                    name=f"layer{idx}"
-                )
-            )
+  for idx in range(1, num_layer):
+    mlp_vector = Dense(layers[idx], 
+                      activation='relu', 
+                      kernel_regularizer = l2(reg_layers[idx]), 
+                      bias_regularizer = l2(reg_layers[idx]), 
+                      name="layer%d" %idx)(mlp_vector)
 
-        # Final prediction layer (sigmoid for binary output)
-        self.prediction_layer = layers.Dense(
-            units=1,
-            activation='sigmoid',
-            kernel_initializer='lecun_uniform',
-            bias_initializer='lecun_uniform',
-            name='prediction'
-        )
+  # Concatenate MF and MLP parts
+  mf_vector = Lambda(lambda x: x * alpha)(mf_vector)
+  mlp_vector = Lambda(lambda x : x * (1 - alpha))(mlp_vector)
+  predict_vector = keras.layers.Concatenate(axis=-1)([mf_vector, mlp_vector])
 
-        self.flatten = layers.Flatten()
-        self.multiply = layers.Multiply()
-        self.concat = layers.Concatenate(axis=-1)
+  # Final prediction layer
+  prediction = Dense(1, 
+                    activation='sigmoid', 
+                    kernel_initializer='lecun_uniform', 
+                    bias_initializer ='lecun_uniform', 
+                    name = "prediction")(predict_vector)
 
-    def call(self, inputs, training=None):
-        # inputs is tuple/list of (user_input, item_input)
-        user_input, item_input = inputs  # both expected shape (batch_size, 1), dtype int32
+  model = keras.Model(inputs=[user_input, item_input], outputs=[prediction])
+  return model
 
-        # MF part embeddings and elementwise multiply
-        mf_user_latent = self.flatten(self.mf_embedding_user(user_input))  # (batch_size, mf_dim)
-        mf_item_latent = self.flatten(self.mf_embedding_item(item_input))  # (batch_size, mf_dim)
-        mf_vector = self.multiply([mf_user_latent, mf_item_latent])  # (batch_size, mf_dim)
+def generate_data(num_user, num_item, count=100):
+    user_input = []
+    item_input = []
+    labels = []
+    for _ in range(count):
+        user = np.random.randint(0,num_user)
+        item = np.random.randint(0,num_item)
+        label = np.random.randint(0,2)
+        user_input.append(user)
+        item_input.append(item)
+        labels.append(label)
+    return np.asarray(user_input), np.asarray(item_input), np.asarray(labels)
 
-        # MLP part embeddings and concatenation
-        mlp_user_latent = self.flatten(self.mlp_embedding_user(user_input))  # (batch_size, layers[0]//2)
-        mlp_item_latent = self.flatten(self.mlp_embedding_item(item_input))  # (batch_size, layers[0]//2)
-        mlp_vector = self.concat([mlp_user_latent, mlp_item_latent])  # (batch_size, layers[0])
+def test_model():
+    num_user = 1000000
+    num_item = 100000
+    count = 10000
+    user_input, item_input, labels = generate_data(num_user, num_item, count)
 
-        # Forward through MLP dense layers
-        for layer in self.mlp_layers:
-            mlp_vector = layer(mlp_vector)
-
-        # Scale MF and MLP parts by alpha and (1-alpha)
-        mf_vector_scaled = mf_vector * self.alpha
-        mlp_vector_scaled = mlp_vector * (1 - self.alpha)
-
-        # Concatenate scaled parts
-        predict_vector = self.concat([mf_vector_scaled, mlp_vector_scaled])
-
-        # Final sigmoid prediction for interaction probability
-        prediction = self.prediction_layer(predict_vector)  # (batch_size, 1)
-
-        return prediction
-
-def my_model_function():
-    # Typical parameters from the original issue: very large user/item vocab with factorization and small MLP
-    num_users = 1_000_000
-    num_items = 100_000
-    mf_dim = 10
-    layers = [10]  # MLP with only input layer size 10
-    reg_layers = [0.0]
-    reg_mf = 0.0
-    alpha = 0.5
-
-    return MyModel(
-        num_users=num_users,
-        num_items=num_items,
-        mf_dim=mf_dim,
-        layers_units=layers,
-        reg_layers=reg_layers,
-        reg_mf=reg_mf,
-        alpha=alpha
+    model = get_model(num_user, num_item)
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(),
+        loss=tf.keras.losses.BinaryCrossentropy()
     )
 
-def GetInput(batch_size=256):
-    # Generate random batch of (user_id, item_id) pairs for the input
-    num_users = 1_000_000
-    num_items = 100_000
+    # Callbacks
+    callbacks = [ tf.keras.callbacks.TensorBoard(log_dir='tb-logs') ]
+    model.fit([user_input, item_input], labels, batch_size=256, epochs=3, callbacks=callbacks)
 
-    # Random int32 tensor shape (batch_size, 1) each for user and item idx
-    user_input = tf.random.uniform(
-        shape=(batch_size, 1), minval=0, maxval=num_users, dtype=tf.int32
-    )
-    item_input = tf.random.uniform(
-        shape=(batch_size, 1), minval=0, maxval=num_items, dtype=tf.int32
-    )
-    return (user_input, item_input)
+if __name__ == "__main__":
+    print("Tensorflow version: ", tf.__version__)
+    test_model()
 
+tf.__version__
+'2.0.0-rc1'

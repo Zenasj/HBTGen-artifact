@@ -1,18 +1,16 @@
-# torch.rand(100, dtype=torch.float32)
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.linear = nn.Linear(100, 10)
-    
-    def forward(self, x):
-        return self.linear(x)
+class RandomDataset(torch.utils.data.Dataset):
+    def __init__(self, length: int):
+        self.length = length
+    def __len__(self):
+        return self.length
+    def __getitem__(self, idx: int):
+        return torch.rand(100), torch.rand(5)
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(100, dtype=torch.float32)
-
+num_replicas = 7    # 6 works fine
+for i in range(num_replicas):
+    sampler = torch.utils.data.DistributedSampler(
+        RandomDataset(3), num_replicas=num_replicas, rank=i
+    )
+    print(list(sampler))

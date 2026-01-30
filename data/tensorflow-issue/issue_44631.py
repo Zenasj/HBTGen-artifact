@@ -1,49 +1,61 @@
-# tf.random.uniform((B,), dtype=tf.string) ← Input is a 1D batch of strings (text samples)
+from tensorflow import keras
+from tensorflow.keras import layers
+
+import pandas as pd
+import numpy as np
+import os
+import time
 
 import tensorflow as tf
 import tensorflow_hub as hub
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # TensorFlow Hub embedding layer for English text, not trainable
-        self.embed = hub.KerasLayer(
-            "https://tfhub.dev/google/nnlm-en-dim50/1",
-            output_shape=[50],
-            input_shape=[],
-            dtype=tf.string,
-            trainable=False,
-            name='embedding_layer'
-        )
-        # Simple classifier layers on top of the embedding
-        self.dense1 = tf.keras.layers.Dense(16, activation='relu', name='dense_relu')
-        self.dense2 = tf.keras.layers.Dense(3, activation='softmax', name='output')
+def make_dataset(path, n_samples):
+    df = pd.read_csv(path, usecols=[6,9], nrows=n_samples)
+    df.columns = ['ratings', 'title']
 
-    def call(self, inputs, training=False):
-        # inputs: batch of strings (shape [B])
-        x = self.embed(inputs)  # shape [B, 50]
-        x = self.dense1(x)      # shape [B, 16]
-        x = self.dense2(x)      # shape [B, 3] softmax output over 3 classes
-        return x
+    text = df['title'].tolist()
+    text = [str(t).encode('ascii', 'replace') for t in text]
+    text = np.array(text, dtype='object')[:]
 
-def my_model_function():
-    # Return an instance of MyModel with the pretrained tensorflow hub embed layer
-    return MyModel()
+    labels = df['ratings'].tolist()
+    labels = [1 if i>= 4 else 0 if i == 3 else -1 for i in labels]
 
-def GetInput():
-    # Generate a random batch of strings to feed the model
-    # For demo/testing, use random ascii strings
-    batch_size = 8  # Example batch size
-    import numpy as np
+    labels = np.array(pd.get_dummies(labels), dtype=int)[:]
 
-    # Create random ASCII strings of length between 5 and 20 characters
-    def random_ascii_string(length):
-        # Generate random bytes in the ascii letter range (32-126)
-        ascii_bytes = np.random.randint(32, 127, size=length).astype('uint8')
-        return ascii_bytes.tobytes().decode('ascii')
+    return labels, text
 
-    text_batch = [random_ascii_string(np.random.randint(5, 20)) for _ in range(batch_size)]
-    # Convert to tensor of dtype string
-    text_tensor = tf.constant(text_batch, dtype=tf.string)
-    return text_tensor
 
+def get_model():
+    embed = hub.KerasLayer("https://tfhub.dev/google/nnlm-en-dim50/1",
+     output_shape=[50],
+     input_shape=[],
+     dtype=tf.string,
+     name='input',
+     trainable=False)
+
+    model = tf.keras.Sequential()
+    model.add(embed)
+    model.add(tf.keras.layers.Dense(16, activation='relu'))
+    model.add(tf.keras.layers.Dense(3, activation='softmax', name='output'))
+    model.compile(loss='categorical_crossentropy', optimizer='Adam', metrics=['acc'])
+    model.summary()
+    return model
+
+def train(epochs=5, bs=32):
+    y_train, x_train = make_dataset('reviews_train.csv', n_samples=100000)
+    y_val, x_val = make_dataset('reviews_test.csv', n_samples=10000)
+    model_checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
+                                filepath='model_checkpoint',
+                                save_weights_only=False,
+                                monitor='val_acc',
+                                mode='max',
+                                save_best_only=True)
+    model = get_model()
+    model.fit(x_train, y_train, batch_size=bs, epochs=epochs, verbose=1,
+         validation_data=(x_val, y_val),
+         callbacks=[model_checkpoint_callback])
+
+
+
+if __name__ == "__main__":
+    train()

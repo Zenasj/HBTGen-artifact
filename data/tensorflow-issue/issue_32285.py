@@ -1,29 +1,46 @@
-# tf.random.uniform((B, 224), dtype=tf.float32) ← Inferred input shape based on example input
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
+import os
+import numpy as np
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Create input layer with explicit name 'Image_input'
-        self.input_layer = tf.keras.layers.Input(shape=(224,), name='Image_input', dtype=tf.float32)
-        # Dense layer outputting 5 units
-        self.dense = tf.keras.layers.Dense(5)
-        # Softmax activation layer with explicit name 'output-softmax'
-        self.softmax = tf.keras.layers.Activation('softmax', name='output-softmax')
+def get_data():
+    images = np.zeros((64,224))
+    labels = np.zeros((64,5))
+    inputs = {
+        'Image_input':images
+    }
+    outputs = {
+        'output-softmax':labels
+    }
+    return inputs, outputs
 
-    def call(self, inputs):
-        # Forward pass through the model implementing input->dense->softmax
-        x = self.dense(inputs)
-        return self.softmax(x)
+def create_model():
+    input_layer = tf.keras.layers.Input(name='Image_input', shape=(224), dtype='float32')
+    model = tf.keras.layers.Dense(5)(input_layer)
+    model = tf.keras.layers.Activation('softmax', name = "output-softmax")(model)
+    model = tf.keras.models.Model(inputs=input_layer, outputs=[model])
+    return model
+    
+model = create_model()
 
-def my_model_function():
-    # Return instance of MyModel
-    return MyModel()
+optimizer = tf.keras.optimizers.Adadelta(lr=1.0, rho=0.95, epsilon=None, decay=0.0)
+model.compile(loss='categorical_crossentropy', optimizer=optimizer)
+    
+data = get_data()
+model.fit(data[0], data[1], batch_size=16, epochs=10)
 
-def GetInput():
-    # Return a random input tensor matching input shape (batch size flexible, 224)
-    # Use batch size 16 as example for typical batch processing
-    # dtype matches input layer dtype: float32
-    return tf.random.uniform((16, 224), dtype=tf.float32)
+tf.keras.models.save_model(model,"model")
 
+model1 = tf.keras.models.load_model("model")
+
+model1.fit(data[0], data[1], batch_size=16, epochs=10)
+
+def get_data():
+        images = np.zeros((64,224))
+        labels = np.zeros((64,5))
+        return images,labels

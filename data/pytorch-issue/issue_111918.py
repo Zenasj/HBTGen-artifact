@@ -1,19 +1,16 @@
-# torch.rand(1, dtype=torch.float32)
 import torch
-import torch.nn as nn
+import torch._dynamo.config
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        x = x + 1
-        y = x.item()
-        if y > 2:
-            return x * 2
-        else:
-            return x * 3
+torch._dynamo.config.capture_scalar_outputs = True
 
-def my_model_function():
-    return MyModel()
+@torch.compile(backend="eager", dynamic=True)
+def fn(x):
+    x = x + 1
+    y = x.item()
+    if y > 2:
+        return x * 2
+    else:
+        return x * 3
 
-def GetInput():
-    return torch.rand(1, dtype=torch.float32)
-
+x = torch.tensor([3.0])
+fn(x)

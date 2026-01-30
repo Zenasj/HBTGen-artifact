@@ -1,38 +1,34 @@
-# tf.random.uniform((1, 28, 28), dtype=tf.float32) ← Input shape inferred from the Flatten input layer in the original Sequential model
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Original model structure from issue:
-        # Flatten input (28,28)
-        # Dense(128, activation=None)
-        # ELU activation
-        # Dense(10, activation='softmax')
+model = tf.keras.models.Sequential([
+  tf.keras.layers.Flatten(input_shape=(28, 28)),
+  tf.keras.layers.Dense(128, activation=None),
+  #  tf.keras.layers.ReLU(),
+  tf.keras.layers.ELU(),
+  tf.keras.layers.Dense(10, activation='softmax')
+])
 
-        self.flatten = tf.keras.layers.Flatten(input_shape=(28, 28))
-        self.dense1 = tf.keras.layers.Dense(128, activation=None)
-        self.elu = tf.keras.layers.ELU()
-        self.dense2 = tf.keras.layers.Dense(10, activation='softmax')
-    
-    def call(self, inputs, training=False):
-        x = self.flatten(inputs)
-        x = self.dense1(x)
-        x = self.elu(x)
-        x = self.dense2(x)
-        return x
+# full-integer quantization, simulate dataset with random input
+def representative_data_gen():
+  for input_value in [np.random.randn(1, 28, 28).astype(np.float32) for _ in range(10)]:
+    yield [input_value] 
 
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+converter.representative_dataset = representative_data_gen
 
-def my_model_function():
-    # Return a new instance of MyModel.
-    # No pretrained weights were mentioned in the issue, so model is returned with default initialization.
-    return MyModel()
+converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
+converter.target_spec.supported_types = {tf.int8}
 
+converter.inference_input_type = tf.int8 #tf.uint8
+converter.inference_output_type = tf.int8 #tf.uint8
 
-def GetInput():
-    # Return a random float32 input tensor matching the model input (B=1,H=28,W=28)
-    # The original example used np.random.randn(1, 28, 28) to generate representative data.
-    # Here, use uniform float32 for simplicity and reproducibility.
-    return tf.random.uniform((1, 28, 28), dtype=tf.float32)
-
+tflite_model_quant = converter.convert()
+with open('basic_fullint_quant.tflite', 'wb') as f:
+  f.write(tflite_model_quant)

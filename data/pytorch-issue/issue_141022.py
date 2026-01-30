@@ -1,20 +1,11 @@
-# torch.rand(2, dtype=torch.float32)
 import torch
-import torch.nn as nn
+from torch.fx.experimental.proxy_tensor import make_fx
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, a):
-        b = a + 1
-        c = b.view(-1)
-        c.add_(1)  # In-place operation as in original code
-        return b
+def func(a):
+    b = a + 1
+    c = b.view(-1)
+    c.add_(1)
+    return b
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.randn(2)
-
+input = torch.randn(2)
+out = make_fx(func)(input)

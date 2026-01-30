@@ -1,16 +1,9 @@
-# torch.rand(B, 3, dtype=torch.float32)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        code = compile("print('Hello World')", "foo", "exec")
-        exec(code)
-        return x
+@torch.compile()
+def foo(x, y):
+    code = compile(y, "foo", "exec")
+    exec(y)
+    return x
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(3)
-
+print(foo(torch.rand(3), "print('Hello World')"))

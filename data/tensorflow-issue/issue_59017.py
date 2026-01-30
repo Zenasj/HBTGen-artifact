@@ -1,4 +1,51 @@
-# tf.random.uniform((1, 64, 64, 4), dtype=tf.float32) ← Assumed input shape (batch=1, height=64, width=64, channels=4)
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
+converter = tf.lite.TFLiteConverter.from_saved_model(f'savedmodel/decoder')
+tflite_model = converter.convert()
+
+# save the model
+with open(f'{name}.tflite', 'wb') as f:
+      f.write(tflite_model)
+
+latent = keras.layers.Input((n_h, n_w, 4))
+decoder = Decoder()
+decoder = keras.models.Model(latent, decoder(latent))
+
+class Decoder(keras.Sequential):
+    def __init__(self):
+        super().__init__(
+            [
+                keras.layers.Lambda(lambda x: 1 / 0.18215 * x),
+                PaddedConv2D(4, 1),
+                PaddedConv2D(512, 3, padding=1),
+                ResnetBlock(512, 512),
+                AttentionBlock(512),
+                ResnetBlock(512, 512),
+                ResnetBlock(512, 512),
+                ResnetBlock(512, 512),
+                ResnetBlock(512, 512),
+                keras.layers.UpSampling2D(size=(2, 2)),
+                PaddedConv2D(512, 3, padding=1),
+                ResnetBlock(512, 512),
+                ResnetBlock(512, 512),
+                ResnetBlock(512, 512),
+                keras.layers.UpSampling2D(size=(2, 2)),
+                PaddedConv2D(512, 3, padding=1),
+                ResnetBlock(512, 256),
+                ResnetBlock(256, 256),
+                ResnetBlock(256, 256),
+                keras.layers.UpSampling2D(size=(2, 2)),
+                PaddedConv2D(256, 3, padding=1),
+                ResnetBlock(256, 128),
+                ResnetBlock(128, 128),
+                ResnetBlock(128, 128),
+                tfa.layers.GroupNormalization(epsilon=1e-5),
+                keras.layers.Activation("swish"),
+                PaddedConv2D(3, 3, padding=1),
+            ]
+        )
+
 import tensorflow as tf
 from tensorflow import keras
 import tensorflow_addons as tfa
@@ -9,13 +56,12 @@ class PaddedConv2D(keras.layers.Layer):
         super().__init__()
         self.padding2d = keras.layers.ZeroPadding2D((padding, padding))
         self.conv2d = keras.layers.Conv2D(
-            channels, kernel_size, strides=(stride, stride), padding='valid'
+            channels, kernel_size, strides=(stride, stride)
         )
 
     def call(self, x):
         x = self.padding2d(x)
         return self.conv2d(x)
-
 
 class ResnetBlock(keras.layers.Layer):
     def __init__(self, in_channels, out_channels):
@@ -24,16 +70,16 @@ class ResnetBlock(keras.layers.Layer):
         self.conv1 = PaddedConv2D(out_channels, 3, padding=1)
         self.norm2 = tfa.layers.GroupNormalization(epsilon=1e-5)
         self.conv2 = PaddedConv2D(out_channels, 3, padding=1)
-        if in_channels != out_channels:
-            self.nin_shortcut = PaddedConv2D(out_channels, 1)
-        else:
-            self.nin_shortcut = lambda x: x
+        self.nin_shortcut = (
+            PaddedConv2D(out_channels, 1)
+            if in_channels != out_channels
+            else lambda x: x
+        )
 
     def call(self, x):
-        h = self.conv1(tf.keras.activations.swish(self.norm1(x)))
-        h = self.conv2(tf.keras.activations.swish(self.norm2(h)))
+        h = self.conv1(keras.activations.swish(self.norm1(x)))
+        h = self.conv2(keras.activations.swish(self.norm2(h)))
         return self.nin_shortcut(x) + h
-
 
 class AttentionBlock(keras.layers.Layer):
     def __init__(self, channels):
@@ -49,29 +95,28 @@ class AttentionBlock(keras.layers.Layer):
         q, k, v = self.q(h_), self.k(h_), self.v(h_)
 
         # Compute attention
-        b, h, w, c = tf.shape(q)[0], tf.shape(q)[1], tf.shape(q)[2], tf.shape(q)[3]
-        # Reshape and transpose to use batch matmul
-        q_reshaped = tf.reshape(q, (b, h * w, c))  # b, hw, c
-        k_reshaped = tf.transpose(tf.reshape(k, (b, h * w, c)), perm=[0, 2, 1])  # b, c, hw
+        b, h, w, c = q.shape
+        q = tf.reshape(q, (-1, h * w, c))  # b,hw,c
+        k = keras.layers.Permute((3, 1, 2))(k)
+        k = tf.reshape(k, (-1, c, h * w))  # b,c,hw
+        w_ = q @ k
+        w_ = w_ * (c ** (-0.5))
+        w_ = keras.activations.softmax(w_)
 
-        w_ = tf.matmul(q_reshaped, k_reshaped)  # b, hw, hw
-        scale = tf.math.rsqrt(tf.cast(c, tf.float32))
-        w_ = w_ * scale
-        w_ = tf.nn.softmax(w_, axis=-1)
-
-        v_reshaped = tf.transpose(tf.reshape(v, (b, h * w, c)), perm=[0, 2, 1])  # b, c, hw
-        h_ = tf.matmul(v_reshaped, tf.transpose(w_, perm=[0, 2, 1]))  # b, c, hw
-        h_ = tf.transpose(h_, perm=[0, 2, 1])  # b, hw, c
-        h_ = tf.reshape(h_, (b, h, w, c))
-
+        # Attend to values
+        v = keras.layers.Permute((3, 1, 2))(v)
+        v = tf.reshape(v, (-1, c, h * w))
+        w_ = keras.layers.Permute((2, 1))(w_)
+        h_ = v @ w_
+        h_ = keras.layers.Permute((2, 1))(h_)
+        h_ = tf.reshape(h_, (-1, h, w, c))
         return x + self.proj_out(h_)
-
 
 class Decoder(keras.Sequential):
     def __init__(self):
         super().__init__(
             [
-                keras.layers.Lambda(lambda x: x / 0.18215),  # scale input
+                keras.layers.Lambda(lambda x: 1 / 0.18215 * x),
                 PaddedConv2D(4, 1),
                 PaddedConv2D(512, 3, padding=1),
                 ResnetBlock(512, 512),
@@ -102,43 +147,31 @@ class Decoder(keras.Sequential):
         )
 
 
-class MyModel(tf.keras.Model):
-    def __init__(self, img_height=512, img_width=512, download_weights=True):
-        super().__init__()
-        self.n_h = img_height // 8  # latent height
-        self.n_w = img_width // 8   # latent width
-        self.decoder = Decoder()
+def get_models(img_height=512, img_width=512, download_weights=True):
+    n_h = img_height // 8
+    n_w = img_width // 8
 
-        # Flag to optionally load weights if available
-        if download_weights:
-            try:
-                decoder_weights_fpath = keras.utils.get_file(
-                    origin="https://huggingface.co/fchollet/stable-diffusion/resolve/main/decoder.h5",
-                    file_hash="6d3c5ba91d5cc2b134da881aaa157b2d2adc648e5625560e3ed199561d0e39d5",
-                )
-                self.decoder.load_weights(decoder_weights_fpath)
-            except Exception:
-                # Weights may not be downloaded/available; silently pass
-                pass
+    # Create decoder
+    latent = keras.layers.Input((n_h, n_w, 4))
+    decoder = Decoder()
+    decoder = keras.models.Model(latent, decoder(latent))
 
-    def call(self, inputs):
-        # Ensure inputs have batch dimension for TFLite compatibility
-        # If inputs shape is (n_h, n_w, 4), add batch dim 1
-        if tf.rank(inputs) == 3:
-            inputs = tf.reshape(inputs, (1, self.n_h, self.n_w, 4))
-        return self.decoder(inputs)
+    if download_weights:
+        decoder_weights_fpath = keras.utils.get_file(
+            origin="https://huggingface.co/fchollet/stable-diffusion/resolve/main/decoder.h5",
+            file_hash="6d3c5ba91d5cc2b134da881aaa157b2d2adc648e5625560e3ed199561d0e39d5",
+        )
+
+        decoder.load_weights(decoder_weights_fpath)
+    return decoder
 
 
-def my_model_function():
-    # Return an instance of MyModel with default input size 512x512 latent space assumed
-    return MyModel()
+if __name__=='__main__':
+    decoder = get_models()
+    decoder.save('savedmodel/decoder_reproducer')
+    converter = tf.lite.TFLiteConverter.from_saved_model(f'savedmodel/decoder_reproducer')
+    tflite_model = converter.convert()
 
-
-def GetInput():
-    # Generate a random input tensor matching the expected latent shape (batch=1 assumed)
-    batch = 1
-    n_h = 512 // 8  # 64
-    n_w = 512 // 8  # 64
-    channels = 4
-    return tf.random.uniform((batch, n_h, n_w, channels), dtype=tf.float32)
-
+    # save the model
+    with open(f'decoder.tflite', 'wb') as f:
+        f.write(tflite_model)

@@ -1,19 +1,22 @@
-# torch.rand(B, 2, dtype=torch.float32)
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.layer = nn.Linear(2, 1)  # Matches the Linear model in the issue's example
+import torch
+import matplotlib.pyplot as plt
 
-    def forward(self, x):
-        return self.layer(x)
+model = torch.nn.Linear(2, 1)
+optimizer = torch.optim.SGD(model.parameters(), lr=0.5)
+lr_scheduler_1 = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=20, eta_min=0.1)
+lr_scheduler_2 = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0.1, max_lr=0.3, step_size_up=1, step_size_down=3)
 
-def my_model_function():
-    return MyModel()
+lrs = []
 
-def GetInput():
-    # Generates input matching the Linear layer's expected shape (batch_size, 2)
-    return torch.rand(1, 2, dtype=torch.float32)
+for i in range(40):
+    if i <= lr_scheduler_1.T_max:
+        lr_scheduler_1.step()
+    else:
+        lr_scheduler_2.step()
+    lrs.append(
+        optimizer.param_groups[0]["lr"]
+    )
 
+plt.plot(lrs)

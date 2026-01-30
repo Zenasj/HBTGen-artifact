@@ -1,149 +1,87 @@
+import torch.distributed as dist
+import argparse
 import torch
-import torch.nn as nn
+import os
 
-# torch.rand(B, 3, 28, 28, dtype=torch.float32)
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1)
-        self.relu = nn.ReLU()
-        self.pool = nn.MaxPool2d(2, 2)
-        self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
-        self.fc = nn.Linear(32 * 7 * 7, 10)  # Assuming input size 28x28 after pooling
+parser = argparse.ArgumentParser()
+parser.add_argument("--local_rank", type=int)
+args = parser.parse_args()
 
-    def forward(self, x):
-        x = self.pool(self.relu(self.conv1(x)))
-        x = self.pool(self.relu(self.conv2(x)))
-        x = x.view(x.size(0), -1)
-        x = self.fc(x)
-        return x
+local_rank = int(os.environ["LOCAL_RANK"])
 
-def my_model_function():
-    model = MyModel()
-    return model
+torch.cuda.set_device(local_rank)
 
-def GetInput():
-    return torch.rand(4, 3, 28, 28, dtype=torch.float32)
+dist.init_process_group("nccl")
 
-# Okay, let's tackle this problem. The user provided a GitHub issue about PyTorch's distributed training logging levels and some related bugs. The task is to generate a complete Python code file based on the issue's content. 
-# First, I need to understand what the user is asking for. The goal is to extract a PyTorch model from the issue and create a Python script that includes the model class, a function to create the model instance, and a function to generate input data. The code must adhere to specific constraints like class names, handling multiple models if present, and ensuring the input matches the model's requirements.
-# Looking at the issue, it's mainly a bug report about logging levels in torch.distributed.launch and torch.distributed.run. The discussion revolves around default log levels being set to INFO instead of WARNING and some deprecation warnings. There's also mention of a script that uses distributed training, but no actual model code is provided. 
-# Hmm, the problem is that the GitHub issue doesn't describe a PyTorch model structure. The user's task requires creating a model from the issue's content, but the issue is about logging and distributed training setup, not a model's architecture. 
-# Wait, the user might have made a mistake in the task. Since there's no model code in the provided issue, I need to infer if there's any model-related content. Looking through the comments, there's a script snippet provided by the user in one of the comments:
-# import torch.distributed as dist
-# import argparse
-# import torch
-# import os
-# parser = argparse.ArgumentParser()
-# parser.add_argument("--local_rank", type=int)
-# args = parser.parse_args()
-# local_rank = int(os.environ["LOCAL_RANK"])
-# torch.cuda.set_device(local_rank)
-# dist.init_process_group("nccl")
-# dist.barrier()
-# dist.get_world_size()
-# dist.is_available()
-# dist.get_rank()
-# This is a basic script for initializing distributed training using NCCL. It doesn't define a model, but it's part of the distributed setup. Since the task requires creating a model, maybe the user expects a minimal model that can be used in such a setup.
-# The requirements mention that if there are multiple models, they should be fused. But since there's no mention of different models, perhaps we need to create a simple model that could be part of a distributed training setup. For example, a small CNN or a linear layer.
-# The GetInput function needs to return a tensor that the model can process. The input shape comment at the top should reflect that. Since the distributed example uses CUDA and NCCL, the model's input would typically be images, but without specifics, maybe a generic tensor.
-# Looking at the constraints again: the class must be MyModel, and the functions my_model_function and GetInput must be present. The model should be compilable with torch.compile.
-# Since the original issue's script uses NCCL (for GPU), the model should probably be a simple neural network that can run on GPU. Let's go with a basic CNN example. The input shape would be (batch, channels, height, width). Let's assume a 3-channel image, say 28x28 for MNIST-like data. So the input comment would be torch.rand(B, 3, 28, 28, dtype=torch.float32).
-# Putting it all together:
-# The MyModel class could be a simple CNN with a couple of conv layers and linear layers. The my_model_function initializes the model, maybe on CUDA. The GetInput function returns a random tensor matching the input shape.
-# Wait, but the issue doesn't mention any specific model architecture. Since there's no model code in the issue, I have to make an educated guess. The user might expect a minimal model that can be used in distributed training scenarios. Let's proceed with a simple model.
-# Another point: the issue mentions that the model should be ready to use with torch.compile. So the model needs to be compatible with that, which most modern PyTorch models are.
-# So here's the plan:
-# 1. Define MyModel as a simple CNN with a couple of conv layers and ReLUs, followed by flatten and linear layers.
-# 2. The input shape is Bx3x28x28 (assuming images).
-# 3. my_model_function returns an instance of MyModel, possibly on CUDA if available.
-# 4. GetInput returns a random tensor of the correct shape.
-# Wait, but the user's script example doesn't have a model, so maybe the model isn't part of the issue. Did I miss any model code in the issue?
-# Looking again through all the comments, the only code provided is the distributed setup script. There's no model definition. Therefore, the task might be a bit ambiguous, but I have to proceed with creating a plausible model based on the context of distributed training.
-# Alternatively, maybe the user wants to create a model that demonstrates the logging issue? But that's unclear. Since the task requires a model, I'll proceed with a standard example.
-# So the code would be:
-# The model class:
-# class MyModel(nn.Module):
-#     def __init__(self):
-#         super(MyModel, self).__init__()
-#         self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1)
-#         self.relu = nn.ReLU()
-#         self.pool = nn.MaxPool2d(2, 2)
-#         self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
-#         self.fc = nn.Linear(32*7*7, 10)  # For 28x28 input, after two pools: 28/2/2=7
-#     def forward(self, x):
-#         x = self.pool(self.relu(self.conv1(x)))
-#         x = self.pool(self.relu(self.conv2(x)))
-#         x = x.view(x.size(0), -1)
-#         x = self.fc(x)
-#         return x
-# The input function:
-# def GetInput():
-#     return torch.rand(4, 3, 28, 28, dtype=torch.float32)
-# The my_model_function would just return MyModel().
-# Wait, but the user's code might need to run on GPU. Should the model be moved to CUDA? The GetInput function could generate tensors on CUDA, but maybe it's better to leave that to the user. The function should return a tensor that works with the model, so if the model is on CPU, then CPU tensor. Alternatively, maybe the code should handle that, but according to the task, the input must work with MyModel()(GetInput()), so the model's device should match the input's.
-# Alternatively, the model's __init__ could check device and move to CUDA, but that might complicate things. The simplest is to have the input be on CPU, and the model can be moved to CUDA when needed.
-# Alternatively, since the original script uses torch.cuda.set_device(local_rank), the model should be on CUDA. Maybe in my_model_function, we can do:
-# def my_model_function():
-#     model = MyModel()
-#     model.cuda()
-#     return model
-# But the GetInput would then need to return a tensor on CUDA. Or perhaps it's better to leave the device handling to the user, as the model can be moved when compiled.
-# Alternatively, the GetInput function can return a tensor on the correct device. Hmm, but the task says GetInput must return a tensor that works with MyModel()(GetInput()), so if the model is on CUDA, the input must be too. Since the user's script example uses CUDA, maybe the model is intended to be on GPU.
-# Therefore, in my_model_function, we'll initialize the model on CUDA if available:
-# def my_model_function():
-#     model = MyModel()
-#     if torch.cuda.is_available():
-#         model.cuda()
-#     return model
-# Then GetInput should return a tensor on the same device. But how to know the device? Alternatively, maybe the input is generated on CPU and the model moves it, but that's not efficient. Alternatively, the GetInput can take a device parameter, but the task says not to include any test code or main blocks. So perhaps the GetInput function should return a tensor on CPU, and when using the model, it's up to the user to move it. Wait, but the model's forward expects the input to be on the same device as the model's parameters.
-# Hmm, perhaps the simplest way is to have GetInput return a CPU tensor, and the model is initialized on CPU. But given that the original script uses CUDA, maybe the model is intended to be on GPU. Alternatively, to avoid hard-coding, maybe the GetInput function returns a tensor on the same device as the model. But since the model instance is created by my_model_function, which could be on any device, perhaps GetInput should return a tensor on CPU, and the user can move it when needed.
-# Alternatively, the input can be generated as a CPU tensor, and when compiled, the model and input can be moved to CUDA. Since the task requires the code to be usable with torch.compile, maybe it's okay.
-# Alternatively, maybe the GetInput function should return a tensor with the same device as the model. But without knowing the model's device, that's tricky. Since the task requires that GetInput() works directly with MyModel()(GetInput()), the input must be compatible in terms of device. 
-# Perhaps the model is initialized on CPU by default, and the input is CPU. So:
-# def GetInput():
-#     return torch.rand(4, 3, 28, 28, dtype=torch.float32)
-# Then, the model is on CPU, and the input is CPU, so it works. If the user wants to run on CUDA, they can move both.
-# Alternatively, to make it work with the distributed example which uses CUDA, maybe the model should be on CUDA, and the input as well. But how to handle that in the code without knowing the device? Maybe in the my_model_function, we can set the device based on local_rank, but that's part of the distributed setup. 
-# Wait, the original script sets the device using torch.cuda.set_device(local_rank). Since this code is for a single model instance, perhaps the model should be on the current device. 
-# Alternatively, since the problem is about the logging, perhaps the model is not the focus here, but the user's task requires creating a model regardless. Since there's no model code in the issue, I have to make an assumption.
-# Another angle: the user's example script initializes distributed training but doesn't have a model. So maybe the model is just a placeholder, and the actual code requires a simple model that can be used in such a setup. 
-# Therefore, proceeding with the CNN example as above.
-# Now, checking the constraints:
-# - Class name must be MyModel: done.
-# - If multiple models, fuse them. Since there are none, proceed.
-# - GetInput must return valid input. The input is Bx3x28x28, so the comment at the top is # torch.rand(B, 3, 28, 28, dtype=torch.float32).
-# - The model should be compilable. The code uses standard PyTorch modules, so that's okay.
-# - No test code or main blocks: the code only has the required functions and class.
-# - All in one code block.
-# So putting it all together:
-# The code would look like this:
-# Wait, but the input shape in the comment says B, C, H, W. The actual GetInput uses 4 as batch size, which is okay. The comment's B is a placeholder, so that's fine.
-# But the user's issue was about distributed training, so maybe the model should be wrapped in DistributedDataParallel? But the task requires the model to be MyModel, so perhaps not. The model itself doesn't need to be distributed; the user's code would handle that externally.
-# Alternatively, since the task requires the model to be usable with torch.compile, which is separate from distributed, the code is okay as is.
-# Another check: The problem mentioned that the model must be ready to use with torch.compile. The model uses standard layers, so that should be okay.
-# I think this meets all the requirements. The code defines a simple model, input function, and follows the structure.
-# </think>
-# ```python
-# import torch
-# import torch.nn as nn
-# # torch.rand(B, 3, 28, 28, dtype=torch.float32)
-# class MyModel(nn.Module):
-#     def __init__(self):
-#         super(MyModel, self).__init__()
-#         self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1)
-#         self.relu = nn.ReLU()
-#         self.pool = nn.MaxPool2d(2, 2)
-#         self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
-#         self.fc = nn.Linear(32 * 7 * 7, 10)  # For 28x28 input after 2x pooling
-#     def forward(self, x):
-#         x = self.pool(self.relu(self.conv1(x)))
-#         x = self.pool(self.relu(self.conv2(x)))
-#         x = x.view(x.size(0), -1)
-#         x = self.fc(x)
-#         return x
-# def my_model_function():
-#     return MyModel()
-# def GetInput():
-#     return torch.rand(4, 3, 28, 28, dtype=torch.float32)
-# ```
+dist.barrier()
+
+dist.get_world_size()
+dist.is_available()
+
+dist.get_rank()
+
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 0, "group_rank": 0, "worker_id": "34604", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [0], \"role_rank\": [0], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 1, "group_rank": 0, "worker_id": "34605", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [1], \"role_rank\": [1], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 2, "group_rank": 0, "worker_id": "34606", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [2], \"role_rank\": [2], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 3, "group_rank": 0, "worker_id": "34607", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [3], \"role_rank\": [3], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 4, "group_rank": 0, "worker_id": "34608", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [4], \"role_rank\": [4], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 5, "group_rank": 0, "worker_id": "34609", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [5], \"role_rank\": [5], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 6, "group_rank": 0, "worker_id": "34610", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [6], \"role_rank\": [6], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 7, "group_rank": 0, "worker_id": "34611", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [7], \"role_rank\": [7], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 8, "group_rank": 0, "worker_id": "34612", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [8], \"role_rank\": [8], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 9, "group_rank": 0, "worker_id": "34613", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [9], \"role_rank\": [9], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 10, "group_rank": 0, "worker_id": "34614", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [10], \"role_rank\": [10], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 11, "group_rank": 0, "worker_id": "34615", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [11], \"role_rank\": [11], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 12, "group_rank": 0, "worker_id": "34616", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [12], \"role_rank\": [12], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 13, "group_rank": 0, "worker_id": "34617", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [13], \"role_rank\": [13], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 14, "group_rank": 0, "worker_id": "34618", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [14], \"role_rank\": [14], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 15, "group_rank": 0, "worker_id": "34619", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [15], \"role_rank\": [15], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 16, "group_rank": 0, "worker_id": "34620", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [16], \"role_rank\": [16], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 17, "group_rank": 0, "worker_id": "34621", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [17], \"role_rank\": [17], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 18, "group_rank": 0, "worker_id": "34622", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [18], \"role_rank\": [18], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 19, "group_rank": 0, "worker_id": "34623", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [19], \"role_rank\": [19], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 20, "group_rank": 0, "worker_id": "34624", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [20], \"role_rank\": [20], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 21, "group_rank": 0, "worker_id": "34625", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [21], \"role_rank\": [21], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 22, "group_rank": 0, "worker_id": "34626", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [22], \"role_rank\": [22], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 23, "group_rank": 0, "worker_id": "34627", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [23], \"role_rank\": [23], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 24, "group_rank": 0, "worker_id": "34628", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [24], \"role_rank\": [24], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 25, "group_rank": 0, "worker_id": "34629", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [25], \"role_rank\": [25], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 26, "group_rank": 0, "worker_id": "34630", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [26], \"role_rank\": [26], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 27, "group_rank": 0, "worker_id": "34631", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [27], \"role_rank\": [27], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 28, "group_rank": 0, "worker_id": "34632", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [28], \"role_rank\": [28], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 29, "group_rank": 0, "worker_id": "34633", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [29], \"role_rank\": [29], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 30, "group_rank": 0, "worker_id": "34634", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [30], \"role_rank\": [30], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 31, "group_rank": 0, "worker_id": "34635", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [31], \"role_rank\": [31], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 32, "group_rank": 0, "worker_id": "34636", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [32], \"role_rank\": [32], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 33, "group_rank": 0, "worker_id": "34637", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [33], \"role_rank\": [33], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 34, "group_rank": 0, "worker_id": "34638", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [34], \"role_rank\": [34], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 35, "group_rank": 0, "worker_id": "34639", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [35], \"role_rank\": [35], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 36, "group_rank": 0, "worker_id": "34640", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [36], \"role_rank\": [36], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 37, "group_rank": 0, "worker_id": "34641", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [37], \"role_rank\": [37], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 38, "group_rank": 0, "worker_id": "34642", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [38], \"role_rank\": [38], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 39, "group_rank": 0, "worker_id": "34643", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [39], \"role_rank\": [39], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 40, "group_rank": 0, "worker_id": "34644", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [40], \"role_rank\": [40], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 41, "group_rank": 0, "worker_id": "34645", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [41], \"role_rank\": [41], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 42, "group_rank": 0, "worker_id": "34646", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [42], \"role_rank\": [42], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 43, "group_rank": 0, "worker_id": "34647", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [43], \"role_rank\": [43], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 44, "group_rank": 0, "worker_id": "34648", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [44], \"role_rank\": [44], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 45, "group_rank": 0, "worker_id": "34649", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [45], \"role_rank\": [45], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 46, "group_rank": 0, "worker_id": "34650", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [46], \"role_rank\": [46], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 47, "group_rank": 0, "worker_id": "34651", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [47], \"role_rank\": [47], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 48, "group_rank": 0, "worker_id": "34652", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [48], \"role_rank\": [48], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 49, "group_rank": 0, "worker_id": "34653", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [49], \"role_rank\": [49], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 50, "group_rank": 0, "worker_id": "34654", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [50], \"role_rank\": [50], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 51, "group_rank": 0, "worker_id": "34655", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [51], \"role_rank\": [51], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 52, "group_rank": 0, "worker_id": "34656", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [52], \"role_rank\": [52], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 53, "group_rank": 0, "worker_id": "34657", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [53], \"role_rank\": [53], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 54, "group_rank": 0, "worker_id": "34658", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [54], \"role_rank\": [54], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 55, "group_rank": 0, "worker_id": "34659", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [55], \"role_rank\": [55], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 56, "group_rank": 0, "worker_id": "34660", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [56], \"role_rank\": [56], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 57, "group_rank": 0, "worker_id": "34661", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [57], \"role_rank\": [57], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 58, "group_rank": 0, "worker_id": "34662", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [58], \"role_rank\": [58], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 59, "group_rank": 0, "worker_id": "34663", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [59], \"role_rank\": [59], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 60, "group_rank": 0, "worker_id": "34664", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [60], \"role_rank\": [60], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 61, "group_rank": 0, "worker_id": "34665", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [61], \"role_rank\": [61], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 62, "group_rank": 0, "worker_id": "34666", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [62], \"role_rank\": [62], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "WORKER", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": 63, "group_rank": 0, "worker_id": "34667", "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\", \"local_rank\": [63], \"role_rank\": [63], \"role_world_size\": [64]}", "agent_restarts": 0}}
+{"name": "torchelastic.worker.status.SUCCEEDED", "source": "AGENT", "timestamp": 0, "metadata": {"run_id": "none", "global_rank": null, "group_rank": 0, "worker_id": null, "role": "default", "hostname": "marvel.amem.cs.cmu.edu", "state": "SUCCEEDED", "total_run_time": 5, "rdzv_backend": "static", "raw_error": null, "metadata": "{\"group_world_size\": 1, \"entry_point\": \"true\"}", "agent_restarts": 0}}

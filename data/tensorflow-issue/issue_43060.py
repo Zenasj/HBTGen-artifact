@@ -1,43 +1,31 @@
-# tf.random.uniform((B,), dtype=tf.string) ← Input shape is batch of strings (1D tensor of strings)
+from tensorflow import keras
 
 import tensorflow as tf
 import tensorflow_hub as hub
-
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Using the Universal Sentence Encoder Multilingual from TF Hub
-        # The original model sets trainable=True on KerasLayer
-        # Inputs are strings batches, output embeddings are float32 vectors
-        self.embed = hub.KerasLayer(
-            "https://tfhub.dev/google/universal-sentence-encoder-multilingual/3",
-            dtype=tf.string,
-            trainable=True,
-        )
-
-    def call(self, inputs):
-        # Expecting inputs as a tuple or list of two string tensors: (s1, s2)
-        s1, s2 = inputs
-
-        # Get embeddings for s1 and s2: each shape (batch_size, embedding_dim)
-        v1 = self.embed(s1)
-        v2 = self.embed(s2)
-
-        # Compute a kind of similarity measure by reduced sum of element-wise multiplication
-        # Resulting shape: (batch_size,)
-        cd = tf.reduce_sum(v1 * v2, axis=-1)
-        return cd
+import tensorflow_text as tf_text
 
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+print(tf.__version__)
+print(tf.keras.__version__)
 
+EMBEDDING = "https://tfhub.dev/google/universal-sentence-encoder-multilingual/3"
 
-def GetInput():
-    # Return a tuple of two 1D string tensors to serve as compatible input to MyModel
-    # For example, 3 strings each, batch size = 3
-    s1 = tf.constant(["x", "y", "z"])
-    s2 = tf.constant(["a", "b", "c"])
-    return (s1, s2)
+embed = hub.KerasLayer(EMBEDDING, dtype=tf.string, trainable=True)
 
+s1 = tf.keras.Input(shape=[], dtype=tf.string)
+s2 = tf.keras.Input(shape=[], dtype=tf.string)
+
+v1 = embed(s1)
+v2 = embed(s2)
+
+cd = tf.reduce_sum(tf.multiply(v1, v2), axis=-1)
+
+train_model = tf.keras.Model(inputs=[s1, s2], outputs=[cd])
+optimizer = tf.optimizers.SGD(learning_rate=0.001)
+
+i1 = tf.constant(["x", "y", "z"])
+i2 = tf.constant(["a", "b", "c"])
+c0 = tf.constant([1.0, 1.0, 1.0])
+
+train_model.compile(optimizer=optimizer, loss="mse", metrics=["mse"])
+train_model.fit(x=[i1, i2], y=c0, batch_size=1, epochs=5, verbose=2)

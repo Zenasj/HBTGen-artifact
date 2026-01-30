@@ -1,30 +1,23 @@
-# tf.random.uniform((B, 28, 28), dtype=tf.float32)
+from tensorflow.keras import layers
+
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Using Sequential with explicit input shape to avoid the deprecated "deferred mode" bug
-        self.model = tf.keras.Sequential([
-            tf.keras.layers.Flatten(input_shape=(28, 28)),  # Must specify input_shape to fix the dropout training issue
-            tf.keras.layers.Dense(512, activation=tf.nn.relu),
-            tf.keras.layers.Dropout(0.2),
-            tf.keras.layers.Dense(10, activation=tf.nn.softmax)
-        ])
+print('tf.version:', tf.__version__)  # 1.12.0
 
-    def call(self, inputs, training=False):
-        # Pass the training flag to enable correct Dropout behavior:
-        # When training=True, Dropout is active; when training=False, it's bypassed
-        return self.model(inputs, training=training)
+# tf.enable_eager_execution()  # try with eager or not
 
-def my_model_function():
-    # Return an instance of MyModel with a properly initialized dropout layer
-    # No custom weights needed as this is a demo model following common MNIST tutorial architecture
-    return MyModel()
+inputs = keras.Input(shape=(100,))
+x = keras.layers.Dense(100,
+                       kernel_initializer='zeros',
+                       bias_initializer='ones',
+                       trainable=False)(inputs)
+x = keras.layers.Dropout(0.5)(x)
+model = keras.Model(inputs, x)
+model.compile(tf.train.RMSPropOptimizer(0.1), 'mse')
 
-def GetInput():
-    # Produce a batch of random float inputs shaped like MNIST images: (batch_size, 28, 28)
-    # Use dtype float32 consistent with typical keras preprocessing
-    batch_size = 4  # arbitrary small batch size for testing
-    return tf.random.uniform((batch_size, 28, 28), dtype=tf.float32)
+print(model.train_on_batch(np.ones((1, 100)), np.ones((1, 100))))  # Positive loss
+model.fit(np.ones((1, 100)), np.ones((1, 100)))  # Positive loss
 
+print(model.test_on_batch(np.ones((1, 100)), np.ones((1, 100))))  # 0 loss
+model.evaluate(np.ones((1, 100)), np.ones((1, 100)))  # 0 loss

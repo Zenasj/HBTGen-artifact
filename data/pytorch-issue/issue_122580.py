@@ -1,17 +1,8 @@
-# Input: (torch.randint(-10, 10, (10, 10), dtype=torch.int64), torch.randint(-10, 10, (10,), dtype=torch.int64))
 import torch
-from torch import nn
+def do_ds(x, y):
+    return torch.diagonal_scatter(x, y)
 
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        x, y = inputs
-        return torch.diagonal_scatter(x, y)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    x = torch.randint(-10, 10, (10, 10), dtype=torch.int64)
-    y = torch.randint(-10, 10, (10,), dtype=torch.int64)
-    return (x, y)
-
+x=torch.ones(10, 10, dtype=torch.int64)
+y=torch.tensor([ 1,  2, -8,  8,  5,  5, -7, -8,  7,  0])
+dsc = torch.compile(do_ds)
+assert torch.allclose(torch.diagonal_scatter(x, y), dsc(x, y))

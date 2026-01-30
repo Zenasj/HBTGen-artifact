@@ -1,31 +1,31 @@
-# tf.random.uniform((B, 1, 1), dtype=tf.float32)
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Using a GRUCell inside an RNN layer with unroll=True.
-        # Input shape is (batch_size, time_steps=1, features=1)
-        self.rnn_layer = tf.keras.layers.RNN(
-            tf.keras.layers.GRUCell(10),
-            unroll=True,
-        )
+model = tf.keras.Sequential()
+
+model.add(tf.keras.layers.Input(shape=(1, 1,)))
+
+cell = tf.keras.layers.GRUCell(10)
+
+model.add(tf.keras.layers.RNN(cell, unroll=True))
     
-    def call(self, inputs):
-        # Forward pass through the RNN layer
-        return self.rnn_layer(inputs)
+model.save("test.tf", save_format='tf') # fails
+#model.save("test.h5", save_format='h5') # works
+
+from tensorflow import keras
+from tensorflow.keras import layers
 
 
-def my_model_function():
-    # Instantiate and return the model
-    return MyModel()
+def get_model():
+    inputs = layers.Input(shape=(20, 80))
+    outputs = layers.LSTM(32, return_sequences=True, unroll=True)(inputs)
+    return keras.Model(inputs=inputs, outputs=outputs)
 
-def GetInput():
-    # The input expected is a 3D tensor (batch_size, time_steps, features)
-    # According to the example, shape is (B, 1, 1)
-    # Use float32 dtype as standard for Keras models
-    batch_size = 2  # arbitrary batch size
-    time_steps = 1  # fixed, required for unroll=True
-    features = 1
-    return tf.random.uniform(shape=(batch_size, time_steps, features), dtype=tf.float32)
 
+def main():
+    model_dir = '/tmp/rnnt_toy/model'
+    model = get_model()
+    model.save(model_dir)
+
+
+if __name__ == '__main__':
+    main()

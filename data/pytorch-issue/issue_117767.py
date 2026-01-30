@@ -1,21 +1,10 @@
-# torch.rand(1, dtype=torch.float32, device="cuda")  # Dummy input tensor
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.param = nn.Parameter(torch.rand(2, 3, device="cuda"))
-        self.param.grad = torch.rand_like(self.param)
-        self.optim = torch.optim.AdamW([self.param])
-    
-    def forward(self, x):
-        self.optim.step()
-        return x  # Dummy return to satisfy forward contract
+p = torch.rand(2, 3, device="cuda")
+p.grad = torch.rand_like(p)
+optim = torch.optim.AdamW([p])
 
-def my_model_function():
-    return MyModel()
+def f():
+    optim.step()
 
-def GetInput():
-    return torch.rand(1, device="cuda")  # Dummy input tensor
-
+torch.compile(f, backend="eager")()

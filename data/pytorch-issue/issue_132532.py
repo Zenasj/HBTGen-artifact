@@ -1,22 +1,20 @@
-# torch.rand(26, dtype=torch.float32)  # Input shape inferred from test script's prob tensor
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # No trainable parameters; acts as a wrapper for multinomial operation
-        self.identity = nn.Identity()  # Placeholder to meet nn.Module requirements
-        
-    def forward(self, x):
-        # Replicates the core operation from the test script
-        return torch.multinomial(x, x.numel(), replacement=False)
+high_bits_for_seed = 16000000000000000000           # to use "good quality" seed
+_ = torch.manual_seed (high_bits_for_seed + 2024)
 
-def my_model_function():
-    # Returns the model instance with default settings
-    return MyModel()
+prob = torch.ones (26)
+dups_mult = 0
+perm_counts_mult = {}
+for _ in range (1_000_000):
+    p = tuple (torch.multinomial (prob, prob.numel(), replacement=False).tolist())
+    if  p in perm_counts_mult:
+        dups_mult += 1
+        perm_counts_mult[p] += 1
+    else:
+        perm_counts_mult[p] = 1
 
-def GetInput():
-    # Reproduces the input from the test script (prob = torch.ones(26))
-    return torch.ones(26, dtype=torch.float32)
-
+print ('duplicate multinomial perms: ', dups_mult)
+print ('multiple multinomial perms:  ', (torch.tensor (list (perm_counts_mult.values())) > 1).sum().item())
+print ('max of perm_counts_mult:     ', torch.tensor (list (perm_counts_mult.values())).max().item())
+print ('len (perm_counts_mult):      ', len (perm_counts_mult))

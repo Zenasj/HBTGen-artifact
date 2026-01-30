@@ -1,21 +1,19 @@
-# torch.rand((), dtype=torch.complex64)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Compare behavior between dim=0 (current implementation) and expected error
-        try:
-            torch.aminmax(x, dim=0)  # Current implementation allows this
-            return torch.tensor(1.0)  # 1 indicates the bug (dim case succeeded)
-        except RuntimeError:
-            return torch.tensor(0.0)  # 0 indicates correct behavior (dim case failed)
+my_tensor = torch.tensor(7.+5.j)
 
-def my_model_function():
-    # Returns the model instance for comparison testing
-    return MyModel()
+torch.aminmax(input=my_tensor) # RuntimeError: "aminmax_cpu" not implemented for 'ComplexFloat'
 
-def GetInput():
-    # Returns a 0D complex tensor to trigger the aminmax behavior
-    return torch.tensor(7. + 5j, dtype=torch.complex64)
+import torch
 
+my_tensor = torch.tensor(7.+5.j)
+
+torch.aminmax(input=my_tensor, dim=0)
+torch.aminmax(input=my_tensor, dim=-1)
+# torch.return_types.aminmax(
+# min=tensor(7.+5.j),
+# max=tensor(7.+5.j))
+
+import torch
+
+torch.__version__ # 2.2.1+cu121

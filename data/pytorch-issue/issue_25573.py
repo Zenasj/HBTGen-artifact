@@ -1,17 +1,18 @@
-# torch.rand(10, dtype=torch.float32)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Replicate numpy's behavior by ensuring source slice is not modified during assignment
-        out = x.clone()
-        out[1:].copy_(x[:9])  # Assign first 9 elements to positions 1-9 (indices 1 to 9 inclusive)
-        return out
+a = torch.arange(10)
+print(a)
+a[1:] = a[:9]
+print(a)
 
-def my_model_function():
-    return MyModel()
+tensor([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+tensor([0, 0, 1, 2, 3, 4, 5, 6, 7, 8])
 
-def GetInput():
-    return torch.rand(10, dtype=torch.float32)  # Matches the required 1D input shape (10,)
+tensor([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+tensor([0, 0, 1, 2, 3, 4, 5, 6, 7, 7])
 
+import numpy as np
+a = np.arange(10)
+print(a) # [0 1 2 3 4 5 6 7 8 9]
+a[1:] = a[:9]
+print(a) # [0 0 1 2 3 4 5 6 7 8]

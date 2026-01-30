@@ -1,49 +1,63 @@
-# tf.random.uniform((B, 784), dtype=tf.float32) ← Input shape inferred from keras.Input(shape=(784,)) in the example
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
-from tensorflow import keras
+import keras
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define the same 3-layer dense architecture from the snippet:
-        # 2 hidden layers with 256 units + ReLU, final layer with 10 output logits
-        self.dense1 = keras.layers.Dense(256, activation="relu")
-        self.dense2 = keras.layers.Dense(256, activation="relu")
-        self.dense3 = keras.layers.Dense(10)
 
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        outputs = self.dense3(x)
-        return outputs
-
-def my_model_function():
-    # Instantiate the model
-    model = MyModel()
-    # Compile similarly as in the issue with Adam optimizer and sparse categorical crossentropy from logits
+def get_compiled_model():
+    # Make a simple 2-layer densely-connected neural network.
+    inputs = keras.Input(shape=(784,))
+    x = keras.layers.Dense(256, activation="relu")(inputs)
+    x = keras.layers.Dense(256, activation="relu")(x)
+    outputs = keras.layers.Dense(10)(x)
+    model = keras.Model(inputs, outputs)
     model.compile(
         optimizer=keras.optimizers.Adam(),
         loss=keras.losses.SparseCategoricalCrossentropy(from_logits=True),
-        metrics=[keras.metrics.SparseCategoricalAccuracy()]
+        metrics=[keras.metrics.SparseCategoricalAccuracy()],
     )
     return model
 
-def GetInput():
-    # Return a batch of random input matching shape (batch_size, 784)
-    # Batch size 32 used in the issue data pipeline
-    batch_size = 32
-    # Random uniform values in [0,1), dtype float32 to simulate normalized MNIST inputs
-    return tf.random.uniform((batch_size, 784), dtype=tf.float32)
 
-# ---
-# **Explanation / Notes:**
-# - The input shape is inferred from the original keras.Input(shape=(784,)) which comes from MNIST flattened images (28x28=784).
-# - The model is a simple dense network with two hidden layers 256 ReLU units each, then output 10 logits.
-# - The example code compiles the model with Adam optimizer, sparse categorical crossentropy loss (from_logits=True) and sparse categorical accuracy metric.
-# - No custom training loop or multiple inputs/outputs were mentioned, so the model's `call` matches a typical classification forward pass.
-# - The example dataset batches at size 32, so `GetInput()` returns random data with batch size 32 to be compatible.
-# - The user specifically wants a class named `MyModel(tf.keras.Model)` and a function `my_model_function()` returning the compiled model.
-# - The requested usage for XLA is supported as this is straightforward TensorFlow 2 keras code.
-# - I assumed no fusion of multiple models is needed, since only one model is described.
-# - Comments clarify inferred assumptions about shapes and types.
+def get_dataset():
+    batch_size = 32
+    num_val_samples = 10000
+
+    # Return the MNIST dataset in the form of a `tf.data.Dataset`.
+    (x_train, y_train), (x_test, y_test) = keras.datasets.mnist.load_data()
+
+    # Preprocess the data (these are Numpy arrays)
+    x_train = x_train.reshape(-1, 784).astype("float32") / 255
+    x_test = x_test.reshape(-1, 784).astype("float32") / 255
+    y_train = y_train.astype("float32")
+    y_test = y_test.astype("float32")
+
+    # Reserve num_val_samples samples for validation
+    x_val = x_train[-num_val_samples:]
+    y_val = y_train[-num_val_samples:]
+    x_train = x_train[:-num_val_samples]
+    y_train = y_train[:-num_val_samples]
+    return (
+        tf.data.Dataset.from_tensor_slices((x_train, y_train)).batch(batch_size),
+        tf.data.Dataset.from_tensor_slices((x_val, y_val)).batch(batch_size),
+        tf.data.Dataset.from_tensor_slices((x_test, y_test)).batch(batch_size),
+    )
+
+
+# Create a MirroredStrategy.
+strategy = tf.distribute.MirroredStrategy()
+print("Number of devices: {}".format(strategy.num_replicas_in_sync))
+
+# Open a strategy scope.
+with strategy.scope():
+    # Everything that creates variables should be under the strategy scope.
+    # In general this is only model construction & `compile()`.
+    model = get_compiled_model()
+
+# Train the model on all available devices.
+train_dataset, val_dataset, test_dataset = get_dataset()
+model.fit(train_dataset, epochs=2, validation_data=val_dataset)
+
+# Test the model on all available devices.
+model.evaluate(test_dataset)

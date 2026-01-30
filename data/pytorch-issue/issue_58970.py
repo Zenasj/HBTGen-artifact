@@ -1,22 +1,24 @@
-# torch.rand(1, dtype=torch.float32)  # Dummy input tensor (unused but required by structure)
 import torch
-from torch import nn
+import tempfile
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Create buffers with different dtypes sharing storage (empty tensors have same data_ptr=0)
-        self.register_buffer('buffer_a', torch.tensor([], dtype=torch.int32))
-        self.register_buffer('buffer_b', torch.tensor([], dtype=torch.int64))
+a = torch.randn(10, dtype=torch.complex64)
 
-    def forward(self, x):
-        # Dummy forward to satisfy torch.compile requirements (input is not used)
-        return x
+# a.real and a.imag share the same data with a, but they have a real dtype, not complex
+ar = a.real
+ai = a.imag
 
-def my_model_function():
-    return MyModel()
+a_s = a.storage()
+ar_s = ar.storage()
+ai_s = ai.storage()
 
-def GetInput():
-    # Return dummy input tensor (shape/dtype doesn't affect the storage comparison issue)
-    return torch.rand(1)
+print(f'type(a_s): {type(a_s)}')
+print(f'type(ar_s): {type(ar_s)}')
+print(f'type(ai_s): {type(ai_s)}')
 
+assert a_s._cdata == ar_s._cdata
+assert a_s._cdata == ai_s._cdata
+
+with tempfile.NamedTemporaryFile() as f:
+    torch.save([a, ar, ai], f)
+    f.seek(0)
+    a_l, ar_l, ai_l = torch.load(f)

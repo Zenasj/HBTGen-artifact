@@ -1,41 +1,20 @@
-# tf.random.uniform((B, ), dtype=tf.float32) for inputs: wide_input (shape [None,5])
-# and tf.random.uniform((B, ), dtype=tf.float32) for inputs: deep_input (shape [None,6])
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
+from tensorflow import keras
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Layers corresponding to the "deep" branch
-        self.hidden1 = tf.keras.layers.Dense(30, activation="relu")
-        self.hidden2 = tf.keras.layers.Dense(30, activation="relu")
-        # Output layer
-        self.output_layer = tf.keras.layers.Dense(1)
-    
-    def call(self, inputs):
-        # Expecting inputs as a tuple/list of two tensors: (wide_input, deep_input)
-        wide_input, deep_input = inputs
-        
-        # Pass deep_input through dense layers
-        hidden1_out = self.hidden1(deep_input)
-        hidden2_out = self.hidden2(hidden1_out)
-        
-        # Concatenate wide_input with processed deep branch output
-        concat = tf.concat([wide_input, hidden2_out], axis=-1)
-        
-        # Final output layer
-        output = self.output_layer(concat)
-        return output
+input_A = keras.layers.Input(shape=[5], name="wide_input")
+input_B = keras.layers.Input(shape=[6], name="deep_input")
+hidden1 = keras.layers.Dense(30, activation="relu")(input_B)
+hidden2 = keras.layers.Dense(30, activation="relu")(hidden1)
+concat = keras.layers.concatenate([input_A, hidden2])
+output = keras.layers.Dense(1, name="output")(concat)
+model = keras.models.Model(inputs=[input_A, input_B], outputs=[output])
 
-def my_model_function():
-    # Return an instance of MyModel initialized per the reconstructed architecture
-    return MyModel()
-
-def GetInput():
-    # Generate a valid input tuple of tensors that match model's input shapes ([None,5], [None,6])
-    # Use batch size 2 for example
-    batch_size = 2
-    wide_input = tf.random.uniform((batch_size, 5), dtype=tf.float32)
-    deep_input = tf.random.uniform((batch_size, 6), dtype=tf.float32)
-    return (wide_input, deep_input)
-
+major_version = int(tf.__version__.split(".")[0])
+if major_version >= 2:
+   from tensorflow.python import _pywrap_util_port
+   print("MKL enabled:", _pywrap_util_port.IsMklEnabled())
+else:
+   print("MKL enabled:", tf.pywrap_tensorflow.IsMklEnabled())

@@ -1,31 +1,36 @@
-# torch.rand(32, 256, dtype=torch.float32) ← Add a comment line at the top with the inferred input shape
-import torch
-import torch.nn as nn
-
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.dense_arch = nn.Sequential(
-            nn.Linear(256, 256),
-            nn.ReLU()
-        )
-        self.layer_norm = nn.LayerNorm(256)
-        self.linear_split_1 = nn.Linear(256, 256)
-        self.linear = nn.Linear(256, 256)
-
-    def forward(self, x):
-        dense_out = self.dense_arch(x)
-        norm = self.layer_norm(dense_out)
-        split_sum = self.linear_split_1(norm)
-        prod = self.linear(split_sum) * norm
-        interaction = torch.sum(torch.stack([norm, prod], dim=0), dim=0)
-        return interaction
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(32, 256, dtype=torch.float32)
-
+import torch                                                                                                                                                  
+from torch.testing._internal.jit_utils import disable_autodiff_subgraph_inlining                                        
+                                                                                                                        
+torch._C._jit_set_profiling_mode(False)                                                                                 
+torch._C._jit_set_profiling_executor(False)                                                                             
+                                                                                                                        
+x = torch.randn(1, 4).requires_grad_()                                                                                  
+with disable_autodiff_subgraph_inlining(False):                                                                         
+                                                                                                                        
+  def f(x):                                                                                                             
+    o = x + 1.0                                                                                                         
+    split_o = torch.split(o, 2, dim=1)                                                                                  
+                                                                                                                        
+    return o, split_o[0], split_o[1]                                                                                    
+                                                                                                                        
+  script_f = torch.jit.script(f)                                                                                        
+                                                                                                                        
+  o = f(x)                                                                                                              
+  torch.cat(o, dim=1).sum().backward()                                                                                  
+                                                                                                                        
+  print(x.grad)                                                                                                         
+                                                                                                                        
+  jit_o = script_f(x)                                                                                                   
+  torch.cat(jit_o, dim=1).sum().backward()                                                                              
+  jit_o = script_f(x)                                                                                                   
+  torch.cat(jit_o, dim=1).sum().backward()                                                                              
+  jit_o = script_f(x)                                                                                                   
+  torch.cat(jit_o, dim=1).sum().backward()                                                                              
+                                                                                                                        
+  x.grad.zero_()                                                                                                        
+  jit_o = script_f(x)                                                                                                   
+  torch.cat(jit_o, dim=1).sum().backward()                                                                              
+                                                                                                                        
+  print(x.grad)                                                                                                         
+                                                                                                                        
+  print(script_f.graph_for(x))

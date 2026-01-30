@@ -1,19 +1,15 @@
-# torch.rand(1, dtype=torch.float32)
+bash
+In [6]: torch.__version__                                                                                                                                                                     
+Out[6]: '1.3.0a0+de394b6'
+In [8]: torch.autograd.Variable(torch.Tensor([float('inf')])).sum()
+
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        return x.sum()  # Matches the operation causing the original issue (sum of tensor with inf)
+s = torch.tensor(float('inf')).sum()
+print(s)
 
-def my_model_function():
-    return MyModel()
+s = torch.autograd.Variable(torch.Tensor([float('inf')])).sum()
+print(s)
 
-def GetInput():
-    # Returns a tensor with a single element to match the issue's input pattern
-    # Uses random value but ensures dtype matches the original Tensor() usage (float32)
-    return torch.rand(1, dtype=torch.float32)
-
+tensor(inf)
+tensor(inf)

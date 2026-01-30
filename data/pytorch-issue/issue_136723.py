@@ -1,20 +1,24 @@
 import torch
-import torch.nn as nn
+import torch.distributed as dist
 
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Assumed input shape (B=1, C=3, H=224, W=224)
-class MyModel(nn.Module):
+class PrefixStoreExample:
     def __init__(self):
-        super(MyModel, self).__init__()
-        # Placeholder module since no model structure was explicitly provided in the issue
-        self.identity = nn.Identity()
-    
-    def forward(self, x):
-        return self.identity(x)
+        # Initialize PrefixStore without providing a prefix
+        self.prefix_store = dist.PrefixStore('my_prefix', None)
 
-def my_model_function():
-    return MyModel()
+    def add_and_get_key(self):
+        # Add key-value pairs
+        self.prefix_store.set('some_key', 'some_value')
 
-def GetInput():
-    # Assumed input dimensions based on common image tensor conventions
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
+        # Try to get a non-existent key that has not been prefixed correctly
+        key = 'my_prefix_never_exists'
+        try:
+            value = self.prefix_store.get(key)
+            print(f"The value of '{key}' is {value}")
+        except Exception as e:
+            print(f"Error occurred: {str(e)}")
 
+
+if __name__ == '__main__':
+    store_example = PrefixStoreExample()
+    store_example.add_and_get_key()

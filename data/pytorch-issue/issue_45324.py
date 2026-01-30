@@ -1,20 +1,29 @@
-import torch
-import torch.nn as nn
+import os
+import torch.utils.data
+import torch.multiprocessing as mp
+import torch.distributed
 
-# torch.rand(B, 1, dtype=torch.float32)  # Input shape inferred from DummyDataset's scalar outputs
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Dummy model to match the scenario (original issue does not involve a model)
-        self.linear = nn.Linear(1, 1)  # Matches input shape from GetInput()
-    
-    def forward(self, x):
-        return self.linear(x)
+# Error occurs when dataset_size * 2 < num_gpus
+num_gpus = 9
+dataset_size = 4
 
-def my_model_function():
-    return MyModel()
+def main(gpu):
+    torch.distributed.init_process_group(backend='nccl', init_method='env://', world_size=num_gpus, rank=gpu)
 
-def GetInput():
-    # Returns a random tensor matching the input expected by MyModel (1D scalar input)
-    return torch.rand(1, 1, dtype=torch.float32)
+    dataset = DummyDataset()
+    sampler = torch.utils.data.distributed.DistributedSampler(dataset, num_replicas=num_gpus, rank=gpu)
+    loader = torch.utils.data.DataLoader(dataset, 1, sampler=sampler)
 
+    for batch in loader:
+        print(batch)
+
+class DummyDataset(torch.utils.data.Dataset):
+    def __getitem__(self, item):
+        return 0
+    def __len__(self):
+        return dataset_size
+
+if __name__ == '__main__':
+    os.environ['MASTER_ADDR'] = 'localhost'
+    os.environ['MASTER_PORT'] = '10000'
+    mp.spawn(main, nprocs=num_gpus)

@@ -1,19 +1,17 @@
-# torch.rand(1, 3, 32, 32, dtype=torch.float32)
 import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
+class M(nn.Module):
     __constants__ = ['my_const']
     def __init__(self):
-        super(MyModel, self).__init__()
-        self.my_const = 2  # Reproduces constant inlining issue when scripted
+        super().__init__()
+        self.my_const = 2
 
     def forward(self, x):
         return x + self.my_const
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    return torch.rand(1, 3, 32, 32, dtype=torch.float32)
+sm = torch.jit.script(M())
 
+# AttributeError: 'RecursiveScriptModule' object has no attribute 'my_const'
+print(sm.my_const)

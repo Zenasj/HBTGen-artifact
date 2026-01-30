@@ -1,35 +1,29 @@
-# tf.random.uniform((B, 2), dtype=tf.float32) ← Input shape inferred as two features per example as in original examples
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
-import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Activation
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define a simple sequential-like model with:
-        # - Dense with 10 units + ReLU activation
-        # - Output layer with 1 unit + sigmoid activation for binary classification
-        self.hidden = tf.keras.layers.Dense(10, activation='relu')
-        self.output_layer = tf.keras.layers.Dense(1, activation='sigmoid')
+model = Sequential([
+    Dense(10, activation = "relu"),
+    Dense(1, activation = "sigmoid")])
+model.compile(
+    optimizer = "rmsprop",
+    loss = "binary_crossentropy")
+model.fit(
+    [[1, 2], [1, 3], [1, 1], [2, 2], [2, 3]],
+    [True, False, False, True, True])
 
-    def call(self, inputs, training=False):
-        x = self.hidden(inputs)
-        return self.output_layer(x)
+print(model.predict([[1, 2], [1, 3], [1, 1]]))
 
-    def predict_classes(self, inputs):
-        # Convenience method to mirror Sequential.predict_classes() behavior:
-        # For binary classification with sigmoid output, threshold at 0.5
-        probs = self(inputs, training=False)
-        return tf.cast(probs > 0.5, dtype=tf.int32)
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Activation
 
-def my_model_function():
-    # Instantiate the model
-    model = MyModel()
-    # Compile to enable fitting if needed
-    model.compile(optimizer='rmsprop', loss='binary_crossentropy')
-    return model
+model = Sequential([
+    Dense(10, activation = "relu"),
+    Dense(2, activation = "softmax")])
+model.compile(
+    optimizer = "rmsprop",
+    loss = "sparse_categorical_crossentropy")
 
-def GetInput():
-    # Return a random input tensor compatible with model input: 
-    # batch size 3 (same as example), 2 features inputs (matches original data)
-    return tf.random.uniform((3, 2), dtype=tf.float32)
-
+print(model.predict([[1, 2], [1, 3], [1, 1]]))

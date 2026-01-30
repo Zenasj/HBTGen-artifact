@@ -1,14 +1,7 @@
-# torch.rand(10000, 10000, dtype=torch.float32)
 import torch
-from torch import nn
+a = torch.zeros(10000, 10000) # probability of drawing "1" is 0
+print((torch.bernoulli(a) == 1).sum())
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return torch.bernoulli(x)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.zeros(10000, 10000, dtype=torch.float32)
-
+import torch
+a = torch.zeros(10000, 10000, dtype=torch.float64) # probability of drawing "1" is 0
+print((torch.bernoulli(a) == 1).sum())

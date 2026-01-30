@@ -1,38 +1,139 @@
-# tf.random.uniform((1, 540, 960, 16), dtype=tf.float32)
+from tensorflow import keras
+from tensorflow.keras import layers
+
 import tensorflow as tf
 import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Construct PReLU layer with shared_axes=(1, 2, 3) as in example
-        # This means the alpha weights are shared across height, width, channels dimensions.
-        self.prelu = tf.keras.layers.PReLU(shared_axes=(1, 2, 3))
-        
-        # Initialize the alpha weights similar to example:
-        # Example initializes weights as a scalar 0.00040957872988656163
-        # The shape of alpha in PReLU with shared_axes=(1,2,3) and input (540,960,16)
-        # alpha shape will be (1,) and broadcasted to all inputs in axes 1,2,3.
-        # So we set weights to np.array([0.0004095787], dtype=np.float32)
-        init_alpha = np.array([0.00040957872988656163], dtype=np.float32)
-        self.prelu.alpha.assign(init_alpha)
-        # Note: Alternatively, we can set weights via set_weights as done in example:
-        # self.prelu.set_weights([init_alpha])
+def make_prelu_tflite():
+    model = tf.keras.Sequential(
+        [
+            tf.keras.Input((540, 960, 16), dtype=tf.float32),
+            tf.keras.layers.PReLU(shared_axes=(1,2,3))
+        ]
+    )
 
-    def call(self, inputs):
-        # Forward pass through PReLU layer
-        return self.prelu(inputs)
+    # Imitate effect of training prelu weight
+    a = np.ndarray(shape=(1,1,1,1))
+    a[0][0][0][0] = 0.00040957872988656163
+    model.layers[0].set_weights(a)
+
+    # Convert and save the model
+    converter = tf.lite.TFLiteConverter.from_keras_model(model)
+    tflite_model = converter.convert()
+    with open(TFLITE_FILE, 'wb') as f:
+       f.write(tflite_model)
+
+def run_tflite_inference(tflite_path, input_npy_path, out_npy_path):
+    # Using AUTO/BUILTIN resolver
+    interpreter = tf.lite.Interpreter(model_path=tflite_path)
+
+    input_details = interpreter.get_input_details()
+    output_details = interpreter.get_output_details()
+    interpreter.allocate_tensors()
+
+    input_npy = np.load(input_npy_path)
+    interpreter.set_tensor(input_details[0]['index'], input_npy)
+
+    interpreter.invoke()
+    output = interpreter.get_tensor(output_details[0]['index'])
+
+    print(f"Output has nan: {np.any(np.isnan(output))}")
+
+    print(f"Writing output to {out_npy_path}")
+    np.save(f"{out_npy_path}", output)
 
 
-def my_model_function():
-    # Return model instance with pre-initialized PReLU alpha weight
-    model = MyModel()
-    return model
+if __name__ == "__main__":
+    TFLITE_FILE = "simple_prelu.tflite"
+    NPY_INPUT_FILE = "faulty_input.npy"
+    NPY_OUTPUT_FILE = "faulty_output.npy"
+    make_prelu_tflite()
+    run_tflite_inference(TFLITE_FILE, NPY_INPUT_FILE, NPY_OUTPUT_FILE)
 
+converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTIN_REF]
 
-def GetInput():
-    # Return a random input tensor matching expected shape and dtype
-    # The example used an input of shape (540, 960, 16) with batch size 1
-    # The values can be arbitrary but float32
-    return tf.random.uniform(shape=(1, 540, 960, 16), dtype=tf.float32)
+array([[[[0.18350317, 0.8055407 , 0.08095651, ..., 0.09189863,
+          0.64712274, 0.42581546],
+         [0.06950494, 0.19689496, 0.945694  , ..., 0.96190053,
+          0.8043054 , 0.6203221 ],
+         [0.50733095, 0.00871299, 0.7729663 , ..., 0.3727163 ,
+          0.2478801 , 0.4909967 ],
+         ...,
+         [0.7556198 , 0.86681217, 0.07057429, ..., 0.4914943 ,
+          0.46564332, 0.7217616 ],
+         [0.4533622 , 0.08109082, 0.6991882 , ..., 0.2784072 ,
+          0.73928165, 0.6248881 ],
+         [0.06713927, 0.37988612, 0.6965632 , ..., 0.66882867,
+          0.22982682, 0.7331834 ]],
 
+        [[0.6969852 , 0.3979096 , 0.30966353, ..., 0.8206956 ,
+          0.07177956, 0.0412529 ],
+         [0.87058693, 0.46980223, 0.7791571 , ..., 0.08392384,
+          0.44429946, 0.41385922],
+         [0.12787104, 0.06190566, 0.9563843 , ..., 0.66872364,
+          0.5529266 , 0.69724584],
+         ...,
+         [0.24671873, 0.8656299 , 0.64001596, ..., 0.5273241 ,
+          0.46549922, 0.01413841],
+         [0.8001449 , 0.303727  , 0.41121402, ..., 0.42395937,
+          0.68907714, 0.9973794 ],
+         [0.5249677 , 0.69011617, 0.32280397, ..., 0.29401043,
+          0.8321104 , 0.8224229 ]],
+
+        [[0.46167508, 0.13801032, 0.41837   , ..., 0.76498574,
+          0.53632194, 0.6082858 ],
+         [0.9040914 , 0.9073978 , 0.5598819 , ..., 0.77390254,
+          0.5010137 , 0.7959867 ],
+         [0.9356298 , 0.838803  , 0.2510756 , ..., 0.27377617,
+          0.03432407, 0.8112841 ],
+         ...,
+         [0.19019738, 0.15415408, 0.15916935, ..., 0.36066476,
+          0.02571733, 0.88389844],
+         [0.05659891, 0.00807601, 0.35056975, ..., 0.99356574,
+          0.0229959 , 0.17586842],
+         [0.16265824, 0.9375197 , 0.04004565, ..., 0.90708274,
+          0.4906749 , 0.01150649]],
+
+        ...,
+
+        [[0.9874541 , 0.13711593, 0.03413203, ..., 0.27944687,
+          0.5725812 , 0.2872343 ],
+         [0.93618304, 0.05400326, 0.80379486, ..., 0.6891535 ,
+          0.85990685, 0.09732993],
+         [0.6015796 , 0.6119976 , 0.17900743, ..., 0.64661974,
+          0.47710946, 0.5185745 ],
+         ...,
+         [0.3314257 , 0.976641  , 0.50370747, ..., 0.18451059,
+          0.8898673 , 0.06551789],
+         [0.7574596 , 0.6803014 , 0.5806643 , ..., 0.02810532,
+          0.21359259, 0.13841787],
+         [0.360362  , 0.8378374 , 0.17994598, ..., 0.52578354,
+          0.8449946 , 0.00566057]],
+
+        [[0.90867203, 0.96147287, 0.00522611, ..., 0.49788418,
+          0.51192576, 0.87039846],
+         [0.8130206 , 0.3965184 , 0.5445026 , ..., 0.7833688 ,
+          0.3920826 , 0.5033432 ],
+         [0.58092123, 0.22957331, 0.06166744, ..., 0.04113004,
+          0.3806144 , 0.66953444],
+         ...,
+         [0.2541557 , 0.7876428 , 0.74799436, ..., 0.8414788 ,
+          0.32410142, 0.25649405],
+         [0.41616407, 0.41103885, 0.3102394 , ..., 0.3179237 ,
+          0.41209835, 0.86601245],
+         [0.13197434, 0.9770973 , 0.576634  , ..., 0.8140475 ,
+          0.3756017 , 0.648409  ]],
+
+        [[0.46594724, 0.38555008, 0.9656739 , ..., 0.3989894 ,
+          0.73881274, 0.696691  ],
+         [0.42470434, 0.03731331, 0.5988427 , ..., 0.26365036,
+          0.183001  , 0.6578406 ],
+         [0.4221254 , 0.62892705, 0.8580361 , ..., 0.4409532 ,
+          0.55401707, 0.39752722],
+         ...,
+         [0.84856015, 0.12720175, 0.12806697, ..., 0.4363036 ,
+          0.7615763 , 0.5988579 ],
+         [0.20318006, 0.40418512, 0.9333598 , ..., 0.17719397,
+          0.97456586, 0.42055926],
+         [0.2521532 , 0.32505414, 0.40645653, ..., 0.863737  ,
+          0.8764026 , 0.04436916]]]], dtype=float32)

@@ -1,21 +1,26 @@
-# torch.rand(1, dtype=torch.float32)  # Dummy input, not used
-import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
+import torch
+
+class SparseTensorModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        # Include both COO and CSR buffers to demonstrate comparison
-        self.register_buffer("a_coo", torch.eye(3).to_sparse())  # Working COO format
-        self.register_buffer("a_csr", torch.eye(3).to_sparse_csr())  # Failing CSR format
+        self.register_buffer("a", torch.eye(3).to_sparse())
 
-    def forward(self, x):
-        # Dummy forward to accept input (required for GetInput compatibility)
-        return x
+    def forward(self):
+        pass
 
-def my_model_function():
-    return MyModel()
+s = SparseTensorModule()
+s.a
+print("hi")
+print(s.state_dict())
 
-def GetInput():
-    return torch.rand(1)  # Dummy input compatible with forward()
+hi
+OrderedDict([('a', tensor(indices=tensor([[0, 1, 2],
+                       [0, 1, 2]]),
+       values=tensor([1., 1., 1.]),
+       size=(3, 3), nnz=3, layout=torch.sparse_coo))])
 
+self.register_buffer("a", torch.eye(3).to_sparse())
+
+self.register_buffer("a", torch.eye(3).to_sparse_csr())

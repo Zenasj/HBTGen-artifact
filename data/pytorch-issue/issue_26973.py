@@ -1,33 +1,11 @@
-# torch.rand(1, 1, 1, 100000000, dtype=torch.float32)
 import torch
-import torch.nn as nn
+import numpy as np
+import random
 
-class OriginalModel(nn.Module):
-    def forward(self, size):
-        return torch.rand(size, dtype=torch.float32)
+sum((torch.rand(100000000) <= 0.).sum().float() for i in range(20)) / 20
 
-class WorkaroundModel(nn.Module):
-    def forward(self, size):
-        return torch.rand(size, dtype=torch.double).float()
+sum((torch.rand(100000000, device=torch.device('cuda')) <= 0.).sum().float() for i in range(20)) / 20
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.original = OriginalModel()  # PyTorch default method
-        self.workaround = WorkaroundModel()  # Proposed workaround using double precision
+sum((np.random.rand(100000000).astype('float32') <= 0.).sum() for i in range(20)) / 20
 
-    def forward(self, x):
-        size = x.shape
-        a = self.original(size)  # Generate using default float32
-        b = self.workaround(size)  # Generate using double->float32
-        zeros_a = (a <= 0).sum()  # Count zeros in original method
-        zeros_b = (b <= 0).sum()  # Count zeros in workaround
-        # Return 1.0 if original has more zeros than workaround (indicating bias)
-        return (zeros_a > zeros_b).float()
-
-def my_model_function():
-    return MyModel()  # Returns fused model with comparison logic
-
-def GetInput():
-    return torch.rand(1, 1, 1, 100000000, dtype=torch.float32)  # Matches required input shape
-
+sum((torch.rand(100000000, dtype=torch.double).float() <= 0.).sum().float() for i in range(20)) / 20

@@ -1,32 +1,37 @@
-# tf.random.normal((B, 512), dtype=tf.float32) ← The inputs are two tensors of shape [batch_size, 512]
+import random
+from tensorflow.keras import layers
 
 import tensorflow as tf
+from tensorflow import (
+    float32,
+    function,
+    TensorSpec,
+)
+from tensorflow.keras import Model
+from tensorflow.keras.layers import Dense
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.dense = tf.keras.layers.Dense(100)
+class TestModel(Model):
+    def __init__(
+        self
+    ):
+        super(TestModel, self).__init__()
 
-    @tf.function(
+        self.dense = Dense(100)
+
+    @function(
         input_signature=[
-            (tf.TensorSpec([None, 512], tf.float32, name="responses"),
-             tf.TensorSpec([None, 512], tf.float32, name="contexts"))
+            TensorSpec([None, 512], float32, name="responses"),
+            TensorSpec([None, 512], float32, name="contexts"),
         ]
     )
-    def call(self, inputs):
-        # inputs is a tuple of (responses, contexts)
-        responses, contexts = inputs
+    def call(
+        self,
+        responses,
+        contexts
+    ):
         return self.dense(responses + contexts)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Returns a tuple matching the input signature of MyModel.call: 
-    # Two tensors shaped [batch, 512] with float32 dtype
-    batch_size = 1  # arbitrary batch size
-    responses = tf.random.normal((batch_size, 512), dtype=tf.float32)
-    contexts = tf.random.normal((batch_size, 512), dtype=tf.float32)
-    return (responses, contexts)
-
+model = TestModel()
+x = tf.random.normal((1, 512))
+_ = model(x, x)
+tf.saved_model.save(model, "directory")

@@ -1,44 +1,96 @@
-# tf.random.uniform((16, 43, 256), dtype=tf.float32) ← inferred input shape from the issue "model(tf.random.uniform([16,43,256]))"
+import random
+from tensorflow.keras import layers
 
+import numpy as np
 import tensorflow as tf
+from tensorflow.keras import Model
+from tensorflow.keras.layers import Dense, LSTM
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
+model_name = "1x_LSTM_64_float32"
+input_length = 256
+
+class SimpleModel(Model):
+  def __init__(self, input_shape, hidden_size):
+    super().__init__()
+    
+    self.lstm = LSTM(hidden_size, return_sequences = True, return_state=True, input_shape = [-1, input_shape] )
+    
+    self.d1 = Dense(1, input_shape = [-1, hidden_size])
+
+  def call(self, x):
+      
+    x, h0, c0 = self.lstm(x)
+    x = self.d1(x)
+    
+    return x#, tf.stack([h0, c0])
+
+model = SimpleModel(input_length, 64)
+
+out, states = model(tf.random.uniform([16,43,256]))
+
+print(np.mean(out))
+
+model_path = f"{model_name}.tf"
+
+run_model = tf.function(lambda x: model(x))
+BATCH_SIZE = 16
+STEPS = 43
+INPUT_SIZE = 256
+concrete_func = run_model.get_concrete_function(
+    tf.TensorSpec([BATCH_SIZE, STEPS, INPUT_SIZE], tf.float32))
+
+model.save(model_path, save_format = 'tf', signatures=concrete_func)
+
+converter = tf.lite.TFLiteConverter.from_saved_model(model_path)
+converter.target_spec.supported_ops = [
+  tf.lite.OpsSet.TFLITE_BUILTINS,
+]
+
+tflite_model = converter.convert()
+open(f"{model_name}.tflite", "wb").write(tflite_model)
+
+class SimpleModel(Model):
+  def __init__(self, input_shape, hidden_size):
+    super().__init__()
+    
+    self.lstm = LSTM(hidden_size, return_sequences = True, return_state=True, input_shape = [-1, input_shape] )
+    
+    self.d1 = Dense(1, input_shape = [-1, hidden_size])
+
+  def call(self, x):
+      
+    x, h0, c0 = self.lstm(x)
+    x = self.d1(x)
+    
+    return x, tf.stack([h0, c0])
+
+model = SimpleModel(input_length, 64)
+
+out, states = model(tf.random.uniform([16,43,256]))
+
+py
+import torch
+from torch import nn
+import ai_edge_torch
+
+
+class SimpleModel(nn.Module):
+    def __init__(self, input_size, hidden_size):
         super().__init__()
-        # Inputs: sequences of shape (batch, steps, features)
-        # From issue: input_length=256, batch=16, steps=43
-        self.hidden_size = 64
-        
-        # LSTM layer with return_sequences=True and return_state=True to provide output sequence and hidden/cell states
-        self.lstm = tf.keras.layers.LSTM(
-            self.hidden_size,
-            return_sequences=True,
-            return_state=True,
-            input_shape=(None, 256)  # time-major False (batch, time, features)
-        )
-        
-        # Dense layer maps hidden dimension to 1 output feature per timestep
-        self.dense = tf.keras.layers.Dense(1)
+    
+        self.lstm = nn.LSTM(input_size, hidden_size)
+        self.d1 = nn.Linear(hidden_size, 1)
 
-    def call(self, x):
-        # Forward pass through LSTM
-        output_seq, h_state, c_state = self.lstm(x)  
-        # output_seq shape: (batch, time_steps, hidden_size)
-        
-        # Apply dense layer to each timestep output (broadcasted)
-        output = self.dense(output_seq)  # shape (batch, time_steps, 1)
-        
-        # Return both output sequence and stacked hidden states [h_state, c_state]
-        # This keeps compatibility with the issue requirement to "return x, tf.stack([h0, c0])"
-        states = tf.stack([h_state, c_state])
-        return output, states
+    def forward(self, x):
+      
+        x, (h0, c0) = self.lstm(x)
+        x = self.d1(x)
+    
+        return x, torch.stack([h0, c0])
 
-def my_model_function():
-    # Create a new instance of MyModel
-    return MyModel()
 
-def GetInput():
-    # Return a random float32 tensor matching input shape expected by MyModel
-    # Batch size, time steps, features = (16, 43, 256)
-    return tf.random.uniform((16, 43, 256), dtype=tf.float32)
+model = SimpleModel(256, 64)
+sample_inputs = (torch.randn(16, 43, 256),)
 
+edge_model = ai_edge_torch.convert(model.eval(), sample_inputs)
+edge_model.export("simple_model.tflite")

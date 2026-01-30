@@ -1,21 +1,19 @@
-# torch.rand(32769, 4, dtype=torch.float32)
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.weight = nn.Parameter(torch.randn(4, 10))  # Matches first example's matrix multiplication dimensions
-        
-    def forward(self, x):
-        # Slice first dimension (row-wise) from index 1 to 25 (exclusive)
-        sliced = x[1:25, :]
-        # Perform matrix multiplication with learned weights
-        return sliced @ self.weight
+A = torch.randn(32769, 4, device='mps')
+B = A[1:25] @ torch.randn(4, 10, device='mps')
 
-def my_model_function():
-    return MyModel()
+A = torch.randn(1, 100000, device="mps")
+B = torch.randn(10, 1, device="mps")
+A = A[:, 16384:32769]
+print(torch.mm(B, A))
 
-def GetInput():
-    return torch.randn(32769, 4, dtype=torch.float32)  # Matches input shape from first example
+import timeit
 
+a_cpu = torch.rand(250, device='cpu')
+b_cpu = torch.rand((250, 250), device='cpu')
+a_mps = torch.rand(250, device='mps')
+b_mps = torch.rand((250, 250), device='mps')
+
+print('cpu', timeit.timeit(lambda: a_cpu @ b_cpu, number=100_000))
+print('mps', timeit.timeit(lambda: a_mps @ b_mps, number=100_000))

@@ -1,6 +1,14 @@
-# tf.random.normal((B, 8), dtype=tf.float32) ← Input shape inferred from the code: batch size B, feature size 8
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
+
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
 
 import tensorflow as tf
+
 
 def normalize_manual(x):
     mean = tf.reduce_mean(x, axis=-1, keepdims=True)
@@ -10,64 +18,64 @@ def normalize_manual(x):
 
 
 def normalize_with_moments(x):
-    # Using tf.nn.moments (mean, variance) with keepdims=True
-    mean, var = tf.nn.moments(x, axes=[-1], keepdims=True)
+    mean, var = tf.nn.moments(x, [-1], keepdims=True)
     x = x - mean
     return x / tf.sqrt(var + 1e-6)
 
 
-class NormalizeManualModel(tf.keras.layers.Layer):
-    def __init__(self, units=8):
-        super().__init__()
-        self.dense1 = tf.keras.layers.Dense(units)
-        self.dense2 = tf.keras.layers.Dense(1)
+def run_model_custom(normalize=normalize_with_moments):
+    inp = tf.keras.layers.Input(shape=(8,))
+    x = inp
+    x = tf.keras.layers.Dense(8)(x)
+    x = normalize(x)
+    out = tf.squeeze(tf.keras.layers.Dense(1)(x), axis=-1)
+    model = tf.keras.Model(inputs=inp, outputs=out)
 
-    def call(self, inputs):
-        x = self.dense1(inputs)
-        x = normalize_manual(x)
-        x = self.dense2(x)
-        return tf.squeeze(x, axis=-1)
+    x = tf.random.normal(shape=((100, 8)))
+    y = tf.random.normal(shape=((100,)))
+    dataset = tf.data.Dataset.from_tensor_slices((x, y)).batch(5)
 
-
-class NormalizeMomentsModel(tf.keras.layers.Layer):
-    def __init__(self, units=8):
-        super().__init__()
-        self.dense1 = tf.keras.layers.Dense(units)
-        self.dense2 = tf.keras.layers.Dense(1)
-
-    def call(self, inputs):
-        x = self.dense1(inputs)
-        x = normalize_with_moments(x)
-        x = self.dense2(x)
-        return tf.squeeze(x, axis=-1)
+    for x, y in dataset.take(1):
+        with tf.GradientTape() as tape:
+            out = model(x)
+            tape.gradient(out, model.trainable_weights)
+        break
+    print('passed run_model_custom with {}'.format(normalize.__name__))
 
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Two sub-models differing by normalization method
-        self.model_manual = NormalizeManualModel()
-        self.model_moments = NormalizeMomentsModel()
+def train_model_fit(normalize=normalize_with_moments):
+    inp = tf.keras.layers.Input(shape=(8,))
+    x = inp
+    x = tf.keras.layers.Dense(8)(x)
+    x = normalize(x)
+    out = tf.squeeze(tf.keras.layers.Dense(1)(x), axis=-1)
+    model = tf.keras.Model(inputs=inp, outputs=out)
 
-    @tf.function(jit_compile=True)
-    def call(self, inputs):
-        # Forward pass through both models
-        out_manual = self.model_manual(inputs)
-        out_moments = self.model_moments(inputs)
-
-        # Compare outputs with some tolerance
-        # Return a boolean tensor indicating if close within tolerance
-        close = tf.math.abs(out_manual - out_moments) < 1e-5
-        return close, out_manual, out_moments
+    x = tf.random.normal(shape=((100, 8)))
+    y = tf.random.normal(shape=((100,)))
+    dataset = tf.data.Dataset.from_tensor_slices((x, y)).batch(5)
+    model.compile(optimizer=tf.keras.optimizers.SGD(), loss='mse')
+    model.fit(dataset, epochs=1, steps_per_epoch=2)
+    print('passed train_model_fit with {}'.format(normalize.__name__))
 
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+def compute_graph_tf(normalize=normalize_with_moments):
+    x = tf.random.normal((10, 5))
+    with tf.GradientTape() as tape:
+        layer = tf.keras.layers.Dense(2)
+        y = layer(x)
+        y = tf.reduce_sum(normalize(y))
+        tape.gradient(y, layer.trainable_weights)
+    print('passed compute_graph_tf with {}'.format(normalize.__name__))
 
 
-def GetInput():
-    # Generate a random input tensor of shape (batch_size=5, features=8)
-    # Shape chosen arbitrarily to match example batches in the issue
-    return tf.random.normal((5, 8))
+run_model_custom(normalize_with_moments)  # <----- fails
 
+###########
+# the below work
+###########
+train_model_fit(normalize_with_moments)
+compute_graph_tf(normalize_with_moments)
+run_model_custom(normalize_manual)
+train_model_fit(normalize_manual)
+compute_graph_tf(normalize_manual)

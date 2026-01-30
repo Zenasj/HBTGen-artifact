@@ -1,60 +1,51 @@
-# tf.random.uniform((batch_size, variable_length), dtype=tf.string) ← Input is a sparse variable-length string tensor per batch element
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        
-        # Define categorical feature column with fixed vocabulary (R, G, B)
-        color_cat = tf.feature_column.categorical_column_with_vocabulary_list(
-            key='color', vocabulary_list=["R", "G", "B"]
-        )
-        
-        # Embedding column with dimension 4 and mean combiner for variable-length sparse inputs
-        self.color_emb = tf.feature_column.embedding_column(color_cat, dimension=4, combiner='mean')
+# generate dummy dataset 
+def serialize_example(val, label):
+    features = {
+      'color': tf.train.Feature(bytes_list=tf.train.BytesList(value=val)),
+      'label': tf.train.Feature(int64_list=tf.train.Int64List(value=[label]))
+    }
+    example_proto = tf.train.Example(features=tf.train.Features(feature=features))
+    return example_proto.SerializeToString()
 
-        # Use DenseFeatures layer to transform feature columns (expects dict input)
-        self.dense_features = tf.keras.layers.DenseFeatures([self.color_emb])
+tfrecord_writer = tf.io.TFRecordWriter('./color.tfrecord')
+for val, label in [([b'G', b'R'], 1), ([b'B'], 1), ([b'B', b'G'], 0), ([b'R'], 1)]:
+    tfrecord_writer.write(serialize_example(val, label))
+tfrecord_writer.close()
 
-        # Final classification layer (binary classification)
-        self.output_layer = tf.keras.layers.Dense(1, activation='sigmoid', name='output')
-
-    @tf.function(jit_compile=True)
-    def call(self, inputs, training=False):
-        """
-        inputs: dict with key 'color' containing a sparse or RaggedTensor of variable length strings of shape (batch_size, None)
-        """
-        # Pass inputs through DenseFeatures which handles sparse inputs and embedding lookups
-        x = self.dense_features(inputs)
-        x = self.output_layer(x)
-        return x
-
-def my_model_function():
-    # Instantiate the model
-    model = MyModel()
+# load the data generate above
+def parse(example_proto):
+    feature_description = {
+        'color': tf.io.VarLenFeature(tf.string) ,           # ** VarLenFeature **
+        'label': tf.io.FixedLenFeature([], tf.int64)        
+    }
+    parsed_features = tf.io.parse_single_example(example_proto, feature_description)
+    labels = parsed_features.pop('label')
+    return parsed_features, labels
     
-    # Compile the model with loss and optimizer to match original example
-    model.compile(optimizer='adam', loss='binary_crossentropy')
-    
-    # Note: weights are random since we are not loading saved weights here
-    return model
+dataset = tf.data.TFRecordDataset('./color.tfrecord').map(parse).repeat(5).batch(2)
 
-def GetInput():
-    """
-    Create a dummy input tensor dictionary structured as the model expects.
-    The input is a sparse tensor of strings with a variable number of entries per batch example.
-    
-    We'll create a batch size 2 input with variable lengths to match the original use case:
-    e.g. batch element 0: ["R"]
-         batch element 1: ["G", "B"]
-    """
-    batch_size = 2
-    
-    # Simulate variable length input as a tf.RaggedTensor and convert to SparseTensor
-    ragged_tensor = tf.ragged.constant([["R"], ["G", "B"]], dtype=tf.string)
-    sparse_input = ragged_tensor.to_sparse()
-    
-    # Return a dictionary with the expected input key 'color' for the model
-    return {'color': sparse_input}
+# feature column & inputs.
+color_cat = tf.feature_column.categorical_column_with_vocabulary_list(
+                    key='color', vocabulary_list=["R", "G", "B"])    
 
+color_emb = tf.feature_column.embedding_column(color_cat, dimension=4, combiner='mean')
+
+inputs = {
+    'color': tf.keras.layers.Input(name='color', shape=(None, ), sparse=True, dtype=tf.string)    
+}
+
+# build model
+deep = tf.keras.layers.DenseFeatures([color_emb, ])(inputs)
+output = tf.keras.layers.Dense(1, activation='sigmoid', name='output')(deep)
+model = tf.keras.Model(inputs, output)
+model.compile(optimizer='adam', loss='binary_crossentropy')
+
+model.summary()
+
+model.fit(dataset, epochs=5)
+model.save('./dummy_model', save_format='tf')

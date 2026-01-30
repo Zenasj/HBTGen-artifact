@@ -1,21 +1,31 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.conv = nn.Conv2d(3, 6, 3)  # Example layer, inferred from typical use case
-        self.fc = nn.Linear(6 * 30 * 30, 10)  # Matches input shape after conv
+my_tensor = torch.tensor([0, 1, 2], device='cpu')
 
-    def forward(self, x):
-        x = self.conv(x)
-        x = x.view(x.size(0), -1)
-        return self.fc(x)
+# With `print()`
+print(my_tensor.device) # cpu
 
-def my_model_function():
-    return MyModel()
+# Without `print()`
+my_tensor.device # device(type='cpu')
 
-def GetInput():
-    return torch.rand(1, 3, 32, 32, dtype=torch.float32)  # Matches input comment's shape
+my_tensor = torch.tensor([0, 1, 2], device='cuda:0')
 
+# With `print()`
+print(my_tensor.device) # cuda:0
+
+# Without `print()`
+my_tensor.device # device(type='cuda', index=0)
+
+import torch
+
+my_tensor = torch.tensor([0, 1, 2], dtype=torch.int32)
+
+# With `print()`
+print(my_tensor.dtype) # torch.int32
+
+# Without `print()`
+my_tensor.dtype # torch.int32
+
+import torch
+
+torch.__version__ # 2.3.0

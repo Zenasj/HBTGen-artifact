@@ -1,32 +1,27 @@
-# tf.random.uniform((1, 224, 224, 3), dtype=tf.float32) ← inferred input shape to match MobileNetV2 input
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Base MobileNetV2 without the top layers, imagenet weights, input shape 224x224x3
-        self.base_model = tf.keras.applications.MobileNetV2(
-            include_top=False, weights="imagenet", input_shape=(224, 224, 3)
-        )
-        self.global_pool = tf.keras.layers.GlobalAveragePooling2D()
-        self.dense_embeddings = tf.keras.layers.Dense(256, activation="relu", name="embeddings")
-        self.dense_probs = tf.keras.layers.Dense(2, activation="softmax", name="probs")
+shape = (224, 224, 3)
 
-    def call(self, inputs):
-        x = self.base_model(inputs)
-        x = self.global_pool(x)
-        embeddings = self.dense_embeddings(x)
-        probs = self.dense_probs(embeddings)
-        # Output as tuple of embeddings and probs, as in original code getting both outputs
-        return {"probs": probs, "embeddings": embeddings}
+# functional model
+base_model2 = tf.keras.applications.MobileNetV2(include_top=False, weights="imagenet", input_shape=shape)
+inputs = tf.keras.Input(shape=shape, name="input")
+x = base_model2(inputs)
+x = tf.keras.layers.GlobalAveragePooling2D()(x)
+x = tf.keras.layers.Dense(256, activation="relu", name="embeddings")(x)
+outputs = tf.keras.layers.Dense(2, activation="softmax", name="probs")(x)
+model2 = tf.keras.Model(inputs=inputs, outputs=outputs)
 
-def my_model_function():
-    # Return instance of the model, weights loaded from imagenet internally for base_model
-    # No further initialization needed as base_model includes pretrained weights
-    return MyModel()
 
-def GetInput():
-    # Return a sample input tensor matching the model input shape: batch size 1, 224x224x3 RGB image
-    return tf.random.uniform((1, 224, 224, 3), dtype=tf.float32)
+tf.keras.models.save_model(model2, "model")
+model_l2 = tf.keras.models.load_model("model")
 
+# this raises exception
+model_loaded = tf.keras.Model(
+    inputs=model_l2.input, outputs=[model_l2.get_layer(layer_name).output for layer_name in ["probs", "embeddings"]]
+)
+
+model3.add(keras.layers.Dense(100,input_shape=(500,)))

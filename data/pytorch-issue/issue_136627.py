@@ -1,27 +1,39 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Assumed input shape (B, C, H, W) with float32
-import torch
-import torch.nn as nn
+import subprocess
+import argparse
+import pathlib
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Inferred placeholder architecture (since no model details provided in the issue)
-        self.conv = nn.Conv2d(3, 6, 3)  # Assumed 3 input channels
-        self.pool = nn.MaxPool2d(2, 2)
-        self.fc = nn.Linear(6 * 111 * 111, 10)  # Arbitrary FC layer for demonstration
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--torch-install-dir",
+        type=pathlib.Path,
+        default=pathlib.Path(__file__).parent / "third_party" / "pytorch" / "torch",
+    )
+    args = parser.parse_args()
 
-    def forward(self, x):
-        x = self.pool(torch.relu(self.conv(x)))
-        x = x.view(-1, 6 * 111 * 111)  # Flatten for FC layer
-        x = self.fc(x)
-        return x
+    out = subprocess.check_output(
+        "find -type f -executable",
+        cwd=args.torch_install_dir,
+        shell=True,
+    )
 
-def my_model_function():
-    # Return an instance of MyModel with default initialization
-    return MyModel()
+    executables = out.decode(encoding="utf-8").splitlines()
+    problematic_executables: str = []
+    for exe in executables:
+        print(exe)
+        if ".so" in exe or ".py" in exe:
+            continue
+        try:
+            out = subprocess.check_output(
+                exe, cwd=args.torch_install_dir, shell=True, stderr=subprocess.STDOUT
+            )
+        except subprocess.CalledProcessError as e:
+            if "error while loading shared libraries" in e.output.decode(
+                encoding="utf-8"
+            ):
+                problematic_executables.append(exe)
+            else:
+                print(e)
 
-def GetInput():
-    # Generate random input tensor matching expected (B, C, H, W) shape
-    batch_size = 4  # Arbitrary batch size
-    return torch.rand(batch_size, 3, 224, 224, dtype=torch.float32)
-
+    with open("torch_executables_missing_rpath.txt", "w") as f:
+        f.write("\n".join(problematic_executables))

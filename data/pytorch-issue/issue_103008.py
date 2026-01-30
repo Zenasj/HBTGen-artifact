@@ -1,25 +1,48 @@
-import torch
-from torch import nn
-from collections import namedtuple
+import torch.nn as nn
+import numpy as np
+import random
 
-# torch.rand(B, 3, H, W, dtype=torch.float32)  # e.g., (1, 3, 224, 224)
-class MyModel(nn.Module):
-    def __init__(self):
+img = np.random.randint(0, 256, size=(479, 640, 3), dtype=np.uint8)
+task = "panoptic"
+
+with torch.no_grad():
+    original_image = img[:, :, ::-1]
+    height, width = img.shape[:2]
+    image = predictor.aug.get_transform(original_image).apply_image(original_image)
+    image = torch.as_tensor(image.astype("float32").transpose(2, 0, 1))
+    
+    inputs = {"image": image, "height": height, "width": width, "task": task}
+
+    ##### SUCCEEDS
+    predictor.model([inputs])
+
+    ##### FAILS
+    optimized = torch.compile(predictor.model, backend="eager")
+    optimized([inputs])
+
+import torch
+import open_clip
+
+class SampleModule(torch.nn.Module):
+    def __init__(self) -> None:
         super().__init__()
-        self.conv = nn.Conv2d(3, 64, kernel_size=3, padding=1)
-        # Define a namedtuple with default None for 'processed' to trigger Dynamo error
-        self.Token = namedtuple('Token', ['data', 'processed'], defaults=(None,))
+        self.tokenizer = open_clip.get_tokenizer('ViT-B-32')
 
     def forward(self, x):
-        features = self.conv(x)
-        # Create Token with default value (processed=None) to cause assertion failure
-        token = self.Token(data=features, processed=None)
-        return token.data.sum()  # Use the data field to return a tensor
+        text = self.tokenizer(x)
+        return text
 
-def my_model_function():
-    return MyModel()
+"""
+Code adapted from:
+https://github.com/mlfoundations/open_clip/blob/fb72f4db1b17133befd6c67c9cf32a533b85a321/README.md?plain=1#L62-L71
+"""
+model = SampleModule().eval().cuda()
+input_ = ["a diagram", "a dog", "a cat"]
 
-def GetInput():
-    # Returns random tensor matching input shape (B, C, H, W)
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
+# Passes
+model(input_)
 
+
+# Fails
+compiled = torch.compile(model, backend="eager")
+compiled(input_)

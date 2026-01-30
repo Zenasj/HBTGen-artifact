@@ -1,14 +1,10 @@
-# torch.rand(3, 2, 4, dtype=torch.float32)
 import torch
-from torch import nn
+import torch._dynamo as dynamo
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return torch.ops.aten._to_copy(x)
 
-def my_model_function():
-    return MyModel()
+@dynamo.optimize("eager")
+def forward(x):
+    return torch.ops.aten._to_copy(x)
 
-def GetInput():
-    return torch.randn(3, 2, 4)
 
+forward(torch.randn(3, 2, 4))

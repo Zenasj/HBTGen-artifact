@@ -1,26 +1,27 @@
-# tf.random.uniform((B, input_dim), dtype=tf.float32) <- Assuming input shape for Dense layer input is (batch_size, input_dim)
+from tensorflow import keras
+from tensorflow.keras import layers
+
+# testcase.py
+import mlflow
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self, units=512):
-        super().__init__()
-        # Single Dense layer from the minimal reproducible example
-        self.dense = tf.keras.layers.Dense(units)
+def init_tf_gpus():
+    resolver = tf.distribute.cluster_resolver.TPUClusterResolver(tpu='local')
+    tf.config.experimental_connect_to_cluster(resolver)
+    # This is the TPU initialization code that has to be at the beginning.
+    tf.tpu.experimental.initialize_tpu_system(resolver)
+    print("All devices: ", tf.config.list_logical_devices('TPU'))
 
-    def call(self, inputs, training=False):
-        # Forward pass just runs the Dense layer
-        return self.dense(inputs)
+    tf.config.optimizer.set_jit(True)
 
-def my_model_function():
-    # Return an instance of MyModel with default Dense size 512 units
-    return MyModel()
+    return tf.distribute.TPUStrategy(resolver)
 
-def GetInput():
-    # Since the example uses tf.keras.Sequential with Dense(512)
-    # Dense requires input shape (batch_size, input_dim), input_dim can be arbitrary
-    # Choose input_dim=128 as a reasonable arbitrary input dimension
-    batch_size = 8
-    input_dim = 128
-    # Return a random float32 tensor in shape (batch_size, input_dim)
-    return tf.random.uniform((batch_size, input_dim), dtype=tf.float32)
+def main():
+    strategy = init_tf_gpus()
+    with mlflow.start_run(run_name="test"): # disable this line to make it work
+        with strategy.scope():
+            seq = tf.keras.Sequential([tf.keras.layers.Dense(512)])
 
+
+if __name__ == "__main__":
+    main()

@@ -1,71 +1,109 @@
-# torch.rand(1, 3, 512, 1024, dtype=torch.float32)  # Inferred input shape
+import argparse
+import os
+import pprint
+import shutil
+import sys
+
+import logging
+import time
+import timeit
+from pathlib import Path
+
+import numpy as np
 
 import torch
 import torch.nn as nn
-import torch.onnx
+import torch.backends.cudnn as cudnn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Placeholder for the HRNet-Semantic-Segmentation model
-        # Since the exact model structure is not provided, we will use a simple CNN as a placeholder.
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3)
-        self.bn1 = nn.BatchNorm2d(64)
-        self.relu = nn.ReLU(inplace=True)
-        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-        self.layer1 = nn.Sequential(
-            nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(64),
-            nn.ReLU(inplace=True)
-        )
-        self.layer2 = nn.Sequential(
-            nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(128),
-            nn.ReLU(inplace=True)
-        )
-        self.layer3 = nn.Sequential(
-            nn.Conv2d(128, 256, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(256),
-            nn.ReLU(inplace=True)
-        )
-        self.layer4 = nn.Sequential(
-            nn.Conv2d(256, 512, kernel_size=3, stride=2, padding=1),
-            nn.BatchNorm2d(512),
-            nn.ReLU(inplace=True)
-        )
-        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        self.fc = nn.Linear(512, 1000)
+import _init_paths
+import models
+import datasets
+from config import config
+from config import update_config
+from core.function import testval, test
+from utils.modelsummary import get_model_summary
+from utils.utils import create_logger, FullModel
 
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.relu(x)
-        x = self.maxpool(x)
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
-        x = self.layer4(x)
-        x = self.avgpool(x)
-        x = torch.flatten(x, 1)
-        x = self.fc(x)
-        return x
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+def parse_args():
+    parser = argparse.ArgumentParser(description='Train segmentation network')
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(1, 3, 512, 1024, dtype=torch.float32)
+    parser.add_argument('--cfg',
+                        help='experiment configure file name',
+                        required=True,
+                        type=str)
+    parser.add_argument('opts',
+                        help="Modify config options using the command-line",
+                        default=None,
+                        nargs=argparse.REMAINDER)
 
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
+    args = parser.parse_args()
+    update_config(config, args)
 
-# ### Explanation:
-# - **MyModel**: A placeholder CNN model is used to represent the HRNet-Semantic-Segmentation model. The actual HRNet model is complex and not provided in the issue, so a simple CNN structure is used here.
-# - **my_model_function**: Returns an instance of `MyModel`.
-# - **GetInput**: Generates a random tensor with the shape `(1, 3, 512, 1024)` which is inferred from the export code in the issue.
-# - The model is designed to be compatible with `torch.compile` and can be exported to ONNX using `torch.onnx.export`.
-# This code should be a good starting point for further development and integration with the actual HRNet model.
+    return args
+
+
+def main():
+    args = parse_args()
+
+    logger, final_output_dir, _ = create_logger(
+        config, args.cfg, 'test')
+
+    logger.info(pprint.pformat(args))
+    logger.info(pprint.pformat(config))
+
+    # cudnn related setting
+    cudnn.benchmark = config.CUDNN.BENCHMARK
+    cudnn.deterministic = config.CUDNN.DETERMINISTIC
+    cudnn.enabled = config.CUDNN.ENABLED
+
+    # build model
+    model = eval('models.' + config.MODEL.NAME +
+                 '.get_seg_model')(config)
+
+    dump_input = torch.rand(
+        (1, 3, config.TRAIN.IMAGE_SIZE[1], config.TRAIN.IMAGE_SIZE[0])
+    )
+    logger.info(get_model_summary(model.cuda(), dump_input.cuda()))
+
+    if config.TEST.MODEL_FILE:
+        model_state_file = config.TEST.MODEL_FILE
+    else:
+        model_state_file = os.path.join(final_output_dir,
+                                        'final_state.pth')
+    logger.info('=> loading model from {}'.format(model_state_file))
+
+    pretrained_dict = torch.load(model_state_file)
+    model_dict = model.state_dict()
+    pretrained_dict = {k[6:]: v for k, v in pretrained_dict.items()
+                       if k[6:] in model_dict.keys()}
+    for k, _ in pretrained_dict.items():
+        logger.info(
+            '=> loading {} from pretrained model'.format(k))
+    model_dict.update(pretrained_dict)
+    model.load_state_dict(model_dict,strict=False)
+
+    
+    os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model=model.to(device)
+
+
+    model.eval()
+    x = torch.randn(1, 3, 512, 1024, requires_grad=True)
+    x=x.to(device)
+
+    torch.onnx.export(model,  # model being run
+                      x,  # model input (or a tuple for multiple inputs)
+                      'to_onnx.onnx',  # where to save the model (can be a file or file-like object)
+                      export_params=True,  # store the trained parameter weights inside the model file
+                      do_constant_folding=True,  # whether to execute constant folding for optimization
+                      input_names=['input'],  # the model's input names
+                      output_names=['output1'],  # the model's output names
+                      operator_export_type = torch.onnx.OperatorExportTypes.ONNX_ATEN
+                      )
+
+
+
+if __name__ == '__main__':
+    main()

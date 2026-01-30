@@ -1,43 +1,57 @@
-# tf.random.uniform((BATCH_SIZE, 32, 32, 3), dtype=tf.float32)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
 import tensorflow as tf
+import tensorflow_datasets as tfds
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # The original issue highlights the problem with including softmax activation in output layer
-        # and unnormalized inputs. The final working approach is:
-        # 1) No softmax in last Dense layer (use linear logits output)
-        # 2) Normalize input images to [0,1] range
-        #
-        # So we implement the model as:
-        # Flatten input (32x32x3) -> Dense(10 logits)
-        self.flatten = tf.keras.layers.Flatten(input_shape=(32,32,3))
-        self.dense = tf.keras.layers.Dense(10)  # No softmax here to avoid numerical instability
-    
-    def call(self, inputs, training=False):
-        # Normalize input images from [0,255] uint8 or float to float32 in [0,1]
-        # We assume inputs might be uint8 or float; convert and normalize accordingly
-        x = tf.cast(inputs, tf.float32) / 255.0
-        x = self.flatten(x)
-        logits = self.dense(x)
-        return logits
+## model don't work if uncomment following line
+# tf.config.experimental_run_functions_eagerly(True)
 
-def my_model_function():
-    # Instantiate model and compile with from_logits=True loss as recommended
-    model = MyModel()
-    loss_fn = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
-    # Compile with adam optimizer, sparse categorical crossentropy (from_logits=True), and accuracy metric
-    model.compile(optimizer='adam', loss=loss_fn, metrics=['accuracy'])
-    return model
+TRAIN_DATASET = tfds.load(name="cifar10")['train']
 
-def GetInput():
-    # Generate a random batch of inputs with shape (BATCH_SIZE, 32, 32, 3),
-    # dtype uint8 in range [0, 255], consistent with CIFAR-10 images.
-    # BATCH_SIZE from example is 50.
-    BATCH_SIZE = 50
-    shape = (BATCH_SIZE, 32, 32, 3)
-    # Generate int images, as typical in CIFAR-10 dataset
-    inputs = tf.random.uniform(shape, minval=0, maxval=256, dtype=tf.int32)
-    inputs = tf.cast(inputs, tf.uint8)
-    return inputs
+model = tf.keras.models.Sequential([
+    tf.keras.layers.Flatten(input_shape=(32,32, 3)),
+    tf.keras.layers.Dense(10, activation='softmax'),
+])
 
+BATCH_SIZE = 50
+
+model.compile(loss = 'sparse_categorical_crossentropy', metrics=['accuracy'])
+
+train_set = TRAIN_DATASET.map(lambda item: (item['image'], item['label'])).batch(BATCH_SIZE)
+model.fit(train_set, epochs = 5)
+
+if not from_logits:
+    if (isinstance(output, (ops.EagerTensor, variables_module.Variable)) or
+        output.op.type != 'Softmax'):
+      epsilon_ = _constant_to_tensor(epsilon(), output.dtype.base_dtype)
+      output = clip_ops.clip_by_value(output, epsilon_, 1 - epsilon_)
+      output = math_ops.log(output)
+    else:
+      # When softmax activation function is used for output operation, we
+      # use logits from the softmax function directly to compute loss in order
+      # to prevent collapsing zero when training.
+      # See b/117284466
+      assert len(output.op.inputs) == 1
+      output = output.op.inputs[0]
+
+import tensorflow as tf
+import tensorflow_datasets as tfds
+
+TRAIN_DATASET = tfds.load(name="cifar10")['train']
+
+tf.config.experimental_run_functions_eagerly(True) # result won't be affected by eager/graph mode
+
+model = tf.keras.models.Sequential([
+    tf.keras.layers.Flatten(input_shape=(32,32, 3)),
+    tf.keras.layers.Dense(10), # no softmax in the layer
+])
+
+BATCH_SIZE = 50
+
+model.compile(loss = tf.losses.SparseCategoricalCrossentropy(from_logits = True), # do softmax in loss function
+              metrics=['accuracy'])
+
+train_set = TRAIN_DATASET.map(lambda item: (item['image'], item['label'])).batch(BATCH_SIZE)
+model.fit(train_set, epochs = 5)

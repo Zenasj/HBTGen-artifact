@@ -1,28 +1,33 @@
-# torch.rand(50, 10, 256, dtype=torch.float32)  # Inferred input shape
+import torch.nn as nn
 
 import torch
 from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.rnn = nn.GRU(input_size=256,
-                          hidden_size=128,
-                          num_layers=2,
-                          batch_first=False,
-                          dropout=0.1,
-                          bidirectional=True)
+device = torch.device('cuda')
 
-    def forward(self, x):
-        return self.rnn(x)
+rnn = nn.GRU(input_size=256,
+    hidden_size=128,
+    num_layers=2,
+    batch_first=False,
+    dropout=0.1,
+    bidirectional=True)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    model = MyModel()
-    model.eval()
-    return model
+rnn.eval()
+rnn = rnn.to(device)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand((50, 10, 256), dtype=torch.float32)
+with torch.no_grad():
+    traced_rnn = torch.jit.trace(rnn, torch.rand((50, 10, 256), dtype=torch.float32).to(device))
 
+params = {}
+
+for k, v in traced_rnn.named_parameters():
+    params[k] = v
+    
+torch.jit.save(traced_rnn, 'traced.pt')
+traced_rnn = torch.jit.load('traced.pt')
+
+for k, v in traced_rnn.named_parameters():
+    diff = torch.max(torch.abs(params[k] - v)).item()
+    
+    if diff > 0:
+        print(k, diff)

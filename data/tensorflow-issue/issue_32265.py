@@ -1,29 +1,47 @@
-# tf.random.uniform((128, 256, 256, 3), dtype=tf.float32)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+
+import os
+import time
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Minimal model replicating the original example: a single Conv2D (1x1) with sigmoid activation
-        self.conv = tf.keras.layers.Conv2D(1, (1, 1), activation='sigmoid')
+tf.keras.backend.clear_session()
 
-    def call(self, inputs, training=False):
-        # Forward pass: Apply conv layer
-        return self.conv(inputs)
+TF_MASTER = 'grpc://{}'.format(os.environ['COLAB_TPU_ADDR'])
 
+with tf.Session(TF_MASTER) as session:
+  print(session.list_devices())
 
-def my_model_function():
-    # Instantiate and compile model analogous to original example
-    model = MyModel()
-    # Compile with adam optimizer, binary crossentropy loss, and accuracy metric
-    model.compile(optimizer='adam',
-                  loss='binary_crossentropy',
-                  metrics=['accuracy'])
-    return model
+print("Tensorflow Version:", tf.VERSION)
+print("Tensorflow Keras Version:", tf.keras.__version__)
 
+amount = 128
+size = [256, 256]
+images = np.array([np.random.rand(*size, 3).astype('float32') for i in range(amount)])
+masks = np.array([np.random.rand(*size, 1).astype('float32') for i in range(amount)])
 
-def GetInput():
-    # Return a batch of random input images with shape (128, 256, 256, 3)
-    # matching the batch_size and input image shape from the original example
-    return tf.random.uniform((128, 256, 256, 3), dtype=tf.float32)
+ds = tf.data.Dataset.from_tensor_slices((images, masks)).batch(amount, drop_remainder=True) # we need Dataset to run on TPU
+print(ds)
 
+# very minimal model to demostrate the issue
+def make_model(batch_size=None):
+  src = tf.keras.layers.Input(shape=(*size,3), batch_size=batch_size, dtype=tf.float32, name='Input')
+  outputs = tf.keras.layers.Conv2D(1, (1, 1), activation='sigmoid')(src)
+
+  model = tf.keras.Model(inputs=[src], outputs=[outputs])
+  model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+  return model
+
+resolver = tf.contrib.cluster_resolver.TPUClusterResolver(tpu='grpc://' + os.environ['COLAB_TPU_ADDR'])
+tf.contrib.distribute.initialize_tpu_system(resolver)
+strategy = tf.contrib.distribute.TPUStrategy(resolver)
+with strategy.scope():
+  model = make_model(batch_size = 128)
+model.summary()
+
+for i in range(30):
+  start_time = time.time()
+  model.evaluate(ds, steps=1)
+  print("--- %s seconds ---" % (time.time() - start_time))

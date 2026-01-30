@@ -1,50 +1,71 @@
-# tf.random.uniform((B, 28, 28, 1), dtype=tf.float32) ← Input shape inferred from MNIST example with grayscale images sized 28x28
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
+#!/usr/bin/env python
+
+import os
+import json
+import tensorflow_datasets as tfds
 import tensorflow as tf
+from slurm_utils import create_tf_config
+tfds.disable_progress_bar()
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # CNN layers as per original example
-        self.conv1 = tf.keras.layers.Conv2D(32, 3, activation='relu', input_shape=(28, 28, 1))
-        self.pool = tf.keras.layers.MaxPooling2D()
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(64, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(10, activation='softmax')
-    
-    def call(self, inputs, training=None):
-        x = self.conv1(inputs)
-        x = self.pool(x)
-        x = self.flatten(x)
-        x = self.dense1(x)
-        output = self.dense2(x)
-        return output
+BUFFER_SIZE = 10000
+BATCH_SIZE = 64
 
-def my_model_function():
-    # Build and compile the model exactly as in the issue example:
-    model = MyModel()
-    model.compile(
-        loss=tf.keras.losses.sparse_categorical_crossentropy,
-        optimizer=tf.keras.optimizers.SGD(learning_rate=0.001),
-        metrics=['accuracy']
-    )
+
+def make_datasets_unbatched():
+    # Scaling MNIST data from (0, 255] to (0., 1.]
+    def scale(image, label):
+        image = tf.cast(image, tf.float32)
+        image /= 255
+        return image, label
+
+    datasets, info = tfds.load(name='mnist',
+                               with_info=True,
+                               as_supervised=True)
+
+    return datasets['train'].map(scale).cache().shuffle(BUFFER_SIZE)
+
+
+def build_and_compile_cnn_model():
+    model = tf.keras.Sequential([
+        tf.keras.layers.Conv2D(32,
+                               3,
+                               activation='relu',
+                               input_shape=(28, 28, 1)),
+        tf.keras.layers.MaxPooling2D(),
+        tf.keras.layers.Flatten(),
+        tf.keras.layers.Dense(64, activation='relu'),
+        tf.keras.layers.Dense(10, activation='softmax')
+    ])
+    model.compile(loss=tf.keras.losses.sparse_categorical_crossentropy,
+                  optimizer=tf.keras.optimizers.SGD(learning_rate=0.001),
+                  metrics=['accuracy'])
     return model
 
-def GetInput():
-    # Create a random tensor mimicking a batch of grayscale 28x28 images.
-    # Batch size chosen arbitrarily to 64, matching example batch size.
-    batch_size = 64
-    input_tensor = tf.random.uniform((batch_size, 28, 28, 1), minval=0, maxval=1, dtype=tf.float32)
-    return input_tensor
 
-# Notes / explanation:
-# - The original issue describes a problem with multi-worker training when datasets are not repeated.
-# - The dataset was MNIST images scaled to (0.,1.) and batch size 64.
-# - The model is a small CNN: Conv2D(32,3) -> MaxPool -> Flatten -> Dense(64 relu) -> Dense(10 softmax).
-# - The compiled model uses sparse categorical crossentropy and SGD with lr=0.001.
-# - Input shape is (28, 28, 1), grayscale MNIST images.
-# - The `GetInput()` function returns a batch of random inputs with shape (64, 28, 28, 1) and float32 dtype.
-#   This matches expected input to the model (batch dimension + input dims).
-# - No training loop or dataset creation is included since that pertains to distribution strategy usage in the issue,
-#   but model and input replicate core components relevant to that.
+tfConfig = create_tf_config(gpus_per_task=2)
+print('Used Config: {}'.format(tfConfig))
+os.environ['TF_CONFIG'] = json.dumps(tfConfig)
 
+strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
+print('Number of workers: {}\nParameter devices: {}\nWorkers: {}'.format(
+    strategy.num_replicas_in_sync, strategy.extended.parameter_devices,
+    strategy.extended.worker_devices))
+
+# Here the batch size scales up by number of workers since
+# `tf.data.Dataset.batch` expects the global batch size.
+GLOBAL_BATCH_SIZE = BATCH_SIZE * strategy.num_replicas_in_sync
+with strategy.scope():
+    # Creation of dataset, and model building/compiling need to be within
+    # `strategy.scope()`.
+    train_datasets = make_datasets_unbatched().batch(GLOBAL_BATCH_SIZE)
+    multi_worker_model = build_and_compile_cnn_model()
+
+multi_worker_model.fit(x=train_datasets, epochs=3)
+
+for epoch in range(FLAGS.epoch):
+        for train_data in train_dataset:
+           ...

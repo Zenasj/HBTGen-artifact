@@ -1,73 +1,68 @@
-# tf.random.uniform((32, 16, 512, 1), dtype=tf.float32) ← Inferred input shape and dtype from dataset generation
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
+from tensorflow import keras
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        initializer = 'he_uniform'
-        nb_filts = [8, 16, 32, 400]
-        out_size = 1
+print(tf.version.VERSION)
 
-        # Define CNN layers as per original Sequential model
-        self.conv1a = tf.keras.layers.Conv2D(nb_filts[0], kernel_size=(3, 3), activation='relu',
-                                             padding='same', kernel_initializer=initializer,
-                                             bias_initializer=initializer, input_shape=(16, 512, 1))
-        self.conv1b = tf.keras.layers.Conv2D(nb_filts[0], kernel_size=(3, 3), activation='relu',
-                                             padding='same', kernel_initializer=initializer,
-                                             bias_initializer=initializer)
-        self.pool1 = tf.keras.layers.MaxPooling2D(pool_size=(3, 3), strides=(2, 2), padding='same')
+training_samples = 100
+input_shape = (16, 512, 1)
 
-        self.conv2a = tf.keras.layers.Conv2D(nb_filts[1], kernel_size=(3, 3), activation='relu',
-                                             padding='same', kernel_initializer=initializer,
-                                             bias_initializer=initializer)
-        self.conv2b = tf.keras.layers.Conv2D(nb_filts[1], kernel_size=(3, 3), activation='relu',
-                                             padding='same', kernel_initializer=initializer,
-                                             bias_initializer=initializer)
-        self.pool2 = tf.keras.layers.MaxPooling2D(pool_size=(3, 3), strides=(2, 2), padding='same')
+dataset = tf.data.Dataset.from_tensor_slices((tf.random_uniform([32, 16, 512, 1], dtype=tf.float32), tf.random_uniform([32], dtype=tf.float32)))
+dataset = dataset.shuffle(32).repeat()
 
-        self.conv3a = tf.keras.layers.Conv2D(nb_filts[2], kernel_size=(3, 3), activation='relu',
-                                             padding='same', kernel_initializer=initializer,
-                                             bias_initializer=initializer)
-        self.conv3b = tf.keras.layers.Conv2D(nb_filts[2], kernel_size=(3, 3), activation='relu',
-                                             padding='same', kernel_initializer=initializer,
-                                             bias_initializer=initializer)
-        self.pool3 = tf.keras.layers.MaxPooling2D(pool_size=(3, 3), strides=(2, 2), padding='same')
+strategy = tf.distribute.MirroredStrategy()
 
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(1024, activation='relu',
-                                            kernel_initializer=initializer,
-                                            bias_initializer=initializer)
-        self.dense2 = tf.keras.layers.Dense(nb_filts[3], activation='relu',
-                                            kernel_initializer=initializer,
-                                            bias_initializer=initializer)
-        self.out = tf.keras.layers.Dense(out_size)
+with strategy.scope():
+    initializer = 'he_uniform'
+    nb_filts = [8, 16, 32, 400]
+    out_size = 1
+    model = tf.keras.models.Sequential()
+    model.add(keras.layers.Conv2D(nb_filts[0], kernel_size=(3, 3),
+                activation='relu', padding='same',
+                kernel_initializer=initializer,
+                bias_initializer=initializer, input_shape=input_shape))
+    model.add(keras.layers.Conv2D(nb_filts[0], kernel_size=(3, 3),
+                activation='relu', padding='same',
+                kernel_initializer=initializer,
+                bias_initializer=initializer))
+    model.add(keras.layers.MaxPooling2D(pool_size=(3, 3), strides=(2, 2), 
+                padding='same'))
+    model.add(keras.layers.Conv2D(nb_filts[1], kernel_size=(3, 3),
+                activation='relu', padding='same',
+                kernel_initializer=initializer,
+                bias_initializer=initializer))
+    model.add(keras.layers.Conv2D(nb_filts[1], kernel_size=(3, 3),
+                activation='relu', padding='same',
+                kernel_initializer=initializer,
+                bias_initializer=initializer))
+    model.add(keras.layers.MaxPooling2D(pool_size=(3, 3), strides=(2, 2), 
+                padding='same'))
+    model.add(keras.layers.Conv2D(nb_filts[2], kernel_size=(3, 3),
+                activation='relu', padding='same',
+                kernel_initializer=initializer,
+                bias_initializer=initializer))
+    model.add(keras.layers.Conv2D(nb_filts[2], kernel_size=(3, 3),
+                activation='relu', padding='same',
+                kernel_initializer=initializer,
+                bias_initializer=initializer))
+    model.add(keras.layers.MaxPooling2D(pool_size=(3, 3), strides=(2, 2), 
+                padding='same'))
+    model.add(keras.layers.Flatten())
+    model.add(keras.layers.Dense(1024, activation='relu',
+                kernel_initializer=initializer,
+                bias_initializer=initializer))
+    model.add(keras.layers.Dense(nb_filts[3], activation='relu',
+                kernel_initializer=initializer,
+                bias_initializer=initializer))
+    model.add(keras.layers.Dense(out_size))
 
-    def call(self, inputs, training=False):
-        x = self.conv1a(inputs)
-        x = self.conv1b(x)
-        x = self.pool1(x)
+    optimizer = tf.keras.optimizers.Adam(1e-3)
+    model.compile(optimizer=optimizer, loss='mean_absolute_error', metrics=['mean_squared_error', 'mean_absolute_error'])
 
-        x = self.conv2a(x)
-        x = self.conv2b(x)
-        x = self.pool2(x)
-
-        x = self.conv3a(x)
-        x = self.conv3b(x)
-        x = self.pool3(x)
-
-        x = self.flatten(x)
-        x = self.dense1(x)
-        x = self.dense2(x)
-        output = self.out(x)
-        return output
-
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input matching the model's expected input:
-    # batch size = 32 (in original dataset), shape = (16,512,1)
-    return tf.random.uniform((32, 16, 512, 1), dtype=tf.float32)
-
+with strategy.scope():
+    batch_size = 32
+    nb_epochs = 1
+    history = model.fit(dataset.batch(batch_size, drop_remainder=True), epochs=nb_epochs, steps_per_epoch=training_samples // batch_size, verbose=1)

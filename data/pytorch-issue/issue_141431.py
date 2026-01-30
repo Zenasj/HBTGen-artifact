@@ -1,22 +1,28 @@
-# torch.rand((), dtype=torch.float32)
-from dataclasses import GenericAlias, _FIELDS
-import torch
-from torch import nn
+from dataclasses import is_dataclass
 
+import torch
+
+
+@torch.compile(fullgraph=True)
+def func(x):
+    if not is_dataclass(x):
+        return x + 1
+
+func(torch.ones(()))
+
+from dataclasses import GenericAlias, _FIELDS
 def is_dataclass_recode(obj):
+    """Returns True if obj is a dataclass or an instance of a
+    dataclass."""
     cls = obj if isinstance(obj, type) and not isinstance(obj, GenericAlias) else type(obj)
     return hasattr(cls, _FIELDS)
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        if not is_dataclass_recode(x):
-            return x + 1
-        else:
-            return x  # Fallback to return input if dataclass is detected
+import torch
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    return torch.rand((), dtype=torch.float32)
+@torch.compile(fullgraph=True)
+def func(x):
+    if not is_dataclass_recode(x):
+        return x + 1
 
+func(torch.ones(()))

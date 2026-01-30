@@ -1,23 +1,14 @@
-# torch.rand(1, 3, 640, 640, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
-
 import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Placeholder for the YOLO-Pose model
-        self.yolo_pose = nn.Identity()  # Replace with actual YOLO-Pose model if available
+class M(torch.nn.Module):
+    def forward(self, h, w, strides):
+        stride_tensor = []
+        for stride in strides:
+            res = torch.full((h * w, 1), stride)
+            stride_tensor.append(res)
+        
+        return torch.cat(stride_tensor)
 
-    def forward(self, x):
-        # Forward pass through the YOLO-Pose model
-        return self.yolo_pose(x)
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand((1, 3, 640, 640), dtype=torch.float32)
-
+ep = torch.export.export(M(), (80, 80, torch.tensor([8.0, 16.0, 32.0])), strict=True)
+print(ep)

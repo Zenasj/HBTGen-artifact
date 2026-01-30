@@ -1,45 +1,39 @@
-# tf.random.uniform((B, 28, 28, 1), dtype=tf.float32) ← Input shape inferred from issue's Fashion MNIST example
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
 import tensorflow as tf
-from tensorflow.keras import layers
+from tensorflow.keras.models import Model, load_model
+from tensorflow.keras.layers import *
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Based on the provided model architecture from the issue description:
-        # Input shape (28,28,1), Conv2D layers with ReLU, Dropout, Flatten, Dense with swish (noted swish caused issue,
-        # but we keep original activation as in snippet), then output Dense without activation (logits).
-        self.conv1 = layers.Conv2D(32, (3, 3), activation='relu')
-        self.dropout1 = layers.Dropout(0.4)
-        self.conv2 = layers.Conv2D(64, (3, 3), activation='relu')
-        self.dropout2 = layers.Dropout(0.4)
-        self.conv3 = layers.Conv2D(128, (3, 3), activation='relu')
-        self.dropout3 = layers.Dropout(0.4)
-        self.flatten = layers.Flatten()
-        self.dense1 = layers.Dense(128, activation='swish')  # original layer activation
-        self.dropout4 = layers.Dropout(0.5)
-        self.dense_out = layers.Dense(10)  # logits, no activation
-        
-    def call(self, inputs, training=False):
-        x = self.conv1(inputs)
-        x = self.dropout1(x, training=training)
-        x = self.conv2(x)
-        x = self.dropout2(x, training=training)
-        x = self.conv3(x)
-        x = self.dropout3(x, training=training)
-        x = self.flatten(x)
-        x = self.dense1(x)
-        x = self.dropout4(x, training=training)
-        x = self.dense_out(x)        
-        return x
+(x_train, y_train), (x_test, y_test) = tf.keras.datasets.fashion_mnist.load_data()
+x_train, x_test = x_train / 255.0, x_test / 255.0  # normalize to between 0-1
 
-def my_model_function():
-    # Instantiate the model
-    return MyModel()
+# model layers
+xIn = Input((28, 28, 1))
+x = Conv2D(32, (3, 3), activation='relu')(xIn)
+x = Dropout(0.4)(x)
+x = Conv2D(64, (3, 3), activation='relu')(x)
+x = Dropout(0.4)(x)
+x = Conv2D(128, (3, 3), activation='relu')(x)
+x = Dropout(0.4)(x)
+x = Flatten()(x)
+x = Dense(128, activation='swish')(x)
+x = Dropout(0.5)(x)
+xOut = Dense(10)(x)
 
-def GetInput():
-    # Return a random float32 tensor shaped (batch, height, width, channels)
-    # The batch size is set arbitrarily to 16 to match the fit batch size from the issue example
-    batch_size = 16
-    return tf.random.uniform((batch_size, 28, 28, 1), dtype=tf.float32)
+model = Model(inputs=xIn, outputs=xOut)
 
+model.compile(
+    optimizer=tf.keras.optimizers.Adam(1e-3),
+    loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+    metrics=['accuracy'])
+
+callbacks = [
+    tf.keras.callbacks.EarlyStopping(monitor='val_accuracy', patience=8, restore_best_weights=True),
+    tf.keras.callbacks.ReduceLROnPlateau(monitor='val_accuracy', factor=0.1, patience=5, verbose=1)
+]
+
+model.summary()
+model.fit(x_train, y_train, epochs=100, batch_size=16, validation_data=(x_test, y_test), callbacks=callbacks)

@@ -1,4 +1,6 @@
-# tf.random.uniform((1, 224, 224, 3), dtype=tf.float32) ← inferred input shape from MobileNetV2 input_shape
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
 
@@ -6,43 +8,30 @@ class L2NormalizeLayer(tf.keras.layers.Layer):
     def __init__(self, name="normalize", **kwargs):
         super(L2NormalizeLayer, self).__init__(name=name, **kwargs)
 
-    def call(self, inputs):
-        # axis=1 following original logic, which shapes to (batch, features)
-        return tf.keras.backend.l2_normalize(inputs, axis=1)
+    def call(self, input):
+        return tf.keras.backend.l2_normalize(input, axis=1)
 
     def get_config(self):
         config = super(L2NormalizeLayer, self).get_config()
         return config
 
+shape = (224, 224, 3)
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Base pretrained feature extractor without top layers
-        self.base_model = tf.keras.applications.MobileNetV2(
-            include_top=False, weights="imagenet", input_shape=(224, 224, 3)
-        )
-        self.gap = tf.keras.layers.GlobalAveragePooling2D()
-        self.dense256 = tf.keras.layers.Dense(256, activation="relu")
-        self.l2norm = L2NormalizeLayer(name="embeddings")
-        self.output_dense = tf.keras.layers.Dense(2, activation="softmax", name="probs")
+# functional model
+base_model2 = tf.keras.applications.MobileNetV2(include_top=False, weights="imagenet", input_shape=shape)
+inputs = tf.keras.Input(shape=shape, name="input")
+x = base_model2(inputs)
+x = tf.keras.layers.GlobalAveragePooling2D()(x)
+x = tf.keras.layers.Dense(256, activation="relu")(x)
+y = L2NormalizeLayer(name="embeddings")(x)
+#y = tf.keras.layers.Lambda(lambda k: tf.keras.backend.l2_normalize(k, axis=1), name="embeddings")(x)
+outputs = tf.keras.layers.Dense(2, activation="softmax", name="probs")(x)
+model2 = tf.keras.Model(inputs=inputs, outputs=outputs)
 
-    def call(self, inputs, training=None):
-        x = self.base_model(inputs, training=training)  # (B, 7, 7, 1280) approx
-        x = self.gap(x)                                 # (B, 1280)
-        x = self.dense256(x)                            # (B, 256)
-        embeddings = self.l2norm(x)                     # normalized embeddings (B, 256)
-        probs = self.output_dense(x)                     # (B, 2)
-        # Because original issue focused on accessing both outputs,
-        # here we expose them both as tuple outputs.
-        return probs, embeddings
+# after training model i would like to load it and extract probs with embeddings
+tf.keras.models.save_model(model2, "model.h5")
+model_l2 = tf.keras.models.load_model("model.h5")
 
-
-def my_model_function():
-    # Return an instance of MyModel, ready for use
-    return MyModel()
-
-def GetInput():
-    # Return random input tensor matching input expected by MyModel (batch size 1)
-    return tf.random.uniform((1, 224, 224, 3), dtype=tf.float32)
-
+model_loaded = tf.keras.Model(
+    inputs=model_l2.input, outputs=[model_l2.get_layer(layer_name).output for layer_name in ["probs", "embeddings"]]
+)

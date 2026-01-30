@@ -1,17 +1,8 @@
-# torch.rand(B, 5, dtype=torch.float32)
 import torch
-from torch import nn
+from typing import *
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        return x[..., 1:] + 2  # Matches the original function's logic
+def f(a : Dict[str, Union[torch.Tensor, int]]):
+  return a['foo'][..., 1:] + 2
 
-def my_model_function():
-    return MyModel()  # Returns the model instance
-
-def GetInput():
-    return torch.rand(1, 5, dtype=torch.float32)  # Matches input shape from the issue's example
-
+fn = torch.jit.script(f)
+print(fn({'foo':torch.Tensor(1,5)}))

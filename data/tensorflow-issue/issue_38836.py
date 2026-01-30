@@ -1,32 +1,72 @@
-# tf.random.uniform((B, 28, 28, 1), dtype=tf.float32)
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
 import tensorflow_probability as tfp
 
-class MyModel(tf.keras.Model):
-    def __init__(self, input_shape=(28, 28, 1), num_classes=10):
-        super().__init__()
-        # Using flipout layers from TensorFlow Probability for Bayesian inference as in the issue
-        self.conv_flipout = tfp.layers.Convolution2DFlipout(
-            6, kernel_size=3, padding="SAME", activation=tf.nn.relu, input_shape=input_shape
-        )
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense_flipout = tfp.layers.DenseFlipout(num_classes)
+tf.config.experimental_run_functions_eagerly(True)
 
-    def call(self, inputs, training=False):
-        x = self.conv_flipout(inputs)
-        x = self.flatten(x)
-        logits = self.dense_flipout(x)
-        return logits
 
-def my_model_function():
-    # Instantiate MyModel with default MNIST input shape and 10 classes
-    return MyModel()
+def get_mnist_data(normalize=True, categorize=True):
+    img_rows, img_cols = 28, 28
+    (x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
 
-def GetInput():
-    # Return a random tensor input matching the MNIST shape (batch_size=64, 28, 28, 1)
-    # Using float32 dtype as expected by the model
+    if tf.keras.backend.image_data_format() == 'channels_first':
+        x_train = x_train.reshape(x_train.shape[0], 1, img_rows, img_cols)
+        x_test = x_test.reshape(x_test.shape[0], 1, img_rows, img_cols)
+        input_shape = (1, img_rows, img_cols)
+    else:
+        x_train = x_train.reshape(x_train.shape[0], img_rows, img_cols, 1)
+        x_test = x_test.reshape(x_test.shape[0], img_rows, img_cols, 1)
+        input_shape = (img_rows, img_cols, 1)
+
+    x_train = x_train.astype('float32')
+    x_test = x_test.astype('float32')
+
+    if normalize:
+        x_train /= 255
+        x_test /= 255
+
+    if categorize:
+        y_train = tf.keras.utils.to_categorical(y_train)
+        y_test = tf.keras.utils.to_categorical(y_test)
+
+    return x_train, y_train, x_test, y_test, input_shape
+
+
+def get_model(input_shape, num_classes=10):
+    model = tf.keras.Sequential()
+    model.add(tfp.layers.Convolution2DFlipout(6, input_shape=input_shape, kernel_size=3, padding="SAME",
+                                              activation=tf.nn.relu))
+    model.add(tf.keras.layers.Flatten())
+    model.add(tfp.layers.DenseFlipout(num_classes))
+    return model
+
+
+def train():
+    x_train, y_train, x_test, y_test, input_shape = get_mnist_data()
+
     batch_size = 64
-    img_rows, img_cols, channels = 28, 28, 1
-    return tf.random.uniform((batch_size, img_rows, img_cols, channels), dtype=tf.float32)
 
+    model = get_model(input_shape)
+
+    model.summary()
+
+    model.compile(loss="categorical_crossentropy")
+
+    model.fit(x_train, y_train, batch_size=batch_size, epochs=1)
+
+
+if __name__ == '__main__':
+    train()
+
+data_augmentation = keras.Sequential(
+    [
+        layers.experimental.preprocessing.RandomFlip("horizontal",
+                                                     input_shape=(img_height,
+                                                                  img_width,
+                                                                  3)),
+        layers.experimental.preprocessing.RandomRotation(0.1),
+        layers.experimental.preprocessing.RandomZoom(0.1),
+    ]
+)

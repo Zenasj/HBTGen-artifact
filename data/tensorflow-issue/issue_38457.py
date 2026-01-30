@@ -1,29 +1,34 @@
-# tf.random.uniform((B, 2), dtype=tf.float16) ← inferred input shape is (batch_size, 2) as per XOR example inputs
+from tensorflow import keras
+from tensorflow.keras import layers
 
+import math
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # A single Dense layer with 1 unit and tanh activation using float16 as in the issue reproducing code.
-        # This layer corresponds to the model from the original issue.
-        self.dense = tf.keras.layers.Dense(units=1, activation='tanh', dtype=tf.float16)
 
-    def call(self, inputs):
-        # Forward pass through the dense layer
-        return self.dense(inputs)
+if __name__ == '__main__':
 
+    x = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])
+    y = np.array([[0], [1], [1], [0]])
 
-def my_model_function():
-    # Return an instance of MyModel.
-    # The weights will be randomly initialized by default.
-    return MyModel()
+    loss_function = tf.keras.losses.BinaryCrossentropy()
 
+    for i in range(2000):
+        if i % 100 == 0:
+            print("Iteration {}".format(i))
 
-def GetInput():
-    # Return a float16 tensor shaped (1, 2) to replicate batch size of 1 and 2 features as per original XOR example.
-    # Values between 0 and 1 (convertable binary inputs 0 or 1).
-    # This works directly with MyModel.
-    # Using tf.random.uniform to generate random input for versatility.
-    return tf.random.uniform(shape=(1, 2), minval=0, maxval=1, dtype=tf.float16)
+        model = tf.keras.Sequential([
+            tf.keras.layers.Dense(units=1, activation='tanh', dtype=tf.float16)])
 
+        model.compile(optimizer='sgd', loss=loss_function)
+        model.fit(x=x, y=y, epochs=1, batch_size=1)
+
+        loss_result = loss_function(y, model(x))
+
+        if math.isnan(loss_result):
+            raise RuntimeError('NAN Error in iteration {}'.format(i))
+
+from tensorflow.keras.mixed_precision import experimental as mixed_precision
+
+policy = mixed_precision.Policy('mixed_float16')
+mixed_precision.set_policy(policy)

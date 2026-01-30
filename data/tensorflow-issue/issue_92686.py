@@ -1,34 +1,29 @@
-# tf.random.uniform((1, 10), dtype=tf.float32) ← Input shape inferred from issue: batch size 1, input dimension 10
-
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Following the simple model architecture from the issue:
-        # Input: (batch_size, 10)
-        # Hidden layer: Dense(8, ReLU)
-        # Output layer: Dense(1, linear)
-        self.hidden_layer = tf.keras.layers.Dense(8, activation='relu', name='hidden_layer')
-        self.output_layer = tf.keras.layers.Dense(1, activation='linear', name='output_prediction')
+# --- Configuration ---
+INPUT_DIM = 10
+OUTPUT_DIM = 1
 
-    def call(self, inputs):
-        # Forward pass
-        x = self.hidden_layer(inputs)
-        output = self.output_layer(x)
-        return output
+# --- Model Definition ---
+input_layer = layers.Input(shape=(INPUT_DIM,), name='input_features', dtype=tf.float32)
+hidden = layers.Dense(8, activation='relu', name='hidden_layer')(input_layer)
+output_layer = layers.Dense(OUTPUT_DIM, activation='linear', name='output_prediction')(hidden)
+model = keras.Model(inputs=input_layer, outputs=output_layer, name="simple_sequential_model")
+model.compile(optimizer='adam', loss='mse')
 
-def my_model_function():
-    # Return an instance of MyModel.
-    # No pretrained weights specified in the issue, so the model is randomly initialized.
-    return MyModel()
+# Deterministic input data
+input_data = np.arange(INPUT_DIM, dtype=np.float32).reshape(1, INPUT_DIM)
+input_data = (input_data / INPUT_DIM) - 0.5
 
-def GetInput():
-    # The input shape is (1, 10) with dtype=tf.float32, deterministic input from the issue code:
-    # input_data = np.arange(10, dtype=np.float32).reshape(1, 10)
-    # input_data = (input_data / 10) - 0.5
-    import numpy as np
-    input_np = (np.arange(10, dtype=np.float32).reshape(1, 10) / 10) - 0.5
-    # Convert to tf.Tensor
-    return tf.convert_to_tensor(input_np, dtype=tf.float32)
+# GPU Inference
+gpu_pred = model.predict(input_data)
+print(f"GPU prediction: {gpu_pred}")
+
+# CPU Inference
+with tf.device('/CPU:0'):
+    cpu_pred = model.predict(input_data)
+print(f"CPU prediction: {cpu_pred}")
 

@@ -1,34 +1,82 @@
-# tf.random.uniform((BATCH_SIZE, 28, 28, 1), dtype=tf.float32) ← inferred input shape: grayscale MNIST images batch
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
+from __future__ import absolute_import, division, print_function, unicode_literals
 import tensorflow as tf
+import tensorflow_datasets as tfds
+import os, json
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Define the convolutional base
-        self.conv = tf.keras.layers.Conv2D(32, 3, activation='relu', input_shape=(28, 28, 1))
-        self.pool = tf.keras.layers.MaxPooling2D()
-        self.flatten = tf.keras.layers.Flatten()
-        # Dense layers
-        self.dense1 = tf.keras.layers.Dense(64, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(10, activation='softmax')
+datasets, info = tfds.load(name='mnist', with_info=True, as_supervised=True)
+mnist_train, mnist_test = datasets['train'], datasets['test']
 
-    def call(self, inputs, training=False):
-        x = self.conv(inputs)
-        x = self.pool(x)
-        x = self.flatten(x)
-        x = self.dense1(x)
-        return self.dense2(x)
+os.environ['TF_CONFIG'] = json.dumps({
+    "cluster": {
+        "worker": ["localhost:12345"],
+        "ps": ["localhost:12346"]
+    },
+    "task": {"type": "worker", "index": 0}
+})
 
+strategy = tf.distribute.experimental.ParameterServerStrategy()
+#strategy = tf.distribute.MirroredStrategy()
 
-def my_model_function():
-    # Returns an instance of MyModel (untrained)
-    return MyModel()
+print('Number of devices: {}'.format(strategy.num_replicas_in_sync))
+num_train_examples = info.splits['train'].num_examples
+num_test_examples = info.splits['test'].num_examples
+BUFFER_SIZE = 10000
+BATCH_SIZE_PER_REPLICA = 64
+BATCH_SIZE = BATCH_SIZE_PER_REPLICA * strategy.num_replicas_in_sync
 
+def scale(image, label):
+  image = tf.cast(image, tf.float32)
+  image /= 255
+  return image, label
 
-def GetInput():
-    # Return a random tensor input compatible with MyModel: (BATCH_SIZE, 28, 28, 1)
-    # BATCH_SIZE is chosen arbitrarily as 64 matching typical batch size from the issue example
-    BATCH_SIZE = 64
-    return tf.random.uniform(shape=(BATCH_SIZE, 28, 28, 1), minval=0, maxval=1, dtype=tf.float32)
+train_dataset = mnist_train.map(scale).shuffle(BUFFER_SIZE).batch(BATCH_SIZE)
+eval_dataset = mnist_test.map(scale).batch(BATCH_SIZE)
 
+with strategy.scope():
+  model = tf.keras.Sequential([
+      tf.keras.layers.Conv2D(32, 3, activation='relu', input_shape=(28, 28, 1)),
+      tf.keras.layers.MaxPooling2D(),
+      tf.keras.layers.Flatten(),
+      tf.keras.layers.Dense(64, activation='relu'),
+      tf.keras.layers.Dense(10, activation='softmax')
+  ])
+
+  model.compile(loss='sparse_categorical_crossentropy',
+                optimizer=tf.keras.optimizers.Adam(),
+                metrics=['accuracy'])
+
+checkpoint_dir = './training_checkpoints'
+# Name of the checkpoint files
+checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt_{epoch}")
+
+# Function for decaying the learning rate.
+# You can define any decay function you need.
+def decay(epoch):
+  if epoch < 3:
+    return 1e-3
+  elif epoch >= 3 and epoch < 7:
+    return 1e-4
+  else:
+    return 1e-5
+
+# Callback for printing the LR at the end of each epoch.
+class PrintLR(tf.keras.callbacks.Callback):
+  def on_epoch_end(self, epoch, logs=None):
+    print('\nLearning rate for epoch {} is {}'.format(epoch + 1,
+                                                      model.optimizer.lr.numpy()))
+callbacks = [
+    tf.keras.callbacks.TensorBoard(log_dir='./logs'),
+    tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_prefix,
+                                       save_weights_only=True),
+    tf.keras.callbacks.LearningRateScheduler(decay),
+    PrintLR()
+]
+
+model.fit(train_dataset, epochs=12, callbacks=callbacks)
+model.load_weights(tf.train.latest_checkpoint(checkpoint_dir))
+eval_loss, eval_acc = model.evaluate(eval_dataset)
+print('Eval loss: {}, Eval Accuracy: {}'.format(eval_loss, eval_acc))

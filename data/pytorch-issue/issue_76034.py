@@ -1,21 +1,11 @@
-# torch.rand(B, 10)  # Assumed input shape based on lack of explicit details in the issue
-import torch
-import torch.nn as nn
+class Works:
+    """I won't stay with -OO :)"""
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Basic linear layer to fulfill model structure requirements
-        self.linear = nn.Linear(10, 5)
-        
-    def forward(self, x):
-        return self.linear(x)
+class Problem:
+    """I am not a docstring anymore {}""".format(":(")
 
-def my_model_function():
-    # Returns a simple model instance with default initialization
-    return MyModel()
+class WorkAround:
+    """I am a {} docstring that won't stay with -OO :)"""
 
-def GetInput():
-    # Generates random input tensor matching the assumed input shape
-    return torch.rand(3, 10)  # Batch size 3, input features 10
-
+if WorkAround.__doc__:
+    WorkAround.__doc__ = WorkAround.__doc__.format("formatted")

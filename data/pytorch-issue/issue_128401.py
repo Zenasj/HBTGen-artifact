@@ -1,34 +1,64 @@
-# torch.rand(B, 2, dtype=torch.float64)
 import torch
-class MyModel(torch.nn.Module):
-    def forward(self, x):
-        a = x[0]
-        b = x[1]
-        # Operation1: a / b (float64 division)
-        op1 = a / b
-        op1_tensor = op1.to(torch.float32)
-        
-        # Operation2: torch.tensor(a)/b → a as float32 divided by b (float64)
-        a_float32 = a.to(torch.float32)
-        op2 = a_float32 / b  # b is cast to float32, result is float32
-        
-        # Operation3: a (float64) divided by torch.tensor(b) (float32)
-        b_float32 = b.to(torch.float32)
-        op3 = a / b_float32  # result is float64
-        
-        # Operation4: a divided by (b converted to float32 then to float64)
-        op4 = a / b_float32.to(torch.float64)  # same as op3, but converted to float32
-        op4_tensor = op4.to(torch.float32)
-        
-        # Operation5: same as op1
-        op5 = a / b
-        op5_tensor = op5.to(torch.float32)
-        
-        return (op1_tensor, op2, op3, op4_tensor, op5_tensor)
+def test(a,b):
+    print()
+    print(a/b)
+    print(torch.tensor(a)/b)
+    print(a/torch.tensor(b))        # Potential bug.
+    print(a/float(torch.tensor(b))) # Potential much more precision loss than merely float() casting.
+    print(a/float(b))
+test(6.10840013583831e-41, 2.7734e-39)  # Bug to inf. (original found case)
+test(0.0, 2.8026e-45)                   # Bug to nan. (original found case)
+test(1.0e-39, 1.0e-39)                  # Bug to inf and more precision loss.
+test(1.0e-38, 1.0e-39)                  # Bug to inf and more precision loss.
+test(1.0e-39, 1.0e-38)                  # More precision loss.
+test(1.0e-38, 1.0e-38)                  # More precision loss.
+test(0.0, 1.0e-39)                      # Bug to nan.
+test(0.0, 1.0e-38)
 
-def my_model_function():
-    return MyModel()
+0.022024951813075323
+tensor(0.0220)
+tensor(inf)
+0.022024955991519653
+0.022024951813075323
 
-def GetInput():
-    return torch.rand(2, dtype=torch.float64) * 1e-38
+0.0
+tensor(0.)
+tensor(nan)
+0.0
+0.0
 
+1.0
+tensor(1.)
+tensor(inf)
+0.9999997846947131
+1.0
+
+10.0
+tensor(10.0000)
+tensor(inf)
+9.99999784694713
+10.0
+
+0.09999999999999999
+tensor(0.1000)
+tensor(0.1000)
+0.10000000649543637
+0.09999999999999999
+
+1.0
+tensor(1.)
+tensor(1.)
+1.0000000649543639
+1.0
+
+0.0
+tensor(0.)
+tensor(nan)
+0.0
+0.0
+
+0.0
+tensor(0.)
+tensor(0.)
+0.0
+0.0

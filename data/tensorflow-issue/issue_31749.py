@@ -1,54 +1,62 @@
-# tf.random.normal(shape=(dynamic_size,)) where dynamic_size is determined by input scalar tensor shape=(1,)
+import random
+from tensorflow import keras
 
 import tensorflow as tf
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # No trainable layers, output shape depends on input scalar values
-        
-    def call(self, inputs):
-        # inputs shape: (batch_size, 1), dtype int32 or int64 assumed
-        # For each batch element, produce output vector of length = inputs[i, 0]
-        # Since TensorFlow graph requires static shapes for outputs in tf.function,
-        # a workaround is required. Example here produces ragged outputs for demonstration.
-        # However, for compatibility with loss, we generate a padded output with zeros.
-        
-        # Extract 1D vector of lengths:
-        lengths = tf.reshape(inputs, [-1])  # shape (batch_size,)
-        
-        max_len = tf.reduce_max(lengths)  # scalar scalar for padding
+inputs = tf.keras.Input(shape=(1,), dtype=tf.int64)
+outputs = tf.random.normal(shape=(inputs[0, 0],))
 
-        # Generate per-batch outputs of shape (batch_size, max_len)
-        # For positions >= input length, output zero logits (so loss ignores?)
-        def gen_logits(length):
-            # Random normal outputs of shape (length,)
-            logits = tf.random.normal(shape=(length,), dtype=tf.float32)
-            return logits
+model = tf.keras.Model(inputs, outputs)
+model.compile(optimizer='sgd', loss=tf.keras.losses.BinaryCrossentropy(from_logits=True))
 
-        # Use tf.ragged to generate ragged tensor of outputs
-        ragged_logits = tf.RaggedTensor.from_row_lengths(
-            values=tf.concat([gen_logits(length) for length in lengths], axis=0),
-            row_lengths=lengths)
-        # Can't directly return ragged from tf.keras.Model, so pad to max_len
-        padded_logits = ragged_logits.to_tensor(shape=[None, max_len], default_value=0.0)
-        
-        # For downstream loss compatibility, outputs length must match labels
-        # so user must prepare labels padded to max_len as well
-        
-        return padded_logits
+dummy = np.zeros((10, 1))
+shapes = np.random.randint(0, 11, 10).reshape(10, 1, 1)
+dataset = tf.data.Dataset.from_tensor_slices(shapes)
+dataset = dataset.map(lambda x: (x, tf.random.uniform(minval=0, maxval=2, shape=(x[0,0],), dtype=tf.int32)))
 
+# eagar mode, works
+loss = tf.keras.losses.BinaryCrossentropy(from_logits=True)
+for inputs, true in dataset:
+    pred = model(inputs)
+    print(true)
+    print(pred)
+    print(loss(true, pred))
+    break
 
-def my_model_function():
-    # Return an instance of the model
-    return MyModel()
+# compiled model, fails
+model.fit(dataset, epochs = 1, steps_per_epoch=1)
 
+import numpy as np
 
-def GetInput():
-    # Generate sample input tensor matching input expectations:
-    # According to example, input shape = (batch_size, 1), dtype int32, values between 0 and 10
-    batch_size = 5
-    # Random integers shape=(batch_size,1), values 0 to 10 inclusive
-    inputs = tf.random.uniform((batch_size,1), minval=0, maxval=11, dtype=tf.int32)
-    return inputs
+print('Tensorflow', tf.__version__)
 
+inputs = tf.keras.Input(shape=(1,), dtype=tf.int32)
+outputs = tf.random.normal(
+    shape=(tf.reduce_max(inputs) - tf.reduce_min(inputs) + 1,))
+
+model = tf.keras.Model(inputs, outputs)
+model.compile(optimizer='sgd',
+              loss=tf.keras.losses.BinaryCrossentropy(from_logits=True))
+
+def gen():
+    while True:
+        x = np.random.normal(5, 10, size=(5, 1)).astype('i4')
+        y = np.random.randint(0, 2, size=int(np.ptp(x) + 1)).astype('i4')
+        yield (x, y)
+
+dataset = tf.data.Dataset.from_generator(
+    gen, output_types=(tf.int32, tf.int32),
+    output_shapes=(tf.TensorShape([5, 1]), tf.TensorShape([None])))
+
+# eager mode, works
+loss = tf.keras.losses.BinaryCrossentropy(from_logits=True)
+for inputs, true in dataset:
+    pred = model(inputs)
+    print(true.shape)
+    print(pred.shape)
+    print(loss(true, pred))
+    break
+
+# compiled model, fails
+model.fit(dataset, epochs = 1, steps_per_epoch=1)

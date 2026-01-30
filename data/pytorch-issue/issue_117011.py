@@ -1,20 +1,15 @@
-# torch.randn(1025, 2, 256, 256, dtype=torch.float32).cuda()  # inferred input shape
+import torch.nn as nn
+
+3
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.output_size = (1024, 1024)  # Output dimensions from the issue
-        self.mode = "nearest"            # Interpolation mode from the issue
-    
-    def forward(self, x):
-        return torch.nn.functional.interpolate(x, size=self.output_size, mode=self.mode)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Creates input tensor matching the problematic scenario described in the issue
-    return torch.randn(1025, 2, 256, 256, dtype=torch.float32, device="cuda").requires_grad_(True)
-
+n, c, hi, wi = 1025, 2, 256, 256
+ho, wo = 1024, 1024
+input = torch.randn(n, c, hi, wi, dtype=torch.float32).cuda()
+input.requires_grad_(True)
+output_size = [ho, wo]
+output = torch.nn.functional.interpolate(input, size=output_size, mode ='nearest')
+grad_output = torch.randn(n, c, ho, wo, dtype=torch.float32).cuda()
+output.backward(grad_output)
+grad_input = input.grad
+print(grad_input.cpu())

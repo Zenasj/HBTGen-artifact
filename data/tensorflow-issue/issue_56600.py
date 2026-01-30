@@ -1,33 +1,40 @@
-# tf.random.uniform((B, 8), dtype=tf.float32)  ← Input shape inferred from input_shape=[8] in Dense input layer
+import numpy as np 
+import pandas as pd 
+import tracemalloc
+tracemalloc.start()
+train = pd.read_csv("train.csv")
+test = pd.read_csv("test.csv")
 
-import tensorflow as tf
+train_labels = train.iloc[:,-3:]
+features = pd.concat([train.iloc[:,1:-3], test.iloc[:,1:]])
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define the layers exactly as per the sequential model in the issue
-        self.dense1 = tf.keras.layers.Dense(16, activation='relu', input_shape=(8,))
-        self.dense2 = tf.keras.layers.Dense(64, activation='relu')
-        self.dense3 = tf.keras.layers.Dense(64, activation='relu')
-        self.dense4 = tf.keras.layers.Dense(32, activation='relu')
-        self.dense5 = tf.keras.layers.Dense(3)  # Output layer with 3 units, no activation specified (linear)
-    
-    @tf.function(jit_compile=True)
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        x = self.dense3(x)
-        x = self.dense4(x)
-        x = self.dense5(x)
-        return x
+from sklearn.preprocessing import StandardScaler
+scaler = StandardScaler()
+scaled_features =scaler.fit_transform(features)
+scaled_train = scaled_features[:train.shape[0]]
+scaled_test = scaled_features[train.shape[0]:]
+print(scaled_train.shape, scaled_test.shape)
+from sklearn.model_selection import train_test_split
+x_train, x_test, y_train, y_test = train_test_split(scaled_train, train_labels, random_state = 42, test_size = 0.3)
+from tensorflow import keras
+from tensorflow.keras import layers
+model = keras.Sequential([
+    layers.Dense(16, activation='relu', input_shape=[8]),
+    layers.Dense(64, activation='relu'),
+    layers.Dense(64, activation = 'relu'),
+    layers.Dense(32, activation = 'relu'),
+    layers.Dense(3),
+])
+model.compile( optimizer = "adam", loss = "mae")
+history = model.fit( x_train, y_train, validation_data=(x_test, y_test), batch_size = 256, epochs = 50, verbose = False)
+hstry_df = pd.DataFrame(history.history)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+submissions = model.predict(scaled_test)
 
-def GetInput():
-    # Return a random tensor matching the expected model input shape (batch size 256 here is arbitrary)
-    # The original training uses batch_size=256; we mimic that.
-    batch_size = 256
-    return tf.random.uniform((batch_size, 8), dtype=tf.float32)
+submission_df = pd.DataFrame(submissions, columns = train_labels.columns)
+submission_df['date_time'] = test['date_time']
+submission_df.to_csv("submissions.csv", index=False)
 
+
+current3, peak3 = tracemalloc.get_traced_memory()
+print("Get_dummies memory usage is {",current3 /1024/1024,"}MB; Peak memory was :{",peak3 / 1024/1024,"}MB")

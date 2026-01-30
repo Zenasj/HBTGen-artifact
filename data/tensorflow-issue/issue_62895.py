@@ -1,25 +1,49 @@
-# tf.random.uniform((B, 28, 28, 1), dtype=tf.float32)
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
+
 import tensorflow as tf
+import tensorflow_datasets as tfds
+tfds.disable_progress_bar()
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        self.flatten = tf.keras.layers.Flatten(input_shape=(28, 28, 1))
-        self.dense1 = tf.keras.layers.Dense(128, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(10, activation='softmax')
+(ds_train, ds_test), ds_info = tfds.load(
+    'mnist',
+    split=['train', 'test'],
+    shuffle_files=True,
+    as_supervised=True,
+    with_info=True,
+)
 
-    def call(self, inputs, training=False):
-        x = self.flatten(inputs)
-        x = self.dense1(x)
-        return self.dense2(x)
+def normalize_img(image, label):
+  """Normalizes images: `uint8` -> `float32`."""
+  return tf.cast(image, tf.float32) / 255., label
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+ds_train = ds_train.map(normalize_img)
+ds_train = ds_train.batch(128)
 
-def GetInput():
-    # Return a random tensor input matching the model input shape (batch size 32 assumed)
-    # Use float32 tensor to match normalized image input
-    batch_size = 32
-    return tf.random.uniform((batch_size, 28, 28, 1), dtype=tf.float32)
+ds_test = ds_test.map(normalize_img)
+ds_test = ds_test.batch(128)
 
+model = tf.keras.models.Sequential([
+  tf.keras.layers.Flatten(input_shape=(28, 28, 1)),
+  tf.keras.layers.Dense(128,activation='relu'),
+  tf.keras.layers.Dense(10, activation='softmax')
+])
+model.compile(
+    loss='sparse_categorical_crossentropy',
+    optimizer=tf.keras.optimizers.Adam(0.001),
+    metrics=['accuracy']
+)
+
+# Create a TensorBoard callback
+logs = "logs/" + datetime.now().strftime("%Y%m%d-%H%M%S")
+
+tboard_callback = tf.keras.callbacks.TensorBoard(log_dir = logs,
+                                                 histogram_freq = 1,
+                                                 profile_batch = '500,520')
+
+model.fit(ds_train,
+          epochs=2,
+          validation_data=ds_test,
+          callbacks = [tboard_callback])

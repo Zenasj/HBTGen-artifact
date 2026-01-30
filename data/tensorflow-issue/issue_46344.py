@@ -1,28 +1,17 @@
-# tf.random.uniform((4, 5), dtype=tf.float32) ← Input shape inferred from example np.random.rand(4,5)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # The original reported example model:
-        # Sequential model with Dense(8, input_shape=(5,)) then Dense(1)
-        self.dense1 = tf.keras.layers.Dense(8)
-        self.dense2 = tf.keras.layers.Dense(1)
-    
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        return x
+model = tf.keras.Sequential()
+model.add(tf.keras.layers.Dense(8, input_shape=(5,)))
+model.add(tf.keras.layers.Dense(1))
+model.compile(optimizer="Adam", loss="binary_crossentropy")
+x = np.random.rand(4,5)
+y = np.random.randint(0, 2, (4,))
+model.fit(x, y, epochs=10, callbacks=[tf.keras.callbacks.BaseLogger()])
 
-def my_model_function():
-    # Create an instance of MyModel and compile akin to example
-    model = MyModel()
-    # Compile with Adam optimizer and binary crossentropy loss (as in the original example)
-    model.compile(optimizer="Adam", loss="binary_crossentropy")
-    return model
-
-def GetInput():
-    # Return random tensor with shape (4, 5) matching the input_shape=(5,) with batch size 4 as in the example
-    return tf.random.uniform((4, 5), dtype=tf.float32)
-
+x = np.random.rand(4,5)
+y = np.random.randint(0, 2, (4,))

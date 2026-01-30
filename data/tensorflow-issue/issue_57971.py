@@ -1,28 +1,26 @@
-# tf.random.uniform((1, 1), dtype=tf.float32) ← Inferred input shape from the original Keras model: input_shape=[1]
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # A simple Sequential model matching the example in the issue
-        self.model = tf.keras.Sequential([
-            tf.keras.layers.Dense(units=1, input_shape=[1]),
-            tf.keras.layers.Dense(units=16, activation='relu'),
-            tf.keras.layers.Dense(units=1)
-        ])
+print("TF version:", tf.__version__)
 
-    def call(self, x):
-        return self.model(x)
+model = tf.keras.models.Sequential([
+    tf.keras.layers.Dense(units=1, input_shape=[1]),
+    tf.keras.layers.Dense(units=16, activation='relu'),
+    tf.keras.layers.Dense(units=1)
+])
 
+converter = tf.lite.TFLiteConverter.from_keras_model(model)
+tflite_model = converter.convert()
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+interpreter = tf.lite.Interpreter(model_content=tflite_model)
+interpreter.allocate_tensors()
 
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # Shape: (batch=1, features=1), dtype float32 is the common dtype here
-    return tf.random.uniform((1, 1), dtype=tf.float32)
-
+tensor_details = interpreter.get_tensor_details()
+print("Found", len(tensor_details), "tensors:")
+for tensor in tensor_details:
+    print(f"Tensor {tensor['index']}: {tensor['name']}")
+    numpy_tensor = interpreter.get_tensor(tensor["index"])
+    print("numpy shape:", numpy_tensor.shape)

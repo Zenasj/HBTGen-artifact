@@ -1,69 +1,164 @@
-# tf.random.uniform((B, 3), dtype=tf.float32) and tf.random.uniform((B, 4), dtype=tf.float32)
-import tensorflow as tf
+from tensorflow.keras import layers
 
-class MyModel(tf.keras.Model):
-    """
-    A fused model representing a multi-input Keras model with two inputs:
-    one of shape (3,) and one of shape (4,).
+import numpy as np
 
-    This model concatenates the two inputs and applies a Dense layer
-    to produce a single output of shape (5,).
+from tensorflow.contrib.distribute.python import mirrored_strategy
+from tensorflow.python import keras
+from tensorflow.python.data.ops import dataset_ops
+from tensorflow.python.platform import test
+from tensorflow.python.training import gradient_descent
 
-    This is based on the issue context describing multi-input keras models 
-    and distribution strategy support and the test cases provided therein.
-    """
+class TrainingTest(test.TestCase):
+  def test_dataset_input_tuples(self):
+    with self.test_session():
+      a = keras.layers.Input(shape=(3,), name='input_a')
+      b = keras.layers.Input(shape=(4,), name='input_b')
+      x = keras.layers.concatenate([a, b])
+      y = keras.layers.Dense(5, name='dense')(x)
 
-    def __init__(self):
-        super().__init__()
-        # Dense layer producing output dim=5 after concatenation of inputs
-        self.dense = tf.keras.layers.Dense(5, name='dense')
+      model = keras.Model(inputs=[a, b], outputs=[y])
+      model.compile(loss='mse', metrics=['mae'], optimizer='rmsprop')
 
-    def call(self, inputs, training=False):
-        """
-        Forward pass for the model.
+      inputs_a = np.zeros((10, 3))
+      inputs_b = np.zeros((10, 4))
+      targets = np.zeros((10, 5))
+      dataset = dataset_ops.Dataset.from_tensor_slices(((inputs_a,
+                                                         inputs_b),
+                                                        targets))
+      dataset = dataset.repeat(100)
+      dataset = dataset.batch(10)
 
-        Parameters:
-            inputs: tuple of two tensors:
-                - input_a of shape (batch_size, 3)
-                - input_b of shape (batch_size, 4)
-            training: boolean, unused here but good practice to include
+      model.fit(dataset, epochs=1, steps_per_epoch=2, verbose=1)
 
-        Returns:
-            Tensor of shape (batch_size, 5)
-        """
-        # Unpack multiple inputs as tuple
-        input_a, input_b = inputs
+  def test_distributed_dataset_input_tuples(self):
+    with self.test_session():
+      a = keras.layers.Input(shape=(3,), name='input_a')
+      b = keras.layers.Input(shape=(4,), name='input_b')
+      x = keras.layers.concatenate([a, b])
+      y = keras.layers.Dense(5, name='dense')(x)
+      model = keras.Model(inputs=[a, b], outputs=[y])
 
-        # Concatenate the inputs along the last axis (feature axis)
-        x = tf.keras.layers.concatenate([input_a, input_b])
+      optimizer = gradient_descent.GradientDescentOptimizer(0.001)
+      strategy = mirrored_strategy.MirroredStrategy(['/device:GPU:1',
+                                                     '/device:CPU:0'])
 
-        # Apply the dense layer
-        y = self.dense(x)
-        return y
+      model.compile(loss='mse',
+                    metrics=['mae'],
+                    optimizer=optimizer,
+                    distribute=strategy)
+
+      inputs_a = np.zeros((10, 3))
+      inputs_b = np.zeros((10, 4))
+      targets = np.zeros((10, 5))
+      dataset = dataset_ops.Dataset.from_tensor_slices(((inputs_a,
+                                                         inputs_b),
+                                                        targets))
+      dataset = dataset.repeat(100)
+      dataset = dataset.batch(10)
+
+      model.fit(dataset, epochs=1, steps_per_epoch=2, verbose=1)
+
+if __name__ == '__main__':
+  test.main()
+
+from absl.testing import parameterized
+import numpy as np
+
+from tensorflow.contrib.distribute.python import mirrored_strategy
+from tensorflow.python import keras
+from tensorflow.python.data.ops import dataset_ops
+from tensorflow.python.platform import test
+from tensorflow.python.training import gradient_descent
 
 
-def my_model_function():
-    """
-    Instantiate and return the MyModel instance.
-    """
-    model = MyModel()
-    # Build the model by calling it once with dummy inputs to create weights
-    batch_size = 1  # dummy batch size
-    model((tf.zeros((batch_size,3)), tf.zeros((batch_size,4))))
-    return model
+class TrainingTest(test.TestCase, parameterized.TestCase):
+
+  @parameterized.named_parameters(
+      ('tuple', lambda *x: x, None),
+      ('dict', lambda x, y: {'input_a': x, 'input_b': y}, None),
+      ('tuple_distribute',
+       lambda *x: x,
+       mirrored_strategy.MirroredStrategy(['/device:GPU:1', '/device:CPU:0'])),
+      ('dict_distribute',
+       lambda x, y: {'input_a': x, 'input_b': y},
+       mirrored_strategy.MirroredStrategy(['/device:GPU:1', '/device:CPU:0'])))
+  def test_multi_input_model(self, input_fn, distribute):
+    with self.test_session():
+      a = keras.layers.Input(shape=(3,), name='input_a')
+      b = keras.layers.Input(shape=(4,), name='input_b')
+      x = keras.layers.concatenate([a, b])
+      y = keras.layers.Dense(5, name='dense')(x)
+
+      optimizer = gradient_descent.GradientDescentOptimizer(0.001)
+
+      model = keras.Model(inputs=[a, b], outputs=[y])
+      model.compile(loss='mse', metrics=['mae'], optimizer=optimizer, distribute=distribute)
+
+      input_a = np.zeros((10, 3))
+      input_b = np.zeros((10, 4))
+      targets = np.zeros((10, 5))
+      dataset = dataset_ops.Dataset.from_tensor_slices((input_fn(input_a, input_b), targets))
+      dataset = dataset.repeat(100)
+      dataset = dataset.batch(10)
+
+      model.fit(dataset, epochs=1, steps_per_epoch=2, verbose=1)
+
+if __name__ == '__main__':
+  test.main()
+
+import numpy as np
+
+from tensorflow.contrib.distribute.python import mirrored_strategy
+from tensorflow.python import keras
+from tensorflow.python.data.ops import dataset_ops
+from tensorflow.python.platform import test
+from tensorflow.python.training import gradient_descent
 
 
-def GetInput():
-    """
-    Generate a valid input tuple for MyModel compatible with the expected input.
+class TrainingTest(test.TestCase):
+  def test_multi_input_model(self):
+    with self.test_session():
+      a = keras.layers.Input(shape=(3,), name='aa_input_a')
+      b = keras.layers.Input(shape=(4,), name='zz_input_b')
+      x = keras.layers.concatenate([a, b])
+      y = keras.layers.Dense(5, name='dense')(x)
 
-    Returns:
-        tuple of two tensors:
-            - tf.Tensor of shape (batch_size, 3), dtype float32
-            - tf.Tensor of shape (batch_size, 4), dtype float32
-    """
-    batch_size = 10  # example batch size to match tests
-    input_a = tf.random.uniform((batch_size, 3), dtype=tf.float32)
-    input_b = tf.random.uniform((batch_size, 4), dtype=tf.float32)
-    return (input_a, input_b)
+      optimizer = gradient_descent.GradientDescentOptimizer(0.001)
+      distribute = mirrored_strategy.MirroredStrategy(['/device:GPU:1', '/device:CPU:0'])
 
+      model = keras.Model(inputs=[a, b], outputs=[y])
+      model.compile(loss='mse', metrics=['mae'], optimizer=optimizer, distribute=distribute)
+
+      input_a = np.zeros((10, 3))
+      input_b = np.zeros((10, 4))
+      targets = np.zeros((10, 5))
+      dataset = dataset_ops.Dataset.from_tensor_slices(({'aa_input_a': input_a, 'zz_input_b': input_b}, targets))
+      dataset = dataset.repeat(100)
+      dataset = dataset.batch(10)
+
+      model.fit(dataset, epochs=1, steps_per_epoch=2, verbose=1)
+
+  def test_multi_input_model_non_alphabetic(self):
+    with self.test_session():
+      a = keras.layers.Input(shape=(3,), name='zz_input_a')
+      b = keras.layers.Input(shape=(4,), name='aa_input_b')
+      x = keras.layers.concatenate([a, b])
+      y = keras.layers.Dense(5, name='dense')(x)
+
+      optimizer = gradient_descent.GradientDescentOptimizer(0.001)
+      distribute = mirrored_strategy.MirroredStrategy(['/device:GPU:1', '/device:CPU:0'])
+
+      model = keras.Model(inputs=[a, b], outputs=[y])
+      model.compile(loss='mse', metrics=['mae'], optimizer=optimizer, distribute=distribute)
+
+      input_a = np.zeros((10, 3))
+      input_b = np.zeros((10, 4))
+      targets = np.zeros((10, 5))
+      dataset = dataset_ops.Dataset.from_tensor_slices(({'zz_input_a': input_a, 'aa_input_b': input_b}, targets))
+      dataset = dataset.repeat(100)
+      dataset = dataset.batch(10)
+
+      model.fit(dataset, epochs=1, steps_per_epoch=2, verbose=1)
+
+if __name__ == '__main__':
+  test.main()

@@ -1,28 +1,21 @@
-# torch.rand(1, 4, 3, 3, 3, dtype=torch.float32)  # Inferred input shape
+import torch.nn as nn
 
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.module = nn.Conv3d(
-            in_channels=4,
-            out_channels=4,
-            kernel_size=3,
-            bias=True,
-        )
-        self.module = torch.nn.utils.parametrizations.weight_norm(self.module)
-        self.module.eval()
+# Create model.
+module = torch.nn.Conv3d(
+    in_channels=4,
+    out_channels=4,
+    kernel_size=3,
+    bias=True,
+)
+module = torch.nn.utils.parametrizations.weight_norm(module)  # <-- works if commented out
+module.eval()
 
-    def forward(self, x):
-        return self.module(x)
+module = torch.compile(module)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+# Run it with some random input.
+input = torch.rand((1, 4, 3, 3, 3), dtype=torch.float32)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand((1, 4, 3, 3, 3), dtype=torch.float32)
-
+with torch.no_grad():
+    module(input)

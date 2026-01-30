@@ -1,24 +1,26 @@
-# torch.rand(2, dtype=torch.float64)
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.lower = -2.9  # Fixed from issue's example
-        self.upper = -2.7  # Fixed from issue's example
-        self.training = True  # Fixed from issue's example
+import torch
 
-    def forward(self, x):
-        return F.rrelu(x, lower=self.lower, upper=self.upper, training=self.training)
+def get_fn():
+    lower = -2.9
+    upper = -2.7
+    training = True
+    def fn(input):
+        fn_res = torch.nn.functional.rrelu(input, lower=lower, upper=upper, training=training)
+        return fn_res
+    return fn
 
-def my_model_function():
-    return MyModel()
+input_tensor = torch.tensor([0.1250, 0.4313], dtype=torch.float64)
+fn = get_fn()
+try:
+    input = input_tensor.clone().detach().to('cuda').requires_grad_()
+    torch.autograd.gradcheck(fn, (input), check_sparse_nnz=False, atol=0.01, rtol=0.01, check_forward_ad=False, check_backward_ad=True, check_batched_grad=False)
+except Exception as e:
+    print(e)
 
-def GetInput():
-    # Reproduces exact input from the issue's test case, moved to CUDA
-    input_tensor = torch.tensor([0.1250, 0.4313], dtype=torch.float64)
-    input = input_tensor.detach().to('cuda').requires_grad_()
-    return input
-
+# Jacobian mismatch for output 0 with respect to input 0,
+# numerical:tensor([[1.0000, 0.0000],
+#         [0.0000, 1.0000]], device='cuda:0', dtype=torch.float64)
+# analytical:tensor([[0., 0.],
+#         [0., 0.]], device='cuda:0', dtype=torch.float64)

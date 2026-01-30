@@ -1,32 +1,30 @@
-# torch.rand(B, C, H, W, dtype=torch.complex128)  # Assuming a typical input shape for a complex-valued model
-
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self, input_size, hidden_size):
-        super(MyModel, self).__init__()
-        self.input_size = input_size
-        self.hidden_size = hidden_size
-        self.fc1 = nn.Linear(self.input_size, self.hidden_size).to(torch.complex128)
-        self.fc2 = nn.Linear(self.hidden_size, 1).to(torch.complex128)
-        self.sigmoid = nn.Sigmoid()
+import torch
 
-    def forward(self, x):
-        hidden = self.fc1(x)
-        relu = self.relu(hidden.real) + 1j * self.relu(hidden.imag)
-        output = self.fc2(relu)
-        output = self.sigmoid(output.real) + 1j * self.sigmoid(output.imag)
-        return output
+a = torch.zeros([1], dtype=torch.complex128)
+a[0] = -3.2427e-04+5.8708e-03j
+b = torch.zeros([0], dtype=torch.complex128)
+print(a)
+print(torch.clamp_min(a, b))
 
-    def relu(self, x):
-        return torch.clamp(x, min=0)
+a = torch.randn(4, dtype=torch.cfloat)
+angle_ = a.angle()
+clamped_abs = torch.clamp(a.abs(), min=...)
+b = torch.polar(clamped_abs, angle_)
 
-def my_model_function():
-    return MyModel(input_size=10, hidden_size=5)
-
-def GetInput():
-    B, C, H, W = 1, 1, 1, 10  # Example batch size, channels, height, width
-    input_tensor = torch.rand(B, C, H, W, dtype=torch.complex128)
-    return input_tensor
-
+class Feedforward(torch.nn.Module):
+        def __init__(self, input_size, hidden_size):
+            super(Feedforward, self).__init__()
+            self.input_size = input_size
+            self.hidden_size  = hidden_size
+            self.fc1 = torch.nn.Linear(self.input_size, self.hidden_size).to(torch.complex128)
+            self.relu = torch.nn.ReLU()
+            self.fc2 = torch.nn.Linear(self.hidden_size, 1).to(torch.complex128)
+            self.sigmoid = torch.nn.Sigmoid()
+        def forward(self, x):
+            hidden = self.fc1(x)
+            relu = self.relu(hidden.real) + 1j * self.relu(hidden.imag)
+            output = self.fc2(relu)
+            output = self.sigmoid(output)
+            return output

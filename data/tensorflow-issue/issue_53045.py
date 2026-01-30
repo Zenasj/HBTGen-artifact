@@ -1,32 +1,46 @@
-# tf.random.uniform((B, 64, 64, 3), dtype=tf.float32)
+from tensorflow import keras
+
 import tensorflow as tf
+import json
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # No trainable weights here; just using tf.nn.space_to_depth and depth_to_space ops.
-        # Multiplication by 10 as in the final example from the issue comments.
-    
-    def call(self, inputs):
-        # Following the example with block_size=2 for space_to_depth and depth_to_space.
-        # Names inside TF ops do not reflect the user provided names in eager mode,
-        # but here we preserve the requested names in call (though actual op names show differently).
-        
-        # SpaceToDepth operation
-        x = tf.nn.space_to_depth(inputs, block_size=2, name="Space2Depth")
-        # Multiplication operation
-        x = tf.multiply(x, 10.0, name="Multiplication")
-        # DepthToSpace operation
-        x = tf.nn.depth_to_space(x, block_size=2, name="Depth2Space")
-        return x
+def sample_network(input_layer):
+    s2d = tf.nn.space_to_depth(input_layer, block_size=2, name="Space2Depth")
+    d2s = tf.nn.depth_to_space(s2d, block_size=2, name="Depth2Space")
+    return d2s
 
-def my_model_function():
-    # Returns an instance of MyModel
-    return MyModel()
+if __name__ == "__main__":
+    input_net = tf.keras.Input(shape=(64, 64, 3), dtype=tf.float32)
+    output = sample_network(input_net)
+    model = tf.keras.Model(inputs=input_net, outputs=output)
+    model_json = json.loads(model.to_json())
+    with open("github_issue.json", "w") as f:
+        json.dump(model_json, f, indent=2)
 
-def GetInput():
-    # Return a random tensor with shape compatible with the model input.
-    # Input shape is (64,64,3) as per the issue.
-    # Batch dimension can be arbitrary; here we pick 1.
-    return tf.random.uniform((1, 64, 64, 3), dtype=tf.float32)
+def sample_network(input_layer):
+    with tf.name_scope("Space2Depth"):
+        s2d = tf.nn.space_to_depth(input_layer, block_size=2, name="s2d1")
+    with tf.name_scope("Depth2Space"):
+        d2s = tf.nn.depth_to_space(s2d, block_size=2, name="d2s1")
+    print(s2d.name, d2s.name)  # print out: tf.nn.space_to_depth/SpaceToDepth:0 tf.nn.depth_to_space/DepthToSpace:0
+    return d2s
 
+import tensorflow as tf
+import json
+
+def sample_network(input_layer):
+    s2d = tf.nn.space_to_depth(input_layer, block_size=2, name="Space2Depth")
+    mul = tf.multiply(s2d, 10.0, name="Multiplication")
+    d2s = tf.nn.depth_to_space(mul, block_size=2, name="Depth2Space")
+    print(s2d.name, d2s.name, mul.name) 
+    return d2s
+
+
+if __name__ == "__main__":
+    # Disable eager mode
+    tf.compat.v1.disable_eager_execution()
+
+    input_net = tf.keras.Input(shape=(64, 64, 3), dtype=tf.float32, name="inputLayer")
+    output = sample_network(input_net)
+    model = tf.keras.Model(inputs=input_net, outputs=output)
+    for layer in model.layers:
+        print(layer.name)

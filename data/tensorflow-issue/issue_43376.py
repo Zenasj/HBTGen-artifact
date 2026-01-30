@@ -1,97 +1,137 @@
-# tf.random.uniform((32, 48, 48, 3), dtype=tf.float32) ← inferred input shape and dtype from ImageDataGenerator flow_from_directory with batch_size=32, target_size=(48,48), color_mode="rgb"
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
 
-import tensorflow as tf
+# set the matplotlib backend so figures can be saved in the background
+import matplotlib
+matplotlib.use("Agg")
+# import the necessary packages
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.callbacks import LearningRateScheduler
+from tensorflow.keras.optimizers import Adagrad
+from tensorflow.keras.utils import to_categorical
+from sklearn.metrics import classification_report
+from sklearn.metrics import confusion_matrix
+from keras.layers import Dense, Embedding
+from pyimagesearch.cancernet import CancerNet
+from pyimagesearch import config
+from imutils import paths
+import matplotlib.pyplot as plt
+import numpy as np
+import argparse
+import os
 
-class CancerNet(tf.keras.Model):
-    """
-    A simplified placeholder for the CancerNet architecture.
-    Since original CancerNet is from external source (pyimagesearch.cancernet),
-    we implement a minimal ConvNet suitable for 48x48 RGB images and 2-class output.
-    This is a reasonable inference based on input image size and classification task.
-    """
-    def __init__(self, classes=2):
-        super().__init__()
-        self.conv1 = tf.keras.layers.Conv2D(32, (3,3), padding='same', activation='relu')
-        self.pool1 = tf.keras.layers.MaxPooling2D(pool_size=(2,2))
-        self.conv2 = tf.keras.layers.Conv2D(64, (3,3), padding='same', activation='relu')
-        self.pool2 = tf.keras.layers.MaxPooling2D(pool_size=(2,2))
-        self.conv3 = tf.keras.layers.Conv2D(128, (3,3), padding='same', activation='relu')
-        self.pool3 = tf.keras.layers.MaxPooling2D(pool_size=(2,2))
-        self.flatten = tf.keras.layers.Flatten()
-        self.fc1 = tf.keras.layers.Dense(128, activation='relu')
-        self.dropout = tf.keras.layers.Dropout(0.5)
-        self.output_layer = tf.keras.layers.Dense(classes, activation='softmax')
-        
-    def call(self, inputs, training=False):
-        x = self.conv1(inputs)
-        x = self.pool1(x)
-        x = self.conv2(x)
-        x = self.pool2(x)
-        x = self.conv3(x)
-        x = self.pool3(x)
-        x = self.flatten(x)
-        x = self.fc1(x)
-        if training:
-            x = self.dropout(x, training=training)
-        return self.output_layer(x)
+# determine the total number of image paths in training, validation,
+# and testing directories
+trainPaths = list(paths.list_images(config.TRAIN_PATH))
+totalTrain = len(trainPaths)
+totalVal = len(list(paths.list_images(config.VAL_PATH)))
+totalTest = len(list(paths.list_images(config.TEST_PATH)))
+# calculate the total number of training images in each class and
+# initialize a dictionary to store the class weights
+trainLabels = [int(p.split(os.path.sep)[-2]) for p in trainPaths]
+trainLabels = to_categorical(trainLabels)
+classTotals = trainLabels.sum(axis=0)
+classWeight = dict()
+# loop over all classes and calculate the class weight
+for i in range(0, len(classTotals)):
+	classWeight[i] = classTotals.max() / classTotals[i]
+# construct the argument parser and parse the arguments
+	ap = argparse.ArgumentParser()
+	ap.add_argument("-p", "--plot", type=str, default="plot.png",
+					help="path to output loss/accuracy plot")
+	args = vars(ap.parse_args())
+	# initialize our number of epochs, initial learning rate, and batch
+	# size
+	NUM_EPOCHS = 2
 
-class MyModel(tf.keras.Model):
-    """
-    Fused model combining CancerNet base and an Embedding layer appended at the end.
-    This mimics the original approach where model was built from CancerNet,
-    then an Embedding layer with batch_size=32 was added.
+	INIT_LR = 1e-2
+	BS = 32
+	# initialize the training data augmentation object
+	trainAug = ImageDataGenerator(
+		rescale=1 / 255.0,
+		rotation_range=20,
+		zoom_range=0.05,
+		width_shift_range=0.1,
+		height_shift_range=0.1,
+		shear_range=0.05,
+		horizontal_flip=True,
+		vertical_flip=True,
+		fill_mode="nearest")
+	# initialize the validation (and testing) data augmentation object
+	valAug = ImageDataGenerator(rescale=1 / 255.0)
+	# initialize the training generator
+	trainGen = trainAug.flow_from_directory(
+		config.TRAIN_PATH,
+		class_mode="categorical",
+		target_size=(48, 48),
+		color_mode="rgb",
+		shuffle=True,
+		batch_size=BS)
+	# initialize the validation generator
+	valGen = valAug.flow_from_directory(
+		config.VAL_PATH,
+		class_mode="categorical",
+		target_size=(48, 48),
+		color_mode="rgb",
+		shuffle=False,
+		batch_size=BS)
+	# initialize the testing generator
+	testGen = valAug.flow_from_directory(
+		config.TEST_PATH,
+		class_mode="categorical",
+		target_size=(48, 48),
+		color_mode="rgb",
+		shuffle=False,
+		batch_size=BS)
+	# initialize our CancerNet model and compile it
+	model = CancerNet.build(width=48, height=48, depth=3,
+							classes=2)
+	model.add(Embedding(batch_size=32, input_shape=(classWeight,), input_dim=1024*1000, output_dim=256))
 
-    We adapt the Embedding to operate on a placeholder input derived from
-    CancerNet output shape. Since the original snippet uses inconsistent Embedding 
-    parameters (input_shape=(classWeight,), which is a dict, and input_dim=1024*1000),
-    we reason that the intention was to add an embedding to the output feature space,
-    possibly to create a learned transformation of the features.
-
-    Here, we implement this by:
-    - Using CancerNet to produce logits/features of shape (batch_size, 2)
-    - Projecting this to an integer sequence so we can embed it (dummy approach)
-    - Using an Embedding layer with input_dim=1000, output_dim=256 (reasonable defaults)
-    - Outputting the embedded feature averaged along sequence dimension to get vector output
-
-    This is a best-effort reconstruction given incomplete and inconsistent code.
-    """
-    def __init__(self):
-        super().__init__()
-        self.cancernet = CancerNet(classes=2)        
-        self.embedding_input_dim = 1000  # Arbitrary large enough vocabulary size
-        self.embedding_output_dim = 256
-        # Since CancerNet output is shape (batch, 2), map predictions to int indices (e.g., 0 or 1)
-        self.embedding = tf.keras.layers.Embedding(
-            input_dim=self.embedding_input_dim,
-            output_dim=self.embedding_output_dim,
-            input_length=1
-        )
-        # A dense layer to interpret embedded features for final prediction
-        self.dense_final = tf.keras.layers.Dense(2, activation='softmax')
-
-    def call(self, inputs, training=False):
-        # CancerNet forward pass
-        features = self.cancernet(inputs, training=training)  # shape (batch, 2)
-        # Convert features (probabilities) to "indices" to lookup in embedding
-        # Since embedding indices must be integers >=0 and < input_dim,
-        # We'll scale and clip features to integers between 0 and embedding_input_dim-1
-        indices = tf.clip_by_value(tf.cast(features[:, 0] * self.embedding_input_dim, tf.int32), 0, self.embedding_input_dim-1)
-        indices = tf.expand_dims(indices, axis=1)  # shape (batch, 1)
-        embedded = self.embedding(indices)  # shape (batch, 1, 256)
-        embedded = tf.squeeze(embedded, axis=1)  # shape (batch, 256)
-        # Combine embedded features and original features (concatenate)
-        combined = tf.concat([features, embedded], axis=1)  # shape (batch, 2 + 256)
-        # Final classification output from combined features
-        output = self.dense_final(combined)
-        return output
-
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Generate a random input tensor matching the expected input shape of MyModel:
-    # batch_size=32 (the original BS in code), height=48, width=48, channels=3 (RGB)
-    # dtype=tf.float32, values scaled as typical for images in [0,1] from rescale=1/255
-    return tf.random.uniform(shape=(32, 48, 48, 3), minval=0, maxval=1, dtype=tf.float32)
-
+	opt = Adagrad(lr=INIT_LR, decay=INIT_LR / NUM_EPOCHS)
+	model.compile(loss="binary_crossentropy", optimizer=opt,
+				  metrics=["accuracy"])
+	# fit the model
+	H = model.fit(
+		x=trainGen,
+		steps_per_epoch=totalTrain // BS,
+		validation_data=valGen,
+		validation_steps=totalVal // BS,
+		class_weight=classWeight,
+		epochs=NUM_EPOCHS)
+# reset the testing generator and then use our trained model to
+# make predictions on the data
+print("[INFO] evaluating network...")
+testGen.reset()
+predIdxs = model.predict(x=testGen, steps=(totalTest // BS) + 1)
+# for each image in the testing set we need to find the index of the
+# label with corresponding largest predicted probability
+predIdxs = np.argmax(predIdxs, axis=1)
+# show a nicely formatted classification report
+print(classification_report(testGen.classes, predIdxs,
+	target_names=testGen.class_indices.keys()))
+# compute the confusion matrix and and use it to derive the raw
+# accuracy, sensitivity, and specificity
+cm = confusion_matrix(testGen.classes, predIdxs)
+total = sum(sum(cm))
+acc = (cm[0, 0] + cm[1, 1]) / total
+sensitivity = cm[0, 0] / (cm[0, 0] + cm[0, 1])
+specificity = cm[1, 1] / (cm[1, 0] + cm[1, 1])
+# show the confusion matrix, accuracy, sensitivity, and specificity
+print(cm)
+print("accuracy: {:.4f}".format(acc))
+print("sensitivity: {:.4f}".format(sensitivity))
+print("specificity: {:.4f}".format(specificity))
+# plot the training loss and accuracy
+N = NUM_EPOCHS
+plt.style.use("ggplot")
+plt.figure()
+plt.plot(np.arange(0, N), H.history["loss"], label="train_loss")
+plt.plot(np.arange(0, N), H.history["val_loss"], label="val_loss")
+plt.plot(np.arange(0, N), H.history["accuracy"], label="train_acc")
+plt.plot(np.arange(0, N), H.history["val_accuracy"], label="val_acc")
+plt.title("Training Loss and Accuracy on Dataset")
+plt.xlabel("Epoch #")
+plt.ylabel("Loss/Accuracy")
+plt.legend(loc="lower left")
+plt.savefig(args["plot"])

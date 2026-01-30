@@ -1,18 +1,12 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.dim = (-1, 1, 0, 2)  # Dimensions as specified in the original issue
+def fn(inputs, dim):
+    res = torch.sum(inputs, dim)
+    return res
 
-    def forward(self, x):
-        return torch.sum(x, self.dim)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.randn(128, 5, 24, 24)
-
+if __name__ == "__main__":
+    inputs = torch.randn(128, 5, 24, 24)
+    dim = tuple([-1, 1, 0, 2])
+    compl_fn = torch.compile(fn, dynamic=True)
+    res = compl_fn(inputs, dim)
+    print(res)

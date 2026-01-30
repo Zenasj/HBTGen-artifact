@@ -1,14 +1,14 @@
-# torch.rand(2, 3, dtype=torch.float32)
 import torch
-from torch import nn
+from torch import linalg
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return torch.linalg.matrix_norm(x, ord='fro', dim=(-2, -1))
+my_tensor = torch.tensor([[-2., -1., 0.],
+                          [1., 2., 3.]])
+linalg.matrix_norm(A=my_tensor) # Error
 
-def my_model_function():
-    return MyModel()
+import torch
+from torch import linalg
 
-def GetInput():
-    return torch.rand(2, 3, dtype=torch.float32)
-
+my_tensor = torch.tensor([[-2., -1., 0.],
+                          [1., 2., 3.]])
+linalg.matrix_norm(input=my_tensor)
+# tensor(4.3589)

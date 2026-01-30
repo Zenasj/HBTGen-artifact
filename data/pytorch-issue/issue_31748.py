@@ -1,4 +1,5 @@
-# torch.rand(5, 32, 128, 128, dtype=torch.float32) ← Add a comment line at the top with the inferred input shape
+import numpy as np
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -59,10 +60,12 @@ class RevChannelPad2D(nn.Module):
         self.value = value
 
     def forward(self, x):
-        if self.pad_size != 0:
-            y = F.pad(x, pad=[0, 0, 0, 0, 0, self.pad_size], mode=self.mode, value=self.value)
-        else:
-            y = x
+        # Bug here
+        y = F.pad(x, pad=[0, 0, 0, 0, 0, self.pad_size], mode=self.mode, value=self.value)
+        # if self.pad_size != 0:
+        #     y = F.pad(x, pad=[0, 0, 0, 0, 0, self.pad_size], mode=self.mode, value=self.value)
+        # else:
+        #     y = x
         return y
 
     def invert(self, x):
@@ -97,7 +100,7 @@ class SimpleRevBlock2(nn.Module):
 class RevSequential(nn.Module):
     def __init__(self, modules=None):
         super().__init__()
-        self.mod_list = nn.ModuleList(modules or [])
+        self.mod_list = nn.ModuleList(modules)
 
     def append(self, module):
         assert hasattr(module, 'invert') and callable(module.invert)
@@ -126,7 +129,7 @@ class RevSequential(nn.Module):
         return self.mod_list[item]
 
 
-class MyModel(nn.Module):
+class Like_IRevNet(nn.Module):
     def __init__(self, use_rev_bw):
         super().__init__()
         self.use_rev_bw = use_rev_bw
@@ -142,12 +145,8 @@ class MyModel(nn.Module):
         return y
 
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel(use_rev_bw=True)
-
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(5, 32, 128, 128, dtype=torch.float32)
-
+if __name__ == '__main__':
+    net = Like_IRevNet(True)
+    im = torch.rand(5, 32, 128, 128) + torch.zeros(1, requires_grad=True)
+    out = net(im)
+    out.sum().backward()

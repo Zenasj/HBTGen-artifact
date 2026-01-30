@@ -1,27 +1,26 @@
-# tf.random.uniform((10, 9, 8), dtype=tf.bfloat16)
-import tensorflow as tf
+import random
 
-class MyModel(tf.keras.Model):
+import tensorflow as tf
+import traceback
+class Network(tf.Module):
     def __init__(self):
         super().__init__()
-        # This model directly wraps raw_ops.Sigmoid usage as in the issue.
-        # The model applies the Sigmoid operation on input tensor of shape [10,9,8] and dtype bfloat16.
-        # No trainable weights or other layers are needed.
 
     @tf.function(jit_compile=True)
-    def call(self, x):
-        # Use tf.raw_ops.Sigmoid directly as in the original code to replicate behavior:
-        # Note: For XLA-GPU, bfloat16 Sigmoid might cause slight precision differences.
-        y = tf.raw_ops.Sigmoid(x=x)
-        return y
+    def __call__(self, x):       
+      x = tf.raw_ops.Sigmoid(x=x, )        
+      return x
 
+m = Network()
+inp = {
+    "x": tf.random.uniform([10,9,8], dtype=tf.bfloat16),
+}
 
-def my_model_function():
-    # Return an instance of MyModel with no additional initialization
-    return MyModel()
+with tf.device('/GPU:0'):
+    tf.config.run_functions_eagerly(True)
+    no_op_res = m(**inp)
+    tf.config.run_functions_eagerly(False)
+    with tf.device('/GPU:0'):
+        op_res = m(**inp)
 
-def GetInput():
-    # Return a random input tensor with shape (10,9,8) and dtype tf.bfloat16 as in the issue input
-    # This input can feed directly into MyModel without error.
-    return tf.random.uniform((10, 9, 8), dtype=tf.bfloat16)
-
+    tf.debugging.assert_near(tf.cast(no_op_res, tf.float64), tf.cast(op_res, tf.float64), atol=0.001, rtol=0.001)

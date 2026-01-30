@@ -1,67 +1,16 @@
-# torch.rand(B, S, dtype=torch.long)  # Input shape: batch_size x sequence_length
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+[
+  'embed_tokens',
+  'layers.0.attn.q_proj', 'layers.0.attn.lora_A', 'layers.0.attn.lora_B', 'layers.0.attn.k_proj', 'layers.0.attn.v_proj', 'layers.0.attn.o_proj', 'layers.0.attn', 'layers.0.mlp.proj1', 'layers.0.mlp.proj2', 'layers.0.mlp', 'layers.0.inp_layernorm', 'layers.0.post_attn_layernorm', 'layers.0',
+  'layers.1.attn.q_proj', 'layers.1.attn.lora_A', 'layers.1.attn.lora_B', 'layers.1.attn.k_proj', 'layers.1.attn.v_proj', 'layers.1.attn.o_proj', 'layers.1.attn', 'layers.1.mlp.proj1', 'layers.1.mlp.proj2', 'layers.1.mlp', 'layers.1.inp_layernorm', 'layers.1.post_attn_layernorm', 'layers.1',
+  'layers.2.attn.q_proj', 'layers.2.attn.lora_A', 'layers.2.attn.lora_B', 'layers.2.attn.k_proj', 'layers.2.attn.v_proj', 'layers.2.attn.o_proj', 'layers.2.attn', 'layers.2.mlp.proj1', 'layers.2.mlp.proj2', 'layers.2.mlp', 'layers.2.inp_layernorm', 'layers.2.post_attn_layernorm', 'layers.2',
+  'layers.3.attn.q_proj', 'layers.3.attn.lora_A', 'layers.3.attn.lora_B', 'layers.3.attn.k_proj', 'layers.3.attn.v_proj', 'layers.3.attn.o_proj', 'layers.3.attn', 'layers.3.mlp.proj1', 'layers.3.mlp.proj2', 'layers.3.mlp', 'layers.3.inp_layernorm', 'layers.3.post_attn_layernorm', 'layers.3',
+  'layers', 'norm', ''
+]
 
-class MyModel(nn.Module):
-    class LoraAttention(nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.q_proj = nn.Linear(32, 32, bias=False)
-            self.lora_A = nn.Linear(32, 8, bias=False)
-            self.lora_B = nn.Linear(8, 32, bias=False)
-            self.k_proj = nn.Linear(32, 32, bias=False)
-            self.v_proj = nn.Linear(32, 32, bias=False)
-            self.o_proj = nn.Linear(32, 32, bias=False)
-
-        def forward(self, x):
-            q = self.q_proj(x)
-            lora = self.lora_B(self.lora_A(q))
-            combined = q + lora  # Simplified LoRA adaptation
-            return combined  # Assume residual connection handled in decoder
-
-    class LoraMLP(nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.proj1 = nn.Linear(32, 128, bias=False)
-            self.proj2 = nn.Linear(128, 32, bias=False)
-
-        def forward(self, x):
-            return self.proj2(F.gelu(self.proj1(x)))
-
-    class LoraDecoder(nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.attn = MyModel.LoraAttention()
-            self.mlp = MyModel.LoraMLP()
-            self.inp_layernorm = nn.LayerNorm(32)
-            self.post_attn_layernorm = nn.LayerNorm(32)
-
-        def forward(self, x):
-            residual = x
-            x = self.inp_layernorm(x)
-            x = self.attn(x) + residual  # Residual connection
-            x = self.post_attn_layernorm(x)
-            mlp_in = x
-            x = self.mlp(x) + mlp_in  # MLP residual
-            return x
-
-    def __init__(self):
-        super().__init__()
-        self.embed_tokens = nn.Embedding(100, 32)  # vocab_size=100, embedding_dim=32
-        self.layers = nn.ModuleList([self.LoraDecoder() for _ in range(4)])
-        self.norm = nn.LayerNorm(32)
-
-    def forward(self, x):
-        x = self.embed_tokens(x)
-        for layer in self.layers:
-            x = layer(x)
-        return self.norm(x)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    B, S = 2, 5  # Batch size and sequence length
-    return torch.randint(0, 100, (B, S), dtype=torch.long)
-
+[
+  'norm',
+  'layers.3.post_attn_layernorm', 'layers.3.inp_layernorm', 'layers.3.mlp.proj2', 'layers.3.mlp.proj1', 'layers.3.mlp', 'layers.3.attn.o_proj', 'layers.3.attn.v_proj', 'layers.3.attn.k_proj', 'layers.3.attn.lora_B', 'layers.3.attn.lora_A', 'layers.3.attn.q_proj', 'layers.3.attn', 'layers.3',
+  'layers.2.post_attn_layernorm', 'layers.2.inp_layernorm', 'layers.2.mlp.proj2', 'layers.2.mlp.proj1', 'layers.2.mlp', 'layers.2.attn.o_proj', 'layers.2.attn.v_proj', 'layers.2.attn.k_proj', 'layers.2.attn.lora_B', 'layers.2.attn.lora_A', 'layers.2.attn.q_proj', 'layers.2.attn', 'layers.2',
+  'layers.1.post_attn_layernorm', 'layers.1.inp_layernorm', 'layers.1.mlp.proj2', 'layers.1.mlp.proj1', 'layers.1.mlp', 'layers.1.attn.o_proj', 'layers.1.attn.v_proj', 'layers.1.attn.k_proj', 'layers.1.attn.lora_B', 'layers.1.attn.lora_A', 'layers.1.attn.q_proj', 'layers.1.attn', 'layers.1', 'layers.0.post_attn_layernorm', 'layers.0.inp_layernorm', 'layers.0.mlp.proj2', 'layers.0.mlp.proj1', 'layers.0.mlp', 'layers.0.attn.o_proj', 'layers.0.attn.v_proj', 'layers.0.attn.k_proj', 'layers.0.attn.lora_B', 'layers.0.attn.lora_A', 'layers.0.attn.q_proj', 'layers.0.attn', 'layers.0',
+  'layers', 'embed_tokens', ''
+]

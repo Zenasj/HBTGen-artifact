@@ -1,27 +1,69 @@
-# torch.rand(1, 10, dtype=torch.int64)  # Inferred input shape for input_ids
+#!/usr/bin/env python
 
+import os
+import sys
 import torch
-import torch.nn as nn
+os.environ["USE_TF"] = "0"
+sys.path.insert(1, "src")
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.embedding = nn.Embedding(50264, 10)  # Example embedding layer
-        self.linear = nn.Linear(10, 10)  # Example linear layer
+# !pip install ipyexperiments 
+from ipyexperiments.utils.mem import gpu_mem_get_used_mbs, gpu_mem_get_used_no_cache_mbs
 
-    def forward(self, input_ids):
-        x = self.embedding(input_ids)
-        x = self.linear(x)
-        return x
+from transformers import BartForConditionalGeneration
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    vocab_size = 50264
-    length = 10
-    input_ids = torch.randint(vocab_size, (1, length), dtype=torch.int64).to('cuda' if torch.cuda.is_available() else 'cpu')
-    return input_ids
+model = BartForConditionalGeneration.from_pretrained('sshleifer/student_cnn_12_6').to(device)
+model.eval()
 
+vocab_size = 50264 # model.config.vocab_size
+length = 10
+
+AUTOCAST = False if "-f" in sys.argv else True
+print(f"autocast: {AUTOCAST}")
+
+class MemReport():
+    def __init__(self, gc_collect=True):
+        self.get_mem = gpu_mem_get_used_no_cache_mbs if gc_collect else gpu_mem_get_used_mbs
+        self.cur = self.get_mem()
+    def delta(self, id):
+        peak = torch.cuda.memory_stats()["allocated_bytes.all.peak"]
+        print(f"{id}: {gpu_mem_get_used_mbs()-self.cur}MB (peak {peak>>20}MB)")
+        self.cur = self.get_mem()
+        
+mr = MemReport(gc_collect=False)
+
+### reproducible code starts here ###
+
+@torch.no_grad()
+def logic():
+    input_ids = torch.randint(vocab_size, (1,length)).to(device)
+    mr.delta(0)
+    for i in range(1,10):
+        outputs = model(input_ids)
+        mr.delta(i)
+
+if AUTOCAST:
+    with torch.cuda.amp.autocast():
+        logic()
+else:
+    logic()
+
+with torch.no_grad():
+    print(a.requires_grad) # True
+    b = a.clone()
+    print(b.requires_grad) # False
+    b = a.t()
+    print(b.requires_grad) # True
+    b = a.view(-1)
+    print(b.requires_grad) # True
+
+base = torch.rand(1, 5)
+slice1 = base[0]
+slice2 = base[0]
+
+# This makes slice1 and base properly require gradients
+slice1.copy_(torch.rand(5, requires_grad=True))
+# Other views need to also be properly updated by reading the base's status
+loss = slice2.sum()
+loss.backward()

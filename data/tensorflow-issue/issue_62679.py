@@ -1,25 +1,21 @@
-# tf.random.uniform((1,), dtype=tf.float32) ← Input shape inferred from issue example: 1D tensor with unknown batch size 1
-
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # No layers needed; the model just applies tf.reverse with empty axis list
-        # which is effectively a no-op but triggers the original reported issue.
-    
+tf.reverse(tf.ones((1,), dtype=tf.float32), [])  # no problem
+
+class Foo(tf.Module):
     @tf.function(input_signature=[tf.TensorSpec(shape=[None], dtype=tf.float32)])
-    def call(self, x):
-        # Apply tf.reverse with axis=[] which is a no-op by definition
-        # Included to reproduce original intent from the issue
+    def reverse(self, x):
+        #    works fine if axis = [0]
+        #    crashes if axis = []
         return tf.reverse(x, axis=[])
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+foo = Foo()
+converter = tf.lite.TFLiteConverter.from_concrete_functions(
+    funcs=[foo.reverse.get_concrete_function()],
+    trackable_obj=foo,
+)
 
-def GetInput():
-    # Return a tensor matching the input signature expected by MyModel
-    # Shape is [None], so generate a 1D float32 tensor with length 1 for simplicity
-    return tf.random.uniform(shape=[1], dtype=tf.float32)
-
+tflite_model = converter.convert()
+interpreter = tf.lite.Interpreter(model_content=tflite_model)
+# crash
+interpreter.get_signature_runner()(x=tf.ones((1,), dtype=tf.float32))

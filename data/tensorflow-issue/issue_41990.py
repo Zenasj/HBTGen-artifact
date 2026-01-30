@@ -1,27 +1,19 @@
-# tf.random.uniform((B, 28, 28), dtype=tf.float32) ← Input shape inferred from original MNIST model input shape (28x28 grayscale images)
+from tensorflow.keras import layers
 
+# TensorFlow and tf.keras
 import tensorflow as tf
+from tensorflow import keras
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Flatten input 28x28 image to 784 vector
-        self.flatten = tf.keras.layers.Flatten(input_shape=(28, 28))
-        # Dense layer with 128 units and ReLU activation
-        self.dense1 = tf.keras.layers.Dense(128, activation='relu')
-        # Final dense layer with 10 units (logits for 10 classes)
-        self.dense2 = tf.keras.layers.Dense(10)
+fashion_mnist = keras.datasets.fashion_mnist
 
-    def call(self, inputs, training=False):
-        x = self.flatten(inputs)
-        x = self.dense1(x)
-        return self.dense2(x)
+(train_images, train_labels), (test_images, test_labels) = fashion_mnist.load_data()
+train_images = train_images / 255.0
+test_images = test_images / 255.0
 
-def my_model_function():
-    # Returns an instance of the defined model
-    return MyModel()
+# At this step I was getting the error which I've posted below in the terminal.
 
-def GetInput():
-    # Return a random tensor input of shape (batch_size=1, 28, 28) with dtype float32, values in [0,1)
-    return tf.random.uniform((1, 28, 28), dtype=tf.float32)
-
+model = keras.Sequential([
+    keras.layers.Flatten(input_shape=(28, 28)),
+    keras.layers.Dense(128, activation='relu'),
+    keras.layers.Dense(10)
+])

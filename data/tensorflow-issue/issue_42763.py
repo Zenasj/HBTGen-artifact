@@ -1,30 +1,36 @@
-# tf.random.uniform((B, 28, 28, 1), dtype=tf.float32) ← Using batch size B and MNIST input shape 28x28x1
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
-import tensorflow as tf
+batch_size = 110
+epochs = 128
+num_classes = 10
+import os
+save_dir = 'model'
+model_name = 'test940_trained_model.h5'
+import tensorflow.keras as keras
+(x_train, y_train), (x_test, y_test) = keras.datasets.mnist.load_data()
+print('x_train shape:', x_train.shape)
+print(x_train.shape[0], 'train samples')
+print(x_test.shape[0], 'test samples')
+img_rows, img_cols = x_train.shape[1], x_train.shape[2]
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Gaussian noise with stddev roughly 0.75 as per original code
-        self.noise = tf.keras.layers.GaussianNoise(stddev=0.75)
-        self.flatten = tf.keras.layers.Flatten()
-        # Dense layer with 10 units (num_classes), with ReLU activation as in original
-        self.dense = tf.keras.layers.Dense(10, activation='relu')
+x_train = x_train.reshape(x_train.shape[0], img_rows, img_cols, 1)
+x_test = x_test.reshape(x_test.shape[0], img_rows, img_cols, 1)
+input_shape = (img_rows, img_cols, 1)
+x_train = x_train.astype('float32')
+x_test = x_test.astype('float32')
+x_train /= 255
+x_test /= 255
+y_train = keras.utils.to_categorical(y_train, num_classes)
+y_test = keras.utils.to_categorical(y_test, num_classes)
+model = keras.models.Sequential()
+model.add(keras.layers.GaussianNoise(stddev=0.7498748441096037))
 
-    def call(self, x, training=False):
-        # GaussianNoise is active only in training mode
-        x = self.noise(x, training=training)
-        x = self.flatten(x)
-        x = self.dense(x)
-        return x
-
-def my_model_function():
-    # Return an instance of MyModel; no pretrained weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor with shape (batch_size=110, 28, 28, 1)
-    # float32 values normalized similarly as MNIST (0..1 float range)
-    batch_size = 110
-    return tf.random.uniform(shape=(batch_size, 28, 28, 1), minval=0, maxval=1, dtype=tf.float32)
-
+model.add(keras.layers.Flatten())
+model.add(keras.layers.Dense(num_classes, activation='relu'))
+model.compile(loss=keras.losses.categorical_crossentropy,optimizer=keras.optimizers.Adadelta(), metrics=['accuracy'])
+model.fit(x_train, y_train, batch_size=batch_size, epochs=epochs, verbose=1, validation_data=(x_test, y_test))
+print('Test accuracy:', score[1])
+model_path = os.path.join(save_dir, model_name)
+model.save(model_path)

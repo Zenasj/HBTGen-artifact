@@ -1,25 +1,26 @@
-# tf.random.uniform((B, 5), dtype=tf.float32) ← inferred input shape from provided example (batch_size, features)
-import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
 
-class MyModel(tf.keras.Model):
+import tensorflow as tf
+from tensorflow.keras.layers import BatchNormalization
+BatchNormalization._USE_V2_BEHAVIOR = False
+import numpy as np
+
+keras = tf.keras
+
+
+class check_bn_model(keras.Model):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        # Typical BatchNormalization layer for feature size 5 as per example
-        self.bn = tf.keras.layers.BatchNormalization()
+        self.bn = BatchNormalization()
 
     @tf.function
-    def call(self, x, training=None):
-        # Important to pass `training` to BN layer to distinguish train/inference mode
-        x = self.bn(x, training=training)
+    def call(self, x, training=None, mask=None):
+        x = self.bn(x)
         return x
 
-def my_model_function():
-    # Return an instance of MyModel.
-    # Users can compile/train externally as needed.
-    return MyModel()
 
-def GetInput():
-    # Return a random float32 tensor input matching the input expected by MyModel:
-    # The example data was shape (10, 5), so batch size can vary; choosing 10 as per example
-    return tf.random.uniform((10, 5), dtype=tf.float32)
-
+X = np.ones((10, 5)).astype('float32')
+model = check_bn_model()
+model.compile('adam', 'mse')
+model.fit(X, X, batch_size=2, epochs=2)

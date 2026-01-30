@@ -1,32 +1,20 @@
-# torch.rand(B, 10, dtype=torch.float32)
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.fc1 = nn.Linear(10, 20)
-        self.bn = nn.BatchNorm1d(20)
-        self.fc2 = nn.Linear(20, 10)
-    
-    def forward(self, x):
-        x = self.fc1(x)
-        x = self.bn(x)
-        x = torch.relu(x)
-        x = self.fc2(x)
-        return x
-    
-    def reset_parameters(self):
-        # No-op here as submodules handle their own parameters/buffers
-        # Linear and BatchNorm layers have their own reset_parameters()
-        pass
-
-def my_model_function():
-    # Returns a model instance with standard initialization
-    model = MyModel()
-    return model
-
-def GetInput():
-    # Generates a random input tensor matching the model's expected input shape
-    return torch.rand(2, 10, dtype=torch.float32)
-
+with torch.no_grad():
+    for module in modules_to_materialize:
+        # TODO: Emulate `module.to_empty(recurse=False)` until that is
+        # explicitly supported
+        named_params = [
+            (param_name, param)
+            for param_name, param in module.named_parameters(recurse=False)
+        ]
+        if len(named_params) == 0:
+            continue
+        for param_name, param in named_params:
+            materialized_param = nn.Parameter(
+                torch.empty_like(param, device=materialization_device)
+            )
+            delattr(module, param_name)
+            setattr(module, param_name, materialized_param)
+        module.reset_parameters()  # type: ignore[operator]

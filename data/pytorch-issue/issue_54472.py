@@ -1,16 +1,11 @@
-# torch.rand(1, 1, 1, 10, dtype=torch.float32)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return x * 2  # Reproduces the computation leading to the Node binding issue
+a = torch.rand(10, requires_grad=True)
 
-def my_model_function():
-    return MyModel()
+b = a * 2
 
-def GetInput():
-    # Returns a 4D tensor matching the input shape expected by MyModel
-    # with requires_grad to trigger autograd graph construction
-    return torch.rand(1, 1, 1, 10, requires_grad=True)
+print(b.grad_fn._saved_other) # Works fine
 
+b.sum().backward()
+
+print(b.grad_fn._saved_other) # Hard crash

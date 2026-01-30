@@ -1,21 +1,25 @@
-# torch.rand(B, 1, 1, 1, dtype=torch.float32)
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.w = nn.Parameter(torch.randn(1, 1))  # Matches the example's weight shape
-
-    def forward(self, x):
-        # Use positional arguments to avoid keyword-argument quantization issues
-        return F.linear(x, self.w)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # 4D tensor to match B,C,H,W convention (collapsed to 2D via 1x1 spatial dims)
-    return torch.rand(1, 1, 1, 1)
-
+import copy                                                          
+import torch                                                         
+import torch.nn as nn                                                
+import torch.fx                                                      
+import torch.nn.functional as F                                      
+import torch.ao.quantization.quantize_fx as quantize_fx              
+                                                                     
+import torch                                                         
+from torch.ao.quantization import get_default_qconfig_mapping        
+from torch.quantization.quantize_fx import prepare_fx, convert_fx    
+import copy                                                          
+                                                                     
+class M(torch.nn.Module):                                            
+    def __init__(self):                                              
+        super().__init__()                                           
+        self.w = torch.nn.Parameter(torch.randn(1, 1))               
+                                                                     
+    def forward(self, x):                                            
+        x = F.linear(input=x, weight=self.w)                         
+        return x                                                     
+                                                                     
+m = M()                                                              
+mp = quantize_fx.prepare_fx(                                         
+    m, get_default_qconfig_mapping('fbgemm'), (torch.randn(1, 1),))  
+mq = quantize_fx.convert_fx(mp)

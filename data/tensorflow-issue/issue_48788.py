@@ -1,64 +1,77 @@
-# tf.random.uniform((B, 1), dtype=tf.float32) ← Input shape inferred from example: inputs are 1D samples with shape (batch_size, 1)
+import random
 
-import tensorflow as tf
-import numpy as np
-
-class MyModel(tf.keras.Model):
+class Data(k.utils.Sequence):
     """
-    A fused model encapsulating two behaviors:
-    1) A simple Keras model performing a single dense tanh layer followed by a dense output layer.
-    2) A SciANN-like functional model mimicking a similar architecture for demonstration.
-
-    The call returns a dictionary with outputs of both models and their MSE difference,
-    serving as a comparison demonstration between two "model" styles in one model.
-
-    Assumptions made:
-    - Input: (batch_size, 1)
-    - The SciANN model is emulated as a functional style model within the subclass.
-    - The output is a dict containing outputs and their difference to illustrate comparison.
+    Converts fit() into fit_generator() interface.
     """
-    def __init__(self):
-        super().__init__()
-        # Standard Keras style model layers
-        self.dense1 = tf.keras.layers.Dense(10, activation='tanh')
-        self.dense2 = tf.keras.layers.Dense(1)
-        # Emulated "SciANN" style functional layers
-        # In absence of SciANN package, we mimic with separate layers
-        self.sc_dense1 = tf.keras.layers.Dense(10, activation='tanh')
-        self.sc_dense2 = tf.keras.layers.Dense(1)
-        # MSE loss component to compare outputs
-        self.mse = tf.keras.losses.MeanSquaredError(reduction=tf.keras.losses.Reduction.NONE)
 
-    def call(self, inputs, training=False):
-        # Keras model forward
-        keras_out1 = self.dense1(inputs)
-        keras_out2 = self.dense2(keras_out1)
+    def __init__(self, inputs, outputs, sample_weights, batch_size, shuffle):
+        self._inputs = inputs
+        self._outputs = outputs
+        self._sample_weights = sample_weights
+        self._size = inputs[0].shape[0]
+        self._batch_size = batch_size
+        self._num_batches = int((self._size-1)/batch_size) + 1
+        self._shuffle = shuffle
+        self._ids = np.arange(0, self._size)
+        self._reshuffle()
+        print("\nTotal samples: {} ".format(self._size))
+        print("Batch size: {} ".format(min(self._batch_size, self._size)))
+        print("Total batches: {} \n".format(self._num_batches))
 
-        # SciANN emulated forward - separate layers but same input
-        sciann_out1 = self.sc_dense1(inputs)
-        sciann_out2 = self.sc_dense2(sciann_out1)
+    def __len__(self):
+        return self._num_batches
 
-        # Compute MSE difference (elementwise per sample)
-        mse_diff = self.mse(keras_out2, sciann_out2)
+    def __getitem__(self, index):
+        start = index * self._batch_size
+        end = min(start + self._batch_size, self._size)
+        ids = self._ids[start: end]
+        inputs = [v[ids, :] for v in self._inputs]
+        outputs = [v[ids, :] for v in self._outputs]
+        sample_weights = [v[ids] for v in self._sample_weights]
+        return inputs, outputs, sample_weights
+    
+    def on_epoch_end(self):
+        self._reshuffle()
 
-        # Return dictionary with outputs and difference for potential comparison or debugging
-        return {
-            'keras_output': keras_out2,
-            'sciann_output': sciann_out2,
-            'mse_difference': mse_diff
-        }
+    def get_data(self):
+        return self._inputs, self._outputs, self._sample_weights
 
-def my_model_function():
-    # Return an instance of MyModel with initialized weights
-    model = MyModel()
-    # Build model once with dummy input to initialize weights and track shapes
-    dummy_input = tf.zeros((1,1), dtype=tf.float32)
-    model(dummy_input)
-    return model
+    def _reshuffle(self):
+        if self._num_batches > 1 and self._shuffle:
+            self._ids = np.random.choice(self._size, self._size, replace=False)
 
-def GetInput():
-    # Generate random uniform input tensor matching expected shape (batch_size, features=1)
-    # batch size reasonable for demonstration/testing, e.g. 32
-    batch_size = 32
-    return tf.random.uniform((batch_size, 1), dtype=tf.float32)
+from tensorflow import keras as k
+import numpy as np 
 
+x = k.Input((1,))
+l1 = k.layers.Dense(10, activation='tanh')(x)
+y = k.layers.Dense(1)(l1)
+
+model = k.Model(x, y)
+model.compile(loss=k.losses.MSE)
+
+inputs = [np.linspace(0, 1, 1000).reshape(-1,1)]
+outputs = list(map(lambda x: np.sin(2*x), inputs))
+weights = list(map(lambda x: np.ones_like(x), inputs))
+
+dg = Data2(inputs, outputs, weights, 32, True)
+
+model.fit(dg, epochs=100)
+
+import sciann as sn 
+import numpy as np 
+from tensorflow import keras as k
+
+x = sn.Variable('x')
+y = sn.Functional('y', x, [10], 'tanh')
+
+model = sn.SciModel(x, y)
+
+inputs = [np.linspace(0, 1, 1000).reshape(-1,1)]
+outputs = list(map(lambda x: np.sin(2*x), inputs))
+weights = list(map(lambda x: np.ones_like(x).flatten(), inputs))
+
+dg = Data(inputs, outputs, weights, 32, True)
+
+model.train(dg, epochs=100)

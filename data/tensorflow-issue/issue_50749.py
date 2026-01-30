@@ -1,25 +1,22 @@
-# tf.random.uniform((B, 1), dtype=tf.float32) ← inferred input shape from the example input of shape (100,) reshaped as (B,1)
+from tensorflow.keras import layers
 
-import tensorflow as tf
+import tensorflow.keras as keras
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        self.dense1 = tf.keras.layers.Dense(10)
-        self.dense2 = tf.keras.layers.Dense(1)
+class MyLoss(keras.losses.Loss):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+    def __call__(self, x, y):
+        return x-y
 
-    def call(self, inputs):
-        x = self.dense1(inputs)
-        x = self.dense2(inputs)  # Note: original code used input again, maybe a bug but preserved here
-        # Return the output tensor
-        return x
+def get_model():
+    i = keras.Input((1,))
+    m = keras.layers.Dense(10)(i)
+    m = keras.layers.Dense(1)(i)
+    return keras.Model(i,m)
 
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+m = get_model()
+m.compile(loss='mse', metrics=[MyLoss()])
+m.fit(np.arange(100), np.arange(100))
 
-def GetInput():
-    # Return a random tensor input consistent with input shape (B,1)
-    # Assume batch size 32 for generality
-    return tf.random.uniform((32, 1), dtype=tf.float32)
-
+m.compile(loss='mse', metrics=[MyLoss("myloss")])

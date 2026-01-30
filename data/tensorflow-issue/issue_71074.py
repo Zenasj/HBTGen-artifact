@@ -1,29 +1,57 @@
-# tf.random.uniform((B, H, W, C), dtype=tf.float32) ← Input shape is assumed 4D tensor with float32, e.g., batch size B with height H, width W, channels C
-
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Placeholder model: simple Conv2D + Flatten + Dense, just to have an example compatible with typical 4D input
-        self.conv = tf.keras.layers.Conv2D(8, 3, padding='same', activation='relu')
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense = tf.keras.layers.Dense(10)
+class tflite_instance:
+    def __init__(self, model_name, qat=True):
+        self.interpreter = tf.lite.Interpreter(model_path=os.path.join(TFLITE_MODELS_DIR, model_name + '.tflite'))
+        self.interpreter.allocate_tensors()
+        self.tflite_input_details = self.interpreter.get_input_details()
+        self.tflite_output_details = self.interpreter.get_output_details()
 
-    def call(self, inputs):
-        x = self.conv(inputs)
-        x = self.flatten(x)
-        x = self.dense(x)
-        return x
+    def inference(self, x, num_out=1):
+        input_details = self.tflite_input_details[0]
+        tensor_index = input_details['index']
+        input_tensor = self.interpreter.tensor(tensor_index)()
+        scale, zero_point = input_details['quantization']        
+        quantized_input = np.uint8(x / scale + zero_point)                    
+        input_tensor = quantized_input
 
-def my_model_function():
-    # Instantiate and return MyModel
-    return MyModel()
+    
+        self.interpreter.invoke()
+        
+        output = self.interpreter.get_tensor(self.tflite_output_details[0]['index'])
+                   
+        scale, zero_point = self.tflite_output_details[0]['quantization']    
+        output = scale * (output.astype(np.float32) - zero_point)                    
+        
+        return output
 
-def GetInput():
-    # Generate random input tensor for MyModel
-    # Assume input shape typical for image data: batch 1, height 224, width 224, channels 3
-    # This is inferred reasonably as no explicit input shape was given in the issue 
-    B, H, W, C = 1, 224, 224, 3  
-    return tf.random.uniform((B, H, W, C), dtype=tf.float32)
+class tflite_instance:
+    def __init__(self, model_name, qat=True):
+        self.interpreter = tf.lite.Interpreter(model_path=os.path.join(TFLITE_MODELS_DIR, model_name + '.tflite'))
+        self.interpreter.allocate_tensors()
+        self.tflite_input_details = self.interpreter.get_input_details()
+        self.tflite_output_details = self.interpreter.get_output_details()
+    
 
+    def set_input_tensor(self, x):
+        input_details = self.interpreter.get_input_details()[0]
+        tensor_index = input_details['index']
+        input_tensor = self.interpreter.tensor(tensor_index)()
+        # Inputs for the TFLite model must be uint8, so we quantize our input data.
+        scale, zero_point = input_details['quantization']
+        quantized_input = np.uint8(x / scale + zero_point)
+        input_tensor[:, :, :, :] = quantized_input
+
+    def inference(self, x, num_out=1):
+
+        self.set_input_tensor(x)
+    
+        self.interpreter.invoke()
+        
+        output = self.interpreter.get_tensor(self.tflite_output_details[0]['index'])
+                   
+        scale, zero_point = self.tflite_output_details[0]['quantization']    
+        output = scale * (output.astype(np.float32) - zero_point)                    
+        
+        return output

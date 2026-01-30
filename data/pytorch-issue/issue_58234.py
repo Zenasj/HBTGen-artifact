@@ -1,24 +1,17 @@
-# torch.rand(2, dtype=torch.float64)  # Inferred input shape: (2,) tensor with numerator and denominator
 import torch
-from torch import nn
+import numpy as np
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        
-    def forward(self, x):
-        numerator, denominator = x.unbind()  # Split into numerator and denominator tensors
-        # Compute division in float32 (PyTorch default) and cast to double for comparison
-        a = (numerator.float() / denominator.float()).double()
-        # Compute division in float64 (NumPy-equivalent precision)
-        b = numerator.double() / denominator.double()
-        # Return absolute difference between the two divisions
-        return torch.abs(a - b)
+416 / 1080
+0.3851851851851852
 
-def my_model_function():
-    return MyModel()
+np.divide(416, 1080)
+0.3851851851851852
 
-def GetInput():
-    # Returns fixed example values from the issue to demonstrate discrepancy
-    return torch.tensor([416.0, 1080.0], dtype=torch.float64)
+torch.div(416, 1080).item()
+0.385185182094574
 
+torch.div(torch.tensor(416.0), 1080.0).item()
+0.385185182094574
+
+torch.div(416.0, 1080.0).item()
+0.3851851851851852

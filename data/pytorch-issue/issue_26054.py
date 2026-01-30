@@ -1,18 +1,24 @@
-# torch.rand(B, 2, dtype=torch.float32)
+import torch.nn as nn
+
 import torch
-from torch import nn
+from torch.utils.data import Dataset, DataLoader
 
-class MyModel(nn.Module):
+class RandomDataset(Dataset):
     def __init__(self):
-        super(MyModel, self).__init__()
-        self.linear = nn.Linear(2, 4)
-    
-    def forward(self, x):
-        return self.linear(x)
+        self.x = torch.rand(1, 2)
+        
+    def __getitem__(self, index):
+        return self.x[index]
 
-def my_model_function():
-    return MyModel()
+    def __len__(self):
+        return self.x.size(0)
 
-def GetInput():
-    return torch.rand(1, 2, dtype=torch.float32)
+loader1 = DataLoader(RandomDataset(), num_workers=2, batch_size=1, pin_memory=True)
+loader2 = DataLoader(RandomDataset(), num_workers=2, batch_size=1, pin_memory=True)
 
+model = torch.nn.Linear(2, 4)
+for data in loader1:
+    print(model(data))
+
+for data in loader2:
+    print(model(data))

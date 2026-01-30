@@ -1,190 +1,197 @@
-import torch
-import torch.nn as nn
-from torch.utils.checkpoint import checkpoint
+#0  __futex_abstimed_wait_common64 (private=792123632, cancel=true, abstime=0x1538ffda5140, op=137, expected=0, futex_word=0x5555558e4a0c <_PyRuntime+428>) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=792123632, abstime=0x1538ffda5140, clockid=-1023316592, expected=0, futex_word=0x5555558e4a0c <_PyRuntime+428>) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x5555558e4a0c <_PyRuntime+428>, expected=expected@entry=0, clockid=clockid@entry=1, abstime=abstime@entry=0x1538ffda5140, private=private@entry=0) at ./nptl/futex-internal.c:139
+#3  0x0000155555273f1b in __pthread_cond_wait_common (abstime=0x1538ffda5140, clockid=1, mutex=0x5555558e4a10 <_PyRuntime+432>, cond=0x5555558e49e0 <_PyRuntime+384>) at ./nptl/pthread_cond_wait.c:503
+#4  ___pthread_cond_timedwait64 (cond=cond@entry=0x5555558e49e0 <_PyRuntime+384>, mutex=mutex@entry=0x5555558e4a10 <_PyRuntime+432>, abstime=abstime@entry=0x1538ffda5140) at ./nptl/pthread_cond_wait.c:652
+#5  0x000055555566f8cd in PyCOND_TIMEDWAIT (us=<optimized out>, mut=<optimized out>, cond=0x5555558e49e0 <_PyRuntime+384>) at python-3.10.12/Python/condvar.h:73
+#6  take_gil (tstate=0x153648000b90) at python-3.10.12/Python/ceval_gil.h:256
+#7  0x00005555556b3332 in PyEval_RestoreThread (tstate=0x153648000b90) at python-3.10.12/Python/ceval.c:547
+#8  0x000015550fa4057b in THPVariable_clear(THPVariable*) () from /torch/lib/libtorch_python.so
+#9  0x000015550fa40b45 in THPVariable_subclass_dealloc(_object*) () from /torch/lib/libtorch_python.so
+#10 0x000015550f98fe36 in (anonymous namespace)::ConcretePyInterpreterVTable::decref(_object*, bool) const () from /torch/lib/libtorch_python.so
+#11 0x000015551279bbe3 in c10::impl::PyObjectSlot::destroy_pyobj_if_needed() () from /torch/lib/libc10.so
+#12 0x0000155512789dbd in c10::TensorImpl::~TensorImpl() () from /torch/lib/libc10.so
+#13 0x000015551278a12d in c10::TensorImpl::~TensorImpl() () from /torch/lib/libc10.so
+#14 0x00001555080db703 in at::autocast::clear_cache() () from /torch/lib/libtorch_cpu.so
+#15 0x000015550f9c548c in torch::autograd::clear_autocast_cache(_object*, _object*) () from /torch/lib/libtorch_python.so
+#16 0x0000555555696362 in cfunction_vectorcall_NOARGS (func=0x155554505670, args=<optimized out>, nargsf=<optimized out>, kwnames=<optimized out>) at python-3.10.12/Objects/methodobject.c:489
+#17 0x000055555568d142 in _PyObject_VectorcallTstate (kwnames=0x0, nargsf=<optimized out>, args=0x153ae2fc01d0, callable=0x155554505670, tstate=0x153648000b90) at python-3.10.12/Include/cpython/abstract.h:114
+#18 PyObject_Vectorcall (kwnames=0x0, nargsf=<optimized out>, args=0x153ae2fc01d0, callable=0x155554505670) at python-3.10.12/Include/cpython/abstract.h:123
+#19 call_function (kwnames=0x0, oparg=<optimized out>, pp_stack=<synthetic pointer>, trace_info=0x1538ffda5590, tstate=<optimized out>) at python-3.10.12/Python/ceval.c:5893
+#20 _PyEval_EvalFrameDefault (tstate=<optimized out>, f=0x153ae2fc0040, throwflag=<optimized out>) at python-3.10.12/Python/ceval.c:4181
+#21 0x00005555556a44f2 in _PyEval_EvalFrame (throwflag=0, f=0x153ae2fc0040, tstate=0x153648000b90) at python-3.10.12/Include/internal/pycore_ceval.h:46
+#22 _PyEval_Vector (kwnames=<optimized out>, argcount=<optimized out>, args=0x55559567cb90, locals=0x0, con=0x1554c33a7a40, tstate=0x153648000b90) at python-3.10.12/Python/ceval.c:5067
+#23 _PyFunction_Vectorcall (kwnames=<optimized out>, nargsf=<optimized out>, stack=0x55559567cb90, func=0x1554c33a7a30) at python-3.10.12/Objects/call.c:342
+#24 _PyObject_VectorcallTstate (kwnames=<optimized out>, nargsf=<optimized out>, args=0x55559567cb90, callable=0x1554c33a7a30, tstate=0x153648000b90) at python-3.10.12/Include/cpython/abstract.h:114
+#25 method_vectorcall (method=<optimized out>, args=0x55559567cb98, nargsf=<optimized out>, kwnames=<optimized out>) at python-3.10.12/Objects/classobject.c:53
+#26 0x000055555568d142 in _PyObject_VectorcallTstate (kwnames=0x0, nargsf=<optimized out>, args=0x55559567cb98, callable=0x153b38ad6680, tstate=0x153648000b90) at python-3.10.12/Include/cpython/abstract.h:114
+#27 PyObject_Vectorcall (kwnames=0x0, nargsf=<optimized out>, args=0x55559567cb98, callable=0x153b38ad6680) at python-3.10.12/Include/cpython/abstract.h:123
+#28 call_function (kwnames=0x0, oparg=<optimized out>, pp_stack=<synthetic pointer>, trace_info=0x1538ffda57a0, tstate=<optimized out>) at python-3.10.12/Python/ceval.c:5893
+#29 _PyEval_EvalFrameDefault (tstate=<optimized out>, f=0x55559567ca00, throwflag=<optimized out>) at python-3.10.12/Python/ceval.c:4181
+#30 0x00005555556a44f2 in _PyEval_EvalFrame (throwflag=0, f=0x55559567ca00, tstate=0x153648000b90) at python-3.10.12/Include/internal/pycore_ceval.h:46
+#31 _PyEval_Vector (kwnames=<optimized out>, argcount=<optimized out>, args=0x1538ffda5a10, locals=0x0, con=0x1554c3114680, tstate=0x153648000b90) at python-3.10.12/Python/ceval.c:5067
+#32 _PyFunction_Vectorcall (kwnames=<optimized out>, nargsf=<optimized out>, stack=0x1538ffda5a10, func=0x1554c3114670) at python-3.10.12/Objects/call.c:342
+#33 _PyObject_VectorcallTstate (kwnames=<optimized out>, nargsf=<optimized out>, args=0x1538ffda5a10, callable=0x1554c3114670, tstate=0x153648000b90) at python-3.10.12/Include/cpython/abstract.h:114
+#34 method_vectorcall (method=<optimized out>, args=0x1538ffda5a18, nargsf=<optimized out>, kwnames=<optimized out>) at python-3.10.12/Objects/classobject.c:53
+#35 0x000055555572a572 in _PyObject_VectorcallTstate (tstate=0x153648000b90, callable=0x153b38ad6280, args=<optimized out>, nargsf=<optimized out>, kwnames=<optimized out>) at python-3.10.12/Include/cpython/abstract.h:114
+#36 0x000055555568bd74 in PyObject_Vectorcall (kwnames=0x0, nargsf=9223372036854775811, args=0x1538ffda5a18, callable=0x153b38ad6280) at python-3.10.12/Include/cpython/abstract.h:123
+#37 _PyEval_EvalFrameDefault (tstate=<optimized out>, f=0x15372eae5360, throwflag=<optimized out>) at python-3.10.12/Python/ceval.c:4113
+#38 0x000055555569899c in _PyEval_EvalFrame (throwflag=0, f=0x15372eae5360, tstate=0x153648000b90) at python-3.10.12/Include/internal/pycore_ceval.h:46
+#39 _PyEval_Vector (kwnames=<optimized out>, argcount=<optimized out>, args=<optimized out>, locals=0x0, con=0x153ae302a570, tstate=0x153648000b90) at python-3.10.12/Python/ceval.c:5067
+#40 _PyFunction_Vectorcall (func=0x153ae302a560, stack=<optimized out>, nargsf=<optimized out>, kwnames=<optimized out>) at python-3.10.12/Objects/call.c:342
+#41 0x000055555568b2b0 in do_call_core (kwdict=0x0, callargs=0x153ae32035c0, func=0x153ae302a560, trace_info=0x1538ffda5b80, tstate=<optimized out>) at python-3.10.12/Python/ceval.c:5945
+#42 _PyEval_EvalFrameDefault (tstate=<optimized out>, f=0x5555d155be30, throwflag=<optimized out>) at python-3.10.12/Python/ceval.c:4277
+#43 0x000055555569899c in _PyEval_EvalFrame (throwflag=0, f=0x5555d155be30, tstate=0x153648000b90) at python-3.10.12/Include/internal/pycore_ceval.h:46
+#44 _PyEval_Vector (kwnames=<optimized out>, argcount=<optimized out>, args=<optimized out>, locals=0x0, con=0x153ae3028050, tstate=0x153648000b90) at python-3.10.12/Python/ceval.c:5067
+#45 _PyFunction_Vectorcall (func=0x153ae3028040, stack=<optimized out>, nargsf=<optimized out>, kwnames=<optimized out>) at python-3.10.12/Objects/call.c:342
+#46 0x0000555555698178 in _PyObject_VectorcallTstate (kwnames=0x0, nargsf=1, args=0x1538ffda5cb0, callable=0x153ae3028040, tstate=0x153648000b90) at python-3.10.12/Include/cpython/abstract.h:114
+#47 object_vacall (tstate=0x153648000b90, base=<optimized out>, callable=0x153ae3028040, vargs=0x1538ffda5d20) at python-3.10.12/Objects/call.c:734
+#48 0x000055555572dd06 in PyObject_CallFunctionObjArgs (callable=<optimized out>) at python-3.10.12/Objects/call.c:841
+#49 0x000015550fa162e8 in torch::autograd::PySavedVariableHooks::call_unpack_hook() () from /torch/lib/libtorch_python.so
+#50 0x000015550b81e924 in torch::autograd::SavedVariable::unpack(std::shared_ptr<torch::autograd::Node>) const () from /torch/lib/libtorch_cpu.so
+#51 0x000015550aa134df in torch::autograd::generated::HardtanhBackward0::apply(std::vector<at::Tensor, std::allocator<at::Tensor> >&&) () from /torch/lib/libtorch_cpu.so
+#52 0x000015550b7e54eb in torch::autograd::Node::operator()(std::vector<at::Tensor, std::allocator<at::Tensor> >&&) () from /torch/lib/libtorch_cpu.so
+#53 0x000015550b7debea in torch::autograd::Engine::evaluate_function(std::shared_ptr<torch::autograd::GraphTask>&, torch::autograd::Node*, torch::autograd::InputBuffer&, std::shared_ptr<torch::autograd::ReadyQueue> const&) () from /torch/lib/libtorch_cpu.so
+#54 0x000015550b7dfed0 in torch::autograd::Engine::thread_main(std::shared_ptr<torch::autograd::GraphTask> const&) () from /torch/lib/libtorch_cpu.so
+#55 0x000015550b7d68da in torch::autograd::Engine::thread_init(int, std::shared_ptr<torch::autograd::ReadyQueue> const&, bool) () from /torch/lib/libtorch_cpu.so
+#56 0x000015550fa1b600 in torch::autograd::python::PythonEngine::thread_init(int, std::shared_ptr<torch::autograd::ReadyQueue> const&, bool) () from /torch/lib/libtorch_python.so
+#57 0x00001555122f0e95 in std::execute_native_thread_routine (__p=<optimized out>) at ../../../../../libstdc++-v3/src/c++11/thread.cc:104
+#58 0x0000155555274b43 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:442
+#59 0x0000155555306a00 in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:81
 
-# torch.rand(B, C, H, W, dtype=torch.float32)
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1)
-        self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
-        self.fc = nn.Linear(32 * 56 * 56, 10)  # After two max pools (224/2/2 =56)
-
-    def forward(self, x):
-        with torch.autocast(device_type='cuda', dtype=torch.float16):
-            x = checkpoint(self.conv1, x)
-            x = torch.relu(x)
-            x = torch.max_pool2d(x, 2)
-            x = checkpoint(self.conv2, x)
-            x = torch.relu(x)
-            x = torch.max_pool2d(x, 2)
-            x = x.view(x.size(0), -1)
-            x = self.fc(x)
-        return x
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    B, C, H, W = 2, 3, 224, 224
-    return torch.rand(B, C, H, W, dtype=torch.float32)
-
-# Okay, let me tackle this problem step by step. The user provided a GitHub issue about a GIL deadlock in PyTorch's autograd engine, specifically involving autocast cache and DDP with activation checkpointing. The task is to generate a Python code file that reproduces the issue based on the information given.
-# First, I need to understand the problem. The deadlock occurs when a thread is trying to acquire a lock but already holds the GIL, leading to a deadlock. The issue mentions DDP (Distributed Data Parallel) and activation checkpointing, which are common in training large models across multiple GPUs. The stack traces indicate that the deadlock happens in `at::autocast::clear_cache`, which is called without releasing the GIL, causing a thread to wait on a mutex while holding the GIL, leading to a deadlock.
-# The goal is to create a PyTorch model and input that would trigger this scenario. The code should include MyModel, a function to create the model, and GetInput to generate the input tensor. Since the problem involves DDP and activation checkpointing, the model should use these features.
-# First, I'll structure the model. Activation checkpointing in PyTorch is done using `torch.utils.checkpoint`, so the model should have layers that are wrapped with checkpointing. DDP requires setting up distributed training, but since the code is supposed to be a single file, I might need to mock or use a simplified version. However, the user wants a code that can be run with `torch.compile`, so perhaps the distributed setup isn't strictly necessary, but the model should include the components that would trigger the issue.
-# Looking at the stack traces, the problem arises in the backward pass, especially with autocast (mixed precision). So the model should use autocast. The model might have layers that use functions with backward hooks causing the GIL issue.
-# The input shape needs to be inferred. Since the exact model isn't given, I'll make a common choice. Let's assume a typical CNN input shape, like (batch_size, channels, height, width). Let's pick B=2, C=3, H=224, W=224 for an image-like input.
-# The MyModel class should include layers that are checkpointed. Let's structure it with a few linear or convolutional layers. Since activation checkpointing requires the model to be split into segments, I'll define a sub-module and wrap its forward with checkpointing.
-# Wait, but the user mentioned DDP and activation checkpointing together. So the model might be wrapped in DDP and use checkpointing. However, since the code needs to be self-contained without actual distributed setup (since that requires multiple processes), perhaps I can just include the necessary components in the model structure, even if the DDP part isn't fully functional. The key is to have the model structure that would trigger the deadlock scenario when run with those features enabled.
-# Alternatively, maybe the model uses autocast in its forward, and during backward, the autocast cache is being cleared while holding the GIL, leading to the deadlock. So the model's forward should involve autocast, and the backward path should involve operations that trigger the cache clear.
-# Putting this together:
-# The model could have a forward pass that uses autocast, and some layers that require gradient computation. Activation checkpointing would split the forward into segments, which might involve saving intermediate variables, leading to the saved variables needing to be unpacked during backward. The backward pass then might call into the autocast cache cleanup, which is not releasing the GIL, causing the deadlock.
-# So, the MyModel could look like this:
-# - Use torch.utils.checkpoint to checkpoint parts of the forward pass.
-# - Use autocast in the forward (maybe via a context manager).
-# - Include layers that have parameters requiring gradients.
-# The GetInput function would generate a random tensor with the inferred shape.
-# Now, considering the code structure requirements:
-# - The class must be MyModel(nn.Module).
-# - The input comment line must have the shape, e.g., torch.rand(B, C, H, W, dtype=torch.float32).
-# - The my_model_function returns an instance of MyModel.
-# - GetInput returns the input tensor.
-# Potential code steps:
-# Define MyModel with sequential layers, using checkpointing on some layers. Maybe a simple CNN with a few conv layers, checkpointed.
-# Wait, but activation checkpointing is more commonly used with transformers. Maybe a better example is a transformer block. Alternatively, a simple model with linear layers for simplicity.
-# Alternatively, let's structure it as follows:
-# class MyModel(nn.Module):
-#     def __init__(self):
-#         super().__init__()
-#         self.layer1 = nn.Linear(224*224*3, 1024)  # Assuming flattened input, but maybe not. Alternatively, use conv layers.
-#         self.layer2 = nn.Linear(1024, 512)
-#         self.layer3 = nn.Linear(512, 10)
-#     def forward(self, x):
-#         # Using activation checkpointing
-#         from torch.utils.checkpoint import checkpoint
-#         x = x.view(x.size(0), -1)
-#         x = checkpoint(self.layer1, x)
-#         x = checkpoint(self.layer2, x)
-#         x = self.layer3(x)
-#         return x
-# Wait, but the input shape needs to be 4D for images. Let's adjust:
-# Suppose the input is (B, 3, 224, 224). Then the forward would flatten it to (B, 3*224*224). But maybe better to use convolutional layers.
-# Alternatively, a CNN model:
-# class MyModel(nn.Module):
-#     def __init__(self):
-#         super().__init__()
-#         self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1)
-#         self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
-#         self.fc = nn.Linear(32*56*56, 10)  # Assuming max pooling reduces spatial dims?
-#     def forward(self, x):
-#         x = checkpoint(self.conv1, x)
-#         x = F.relu(x)
-#         x = F.max_pool2d(x, 2)
-#         x = checkpoint(self.conv2, x)
-#         x = F.relu(x)
-#         x = F.max_pool2d(x, 2)
-#         x = x.view(x.size(0), -1)
-#         x = self.fc(x)
-#         return x
-# But checkpointing is applied on the conv layers. However, activation checkpointing typically wraps the entire segment, not individual layers. Maybe better to split into segments.
-# Alternatively, the model could have a submodule that is checkpointed.
-# Alternatively, to ensure that during backward, the autocast cache is involved, perhaps the model uses mixed precision training, which requires autocast.
-# So the forward would be inside an autocast context:
-# def forward(self, x):
-#     with torch.autocast(device_type='cuda', dtype=torch.float16):
-#         # ... layers ...
-#     return x
-# Wait, but the user's issue is about autocast's cache. So the model must be using autocast in its forward pass.
-# Thus, integrating autocast into the model's forward:
-# class MyModel(nn.Module):
-#     def __init__(self):
-#         super().__init__()
-#         self.layers = nn.Sequential(
-#             nn.Linear(3*224*224, 1024),
-#             nn.ReLU(),
-#             nn.Linear(1024, 512),
-#             nn.ReLU(),
-#             nn.Linear(512, 10)
-#         )
-#     def forward(self, x):
-#         with torch.autocast(device_type='cuda', dtype=torch.float16):
-#             x = x.view(x.size(0), -1)
-#             x = torch.utils.checkpoint.checkpoint(self.layers, x)
-#         return x
-# This uses autocast and checkpointing. The input would be 4D, but in this case, the view flattens it. Alternatively, adjust to 2D input.
-# Wait, the input shape in the comment must be correct. Let's pick B=2, C=3, H=224, W=224. So the first line would be:
-# # torch.rand(B, C, H, W, dtype=torch.float32)
-# The GetInput function would return that tensor.
-# But for the model, the forward must handle the input. In the above code, the view converts to 2D, which is okay.
-# Another consideration: The error occurs during backward, when the autocast cache is being cleared. So the model needs to have parameters that require gradients, and during the backward pass, the autocast cache is accessed.
-# The code provided in the issue mentions that the problem was fixed by releasing the GIL in certain functions, but since we are to reproduce the bug, perhaps the code should use an older version (PyTorch 2.1 as per the versions section) which has the bug. However, since we can't pin versions in code, the code should just be structured to trigger the scenario where the bug would occur.
-# Putting it all together, the code structure would be:
-# Wait, but in the forward, the checkpoints are applied to individual conv layers. Activation checkpointing is typically applied to a segment of the network, not individual layers. Maybe better to wrap a part of the network in a checkpoint.
-# Alternatively, create a submodule and checkpoint that:
-# class MyModel(nn.Module):
-#     def __init__(self):
-#         super().__init__()
-#         self.block1 = nn.Sequential(
-#             nn.Conv2d(3, 16, 3, padding=1),
-#             nn.ReLU(),
-#             nn.MaxPool2d(2)
-#         )
-#         self.block2 = nn.Sequential(
-#             nn.Conv2d(16, 32, 3, padding=1),
-#             nn.ReLU(),
-#             nn.MaxPool2d(2)
-#         )
-#         self.fc = nn.Linear(32*56*56, 10)
-#     def forward(self, x):
-#         with torch.autocast(device_type='cuda', dtype=torch.float16):
-#             x = checkpoint(self.block1, x)
-#             x = checkpoint(self.block2, x)
-#             x = x.view(x.size(0), -1)
-#             x = self.fc(x)
-#         return x
-# This way, the checkpoints are on the blocks, which is more standard.
-# Another consideration: The issue mentions DDP, so perhaps the model should be wrapped in DDP. However, since the code must be a single file and not involve distributed setup (which requires multiple processes), I can't actually initialize DDP here. But the presence of DDP might be part of the scenario that triggers the bug. Since the code is to reproduce the issue's scenario, maybe including DDP in the model's initialization is necessary. However, without the actual distributed setup, it might not work, but the code can still include it as a submodule, perhaps using a mock.
-# Alternatively, since the user's problem occurs with DDP and activation checkpointing, the model must be designed in a way that when wrapped in DDP and using checkpointing, the deadlock arises. Since the code can't run DDP here, but the structure must reflect that, perhaps the model is just set up with those components.
-# Alternatively, the code can ignore DDP and focus on the parts that would cause the deadlock when DDP is used. Since the main issue is the autocast cache and GIL, the code's structure with autocast and checkpointing should suffice.
-# Also, the input must be a tensor that when passed through the model and trained (with backward) would trigger the autocast cache's clear function while holding the GIL, leading to deadlock.
-# Another thing: The user's stack trace shows that `clear_cache` is being called, which might be part of the autocast context exiting. So the model's forward uses autocast, and during backward, when the cache is being cleared, the GIL isn't released, causing the deadlock.
-# Thus, the code above should suffice. Now checking the requirements:
-# - Class name is MyModel, which it is.
-# - Functions my_model_function and GetInput are present.
-# - The input is correctly generated with the right shape.
-# - The model uses autocast and checkpointing, which are the components involved in the bug.
-# I think this should work. Let me write the final code accordingly, making sure to include the comments and structure as specified.
-# </think>
-# ```python
-# # torch.rand(B, C, H, W, dtype=torch.float32)
-# import torch
-# import torch.nn as nn
-# from torch.utils.checkpoint import checkpoint
-# class MyModel(nn.Module):
-#     def __init__(self):
-#         super(MyModel, self).__init__()
-#         self.block1 = nn.Sequential(
-#             nn.Conv2d(3, 16, kernel_size=3, padding=1),
-#             nn.ReLU(),
-#             nn.MaxPool2d(2)
-#         )
-#         self.block2 = nn.Sequential(
-#             nn.Conv2d(16, 32, kernel_size=3, padding=1),
-#             nn.ReLU(),
-#             nn.MaxPool2d(2)
-#         )
-#         self.fc = nn.Linear(32 * 56 * 56, 10)  # 56x56 after 2x max pooling
-#     def forward(self, x):
-#         with torch.autocast(device_type='cuda', dtype=torch.float16):  # Triggers autocast context
-#             x = checkpoint(self.block1, x)  # Activation checkpointing
-#             x = checkpoint(self.block2, x)
-#             x = x.view(x.size(0), -1)
-#             x = self.fc(x)
-#         return x
-# def my_model_function():
-#     return MyModel()
-# def GetInput():
-#     # Input shape matching (B, C, H, W) for 224x224 images
-#     return torch.rand(2, 3, 224, 224, dtype=torch.float32)
-# ```
+#0  futex_wait (private=0, expected=2, futex_word=0x15550f1ccc00 <at::autocast::(anonymous namespace)::cached_casts_mutex>) at ../sysdeps/nptl/futex-internal.h:146
+#1  __GI___lll_lock_wait (futex=futex@entry=0x15550f1ccc00 <at::autocast::(anonymous namespace)::cached_casts_mutex>, private=0) at ./nptl/lowlevellock.c:49
+#2  0x0000155555278082 in lll_mutex_lock_optimized (mutex=0x15550f1ccc00 <at::autocast::(anonymous namespace)::cached_casts_mutex>) at ./nptl/pthread_mutex_lock.c:48
+#3  ___pthread_mutex_lock (mutex=0x15550f1ccc00 <at::autocast::(anonymous namespace)::cached_casts_mutex>) at ./nptl/pthread_mutex_lock.c:93
+#4  0x00001555080db616 in at::autocast::clear_cache() () from /torch/lib/libtorch_cpu.so
+#5  0x000015550f9c548c in torch::autograd::clear_autocast_cache(_object*, _object*) () from /torch/lib/libtorch_python.so
+#6  0x0000555555696362 in cfunction_vectorcall_NOARGS (func=0x155554505670, args=<optimized out>, nargsf=<optimized out>, kwnames=<optimized out>) at python-3.10.12/Objects/methodobject.c:489
+#7  0x000055555568d142 in _PyObject_VectorcallTstate (kwnames=0x0, nargsf=<optimized out>, args=0x555572b04020, callable=0x155554505670, tstate=0x55555590a0c0) at python-3.10.12/Include/cpython/abstract.h:114
+#8  PyObject_Vectorcall (kwnames=0x0, nargsf=<optimized out>, args=0x555572b04020, callable=0x155554505670) at python-3.10.12/Include/cpython/abstract.h:123
+#9  call_function (kwnames=0x0, oparg=<optimized out>, pp_stack=<synthetic pointer>, trace_info=0x7fffffff61c0, tstate=<optimized out>) at python-3.10.12/Python/ceval.c:5893
+#10 _PyEval_EvalFrameDefault (tstate=<optimized out>, f=0x555572b03e90, throwflag=<optimized out>) at python-3.10.12/Python/ceval.c:4181
+#11 0x00005555556a44f2 in _PyEval_EvalFrame (throwflag=0, f=0x555572b03e90, tstate=0x55555590a0c0) at python-3.10.12/Include/internal/pycore_ceval.h:46
+#12 _PyEval_Vector (kwnames=<optimized out>, argcount=<optimized out>, args=0x5555d13839b0, locals=0x0, con=0x1554c33a7a40, tstate=0x55555590a0c0) at python-3.10.12/Python/ceval.c:5067
+#13 _PyFunction_Vectorcall (kwnames=<optimized out>, nargsf=<optimized out>, stack=0x5555d13839b0, func=0x1554c33a7a30) at python-3.10.12/Objects/call.c:342
+#14 _PyObject_VectorcallTstate (kwnames=<optimized out>, nargsf=<optimized out>, args=0x5555d13839b0, callable=0x1554c33a7a30, tstate=0x55555590a0c0) at python-3.10.12/Include/cpython/abstract.h:114
+#15 method_vectorcall (method=<optimized out>, args=0x5555d13839b8, nargsf=<optimized out>, kwnames=<optimized out>) at python-3.10.12/Objects/classobject.c:53
+#16 0x000055555568d142 in _PyObject_VectorcallTstate (kwnames=0x0, nargsf=<optimized out>, args=0x5555d13839b8, callable=0x153b38ad58c0, tstate=0x55555590a0c0) at python-3.10.12/Include/cpython/abstract.h:114
+#17 PyObject_Vectorcall (kwnames=0x0, nargsf=<optimized out>, args=0x5555d13839b8, callable=0x153b38ad58c0) at python-3.10.12/Include/cpython/abstract.h:123
+#18 call_function (kwnames=0x0, oparg=<optimized out>, pp_stack=<synthetic pointer>, trace_info=0x7fffffff63d0, tstate=<optimized out>) at python-3.10.12/Python/ceval.c:5893
+#19 _PyEval_EvalFrameDefault (tstate=<optimized out>, f=0x5555d1383820, throwflag=<optimized out>) at python-3.10.12/Python/ceval.c:4181
+#20 0x00005555556a44f2 in _PyEval_EvalFrame (throwflag=0, f=0x5555d1383820, tstate=0x55555590a0c0) at python-3.10.12/Include/internal/pycore_ceval.h:46
+#21 _PyEval_Vector (kwnames=<optimized out>, argcount=<optimized out>, args=0x7fffffff6640, locals=0x0, con=0x1554c3114680, tstate=0x55555590a0c0) at python-3.10.12/Python/ceval.c:5067
+#22 _PyFunction_Vectorcall (kwnames=<optimized out>, nargsf=<optimized out>, stack=0x7fffffff6640, func=0x1554c3114670) at python-3.10.12/Objects/call.c:342
+#23 _PyObject_VectorcallTstate (kwnames=<optimized out>, nargsf=<optimized out>, args=0x7fffffff6640, callable=0x1554c3114670, tstate=0x55555590a0c0) at python-3.10.12/Include/cpython/abstract.h:114
+#24 method_vectorcall (method=<optimized out>, args=0x7fffffff6648, nargsf=<optimized out>, kwnames=<optimized out>) at python-3.10.12/Objects/classobject.c:53
+#25 0x000055555572a572 in _PyObject_VectorcallTstate (tstate=0x55555590a0c0, callable=0x153b02f55f80, args=<optimized out>, nargsf=<optimized out>, kwnames=<optimized out>) at python-3.10.12/Include/cpython/abstract.h:114
+#26 0x000055555568bd74 in PyObject_Vectorcall (kwnames=0x0, nargsf=9223372036854775811, args=0x7fffffff6648, callable=0x153b02f55f80) at python-3.10.12/Include/cpython/abstract.h:123
+#27 _PyEval_EvalFrameDefault (tstate=<optimized out>, f=0x5555a4559930, throwflag=<optimized out>) at python-3.10.12/Python/ceval.c:4113
+#28 0x000055555569899c in _PyEval_EvalFrame (throwflag=0, f=0x5555a4559930, tstate=0x55555590a0c0) at python-3.10.12/Include/internal/pycore_ceval.h:46
+#29 _PyEval_Vector (kwnames=<optimized out>, argcount=<optimized out>, args=<optimized out>, locals=0x0, con=0x153ae3028290, tstate=0x55555590a0c0) at python-3.10.12/Python/ceval.c:5067
+#30 _PyFunction_Vectorcall (func=0x153ae3028280, stack=<optimized out>, nargsf=<optimized out>, kwnames=<optimized out>) at python-3.10.12/Objects/call.c:342
+#31 0x000055555568b2b0 in do_call_core (kwdict=0x0, callargs=0x153b036a63c0, func=0x153ae3028280, trace_info=0x7fffffff67b0, tstate=<optimized out>) at python-3.10.12/Python/ceval.c:5945
+#32 _PyEval_EvalFrameDefault (tstate=<optimized out>, f=0x5555a1cc8fe0, throwflag=<optimized out>) at python-3.10.12/Python/ceval.c:4277
+#33 0x000055555569899c in _PyEval_EvalFrame (throwflag=0, f=0x5555a1cc8fe0, tstate=0x55555590a0c0) at python-3.10.12/Include/internal/pycore_ceval.h:46
+#34 _PyEval_Vector (kwnames=<optimized out>, argcount=<optimized out>, args=<optimized out>, locals=0x0, con=0x153ae3029e20, tstate=0x55555590a0c0) at python-3.10.12/Python/ceval.c:5067
+#35 _PyFunction_Vectorcall (func=0x153ae3029e10, stack=<optimized out>, nargsf=<optimized out>, kwnames=<optimized out>) at python-3.10.12/Objects/call.c:342
+#36 0x0000555555698178 in _PyObject_VectorcallTstate (kwnames=0x0, nargsf=1, args=0x7fffffff68e0, callable=0x153ae3029e10, tstate=0x55555590a0c0) at python-3.10.12/Include/cpython/abstract.h:114
+#37 object_vacall (tstate=0x55555590a0c0, base=<optimized out>, callable=0x153ae3029e10, vargs=0x7fffffff6950) at python-3.10.12/Objects/call.c:734
+#38 0x000055555572dd06 in PyObject_CallFunctionObjArgs (callable=<optimized out>) at python-3.10.12/Objects/call.c:841
+#39 0x000015550fa162e8 in torch::autograd::PySavedVariableHooks::call_unpack_hook() () from /torch/lib/libtorch_python.so
+#40 0x000015550b81e924 in torch::autograd::SavedVariable::unpack(std::shared_ptr<torch::autograd::Node>) const () from /torch/lib/libtorch_cpu.so
+#41 0x000015550aa134df in torch::autograd::generated::HardtanhBackward0::apply(std::vector<at::Tensor, std::allocator<at::Tensor> >&&) () from /torch/lib/libtorch_cpu.so
+#42 0x000015550b7e54eb in torch::autograd::Node::operator()(std::vector<at::Tensor, std::allocator<at::Tensor> >&&) () from /torch/lib/libtorch_cpu.so
+#43 0x000015550b7debea in torch::autograd::Engine::evaluate_function(std::shared_ptr<torch::autograd::GraphTask>&, torch::autograd::Node*, torch::autograd::InputBuffer&, std::shared_ptr<torch::autograd::ReadyQueue> const&) () from /torch/lib/libtorch_cpu.so
+#44 0x000015550b7dfed0 in torch::autograd::Engine::thread_main(std::shared_ptr<torch::autograd::GraphTask> const&) () from /torch/lib/libtorch_cpu.so
+#45 0x000015550b7da965 in torch::autograd::Engine::execute_with_graph_task(std::shared_ptr<torch::autograd::GraphTask> const&, std::shared_ptr<torch::autograd::Node>, torch::autograd::InputBuffer&&) () from /torch/lib/libtorch_cpu.so
+#46 0x000015550fa1bb39 in torch::autograd::python::PythonEngine::execute_with_graph_task(std::shared_ptr<torch::autograd::GraphTask> const&, std::shared_ptr<torch::autograd::Node>, torch::autograd::InputBuffer&&) () from /torch/lib/libtorch_python.so
+#47 0x000015550b7dd755 in torch::autograd::Engine::execute(std::vector<torch::autograd::Edge, std::allocator<torch::autograd::Edge> > const&, std::vector<at::Tensor, std::allocator<at::Tensor> > const&, bool, bool, bool, std::vector<torch::autograd::Edge, std::allocator<torch::autograd::Edge> > const&) () from /torch/lib/libtorch_cpu.so
+#48 0x000015550fa1ba9e in torch::autograd::python::PythonEngine::execute(std::vector<torch::autograd::Edge, std::allocator<torch::autograd::Edge> > const&, std::vector<at::Tensor, std::allocator<at::Tensor> > const&, bool, bool, bool, std::vector<torch::autograd::Edge, std::allocator<torch::autograd::Edge> > const&) () from /torch/lib/libtorch_python.so
+#49 0x000015550fa1a2b0 in THPEngine_run_backward(_object*, _object*, _object*) () from /torch/lib/libtorch_python.so
+#50 0x0000555555698516 in cfunction_call (func=0x153b03466ed0, args=<optimized out>, kwargs=<optimized out>) at python-3.10.12/Objects/methodobject.c:543
+#51 0x0000555555691a6b in _PyObject_MakeTpCall (tstate=0x55555590a0c0, callable=0x153b03466ed0, args=<optimized out>, nargs=5, keywords=0x1554c30f1dc0) at python-3.10.12/Objects/call.c:215
+#52 0x000055555568dc39 in _PyObject_VectorcallTstate (kwnames=0x1554c30f1dc0, nargsf=<optimized out>, args=<optimized out>, callable=0x153b03466ed0, tstate=<optimized out>) at python-3.10.12/Include/cpython/abstract.h:112
+#53 _PyObject_VectorcallTstate (kwnames=0x1554c30f1dc0, nargsf=<optimized out>, args=<optimized out>, callable=0x153b03466ed0, tstate=<optimized out>) at python-3.10.12/Include/cpython/abstract.h:99
+#54 PyObject_Vectorcall (kwnames=0x1554c30f1dc0, nargsf=<optimized out>, args=<optimized out>, callable=0x153b03466ed0) at python-3.10.12/Include/cpython/abstract.h:123
+#55 call_function (kwnames=0x1554c30f1dc0, oparg=<optimized out>, pp_stack=<synthetic pointer>, trace_info=0x7fffffff8240, tstate=<optimized out>) at python-3.10.12/Python/ceval.c:5893
+#56 _PyEval_EvalFrameDefault (tstate=<optimized out>, f=0x153ae7d47c40, throwflag=<optimized out>) at python-3.10.12/Python/ceval.c:4231
+#57 0x000055555569899c in _PyEval_EvalFrame (throwflag=0, f=0x153ae7d47c40, tstate=0x55555590a0c0) at python-3.10.12/Include/internal/pycore_ceval.h:46
+#58 _PyEval_Vector (kwnames=<optimized out>, argcount=<optimized out>, args=<optimized out>, locals=0x0, con=0x1554c2e7b530, tstate=0x55555590a0c0) at python-3.10.12/Python/ceval.c:5067
+#59 _PyFunction_Vectorcall (func=0x1554c2e7b520, stack=<optimized out>, nargsf=<optimized out>, kwnames=<optimized out>) at python-3.10.12/Objects/call.c:342
+#60 0x00005555556898fa in _PyObject_VectorcallTstate (kwnames=0x1554c346f0d0, nargsf=<optimized out>, args=<optimized out>, callable=0x1554c2e7b520, tstate=0x55555590a0c0) at python-3.10.12/Include/cpython/abstract.h:114
+#61 PyObject_Vectorcall (kwnames=0x1554c346f0d0, nargsf=<optimized out>, args=<optimized out>, callable=0x1554c2e7b520) at python-3.10.12/Include/cpython/abstract.h:123
+#62 call_function (kwnames=0x1554c346f0d0, oparg=<optimized out>, pp_stack=<synthetic pointer>, trace_info=0x7fffffff83f0, tstate=<optimized out>) at python-3.10.12/Python/ceval.c:5893
+#63 _PyEval_EvalFrameDefault (tstate=<optimized out>, f=0x153ae2f63490, throwflag=<optimized out>) at python-3.10.12/Python/ceval.c:4231
+#64 0x000055555569899c in _PyEval_EvalFrame (throwflag=0, f=0x153ae2f63490, tstate=0x55555590a0c0) at python-3.10.12/Include/internal/pycore_ceval.h:46
+#65 _PyEval_Vector (kwnames=<optimized out>, argcount=<optimized out>, args=<optimized out>, locals=0x0, con=0x1554c34d52e0, tstate=0x55555590a0c0) at python-3.10.12/Python/ceval.c:5067
+#66 _PyFunction_Vectorcall (func=0x1554c34d52d0, stack=<optimized out>, nargsf=<optimized out>, kwnames=<optimized out>) at python-3.10.12/Objects/call.c:342
+#67 0x0000555555688c5c in _PyObject_VectorcallTstate (kwnames=0x0, nargsf=<optimized out>, args=0x5555ae6dc208, callable=0x1554c34d52d0, tstate=0x55555590a0c0) at python-3.10.12/Include/cpython/abstract.h:114
+#68 PyObject_Vectorcall (kwnames=0x0, nargsf=<optimized out>, args=0x5555ae6dc208, callable=0x1554c34d52d0) at python-3.10.12/Include/cpython/abstract.h:123
+#69 call_function (kwnames=0x0, oparg=<optimized out>, pp_stack=<synthetic pointer>, trace_info=0x7fffffff85a0, tstate=<optimized out>) at python-3.10.12/Python/ceval.c:5893
+#70 _PyEval_EvalFrameDefault (tstate=<optimized out>, f=0x5555ae6dbfa0, throwflag=<optimized out>) at python-3.10.12/Python/ceval.c:4198
+#71 0x000055555569899c in _PyEval_EvalFrame (throwflag=0, f=0x5555ae6dbfa0, tstate=0x55555590a0c0) at python-3.10.12/Include/internal/pycore_ceval.h:46
+#72 _PyEval_Vector (kwnames=<optimized out>, argcount=<optimized out>, args=<optimized out>, locals=0x0, con=0x1551df3a9130, tstate=0x55555590a0c0) at python-3.10.12/Python/ceval.c:5067
+#73 _PyFunction_Vectorcall (func=0x1551df3a9120, stack=<optimized out>, nargsf=<optimized out>, kwnames=<optimized out>) at python-3.10.12/Objects/call.c:342
+#74 0x0000555555688850 in _PyObject_VectorcallTstate (kwnames=0x0, nargsf=<optimized out>, args=0x5555a551c548, callable=0x1551df3a9120, tstate=0x55555590a0c0) at python-3.10.12/Include/cpython/abstract.h:114
+#75 PyObject_Vectorcall (kwnames=0x0, nargsf=<optimized out>, args=0x5555a551c548, callable=0x1551df3a9120) at python-3.10.12/Include/cpython/abstract.h:123
+#76 call_function (kwnames=0x0, oparg=<optimized out>, pp_stack=<synthetic pointer>, trace_info=0x7fffffff8750, tstate=<optimized out>) at python-3.10.12/Python/ceval.c:5893
+#77 _PyEval_EvalFrameDefault (tstate=<optimized out>, f=0x5555a551c320, throwflag=<optimized out>) at python-3.10.12/Python/ceval.c:4213
+#78 0x000055555569899c in _PyEval_EvalFrame (throwflag=0, f=0x5555a551c320, tstate=0x55555590a0c0) at python-3.10.12/Include/internal/pycore_ceval.h:46
+#79 _PyEval_Vector (kwnames=<optimized out>, argcount=<optimized out>, args=<optimized out>, locals=0x0, con=0x1551df3a8f80, tstate=0x55555590a0c0) at python-3.10.12/Python/ceval.c:5067
+#80 _PyFunction_Vectorcall (func=0x1551df3a8f70, stack=<optimized out>, nargsf=<optimized out>, kwnames=<optimized out>) at python-3.10.12/Objects/call.c:342
+#81 0x00005555556898fa in _PyObject_VectorcallTstate (kwnames=0x155554a17700, nargsf=<optimized out>, args=<optimized out>, callable=0x1551df3a8f70, tstate=0x55555590a0c0) at python-3.10.12/Include/cpython/abstract.h:114
+#82 PyObject_Vectorcall (kwnames=0x155554a17700, nargsf=<optimized out>, args=<optimized out>, callable=0x1551df3a8f70) at python-3.10.12/Include/cpython/abstract.h:123
+#83 call_function (kwnames=0x155554a17700, oparg=<optimized out>, pp_stack=<synthetic pointer>, trace_info=0x7fffffff8900, tstate=<optimized out>) at python-3.10.12/Python/ceval.c:5893
+#84 _PyEval_EvalFrameDefault (tstate=<optimized out>, f=0x55558ca972f0, throwflag=<optimized out>) at python-3.10.12/Python/ceval.c:4231
+#85 0x000055555569899c in _PyEval_EvalFrame (throwflag=0, f=0x55558ca972f0, tstate=0x55555590a0c0) at python-3.10.12/Include/internal/pycore_ceval.h:46
+#86 _PyEval_Vector (kwnames=<optimized out>, argcount=<optimized out>, args=<optimized out>, locals=0x0, con=0x1551de1d3650, tstate=0x55555590a0c0) at python-3.10.12/Python/ceval.c:5067
+#87 _PyFunction_Vectorcall (func=0x1551de1d3640, stack=<optimized out>, nargsf=<optimized out>, kwnames=<optimized out>) at python-3.10.12/Objects/call.c:342
+#88 0x0000555555688850 in _PyObject_VectorcallTstate (kwnames=0x0, nargsf=<optimized out>, args=0x155168ffb9f0, callable=0x1551de1d3640, tstate=0x55555590a0c0) at python-3.10.12/Include/cpython/abstract.h:114
+#89 PyObject_Vectorcall (kwnames=0x0, nargsf=<optimized out>, args=0x155168ffb9f0, callable=0x1551de1d3640) at python-3.10.12/Include/cpython/abstract.h:123
+#90 call_function (kwnames=0x0, oparg=<optimized out>, pp_stack=<synthetic pointer>, trace_info=0x7fffffff8ab0, tstate=<optimized out>) at python-3.10.12/Python/ceval.c:5893
+#91 _PyEval_EvalFrameDefault (tstate=<optimized out>, f=0x155168ffb840, throwflag=<optimized out>) at python-3.10.12/Python/ceval.c:4213
+#92 0x000055555569899c in _PyEval_EvalFrame (throwflag=0, f=0x155168ffb840, tstate=0x55555590a0c0) at python-3.10.12/Include/internal/pycore_ceval.h:46
+#93 _PyEval_Vector (kwnames=<optimized out>, argcount=<optimized out>, args=<optimized out>, locals=0x0, con=0x1551de1d3800, tstate=0x55555590a0c0) at python-3.10.12/Python/ceval.c:5067
+#94 _PyFunction_Vectorcall (func=0x1551de1d37f0, stack=<optimized out>, nargsf=<optimized out>, kwnames=<optimized out>) at python-3.10.12/Objects/call.c:342
+#95 0x0000555555688850 in _PyObject_VectorcallTstate (kwnames=0x0, nargsf=<optimized out>, args=0x153c96c27df0, callable=0x1551de1d37f0, tstate=0x55555590a0c0) at python-3.10.12/Include/cpython/abstract.h:114
+#96 PyObject_Vectorcall (kwnames=0x0, nargsf=<optimized out>, args=0x153c96c27df0, callable=0x1551de1d37f0) at python-3.10.12/Include/cpython/abstract.h:123
+#97 call_function (kwnames=0x0, oparg=<optimized out>, pp_stack=<synthetic pointer>, trace_info=0x7fffffff8c60, tstate=<optimized out>) at python-3.10.12/Python/ceval.c:5893
+#98 _PyEval_EvalFrameDefault (tstate=<optimized out>, f=0x153c96c27c50, throwflag=<optimized out>) at python-3.10.12/Python/ceval.c:4213
+#99 0x000055555569899c in _PyEval_EvalFrame (throwflag=0, f=0x153c96c27c50, tstate=0x55555590a0c0) at python-3.10.12/Include/internal/pycore_ceval.h:46
+#100 _PyEval_Vector (kwnames=<optimized out>, argcount=<optimized out>, args=<optimized out>, locals=0x0, con=0x1551de1d39b0, tstate=0x55555590a0c0) at python-3.10.12/Python/ceval.c:5067
+#101 _PyFunction_Vectorcall (func=0x1551de1d39a0, stack=<optimized out>, nargsf=<optimized out>, kwnames=<optimized out>) at python-3.10.12/Objects/call.c:342
+#102 0x0000555555688850 in _PyObject_VectorcallTstate (kwnames=0x0, nargsf=<optimized out>, args=0x555563a943e0, callable=0x1551de1d39a0, tstate=0x55555590a0c0) at python-3.10.12/Include/cpython/abstract.h:114
+#103 PyObject_Vectorcall (kwnames=0x0, nargsf=<optimized out>, args=0x555563a943e0, callable=0x1551de1d39a0) at python-3.10.12/Include/cpython/abstract.h:123
+#104 call_function (kwnames=0x0, oparg=<optimized out>, pp_stack=<synthetic pointer>, trace_info=0x7fffffff8e10, tstate=<optimized out>) at python-3.10.12/Python/ceval.c:5893
+#105 _PyEval_EvalFrameDefault (tstate=<optimized out>, f=0x555563a94210, throwflag=<optimized out>) at python-3.10.12/Python/ceval.c:4213
+#106 0x000055555569899c in _PyEval_EvalFrame (throwflag=0, f=0x555563a94210, tstate=0x55555590a0c0) at python-3.10.12/Include/internal/pycore_ceval.h:46
+#107 _PyEval_Vector (kwnames=<optimized out>, argcount=<optimized out>, args=<optimized out>, locals=0x0, con=0x1551de1d3ad0, tstate=0x55555590a0c0) at python-3.10.12/Python/ceval.c:5067
+#108 _PyFunction_Vectorcall (func=0x1551de1d3ac0, stack=<optimized out>, nargsf=<optimized out>, kwnames=<optimized out>) at python-3.10.12/Objects/call.c:342
+#109 0x00005555556898fa in _PyObject_VectorcallTstate (kwnames=0x155554a2c7c0, nargsf=<optimized out>, args=<optimized out>, callable=0x1551de1d3ac0, tstate=0x55555590a0c0) at python-3.10.12/Include/cpython/abstract.h:114
+#110 PyObject_Vectorcall (kwnames=0x155554a2c7c0, nargsf=<optimized out>, args=<optimized out>, callable=0x1551de1d3ac0) at python-3.10.12/Include/cpython/abstract.h:123
+#111 call_function (kwnames=0x155554a2c7c0, oparg=<optimized out>, pp_stack=<synthetic pointer>, trace_info=0x7fffffff8fc0, tstate=<optimized out>) at python-3.10.12/Python/ceval.c:5893
+#112 _PyEval_EvalFrameDefault (tstate=<optimized out>, f=0x5555624a1f80, throwflag=<optimized out>) at python-3.10.12/Python/ceval.c:4231
+#113 0x000055555569899c in _PyEval_EvalFrame (throwflag=0, f=0x5555624a1f80, tstate=0x55555590a0c0) at python-3.10.12/Include/internal/pycore_ceval.h:46
+#114 _PyEval_Vector (kwnames=<optimized out>, argcount=<optimized out>, args=<optimized out>, locals=0x0, con=0x1551de1d3b60, tstate=0x55555590a0c0) at python-3.10.12/Python/ceval.c:5067
+#115 _PyFunction_Vectorcall (func=0x1551de1d3b50, stack=<optimized out>, nargsf=<optimized out>, kwnames=<optimized out>) at python-3.10.12/Objects/call.c:342
+#116 0x0000555555688850 in _PyObject_VectorcallTstate (kwnames=0x0, nargsf=<optimized out>, args=0x155554b95ba8, callable=0x1551de1d3b50, tstate=0x55555590a0c0) at python-3.10.12/Include/cpython/abstract.h:114
+#117 PyObject_Vectorcall (kwnames=0x0, nargsf=<optimized out>, args=0x155554b95ba8, callable=0x1551de1d3b50) at python-3.10.12/Include/cpython/abstract.h:123
+#118 call_function (kwnames=0x0, oparg=<optimized out>, pp_stack=<synthetic pointer>, trace_info=0x7fffffff9170, tstate=<optimized out>) at python-3.10.12/Python/ceval.c:5893
+#119 _PyEval_EvalFrameDefault (tstate=<optimized out>, f=0x155554b95a40, throwflag=<optimized out>) at python-3.10.12/Python/ceval.c:4213
+#120 0x000055555572bf90 in _PyEval_EvalFrame (throwflag=0, f=0x155554b95a40, tstate=0x55555590a0c0) at python-3.10.12/Include/internal/pycore_ceval.h:46
+#121 _PyEval_Vector (tstate=0x55555590a0c0, con=0x7fffffff9270, locals=<optimized out>, args=<optimized out>, argcount=<optimized out>, kwnames=<optimized out>) at python-3.10.12/Python/ceval.c:5067
+#122 0x000055555572bed7 in PyEval_EvalCode (co=co@entry=0x155554a31dc0, globals=globals@entry=0x155554aabf80, locals=locals@entry=0x155554aabf80) at python-3.10.12/Python/ceval.c:1134
+#123 0x000055555575c42a in run_eval_code_obj (tstate=0x55555590a0c0, co=0x155554a31dc0, globals=0x155554aabf80, locals=0x155554aabf80) at python-3.10.12/Python/pythonrun.c:1291
+#124 0x0000555555757833 in run_mod (mod=<optimized out>, filename=<optimized out>, globals=0x155554aabf80, locals=0x155554aabf80, flags=<optimized out>, arena=<optimized out>) at python-3.10.12/Python/pythonrun.c:1312
+#125 0x00005555555ee6cd in pyrun_file (fp=0x5555559348f0, filename=0x155554ab0490, start=<optimized out>, globals=0x155554aabf80, locals=0x155554aabf80, closeit=1, flags=0x7fffffff9458) at python-3.10.12/Python/pythonrun.c:1208
+#126 0x0000555555751d1e in _PyRun_SimpleFileObject (fp=0x5555559348f0, filename=0x155554ab0490, closeit=1, flags=0x7fffffff9458) at python-3.10.12/Python/pythonrun.c:456
+#127 0x00005555557518b4 in _PyRun_AnyFileObject (fp=0x5555559348f0, filename=0x155554ab0490, closeit=1, flags=0x7fffffff9458) at python-3.10.12/Python/pythonrun.c:90
+#128 0x000055555574eaab in pymain_run_file_obj (skip_source_first_line=0, filename=0x155554ab0490, program_name=0x155554abb9b0) at python-3.10.12/Modules/main.c:357
+#129 pymain_run_file (config=0x5555558ee130) at python-3.10.12/Modules/main.c:376
+#130 pymain_run_python (exitcode=0x7fffffff9454) at python-3.10.12/Modules/main.c:591
+#131 Py_RunMain () at python-3.10.12/Modules/main.c:670
+#132 0x000055555571f527 in Py_BytesMain (argc=<optimized out>, argv=<optimized out>) at python-3.10.12/Modules/main.c:1090
+#133 0x0000155555209d90 in __libc_start_call_main (main=main@entry=0x55555571f4e0 <main>, argc=argc@entry=10, argv=argv@entry=0x7fffffff9688) at ../sysdeps/nptl/libc_start_call_main.h:58
+#134 0x0000155555209e40 in __libc_start_main_impl (main=0x55555571f4e0 <main>, argc=10, argv=0x7fffffff9688, init=<optimized out>, fini=<optimized out>, rtld_fini=<optimized out>, stack_end=0x7fffffff9678) at ../csu/libc-start.c:392
+#135 0x000055555571f421 in _start ()

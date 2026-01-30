@@ -1,49 +1,88 @@
-# tf.random.uniform((B, 100, 1), dtype=tf.float32) ← Input shape inferred from original code (batch size unknown, sequence length 100, 1 feature/channel)
-
-import tensorflow as tf
 from tensorflow.keras import layers
+from tensorflow.keras import models
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Replicating the original LSTM model architecture from the issue:
-        # Three LSTM layers with Dropout in between and a final Dense softmax layer
-        self.lstm1 = layers.LSTM(256, return_sequences=True, input_shape=(100, 1))
-        self.dropout1 = layers.Dropout(0.2)
-        self.lstm2 = layers.LSTM(256, return_sequences=True)
-        self.dropout2 = layers.Dropout(0.2)
-        self.lstm3 = layers.LSTM(128)
-        self.dropout3 = layers.Dropout(0.2)
-        # Output dimension inferred from the number of characters in vocab (y.shape[1])
-        # We will take vocab_len as 65 (rough heuristic typical for English char vocab with basic chars)
-        # In practice vocab_len should be detected or set outside the model, but we embed as a param
-        self.vocab_len = 65
-        self.dense = layers.Dense(self.vocab_len, activation='softmax')
+py
+import sys
+import numpy
+from nltk.tokenize import RegexpTokenizer
+from nltk.corpus import stopwords
+from keras.models import Sequential
+from keras.layers import Dense, Dropout, LSTM
+from keras.utils import np_utils
+from keras.callbacks import ModelCheckpoint
 
-    def call(self, x, training=False):
-        x = self.lstm1(x)
-        x = self.dropout1(x, training=training)
-        x = self.lstm2(x)
-        x = self.dropout2(x, training=training)
-        x = self.lstm3(x)
-        x = self.dropout3(x, training=training)
-        x = self.dense(x)
-        return x
+print(sys.version_info)
 
-def my_model_function():
-    # Return an instance of MyModel
-    # No pretrained weights are loaded here since original code trains from scratch
-    return MyModel()
 
-def GetInput():
-    # Return an input tensor shaped (batch_size, seq_length, 1)
-    # According to original code: seq_length=100, features=1
-    # Batch size used during training was 256, but we can generate any batch size
-    batch_size = 256
-    seq_length = 100
-    features = 1
-    # The original preprocessing normalizes by vocabulary length (x = x / float(vocab_len))
-    # So input should be floats in [0,1)
-    input_tensor = tf.random.uniform((batch_size, seq_length, features), minval=0., maxval=1., dtype=tf.float32)
-    return input_tensor
+def tokenize_words(text_input):
+    # Lowercase everything to standardize it
+    text_input = text_input.lower()
 
+    # Instantiate the tokenizer
+    tokenizer = RegexpTokenizer(r"\w+")
+    tokens = tokenizer.tokenize(text_input)
+
+    # If the create token isn't in the stop words, make it part of "filtered"
+    filtered = filter(lambda token: token not in stopwords.words("english"), tokens)
+    return " ".join(filtered)
+
+
+input_file = open("yejibro_data.txt").read()
+# input_file = open("84-0.txt", "r", encoding="utf-8").read()
+
+# Preprocces the input data, make tokens
+processed_inputs = tokenize_words(input_file)
+
+chars = sorted(set(processed_inputs))
+char_to_num = dict((c, i) for i, c in enumerate(chars))
+
+input_len = len(processed_inputs)
+vocab_len = len(chars)
+print(f"Total number of characters: {input_len}")
+print(f"Total vocab: {vocab_len}")
+
+seq_length = 100
+x_data = []
+y_data = []
+
+# Loop through inputs, start at the beginning and go until we hit the final character we can create
+# a sequence out of
+for i in range(0, input_len - seq_length, 1):
+    # Define input and output sequences
+    # Input is the current character plus desired sequence length
+    in_seq = processed_inputs[i:i + seq_length]
+
+    # Out sequence is the initial character plus total sequence length
+    out_seq = processed_inputs[i + seq_length]
+
+    # We now convert list of characters to integers based on previous mappings and add the values to
+    # our lists
+    x_data.append([char_to_num[char] for char in in_seq])
+    y_data.append(char_to_num[out_seq])
+
+n_patterns = len(x_data)
+print(f"Total patterns: {n_patterns}")
+
+x = numpy.reshape(x_data, (n_patterns, seq_length, 1))
+x = x/float(vocab_len)
+
+y = np_utils.to_categorical(y_data)
+
+model = Sequential()
+model.add(LSTM(256, input_shape=(x.shape[1], x.shape[2]), return_sequences=True))
+model.add(Dropout(0.2))
+model.add(LSTM(256, return_sequences=True))
+model.add(Dropout(0.2))
+model.add(LSTM(128))
+model.add(Dropout(0.2))
+model.add(Dense(y.shape[1], activation="softmax"))
+
+model.compile(loss="categorical_crossentropy", optimizer="adam")
+
+# print(model.summary())
+
+filepath = "model_weights_saved.hdf5"
+checkpoint = ModelCheckpoint(filepath, monitor="loss", verbose=1, save_best_only=True, mode="min")
+desired_callbacks = [checkpoint]
+
+model.fit(x, y, epochs=8, batch_size=256, callbacks=desired_callbacks)

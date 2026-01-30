@@ -1,23 +1,23 @@
-# torch.rand(1, dtype=torch.float32)  # Inferred minimal input shape for forward
-import torch
+import torch.nn as nn
+
 from torch import nn
 
-class MyModel(nn.Module):
+class MyModule(nn.Module):
     @property
     def something(self):
-        # This property intentionally triggers an AttributeError for demonstration
-        hey = self.unknown_function()  # undefined function to cause error
+        hey = self.unknown_function()
         return hey
 
-    def forward(self, x):
-        # Minimal forward pass to satisfy torch.compile requirements
-        return x
 
-def my_model_function():
-    # Returns the model instance demonstrating the fixed error behavior
-    return MyModel()
+model = MyModule()
+print(model.something)
 
-def GetInput():
-    # Returns a tensor matching the expected input shape
-    return torch.rand(1, dtype=torch.float32)
+class ModuleAttributeError(AttributeError):
+    """ When `__getattr__` raises AttributeError inside a property,
+    AttributeError is raised with the property name instead of the
+    attribute that initially raised AttributeError, making the error
+    message uninformative. Using `ModuleAttributeError` instead
+    fixes this issue."""
 
+
+ModuleAttributeError.__module__ = 'torch'

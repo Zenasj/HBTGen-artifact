@@ -1,6 +1,4 @@
-# torch.rand(2), torch.rand(2)  # Input is a named tuple of two tensors of shape (2,)
 import torch
-from collections import namedtuple
 
 def isinstance_namedtuple(obj) -> bool:
     return (
@@ -9,19 +7,27 @@ def isinstance_namedtuple(obj) -> bool:
             hasattr(obj, '_fields')
     )
 
-class MyModel(torch.nn.Module):
-    def forward(self, inputs):
-        if isinstance_namedtuple(inputs):
-            return type(inputs)(*(torch.mul(x, 2) for x in inputs))
-        else:
-            return type(inputs)([torch.mul(x, 2) for x in inputs])
 
-def my_model_function():
-    return MyModel()
+@torch.compile(backend='eager', full_graph=True)
+def f(tuple_of_tensors):
+    assert isinstance(tuple_of_tensors, tuple)
+    if isinstance_namedtuple(tuple_of_tensors):
+        return type(tuple_of_tensors)(*(torch.mul(x, 2) for x in tuple_of_tensors))
+    else:
+        return type(tuple_of_tensors)([torch.mul(x, 2) for x in tuple_of_tensors])
 
-def GetInput():
-    x = torch.rand(2)
-    y = torch.rand(2)
-    MyTuple = namedtuple('MyNamedTuple', ['foo', 'bar'])
-    return MyTuple(foo=x, bar=y)
 
+from collections import namedtuple
+MyTuple = namedtuple('MyNamedTuple', ['foo', 'bar'])
+
+x = torch.ones(2)
+y = torch.ones(2)
+
+normal_tuple = (x, y)
+my_tuple = MyTuple(foo=x, bar=y)
+
+normal_out = f(normal_tuple)
+named_out = f(my_tuple)
+
+print(normal_out[0])
+print(named_out.foo)

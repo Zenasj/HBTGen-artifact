@@ -1,62 +1,109 @@
-# tf.random.uniform((B, 1), dtype=tf.int32) ← inferred input shape: batch size B unknown and input is (1,) integer (index) per input
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
+import tensorflow.keras.backend as K
 import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Parameters inferred from the shared code snippet:
-        self.n_inputs = 5       # number of input indices
-        self.n_items = 1000     # vocabulary size for embedding layer
-        self.dim_embedding = 10 # embedding output dimension
+# changing this to 4 make train success
+n_inputs = 5
+dim_embedding = 10
 
-        # Shared embedding layer across multiple inputs
-        self.shared_embed = tf.keras.layers.Embedding(self.n_items, self.dim_embedding)
+inputs = []
+for i in range(n_inputs):
+  inputs.append(tf.keras.Input(shape=(1,), dtype='int32'))
 
-        # Dense output layer after concatenation
-        self.dense = tf.keras.layers.Dense(1)
+embeds = []
+shared_embed = tf.keras.layers.Embedding(n_input, dim_embedding)
+for i in range(n_inputs):
+  embed = shared_embed(inputs[i])
+  flatten = tf.keras.layers.Flatten()(embed)
+  embeds.append(flatten)
 
-        # Flatten layer, reused for each embedded output
-        self.flatten = tf.keras.layers.Flatten()
+concat = tf.keras.layers.Concatenate(axis=1)(embeds)
+output = tf.keras.layers.Dense(1)(concat)
+model = tf.keras.Model(inputs=[inputs], outputs=[output])
+model.summary()
 
-        # Concatenate layer
-        self.concat = tf.keras.layers.Concatenate(axis=1)
+model.compile(optimizer='adam', loss='mse')
 
-    def call(self, inputs, training=False):
-        # inputs is expected to be a list of n_inputs tensors, each shape (batch_size, 1)
+# run
+dummy_input = []
+for i in range(n_shared_layers):
+  dummy_input.append(np.random.randint(0, n_input, size=(1000, )))
 
-        embeds = []
-        for i in range(self.n_inputs):
-            x = inputs[i]
-            x_emb = self.shared_embed(x)        # Shape: (batch_size, 1, dim_embedding)
-            x_flat = self.flatten(x_emb)        # Shape: (batch_size, dim_embedding)
-            embeds.append(x_flat)
+dummy = np.arange(1000).reshape(1000, 1, 1)
 
-        # Concatenate all embeddings along feature axis
-        concat_embeds = self.concat(embeds)     # Shape: (batch_size, n_inputs * dim_embedding)
+model.fit(x=dummy_input, y=dummy, batch_size=32, epochs=1, verbose=1)
 
-        # Dense layer produces output scalar per batch instance
-        output = self.dense(concat_embeds)      # Shape: (batch_size, 1)
+import tensorflow as tf
+import tensorflow.keras.backend as K
+import numpy as np
 
-        return output
+# changing this to 4 make train success
+n_inputs = 5
+dim_embedding = 10
 
-def my_model_function():
-    # Instantiate and return the model
-    return MyModel()
+inputs = []
+for i in range(n_inputs):
+  inputs.append(tf.keras.Input(shape=(1,), dtype='int32'))
 
-def GetInput():
-    # Create a list of n_inputs tensors with shape (batch_size, 1) and dtype int32
-    # We'll use batch_size = 32 as a reasonable default
-    batch_size = 32
-    n_inputs = 5
-    n_items = 1000
+embeds = []
+shared_embed = tf.keras.layers.Embedding(n_input, dim_embedding)
+for i in range(n_inputs):
+  embed = shared_embed(inputs[i])
+  flatten = tf.keras.layers.Flatten()(embed)
+  embeds.append(flatten)
 
-    inputs = []
-    for _ in range(n_inputs):
-        # Random integers in [0, n_items) with shape (batch_size, 1)
-        inp = tf.random.uniform(shape=(batch_size, 1), minval=0, maxval=n_items, dtype=tf.int32)
-        inputs.append(inp)
+concat = tf.keras.layers.Concatenate(axis=1)(embeds)
+output = tf.keras.layers.Dense(1)(concat)
+model = tf.keras.Model(inputs=[inputs], outputs=[output])
+model.summary()
 
-    return inputs
+model.compile(optimizer='adam', loss='mse')
 
+# run
+dummy_input = []
+for i in range(n_shared_layers):
+  dummy_input.append(np.random.randint(0, n_input, size=(1000, )))
+
+dummy = np.arange(1000).reshape(1000, 1, 1)
+
+model.fit(x=dummy_input, y=dummy, batch_size=32, epochs=1, verbose=1)
+
+import tensorflow as tf
+import tensorflow.keras.backend as K
+import numpy as np
+
+# changing this to 4 make train success
+n_inputs = 5
+n_items = 1000
+dim_embedding = 10
+
+inputs = []
+for i in range(n_inputs):
+  inputs.append(tf.keras.Input(shape=(1,), dtype='int32'))
+
+embeds = []
+shared_embed = tf.keras.layers.Embedding(n_items, dim_embedding)
+for i in range(n_inputs):
+  embed = shared_embed(inputs[i])
+  flatten = tf.keras.layers.Flatten()(embed)
+  embeds.append(flatten)
+
+concat = tf.keras.layers.Concatenate(axis=1)(embeds)
+output = tf.keras.layers.Dense(1)(concat)
+model = tf.keras.Model(inputs=[inputs], outputs=[output])
+model.summary()
+
+model.compile(optimizer='adam', loss='mse')
+
+# run
+dummy_inputs = []
+for i in range(n_inputs):
+  dummy_inputs.append(np.random.randint(0, n_inputs, size=(n_items, )))
+
+dummy = np.arange(n_items).reshape(n_items, 1, 1)
+
+model.fit(x=dummy_inputs, y=dummy, batch_size=32, epochs=1, verbose=1)

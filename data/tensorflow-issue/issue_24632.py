@@ -1,26 +1,26 @@
-# tf.random.uniform((1000, 10), dtype=tf.float32) ← input shape inferred from the example code (X_train shape)
+import random
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
+import shutil
+import numpy as np
 import tensorflow as tf
+from tensorflow import keras
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # A simple model: single Dense layer with 1 output unit as in the original minimal example
-        self.dense = tf.keras.layers.Dense(1)
+X_train = np.random.rand(1000, 10)
+y_train = np.random.rand(1000)
+model = keras.models.Sequential([keras.layers.Dense(1)])
+model.compile(loss="mse", optimizer="sgd")
+tensorboard_cb = keras.callbacks.TensorBoard("logs/run1")
+model.fit(X_train, y_train, epochs=1000, callbacks=[tensorboard_cb])
+# NOTE: you must interrupt training (Ctrl-C) before it finishes
 
-    def call(self, inputs, training=False):
-        # Forward pass: simple dense layer
-        return self.dense(inputs)
+# For issue #1, try this:
+model.fit(X_train, y_train, epochs=1000, callbacks=[tensorboard_cb])
 
-def my_model_function():
-    # Instantiate and compile the model as in the original TF Keras example
-    model = MyModel()
-    # Compile with mean squared error loss and SGD optimizer to match original snippet
-    model.compile(loss="mse", optimizer="sgd")
-    return model
-
-def GetInput():
-    # Generate a random tensor input matching the expected shape (batch 1000, features 10)
-    # Match dtype to default tf.keras layers usage (float32)
-    return tf.random.uniform((1000, 10), dtype=tf.float32)
-
+# For issue #2, try this (you may need to interrupt and retry a few times):
+shutil.rmtree("logs")
+model = keras.models.Sequential([keras.layers.Dense(1)])
+model.compile(loss="mse", optimizer="sgd")
+tensorboard_cb = keras.callbacks.TensorBoard("logs/run1")
+model.fit(X_train, y_train, epochs=1000, callbacks=[tensorboard_cb])

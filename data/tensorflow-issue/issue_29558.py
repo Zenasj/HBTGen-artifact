@@ -1,39 +1,50 @@
-# tf.random.uniform((6, 1), dtype=tf.float32) ← input shape inferred from the original numpy input X (6 samples, 1 feature each)
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
+from tensorflow import keras
+import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # This model replicates the simple Sequential flow from the issue:
-        # 1) a Lambda layer that logs inputs (using tf.print)
-        # 2) a Dense layer with 1 unit as output
-        self.log_inputs = tf.keras.layers.Lambda(self._log_inputs)
-        self.dense = tf.keras.layers.Dense(1)
+X = np.arange(6).astype(np.float32).reshape(-1, 1)
+y = X**2
+dataset = tf.data.Dataset.from_tensor_slices((X,y))
+dataset = dataset.shuffle(100, reshuffle_each_iteration=True)
+dataset = dataset.repeat(2)
+dataset = dataset.batch(2)
 
-    def _log_inputs(self, inputs):
-        # This replicates the logging function shown in the issue,
-        # printing inputs before passing them forward transparently.
-        tf.print(inputs)
-        return inputs
+@tf.function
+def log_inputs(inputs):
+    tf.print(inputs)
+    return inputs
 
-    def call(self, inputs, training=False):
-        x = self.log_inputs(inputs)
-        x = self.dense(x)
-        return x
+model = keras.models.Sequential([
+    keras.layers.Lambda(log_inputs),
+    keras.layers.Dense(1)
+])
+model.compile(loss="mse", optimizer="sgd")
+model.fit(dataset, epochs=2, verbose=0)
 
-def my_model_function():
-    # Returns an instance of the above model, untrained weights initialized by default
-    return MyModel()
-
-def GetInput():
-    # Inputs similar to original numpy array: 6 samples, 1 feature each
-    # Values range 0 to 5, float32 dtype.
-    # For generality, we produce a batch dimension (which is standard for Model).
-    # The input tensor shape is (batch_size, 1).
-    # We pick batch_size as 2 to match the batch size used in the original code.
-    X = tf.constant([[0.0],[1.0],[2.0],[3.0],[4.0],[5.0]], dtype=tf.float32)
-    # For demonstration, return first 2 samples as batch size 2 tensor.
-    # This supports feeding directly into the model.
-    return X[:2]
-
+[[5]   # first epoch, first iteration, first batch
+ [2]]
+[[3]      # second batch
+ [1]]
+[[0]      # third batch
+ [4]]
+[[0]   # first epoch, second iteration, first batch
+ [3]]
+[[1]      # second batch
+ [5]]
+[[4]      # third batch
+ [2]]
+[[5]   # second epoch, first iteration, first batch
+ [2]]
+[[3]
+ [1]]
+[[0]
+ [4]]
+[[0]   # second epoch, second iteration, first batch
+ [3]]
+[[1]
+ [5]]
+[[4]
+ [2]]

@@ -1,20 +1,10 @@
-# torch.rand(64, dtype=torch.float16)
 import torch
-from torch import nn
+a = torch.randn(64, dtype=torch.float16)
 
-class MyModel(nn.Module):
-    def __init__(self, dim=-1):
-        super().__init__()
-        self.dim = dim
+@torch.compile
+def f(a, dim=-1):
+    na = torch.linalg.vector_norm(a, dim=dim)
+    eps = 1e-8
+    return na.clamp_min(eps)
 
-    def forward(self, a):
-        na = torch.linalg.vector_norm(a, dim=self.dim)
-        eps = 1e-8
-        return na.clamp_min(eps)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.randn(64, dtype=torch.float16)
-
+f(a)

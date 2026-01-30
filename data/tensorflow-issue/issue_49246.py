@@ -1,30 +1,23 @@
-# tf.random.uniform((B, 1), dtype=tf.float32)  ← inferred input shape is (batch_size, 1) matching Input(shape=(1,))
+from tensorflow.keras import layers
 
-import tensorflow as tf
+import tensorflow.keras as keras
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Simple model matching the example: one input layer
-        # No layers beyond input, as the example uses keras.Sequential with only Input layer
-        # To have a proper model, add a dummy identity (or linear activation)
-        self.dense = tf.keras.layers.Dense(1, activation='linear')
+model = keras.Sequential()
+model.add(keras.layers.Input(shape=(1,)))
 
-    def call(self, inputs, training=False):
-        # Forward pass - simple identity mapping with a dense layer
-        return self.dense(inputs)
+model.compile()
+model.summary()
 
+model.fit([1, 2, 3, 4, 5], callbacks=[keras.callbacks.TensorBoard(update_freq='batch')])
+model.compile()
+model.fit([1, 2, 3, 4, 5])
 
-def my_model_function():
-    model = MyModel()
-    # Compile the model to be ready for training, no loss or optimizer specified in original code
-    # Use dummy optimizer and loss for compile to mirror original behavior (model.compile() without args is invalid)
-    model.compile(optimizer='adam', loss='mse')
-    return model
+model.fit([1, 2, 3, 4, 5], callbacks=[keras.callbacks.TensorBoard(update_freq=1)])
+model.fit([1, 2, 3, 4, 5], callbacks=[keras.callbacks.TensorBoard(update_freq=2)])
 
+model.fit([1, 2, 3, 4, 5], callbacks=[keras.callbacks.TensorBoard(update_freq=2)])
+model.fit([1, 2, 3, 4, 5], callbacks=[keras.callbacks.TensorBoard(update_freq=1)])
 
-def GetInput():
-    # Return random input tensor shaped (batch_size, 1)
-    # Batch size can be a small number, e.g. 5 to match example inputs
-    return tf.random.uniform((5, 1), dtype=tf.float32)
-
+model.fit([1, 2, 3, 4, 5], callbacks=[keras.callbacks.TensorBoard(update_freq=1)])
+model.train_function=None
+model.fit([1, 2, 3, 4, 5], callbacks=[keras.callbacks.TensorBoard(update_freq=1)])

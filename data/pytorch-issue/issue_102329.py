@@ -1,28 +1,31 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)
+#manual repro, as repro tools don't work
 import torch
-from torch import nn
+import torch._dynamo
+torch._dynamo.reset()
+torch._dynamo.config.verbose=True
+print(torch.__version__)
 
 def fw_bw(*args):
-    a, b, c = args
-    pass  # Original print statement removed to avoid side effects in compiled code
+  a,b,c = args
+  print(len(args))
+  pass
 
-class Trainer:
-    def __init__(self, fw_b):
-        self._fw_bw = fw_b
+class Trainer():
+  def __init__(self, fw_b):
+    self._fw_bw = fw_b
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.trainer = Trainer(fw_bw)
-    
-    def forward(self, x):
-        # Reproduces the Dynamo argument-passing issue
-        self.trainer._fw_bw(1, 2, 3)
-        return x  # Pass-through tensor to satisfy module requirements
+trainer = Trainer(fw_bw)
 
-def my_model_function():
-    return MyModel()
+def outer(trainer):
+  trainer._fw_bw(1,2,3)
 
-def GetInput():
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)  # Standard input shape placeholder
+print("Normal")
+outer(trainer)
+print("Compiled")
+torch.compile(outer, backend="eager")(trainer)
 
+fw_b
+
+trainer._fw_bw
+
+self

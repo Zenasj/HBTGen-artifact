@@ -1,17 +1,18 @@
-# torch.rand(2, 0, dtype=torch.float32)  # Example input with empty vectors
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Split the input into two vectors (rows) and compute their dot product
-        t1, t2 = x[0], x[1]
-        return torch.dot(t1, t2)
+t1 = torch.tensor([])
+t2 = torch.tensor([])
 
-def my_model_function():
-    return MyModel()
+torch.dot(input=t1, tensor=t2)
+# tensor(0.)
 
-def GetInput():
-    # Returns a tensor of shape (2, 0) to replicate the empty vector case from the issue
-    return torch.rand(2, 0, dtype=torch.float32)
+# Additional
+t1 = torch.tensor([0.])
+t2 = torch.tensor([0.])
 
+torch.dot(input=t1, tensor=t2)
+# tensor(0.)
+
+import torch
+
+torch.__version__ # 2.3.0+cu121

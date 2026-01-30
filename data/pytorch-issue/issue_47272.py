@@ -1,19 +1,14 @@
-# torch.rand(2, 3, 3, dtype=torch.float32)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Compute batched inverse and split-inverse comparison
-        batch_inv = torch.inverse(x)
-        split_inv = torch.stack([torch.inverse(m) for m in x])
-        # Return boolean tensor indicating if results match (within tolerance)
-        return torch.tensor(torch.allclose(batch_inv, split_inv, atol=1e-6), dtype=torch.bool)
+device = torch.device('cuda:0')
 
-def my_model_function():
-    return MyModel()
+d = torch.tensor([
+    [[-0.4397,  0.8981,  0.0000], [-0.8981, -0.4397,  0.0000], [ 0.0000,  0.0000,  1.0000]],
+    [[-0.4397,  0.8981,  0.0000], [-0.8981, -0.4397,  0.0000], [ 0.0000,  0.0000,  1.0000]]
+], device=device)
 
-def GetInput():
-    # Returns a random 2x3x3 tensor (matching the issue's problematic batch size)
-    return torch.rand(2, 3, 3, dtype=torch.float32)
-
+count = 0
+while True:
+    temp = torch.inverse(d)
+    count = count + 1
+    assert not torch.isnan(temp).any(), str(temp) + '\n' + str(count)

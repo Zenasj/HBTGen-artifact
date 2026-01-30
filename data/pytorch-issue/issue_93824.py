@@ -1,110 +1,85 @@
-# torch.rand(1, 1, 1, 1, 12, dtype=torch.float32)
+import torch.nn as nn
+
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        v6 = x.min(0).values  # Reduce along dimension 0
-        v5 = v6.squeeze(1)    # Squeeze dimension 1 (size 1)
-        v3 = v5.squeeze(0)    # Squeeze dimension 0 (size 1)
-        v5.reciprocal_()      # In-place reciprocal (critical for bug)
-        return v3
+def fn(v0):
+    # v0: (1, 1, 1, 1, 12)
+    v6 = v0.min(0).values # v6: (1, 1, 1, 12)
+    v5 = v6.squeeze(1) # v5: (1, 1, 12)
+    v3 = v5.squeeze(0) # v3: (1, 12)
+    v2 = v5.reciprocal_() # need this line to trigger the inconsistency
+    return v3
 
-def my_model_function():
-    return MyModel()
+x = torch.rand(1, 1, 1, 1, 12)
 
-def GetInput():
-    return torch.rand(1, 1, 1, 1, 12, dtype=torch.float32)
+eager = fn(x)
+compiled = torch.compile(fn)
+comp = compiled(x)
 
-# Okay, I need to generate a Python code file based on the provided GitHub issue. Let's start by understanding the problem described here. The user is reporting that when using `torch.compile` on a function that includes an in-place reciprocal operation (`reciprocal_`), the compiled version produces different results compared to the eager execution. The goal is to create a code snippet that reproduces this issue, following the structure specified.
-# First, the output structure requires a class `MyModel` inheriting from `nn.Module`, along with functions `my_model_function` and `GetInput`. The input shape is mentioned in the original code as `(1, 1, 1, 1, 12)`, so the comment at the top should reflect that.
-# Looking at the issue's code, the function `fn` is the core part. Let me parse its steps:
-# 1. `v0` is the input tensor of shape (1,1,1,1,12).
-# 2. `v6 = v0.min(0).values` reduces along dimension 0, resulting in shape (1,1,1,12).
-# 3. `v5 = v6.squeeze(1)` removes the second dimension (since dim=1 has size 1), leading to (1,1,12).
-# 4. `v3 = v5.squeeze(0)` removes the first dimension (size 1), resulting in (1,12).
-# 5. `v5.reciprocal_()` is an in-place operation on v5, which might be causing the discrepancy when compiled.
-# The problem arises because the compiled version's output differs from the eager version. To encapsulate this into `MyModel`, I need to structure the model's forward method to replicate these steps.
-# Wait, but the function `fn` returns `v3`, which is the result of squeezing, not the reciprocal. However, the reciprocal is applied to `v5`, which is a view of `v6`, which in turn is a view of `v0`. Since `reciprocal_` is in-place, modifying `v5` would affect `v6` and `v0`, but in the original code, the return is `v3`, which comes from `v5.squeeze(0)`. Wait, no: the steps are:
-# After `v5 = v6.squeeze(1)`, then `v3 = v5.squeeze(0)`, but then `v5.reciprocal_()` modifies v5. However, `v3` is a view of v5 before the reciprocal? Or after? Let me think:
-# The code steps are:
-# - v6 = v0.min(0).values → shape (1,1,1,12)
-# - v5 = v6.squeeze(1) → (1,1,12)
-# - v3 = v5.squeeze(0) → (1,12)
-# - Then, v5.reciprocal_() is called. Since v5 is a view, modifying it in-place would affect any views derived from it, including v3?
-# Wait, but the return is v3. Let me see the code again:
-# Original function:
-# def fn(v0):
-#     v6 = v0.min(0).values 
-#     v5 = v6.squeeze(1)
-#     v3 = v5.squeeze(0)
-#     v2 = v5.reciprocal_()
-#     return v3
-# Wait, the return is v3. But after the reciprocal_ is applied to v5, which is a view of v6. Since v3 is a view of v5 (since it's a squeeze of v5), then v3 would be modified by the in-place reciprocal. So the return value v3 is the reciprocal of the original v5?
-# Wait, the reciprocal_ is applied to v5, so v5 is modified in-place. Then, v3 is a view of v5 before the reciprocal? Or after?
-# Actually, since v3 is created as v5.squeeze(0), then v3 is a view of v5. So when you do v5.reciprocal_(), v3's data would also be updated. So the return value v3 is the reciprocal of the original v5.
-# Wait, but in the code, the return is v3, which is the result of squeezing v5 before the reciprocal is applied? No, because v3 is a view. Let me see:
-# Let me take an example. Suppose v5 is a tensor:
-# v5 = tensor([[1,2,3]]).shape is (1,3)
-# Then, v3 = v5.squeeze(0) → tensor([1,2,3])
-# Then, if I do v5.reciprocal_(), v5 becomes [[1/1, 1/2, 1/3]], so v3 would also become [1, 0.5, 0.333...], since it's a view.
-# Therefore, in the original function, the return value v3 is indeed the reciprocal of the original v5.squeeze(0), because the in-place operation modifies v5, and v3 is a view of it.
-# Therefore, the function's output is the reciprocal of the squeezed tensor.
-# So, the model's forward method should replicate this process. Let's structure `MyModel` as follows:
-# The forward method takes an input tensor, applies min along dimension 0, squeezes dimensions 1 and 0, then applies reciprocal in-place on the intermediate tensor, and returns the final tensor.
-# Wait, but the problem here is that the compiled version is not matching the eager version. The user wants to capture this behavior in a model so that when compiled, the error can be demonstrated.
-# Now, the structure requires that `MyModel` is a single class. Let's see:
-# The steps in the function can be translated into the model's forward:
-# class MyModel(nn.Module):
-#     def forward(self, x):
-#         v6 = x.min(0).values
-#         v5 = v6.squeeze(1)
-#         v3 = v5.squeeze(0)
-#         v5.reciprocal_()
-#         return v3
-# Wait, but in the function, the reciprocal is applied to v5, which is then returned via v3 (since v3 is a view of v5). So this should be correct.
-# The input shape is (1,1,1,1,12), so in the comment at the top, we need to have `torch.rand(B, C, H, W, dtype=...)` but the actual shape is 5-dimensional. Wait, the user's input is (1,1,1,1,12). So the comment should be:
-# # torch.rand(1,1,1,1,12, dtype=torch.float32)
-# So the first line of the code should be a comment indicating the input shape and dtype.
-# Next, the function `my_model_function()` should return an instance of MyModel. Since there's no parameters needed, just:
-# def my_model_function():
-#     return MyModel()
-# Then, the GetInput function should return a tensor with the correct shape. The original code uses `torch.rand(1,1,1,1,12)`, so:
-# def GetInput():
-#     return torch.rand(1, 1, 1, 1, 12, dtype=torch.float32)
-# Wait, but in the min operation, the first dimension (dim 0) is reduced. The original code's input is (1,1,1,1,12), so the first dimension has size 1. The min over dim 0 would produce a tensor of size (1,1,1,12), then squeeze 1 (dim=1) which is size 1 → (1,1,12), then squeeze 0 (dim=0) → (1,12). Then reciprocal in place.
-# This should be correct.
-# Now, checking the constraints:
-# - The model must be usable with torch.compile(MyModel())(GetInput()). The model's forward should take a single tensor input, which GetInput() provides.
-# - The code must not include any test code or main blocks. The functions are only for creating the model and input.
-# - The input shape is correctly captured.
-# Now, looking at the special requirements:
-# Requirement 2 mentions that if there are multiple models, they need to be fused. However, in this case, the issue is about a single function, so the model is straightforward.
-# Another point: The issue mentions that the problem is due to an in-place operation, and the fix is in a PR. But the user wants the code that demonstrates the problem, so the code should include the in-place reciprocal.
-# Therefore, the code structure would be as outlined above.
-# Wait, but in the original code, the function's return is v3, which after the reciprocal in-place, so the return is the reciprocal of the original v5.squeeze(0). So the model's forward is correct as written.
-# Now, the code:
-# The top comment should be:
-# # torch.rand(1, 1, 1, 1, 12, dtype=torch.float32)
-# Then the class:
-# class MyModel(nn.Module):
-#     def forward(self, x):
-#         v6 = x.min(0).values
-#         v5 = v6.squeeze(1)
-#         v3 = v5.squeeze(0)
-#         v5.reciprocal_()
-#         return v3
-# Wait, but in PyTorch, when you do in-place operations on views, there might be some issues. However, the code as written should replicate the original function's behavior.
-# The functions my_model_function and GetInput are straightforward.
-# Testing this code with the original example:
-# If we run:
-# model = MyModel()
-# input = GetInput()
-# eager_out = model(input)
-# compiled_model = torch.compile(model)
-# compiled_out = compiled_model(input)
-# assert torch.allclose(eager_out, compiled_out)
-# This should reproduce the error (since the compiled version's output is different).
-# Thus, the generated code should be correct.
-# I think that's all. Let me structure it properly.
-# </think>
+assert torch.allclose(
+    eager, comp,
+), '\n'.join([
+    '',
+    f'>>> eager',
+    str(eager),
+    f'>>> comp',
+    str(comp),
+])
+print(f'==== finished! ====')
+
+import torch._inductor.overrides
+
+import torch
+from torch import tensor, device
+import torch.fx as fx
+from torch._dynamo.testing import rand_strided
+from math import inf
+from torch.fx.experimental.proxy_tensor import make_fx
+
+import torch._dynamo.config
+import torch._inductor.config
+torch._dynamo.config.load_config(b'\x80\x04\x95\x15\x08\x00\x00\x00\x00\x00\x00}\x94(\x8c\x08__name__\x94\x8c\x14torch._dynamo.config\x94\x8c\x07__doc__\x94N\x8c\x0b__package__\x94\x8c\rtorch._dynamo\x94\x8c\n__loader__\x94\x8c\x1a_frozen_importlib_external\x94\x8c\x10SourceFileLoader\x94\x93\x94)\x81\x94}\x94(\x8c\x04name\x94h\x02\x8c\x04path\x94\x8cU/home/colin/miniconda3/envs/py10/lib/python3.10/site-packages/torch/_dynamo/config.py\x94ub\x8c\x08__spec__\x94\x8c\x11_frozen_importlib\x94\x8c\nModuleSpec\x94\x93\x94)\x81\x94}\x94(h\x0ch\x02\x8c\x06loader\x94h\n\x8c\x06origin\x94h\x0e\x8c\x0cloader_state\x94N\x8c\x1asubmodule_search_locations\x94N\x8c\r_set_fileattr\x94\x88\x8c\x07_cached\x94\x8cn/home/colin/miniconda3/envs/py10/lib/python3.10/site-packages/torch/_dynamo/__pycache__/config.cpython-310.pyc\x94\x8c\r_initializing\x94\x89ub\x8c\x08__file__\x94h\x0e\x8c\n__cached__\x94h\x1b\x8c\x07abspath\x94\x8c\tposixpath\x94h\x1f\x93\x94\x8c\x07dirname\x94h h"\x93\x94\x8c\tlog_level\x94K\x1e\x8c\x0boutput_code\x94\x89\x8c\rlog_file_name\x94N\x8c\x07verbose\x94\x89\x8c\x11output_graph_code\x94\x89\x8c\x12verify_correctness\x94\x89\x8c\x12minimum_call_count\x94K\x01\x8c\x15dead_code_elimination\x94\x88\x8c\x10cache_size_limit\x94K@\x8c\x14specialize_int_float\x94\x88\x8c\x0edynamic_shapes\x94\x89\x8c\x10guard_nn_modules\x94\x89\x8c\x0cnormalize_ir\x94\x89\x8c\x1btraceable_tensor_subclasses\x94\x8f\x94\x8c\x0fsuppress_errors\x94\x89\x8c\x15replay_record_enabled\x94\x89\x8c rewrite_assert_with_torch_assert\x94\x88\x8c\x12print_graph_breaks\x94\x89\x8c\x07disable\x94\x89\x8c*allowed_functions_module_string_ignorelist\x94\x8f\x94(\x8c\x13torch.distributions\x94\x8c\x0ctorch._prims\x94\x8c\rtorch._decomp\x94\x8c\x0btorch._refs\x94\x8c\rtorch.testing\x94\x90\x8c\x16capture_scalar_outputs\x94\x89\x8c\x19enforce_cond_guards_match\x94\x88\x8c\x0coptimize_ddp\x94\x88\x8c\x1araise_on_ctx_manager_usage\x94\x88\x8c\x1craise_on_unsafe_aot_autograd\x94\x89\x8c\rdynamo_import\x94\x8c\rtorch._dynamo\x94\x8c\x0finductor_import\x94\x8c\x0ftorch._inductor\x94\x8c\x18error_on_nested_fx_trace\x94\x88\x8c\tallow_rnn\x94\x89\x8c\x08base_dir\x94\x8c=/home/colin/miniconda3/envs/py10/lib/python3.10/site-packages\x94\x8c\x0edebug_dir_root\x94\x8cc/home/colin/code/nnsmith-autoinf/pt2_0201_n5_cpu_opt_0/bug-check-15-1-554836463/torch_compile_debug\x94\x8c)DO_NOT_USE_legacy_non_fake_example_inputs\x94\x89\x8c\x15_AccessLimitingConfig\x94}\x94(\x8c\n__module__\x94h\x02\x8c\x0b__setattr__\x94\x8c\x14torch._dynamo.config\x94\x8c!_AccessLimitingConfig.__setattr__\x94\x93\x94h\x03Nu\x8c\x15_allowed_config_names\x94\x8f\x94(hLhC\x8c\x05torch\x94\x8c\x12constant_functions\x94h?h%hBhFh+\x8c!skipfiles_inline_module_allowlist\x94hIh(h.h"h7\x8c\x03sys\x94h,h@h)hDh0h6h\x01h1h\x04h&h3h\'hNh\x1dh\x1f\x8c\nModuleType\x94hAh\x03h5h\x1e\x8c\x0eexternal_utils\x94h4h8hOh/hH\x8c\x0brepro_after\x94h-\x8c\x02os\x94\x8c\x07logging\x94h*\x8c\x0brepro_level\x94\x8c\x0c__builtins__\x94hJh\x0fh$h\x06\x90\x8c\x1cget_config_serialization_fns\x94\x8c\x1atorch._dynamo.config_utils\x94hc\x93\x94u.')
+torch._inductor.config.load_config(b'\x80\x04\x95&\t\x00\x00\x00\x00\x00\x00}\x94(\x8c\x08__name__\x94\x8c\x16torch._inductor.config\x94\x8c\x07__doc__\x94N\x8c\x0b__package__\x94\x8c\x0ftorch._inductor\x94\x8c\n__loader__\x94\x8c\x1a_frozen_importlib_external\x94\x8c\x10SourceFileLoader\x94\x93\x94)\x81\x94}\x94(\x8c\x04name\x94h\x02\x8c\x04path\x94\x8cW/home/colin/miniconda3/envs/py10/lib/python3.10/site-packages/torch/_inductor/config.py\x94ub\x8c\x08__spec__\x94\x8c\x11_frozen_importlib\x94\x8c\nModuleSpec\x94\x93\x94)\x81\x94}\x94(h\x0ch\x02\x8c\x06loader\x94h\n\x8c\x06origin\x94h\x0e\x8c\x0cloader_state\x94N\x8c\x1asubmodule_search_locations\x94N\x8c\r_set_fileattr\x94\x88\x8c\x07_cached\x94\x8cp/home/colin/miniconda3/envs/py10/lib/python3.10/site-packages/torch/_inductor/__pycache__/config.cpython-310.pyc\x94\x8c\r_initializing\x94\x89ub\x8c\x08__file__\x94h\x0e\x8c\n__cached__\x94h\x1b\x8c\x05debug\x94\x89\x8c\x10disable_progress\x94\x88\x8c\x10verbose_progress\x94\x89\x8c\x0bcpp_wrapper\x94\x89\x8c\x03dce\x94\x89\x8c\x14static_weight_shapes\x94\x88\x8c\x0csize_asserts\x94\x88\x8c\x10pick_loop_orders\x94\x88\x8c\x0finplace_buffers\x94\x88\x8c\x11benchmark_harness\x94\x88\x8c\x0fepilogue_fusion\x94\x89\x8c\x15epilogue_fusion_first\x94\x89\x8c\x0cmax_autotune\x94\x89\x8c\x17realize_reads_threshold\x94K\x04\x8c\x17realize_bytes_threshold\x94M\xd0\x07\x8c\x1brealize_acc_reads_threshold\x94K\x08\x8c\x0ffallback_random\x94\x89\x8c\x12implicit_fallbacks\x94\x88\x8c\rprefuse_nodes\x94\x88\x8c\x0btune_layout\x94\x89\x8c\x11aggressive_fusion\x94\x89\x8c\x0fmax_fusion_size\x94K@\x8c\x1bunroll_reductions_threshold\x94K\x08\x8c\x0ecomment_origin\x94\x89\x8c\tis_fbcode\x94\x8c\x16torch._inductor.config\x94h7\x93\x94\x8c\x0fcompile_threads\x94K\x10\x8c\x13kernel_name_max_ops\x94K\n\x8c\x0finductor_import\x94\x8c\x0ftorch._inductor\x94\x8c\rshape_padding\x94\x89\x8c\x0epermute_fusion\x94\x89\x8c\x1aprofiler_mark_wrapper_call\x94\x89\x8c\x03cpp\x94}\x94(\x8c\n__module__\x94h\x02\x8c\x07threads\x94J\xff\xff\xff\xff\x8c\x0fdynamic_threads\x94\x89\x8c\x07simdlen\x94N\x8c\x0emin_chunk_size\x94M\x00\x10\x8c\x03cxx\x94N\x8c\x03g++\x94\x86\x94\x8c\x15enable_kernel_profile\x94\x89h\x03Nu\x8c\x06triton\x94}\x94(hCh\x02\x8c\ncudagraphs\x94\x88\x8c\x10debug_sync_graph\x94\x89\x8c\x11debug_sync_kernel\x94\x89\x8c\x0bconvolution\x94\x8c\x04aten\x94\x8c\x0edense_indexing\x94\x89\x8c\tmax_tiles\x94K\x02\x8c\x12autotune_pointwise\x94\x88\x8c tiling_prevents_pointwise_fusion\x94\x88\x8c tiling_prevents_reduction_fusion\x94\x88\x8c\x14ordered_kernel_names\x94\x89\x8c\x18descriptive_kernel_names\x94\x89h\x03Nu\x8c\x05trace\x94}\x94(hCh\x02\x8c\x07enabled\x94\x89\x8c\tdebug_log\x94\x88\x8c\x08info_log\x94\x89\x8c\x08fx_graph\x94\x88\x8c\rir_pre_fusion\x94\x88\x8c\x0eir_post_fusion\x94\x88\x8c\x0boutput_code\x94\x88\x8c\rgraph_diagram\x94\x89\x8c\x0fcompile_profile\x94\x89\x8c\nupload_tar\x94Nh\x03Nu\x8c\x15InductorConfigContext\x94}\x94(hCh\x02\x8c\x0f__annotations__\x94}\x94(\x8c\rstatic_memory\x94\x8c\x08builtins\x94\x8c\x04bool\x94\x93\x94\x8c\x0ematmul_padding\x94hm\x8c\x0cmax_autotune\x94hm\x8c\x12triton_convolution\x94hk\x8c\x03str\x94\x93\x94\x8c\x17rematerialize_threshold\x94hk\x8c\x03int\x94\x93\x94\x8c\x1brematerialize_acc_threshold\x94huu\x8c\x05_save\x94h8\x8c\x1bInductorConfigContext._save\x94\x93\x94\x8c\x06_apply\x94h8\x8c\x1cInductorConfigContext._apply\x94\x93\x94\x8c\x08__init__\x94h8\x8c\x1eInductorConfigContext.__init__\x94\x93\x94\x8c\t__enter__\x94h8\x8c\x1fInductorConfigContext.__enter__\x94\x93\x94\x8c\x08__exit__\x94h8\x8c\x1eInductorConfigContext.__exit__\x94\x93\x94h\x03Nu\x8c\x1cget_config_serialization_fns\x94\x8c\x1atorch._dynamo.config_utils\x94h\x86\x93\x94u.')
+
+
+# REPLACEABLE COMMENT FOR TESTING PURPOSES
+
+
+# torch version: 2.0.0.dev20230131+cu117
+# torch cuda version: 11.7
+# torch git version: b2690c3ceae36fa6681a0c7cedcc8db7f5d9814a
+
+
+# CUDA Info: 
+# nvcc not found
+# GPU Hardware Info: 
+# NVIDIA GeForce RTX 2080 Ti : 1 
+
+
+from torch.nn import *
+class Repro(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    
+    
+    def forward(self, arg0_1):
+        min_1 = torch.ops.aten.min.dim(arg0_1, 0);  arg0_1 = None
+        getitem = min_1[0];  min_1 = None
+        squeeze = torch.ops.aten.squeeze.dim(getitem, 1);  getitem = None
+        squeeze_1 = torch.ops.aten.squeeze.dim(squeeze, 0)
+        reciprocal_ = torch.ops.aten.reciprocal_.default(squeeze);  squeeze = None
+        return (squeeze_1,)
+        
+args = [((1, 1, 1, 1, 12), (12, 12, 12, 12, 1), torch.float32, 'cpu')]
+args = [rand_strided(sh, st, dt, dev) for (sh, st, dt, dev) in args]
+mod = make_fx(Repro())(*args)
+
+from torch._inductor.compile_fx import compile_fx_inner
+from torch._dynamo.debug_utils import same_two_models
+
+compiled = compile_fx_inner(mod, args)
+class AccuracyError(Exception):
+    pass
+if not same_two_models(mod, compiled, args, only_fwd=True):
+    raise AccuracyError("Bad accuracy detected")

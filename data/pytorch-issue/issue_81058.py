@@ -1,17 +1,10 @@
-# torch.rand(B, 3, 5, dtype=torch.float32)  # Inferred from test input shape (2,3,5)
 import torch
-from torch import nn
+print(torch.__version__)
+print(torch._C._PYBIND11_BUILD_ABI)
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Minimal identity model to replicate test scenario
-        return x
-
-def my_model_function():
-    # Returns a simple identity model
-    return MyModel()
-
-def GetInput():
-    # Returns random tensor matching test input shape (2,3,5)
-    return torch.randn(2, 3, 5)
-
+import torch
+print(torch.__version__)
+print(torch._C._PYBIND11_BUILD_ABI)
+from functorch import vmap
+x = torch.randn(2, 3, 5)
+vmap(lambda x: x, out_dims=3)(x)

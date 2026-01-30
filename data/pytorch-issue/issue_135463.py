@@ -1,18 +1,19 @@
-# torch.rand(B, 3, dtype=torch.float32)
+import torch.nn as nn
+
 import torch
 from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.linear = nn.Linear(3, 5)  # Correct parameters for demonstration
+my_tensor = torch.tensor([2., 7., 4.])
+                             # ↓↓
+linear = nn.Linear(in_features=3., out_features=5)
 
-    def forward(self, x):
-        return self.linear(x)
+import torch
+from torch import nn
 
-def my_model_function():
-    return MyModel()
+my_tensor = torch.tensor([2., 7., 4.])
+                                             # ↓↓↓↓↓↓
+linear = nn.Linear(in_features=3, out_features=5.+0.j)
 
-def GetInput():
-    return torch.rand(1, 3)  # Batch size 1, 3 input features
+import torch
 
+torch.__version__ # 2.4.0+cu121

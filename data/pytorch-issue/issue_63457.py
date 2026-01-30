@@ -1,20 +1,15 @@
-# torch.rand(2, 2, dtype=torch.float32)
 import torch
-from torch import nn
+from torch.nn import Parameter
+from torch.optim import SGD
+from torch.optim.lr_scheduler import WarmUpLR, ExponentialLR
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.param = nn.Parameter(torch.randn(2, 2))  # Matches the original model's parameter
-        
-    def forward(self, x):
-        # Example operation using the parameter (for compatibility with torch.compile)
-        return self.param * x  # Element-wise multiplication as a dummy forward pass
+model = [Parameter(torch.randn(2, 2, requires_grad=True))]
+optimizer = SGD(model, 1.0)
+scheduler1 = WarmUpLR(optimizer, warmup_factor=0.1, warmup_iters=5, warmup_method="constant")
+scheduler2 = ExponentialLR(optimizer, gamma=0.9)
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Returns a random input tensor of shape (2, 2) as required by MyModel's forward
-    return torch.rand(2, 2, dtype=torch.float32)
-
+for epoch in range(10):
+     print(epoch, scheduler2.get_last_lr()[0])
+     optimizer.step()
+     scheduler1.step()
+     scheduler2.step()

@@ -1,19 +1,11 @@
-# torch.rand(32, 4, dtype=torch.float32)
 import torch
-from torch import nn
+from torch._dynamo.testing import rand_strided
+assert_size_stride = torch._C._dynamo.guards.assert_size_stride
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return torch.nonzero(x)
+devices = ["cpu", "xpu"]
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Create a tensor with size (32,4) and strides (4,1)
-    size = (32, 4)
-    strides = (4, 1)
-    x = torch.empty_strided(size, strides, dtype=torch.float32)
-    x.copy_(torch.rand(size))  # Initialize with random values
-    return x
-
+for device in devices:
+    print("testing device: ", device)
+    arg0_1 = rand_strided((32, 4), (4, 1), device=device, dtype=torch.float32)
+    buf0 = torch.ops.aten.nonzero.default(arg0_1)
+    assert_size_stride(buf0, (128, 2), (1, 128))

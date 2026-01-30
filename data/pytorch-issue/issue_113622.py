@@ -1,32 +1,24 @@
-# torch.rand(1024 ** 3, dtype=torch.float32, pin_memory=True)
+# both backends have the problem
+# import os; os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'backend:cudaMallocAsync'
+
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.copy_stream = torch.cuda.Stream()  # CUDA stream for data transfer
+copy_stream = torch.cuda.Stream()
+A = torch.ones(1024 ** 3, pin_memory=True)
+with torch.cuda.stream(copy_stream):
+    B = torch.zeros(1024 ** 3, device='cuda:0')
+print(B.data_ptr())
+torch.cuda.synchronize()
 
-    def forward(self, A):
-        with torch.cuda.stream(self.copy_stream):
-            B = torch.zeros(1024 ** 3, device='cuda:0')
-        torch.cuda.synchronize()  # Wait for B creation to complete
-        
-        # Simulate long-running computation on B in default stream
-        for _ in range(100):
-            B.mul_(2)
-        del B  # Memory freed here
-        
-        # Attempt to reuse CUDA stream for data transfer (may reuse B's memory)
-        with torch.cuda.stream(self.copy_stream):
-            C = A.to('cuda:0', non_blocking=True)
-        
-        torch.cuda.synchronize()  # Ensure all operations complete
-        return C
+for _ in range(100): # computation that takes a long time
+    B.mul_(2)
+del B
 
-def my_model_function():
-    return MyModel()
+# torch.cuda.synchronize() # this synchronization does help, but unable to parallelize multistream 
 
-def GetInput():
-    return torch.rand(1024 ** 3, dtype=torch.float32, pin_memory=True)
+with torch.cuda.stream(copy_stream): # trying to parallelize the data transfer and computation
+    C = A.to('cuda:0', non_blocking=True) # C may use the same memory as B, why?
 
+torch.cuda.synchronize()
+print(C.data_ptr()) # B.data_ptr() == C.data_ptr()
+print(C) # 6.3383e+29 or something else, should be 1

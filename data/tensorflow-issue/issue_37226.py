@@ -1,54 +1,28 @@
-# tf.random.uniform((None, None, 11), dtype=tf.float32) ← inferred from RaggedTensorSpec(TensorShape([None, None, 11]), tf.float32)
-
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Example LSTM layer and Dense output to match example usage in issue
-        # Assuming a sequence model handling ragged inputs with feature size 11
-        self.lstm = tf.keras.layers.LSTM(32, return_sequences=False)
-        self.dense = tf.keras.layers.Dense(3)  # output size from example
+class SomeModule(tf.Module):
 
-    def call(self, inputs):
-        # inputs is expected as a RaggedTensor with shape [batch, None, 11]
-        # We convert the ragged input to a dense tensor with padding for LSTM
-        # Alternatively, pass the ragged values + row_splits to handle ragged input properly
+  @tf.function(input_signature=[
+    tf.RaggedTensorSpec(shape=[None, None], dtype=tf.string)
+  ])
+  def return_ragged_inputs(self, inputs: tf.RaggedTensor):
+    return inputs
 
-        if isinstance(inputs, tf.RaggedTensor):
-            # Using ragged.to_tensor pads to max length in batch dimension 
-            x = inputs.to_tensor(default_value=0.0)
-            # Masking could be applied if needed, but keeping simple here
-        else:
-            # If input is not ragged, assume dense tensor
-            x = inputs
+ragged_inputs = tf.ragged.constant([["foo"], ["bar"], ["foo", "bar"]], dtype=tf.string)
 
-        # Now shape should be [batch, seq_len, 11]
-        x = self.lstm(x)
-        out = self.dense(x)
-        return out
-
-
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-
-def GetInput():
-    # Returns a RaggedTensor shaped [batch=2, variable length sequences, 11 features]
-    # Matching the example in the issue context
-    batch_data = [
-        [  # first batch sequence with 2 steps (variable length)
-            [-0.5]*11,
-            [0.2]*11,
-        ],
-        [  # second batch sequence with 3 steps
-            [0.1]*11,
-            [0.3]*11,
-            [-0.1]*11,
-        ],
-    ]
-    ragged_input = tf.ragged.constant(batch_data, dtype=tf.float32)
-
-    return ragged_input
-
+some_module = SomeModule()
+return_ragged_inputs_result = some_module.return_ragged_inputs(ragged_inputs)
+print(f"ragged_inputs => {ragged_inputs}\n")
+print("We can use the method with ragged inputs:")
+print(f"return_ragged_inputs => {return_ragged_inputs_result}\n")
+print("Saving some_module...")
+tf.saved_model.save(some_module, export_dir="foobar")
+some_module = tf.saved_model.load("foobar")
+print(f"\nWe can pass and return ragged inputs even by saving and reloading the module, if we use it 'eagerly':")
+print(some_module.return_ragged_inputs(ragged_inputs))
+print("\nBut the graph signature tell us that our exported signature expects tf.Tensor values instead:")
+exported_model_graph_inputs = some_module.signatures[tf.saved_model.DEFAULT_SERVING_SIGNATURE_DEF_KEY].inputs
+exported_model_graph_outputs = some_module.signatures[tf.saved_model.DEFAULT_SERVING_SIGNATURE_DEF_KEY].outputs
+print(f"Expected inputs  : {exported_model_graph_inputs}")
+print(f"Expected outputs : {exported_model_graph_outputs}")
+print("\nThis means we couldn't use the method as we would expect in (e.g.) TensorFlow Serving.")

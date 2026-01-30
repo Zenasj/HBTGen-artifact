@@ -1,65 +1,102 @@
-# tf.random.uniform((2, 2, 2, 5, 1), dtype=tf.float32)  # (batch, time_steps, channels, height, width) with channels_first
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+
+filters = 2
+kernel_size_0 = 4
+kernel_size_1 = 2
+kernel_size = [kernel_size_0,kernel_size_1,]
+strides_0 = 1
+strides_1 = 1
+strides = [strides_0,strides_1,]
+padding = "valid"
+data_format = "channels_first"
+dilation_rate_0 = 1
+dilation_rate_1 = 1
+dilation_rate = [dilation_rate_0,dilation_rate_1,]
+activation = "tanh"
+recurrent_activation = "hard_sigmoid"
+use_bias = False
+kernel_initializer = None
+recurrent_initializer = None
+bias_initializer = "zeros"
+unit_forget_bias = True
+kernel_regularizer = None
+recurrent_regularizer = None
+bias_regularizer = None
+activity_regularizer = None
+kernel_constraint = None
+recurrent_constraint = None
+bias_constraint = None
+return_sequences = False
+return_state = False
+go_backwards = True
+stateful = False
+dropout = 0.0
+recurrent_dropout = 0.0
+__input___0_tensor = tf.random.uniform([2, 2, 2, 5, 1], minval=1.7518786460769893, maxval=2.8945805380363145, dtype=tf.float32)
+__input___0 = tf.identity(__input___0_tensor)
+ConvLSTM2D_class = tf.keras.layers.ConvLSTM2D(filters, kernel_size, strides=strides, padding=padding, data_format=data_format, dilation_rate=dilation_rate, activation=activation, recurrent_activation=recurrent_activation, use_bias=use_bias, kernel_initializer=kernel_initializer, recurrent_initializer=recurrent_initializer, bias_initializer=bias_initializer, unit_forget_bias=unit_forget_bias, kernel_regularizer=kernel_regularizer, recurrent_regularizer=recurrent_regularizer, bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer, kernel_constraint=kernel_constraint, recurrent_constraint=recurrent_constraint, bias_constraint=bias_constraint, return_sequences=return_sequences, return_state=return_state, go_backwards=go_backwards, stateful=stateful, dropout=dropout, recurrent_dropout=recurrent_dropout)
+
+layer = ConvLSTM2D_class
+inputs = __input___0
+
+with tf.GradientTape() as g:
+    g.watch(inputs)
+    res = layer(inputs)
+print(res.shape)
+grad = g.jacobian(res, inputs)  # Error
 
 import tensorflow as tf
+print(tf.__version__)
+filters = 2
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Parameters inferred from the issue comments and example
-        filters = 2
-        kernel_size = [4, 2]
-        strides = [1, 1]
-        padding = "same"  # changed from "valid" to "same" to avoid zero spatial output shape
-        data_format = "channels_first"
-        dilation_rate = [1, 1]
-        activation = "tanh"
-        recurrent_activation = "hard_sigmoid"
-        use_bias = False
-        # Initializers and constraints are left as default/None because original example did not set them explicitly
-        unit_forget_bias = True
-        return_sequences = True  # Important for gradient computation and aligned output shape
-        return_state = False
-        go_backwards = True  # as in the original example to match behavior
-        stateful = False
-        dropout = 0.0
-        recurrent_dropout = 0.0
+kernel_size_0 = 4  
+kernel_size_1 = 2
+kernel_size = [kernel_size_0, kernel_size_1]
+strides_0 = 1
+strides_1 = 1
+strides = [strides_0, strides_1]
+# Use 'same' padding ................
+padding = "same"  # Changed from 'valid...............'
+data_format = "channels_first"
+dilation_rate_0 = 1
+dilation_rate_1 = 1
+dilation_rate = [dilation_rate_0, dilation_rate_1]
+activation = "tanh"
+recurrent_activation = "hard_sigmoid"
+use_bias = False
+kernel_initializer = None
+recurrent_initializer = None
+bias_initializer = "zeros"
+unit_forget_bias = True
+kernel_regularizer = None
+recurrent_regularizer = None
+bias_regularizer = None
+activity_regularizer = None
+kernel_constraint = None
+recurrent_constraint = None
+bias_constraint = None
+return_sequences = True
+return_state = False
+go_backwards = True
+stateful = False
+dropout = 0.0
+recurrent_dropout = 0.0
+__input___0_tensor = tf.random.uniform([2, 2, 2, 5, 1], minval=1.7518786460769893, maxval=2.8945805380363145, dtype=tf.float32)
+__input___0 = tf.identity(__input___0_tensor)
+ConvLSTM2D_class = tf.keras.layers.ConvLSTM2D(filters, kernel_size, strides=strides, padding=padding, data_format=data_format, dilation_rate=dilation_rate, activation=activation, recurrent_activation=recurrent_activation, use_bias=use_bias, kernel_initializer=kernel_initializer, recurrent_initializer=recurrent_initializer, bias_initializer=bias_initializer, unit_forget_bias=unit_forget_bias, kernel_regularizer=kernel_regularizer, recurrent_regularizer=recurrent_regularizer, bias_regularizer=bias_regularizer, activity_regularizer=activity_regularizer, kernel_constraint=kernel_constraint, recurrent_constraint=recurrent_constraint, bias_constraint=bias_constraint, return_sequences=return_sequences, return_state=return_state, go_backwards=go_backwards, stateful=stateful, dropout=dropout, recurrent_dropout=recurrent_dropout)
 
-        self.conv_lstm = tf.keras.layers.ConvLSTM2D(
-            filters=filters,
-            kernel_size=kernel_size,
-            strides=strides,
-            padding=padding,
-            data_format=data_format,
-            dilation_rate=dilation_rate,
-            activation=activation,
-            recurrent_activation=recurrent_activation,
-            use_bias=use_bias,
-            unit_forget_bias=unit_forget_bias,
-            return_sequences=return_sequences,
-            return_state=return_state,
-            go_backwards=go_backwards,
-            stateful=stateful,
-            dropout=dropout,
-            recurrent_dropout=recurrent_dropout,
-        )
+layer = ConvLSTM2D_class
+inputs = __input___0
 
-    def call(self, inputs):
-        # inputs shape: (batch, time, channels, height, width) with channels_first
-        # directly forward through ConvLSTM2D layer
-        return self.conv_lstm(inputs)
+with tf.GradientTape() as g:
+    g.watch(inputs)
+    res = layer(inputs)
+print(res.shape)
+grad = g.jacobian(res, inputs)
 
-def my_model_function():
-    # Return an initialized instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Generate a random input tensor matching the input shape used in the examples
-    # Shape: [batch_size=2, time_steps=2, channels=2, height=5, width=1]
-    # Channels_first means channel dimension is the 3rd dimension
-    return tf.random.uniform(
-        (2, 2, 2, 5, 1),
-        minval=1.75,
-        maxval=2.90,
-        dtype=tf.float32
-    )
-
+print(inputs.shape)
+print(res.shape)
+(2, 2, 2, 5, 1)
+(2, 2, 2, 5, 1)

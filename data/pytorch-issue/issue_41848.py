@@ -1,22 +1,27 @@
-# torch.rand(1, 3, 224, 224, dtype=torch.float32)  # Inferred input shape for ResNet50
+import torchvision
 
+python
+# - With torch 1.5.1, torchvision 0.6.1 and onnx 1.7.0, this script raises the runtime error shown below at rep.run()
+# - With torch 1.4, torchvision 0.5 and onnx 1.7.0 it runs without issues.
+
+import onnx
 import torch
-import torch.nn as nn
+from caffe2.python.onnx import backend
+
 from torchvision.models import resnet50
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.resnet50 = resnet50(pretrained=True)
+rn50 = resnet50(pretrained=True)
 
-    def forward(self, x):
-        return self.resnet50(x)
+# Export the model
+dummy_input = torch.randn(1, 3, 224, 224).cpu()
+rn50.cpu()
+torch.onnx.export(rn50, dummy_input, "/tmp/rn50_test.onnx", keep_initializers_as_inputs=True, verbose=False)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+# Load and test that the export went correctly
+onnx_model = onnx.load("/tmp/rn50_test.onnx")
+onnx.checker.check_model(onnx_model)
+rep = backend.prepare(onnx_model, device="CPU")
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(1, 3, 224, 224, dtype=torch.float32)
-
+# the following rep.run() line raises:
+# RuntimeError: [enforce fail at conv_pool_op_base.h:160] kernel_[dim]. If you are doing convolution or pooling, you will need to set explicitly the kernel size.
+onnx_out = rep.run(dummy_input.numpy())

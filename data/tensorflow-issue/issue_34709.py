@@ -1,37 +1,56 @@
-# tf.random.uniform((B, 10), dtype=tf.float32) ← Input shape is (batch_size, 10) with float features
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
+session_config = tf.ConfigProto()
+session_config.gpu_options.allow_growth = True
+session_config.allow_soft_placement = True
+strategy = tf.contrib.distribute.MirroredStrategy(num_gpus=num_gpus)
+config = tf.estimator.RunConfig(session_config=session_config, train_distribute=strategy)
+estimator = tf.estimator.Estimator(model_fn, model_dir, config, params)
+estimator.train()
+
+import os
+import tensorflow as tf
+import tensorflow.keras.layers as layers
 import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Simple 2-layer dense network
-        self.dense1 = tf.keras.layers.Dense(80, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(2)  # Output logits for 2 classes
 
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        logits = self.dense2(x)
-        return logits
+def model_fn(features, labels, mode):
+  """A simple 2-classify model.
+  
+  """
+  model = tf.keras.Sequential([layers.Dense(80, activation="relu"), layers.Dense(2)])
+  logits = model(features)
+  loss = tf.losses.softmax_cross_entropy(labels, logits)
 
-
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
+  if mode == tf.estimator.ModeKeys.TRAIN:
+    optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
+    train_op = optimizer.minimize(loss, tf.train.get_global_step())
+    return tf.estimator.EstimatorSpec(mode, loss=loss, train_op=train_op)
 
 
-def GetInput():
-    # Create a random input tensor with shape (batch_size=1, features=10)
-    return tf.random.uniform((1, 10), dtype=tf.float32)
+def input_fn():
+  """dataset that return feature and label.
 
+  """
+  features_mat = np.random.randn(10, 10) 
+  labels_mat = np.random.randint(0, 2, size=(10, 2)) 
+  dataset = tf.data.Dataset.from_tensor_slices((features_mat, labels_mat))
+  return dataset.batch(1)
 
-# Additional Notes / Assumptions:
-# The original issue describes using this simple model within an Estimator with MirroredStrategy.
-# The forwarded code snippet uses tf.keras.Sequential with 2 Dense layers having ReLU and then output logits.
-# Labels are one-hot or two-class vectors of shape (batch_size, 2).
-# Input tensor shape inferred from dataset is (batch_size, 10).
-# For testing with XLA compilation, the model inputs should be tf.float32 tensors of shape (B, 10).
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # Set available GPU id. 
+session_config = tf.ConfigProto()
+session_config.gpu_options.allow_growth = True
 
-# This model is compatible with TF 2.20.0 and can be wrapped in a tf.function with jit_compile=True for XLA compilation.
+session_config.allow_soft_placement = True
+strategy = tf.contrib.distribute.MirroredStrategy(num_gpus=1)
+config = tf.estimator.RunConfig(session_config=session_config, train_distribute=strategy)
+# If disable above 3 lines and using following line, GPU memory allocation will be correct.
+#config = tf.estimator.RunConfig(session_config=session_config)
 
+estimator = tf.estimator.Estimator(model_fn, config=config)
+
+while True:
+  estimator.train(input_fn)

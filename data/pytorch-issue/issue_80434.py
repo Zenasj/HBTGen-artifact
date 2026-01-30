@@ -1,22 +1,18 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
-
+from  torch.testing._internal.common_utils import freeze_rng_state
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.rrelu = nn.RReLU()
+def fn(x):
+    torch.manual_seed(42)
+    return torch.rrelu(x, training=True)
 
-    def forward(self, x):
-        return self.rrelu(x)
+def fn2(x):
+    with freeze_rng_state():
+        return torch.rrelu(x, training=True)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+for device in ("cpu", "cuda"):  # Fails when CUDA
+    a = torch.rand(10, 10, 10, requires_grad=True, dtype=torch.float64, device=device)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    B, C, H, W = 10, 3, 32, 32  # Example dimensions
-    return torch.rand(B, C, H, W, dtype=torch.float32, requires_grad=True)
-
+    for fast_mode in (True, False):  # Doesn't affect results
+        print(fast_mode, device)
+        print(torch.autograd.gradcheck(fn, (a,), fast_mode=fast_mode, raise_exception=False))
+        print(torch.autograd.gradcheck(fn2, (a,), fast_mode=fast_mode, raise_exception=False))

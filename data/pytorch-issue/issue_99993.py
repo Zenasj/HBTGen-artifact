@@ -1,16 +1,21 @@
-# torch.rand(B), torch.rand(B)  # dtype=torch.float32
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, inputs):
-        x, y = inputs
-        return x + y
+def foo(x, y):
+    return x + y
 
-def my_model_function():
-    return MyModel()
+x = torch.rand(5)
+y = torch.rand(5)
+gm, _ = dynamo.export(
+    foo,
+    x,
+    y,
+    constraints=[
+        dynamic_dim(x, 0),
+        dynamic_dim(y, 0),
+    ],
+    aten_graph=True,
+    tracing_mode="symbolic",
+    assume_static_by_default=True,
+)
 
-def GetInput():
-    B = torch.randint(1, 10, (1,)).item()  # Random batch size between 1-9
-    return (torch.rand(B), torch.rand(B))
-
+gm(torch.rand(4), torch.rand(6))

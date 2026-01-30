@@ -1,47 +1,73 @@
-# tf.random.uniform((B, 300, 300, 1), dtype=tf.float32)  # Input shape inferred from training pipeline
-
+import numpy as np
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+from tensorflow.keras import optimizers
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # A simple CNN architecture for digit classification on 300x300 grayscale images
-        self.conv1 = tf.keras.layers.Conv2D(32, kernel_size=3, activation='relu', input_shape=(300, 300, 1))
-        self.pool1 = tf.keras.layers.MaxPooling2D(pool_size=2)
-        self.conv2 = tf.keras.layers.Conv2D(64, kernel_size=3, activation='relu')
-        self.pool2 = tf.keras.layers.MaxPooling2D(pool_size=2)
-        self.conv3 = tf.keras.layers.Conv2D(64, kernel_size=3, activation='relu')
-        self.pool3 = tf.keras.layers.MaxPooling2D(pool_size=2)
-        self.flatten = tf.keras.layers.Flatten()
-        self.dense1 = tf.keras.layers.Dense(128, activation='relu')
-        # Output layer: logits for 10 classes (digits 0-9)
-        self.out = tf.keras.layers.Dense(10)
+sample = splitted_blocks[0][0][6]
+size = 300
+(ds_train, ds_test), ds_info = tfds.load(
+    'mnist',
+    split=['train', 'test'],
+    shuffle_files=True,
+    as_supervised=True,
+    with_info=True,
+)
 
-    def call(self, inputs, training=False):
-        x = self.conv1(inputs)
-        x = self.pool1(x)
-        x = self.conv2(x)
-        x = self.pool2(x)
-        x = self.conv3(x)
-        x = self.pool3(x)
-        x = self.flatten(x)
-        x = self.dense1(x)
-        logits = self.out(x)
-        return logits
 
-def my_model_function():
-    # Instantiate the model and compile with optimizer, loss, and metrics
-    model = MyModel()
-    model.compile(
-        optimizer=tf.keras.optimizers.legacy.Adam(0.001),
-        loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
-        metrics=[tf.keras.metrics.SparseCategoricalAccuracy()]
-    )
-    return model
+def resize_img(image, label):
+    return tf.image.resize(image, (size, size)), label
 
-def GetInput():
-    # Generate a random batch of images simulating the input shape used for training
-    # Batch size = 1 for simplicity, grayscale image with shape 300x300
-    input_tensor = tf.random.uniform((1, 300, 300, 1), dtype=tf.float32)
-    return input_tensor
 
+ds_train = ds_train.map(resize_img, num_parallel_calls=tf.data.AUTOTUNE)
+ds_test = ds_test.map(resize_img, num_parallel_calls=tf.data.AUTOTUNE)
+
+
+def normalize_img(image, label):
+    """Normalizes images: `uint8` -> `float32`."""
+    return tf.cast(image, tf.float32) / 255., label
+
+
+ds_train = ds_train.map(normalize_img, num_parallel_calls=tf.data.AUTOTUNE)
+ds_train = ds_train.cache()
+ds_train = ds_train.shuffle(ds_info.splits['train'].num_examples)
+ds_train = ds_train.batch(128)
+ds_train = ds_train.prefetch(tf.data.AUTOTUNE)
+
+ds_test = ds_test.map(normalize_img, num_parallel_calls=tf.data.AUTOTUNE)
+ds_test = ds_test.batch(128)
+ds_test = ds_test.cache()
+ds_test = ds_test.prefetch(tf.data.AUTOTUNE)
+
+model = tf.keras.models.Sequential([
+    tf.keras.layers.Flatten(input_shape=(size, size, 1)),
+    tf.keras.layers.Dense(128, activation='relu'),
+    tf.keras.layers.Dense(10)
+])
+model.compile(
+    optimizer=tf.keras.optimizers.legacy.Adam(0.001),
+    loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+    metrics=[tf.keras.metrics.SparseCategoricalAccuracy()],
+)
+
+model.fit(
+    ds_train,
+    epochs=6,
+    validation_data=ds_test,
+)
+sample = cv.cvtColor(sample, cv.COLOR_BGR2GRAY)
+sample = cv.resize(sample, (size, size))
+
+view_image(sample)
+sample = np.invert(np.array([sample]))
+
+prediction = model.predict(sample)
+print(np.argmax(prediction))
+
+for class_index, prob in enumerate(prediction[0]):
+    print(f'Class {class_index}: Probability {prob}')
+
+sample = np.invert(np.array([sample])).reshape((size, size, 1))
+cv.imshow("test", sample)
+cv.waitKey(0)

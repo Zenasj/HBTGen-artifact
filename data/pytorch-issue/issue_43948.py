@@ -1,22 +1,50 @@
-# torch.rand(N, C, L, dtype=torch.float32)  # Inferred input shape: (batch_size, channels, length)
-
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.bn = nn.BatchNorm1d(4)  # C = 4 from the issue
+N, C, L = 2, 4, 5
+if False:
+    # example from: https://github.com/pytorch/pytorch/issues/34002#issuecomment-656769904
+    class MyClass(torch.nn.Module):
+        def __init__(self):
+            super(MyClass, self).__init__()
+            self.num_batches_tracked = 0
+        def forward(self, x):
+            self.num_batches_tracked += 1
+            return x
 
-    def forward(self, x):
-        return self.bn(x)
+else:
+    # example using BN
+    class MyClass(torch.nn.Module):
+        def __init__(self):
+            super(MyClass, self).__init__()
+            self.bn = torch.nn.BatchNorm1d( C )
+        def forward(self, x):
+            return self.bn(x)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+model = MyClass()
+model.eval()
+x_in = torch.zeros((N, C, L))
+traced_model = torch.jit.trace(model, x_in)
+scripted_model = torch.jit.script(model)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    N, C, L = 2, 4, 5  # Batch size, Channels, Length
-    return torch.rand((N, C, L), dtype=torch.float32)
+# ONNX export
+print('ONNX export of plain model...')
+torch.onnx.export(model, x_in, 'f.onnx', example_outputs=x_in)  # => OK
 
+print('ONNX export of scripted model...')
+torch.onnx.export(scripted_model, x_in, 'f.onnx', example_outputs=x_in) #  => FAIL
+
+# CoreML export
+import coremltools as ct
+
+print('CoreML export of plain model...')
+coreml_model = ct.convert(
+    traced_model,
+    inputs=[ct.TensorType(shape=x_in.shape)]
+)  # => OK
+
+print('CoreML export of scripted model...')
+coreml_model = ct.convert(
+    scripted_model,
+    inputs=[ct.TensorType(shape=x_in.shape)]
+)  #  => FAIL

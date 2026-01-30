@@ -1,19 +1,28 @@
-# torch.rand(64, 64, dtype=torch.float32)
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class MyModel(nn.Module):
+torch.manual_seed(42)
+
+
+class Model(nn.Module):
     def __init__(self):
         super().__init__()
-        
+
     def forward(self, x):
-        return F.gelu(x)
+        x = F.gelu(x)
+        return x
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    return torch.randn(64, 64, device=device, dtype=torch.float32)
+m = Model().cuda()
+x = torch.randn(64, 64).cuda()
 
+with torch.no_grad():
+    m = m.eval()
+    c_m = torch.compile(m)  # if backend="cudagraphs", there is no inconsistency
+
+    y = m(x)
+    c_y = c_m(x)
+
+    print(torch.allclose(y, c_y))
+    print(torch.max(torch.abs(y - c_y)))

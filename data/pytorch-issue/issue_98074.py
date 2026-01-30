@@ -1,19 +1,35 @@
-# torch.rand(2, 3, 14, dtype=torch.float32)
 import torch
-from torch import nn
+x = torch.tensor([[[ 5.4682e+01,  4.6808e+01,  3.0052e-01,  7.9335e-01,  2.9827e-02,
+          -1.2526e-01, -1.4951e-01,  2.0965e-02, -3.8951e-02, -6.4755e-02,
+          -1.1634e-01, -1.3664e-01,  7.6581e-02, -6.7145e-02],
+         [ 5.4682e+01,  4.6808e+01,  3.0221e-01,  8.0021e-01,  4.3539e-02,
+          -1.1973e-01, -1.5327e-01,  1.8146e-02, -4.9131e-02, -7.4980e-02,
+          -1.2084e-01, -1.5291e-01,  9.5669e-02, -6.9044e-02],
+         [ 5.4682e+01,  4.6808e+01,  2.9350e-01,  7.9190e-01,  4.5278e-02,
+          -1.1613e-01, -1.6498e-01,  1.5942e-02, -5.6110e-02, -7.5458e-02,
+          -1.3216e-01, -1.5973e-01,  9.6978e-02, -7.3055e-02]],
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Problematic MPS path: permute + slice + sqrt (may produce NaNs on MPS)
-        mps_path = x.permute(1, 0, 2)[..., 3].sqrt()
-        # Correct alternative: transpose + sqrt (works correctly on all backends)
-        correct_path = x[..., 3].sqrt().transpose(0, 1)
-        # Compare outputs using numerical tolerance
-        return torch.tensor([torch.allclose(mps_path, correct_path, atol=1e-4, rtol=1e-5)], dtype=torch.bool)
+        [[ 5.4682e+01,  4.6808e+01,  2.9427e-01,  8.2911e-01,  3.4680e-02,
+          -1.3831e-01, -1.0695e-01,  3.5526e-02,  1.1863e-02, -3.8334e-02,
+          -8.2048e-02, -1.0484e-01,  3.4512e-02, -6.4307e-02],
+         [ 5.4682e+01,  4.6808e+01,  2.9440e-01,  8.2899e-01,  3.4583e-02,
+          -1.3845e-01, -1.0717e-01,  3.5825e-02,  1.2162e-02, -3.7982e-02,
+          -8.2242e-02, -1.0442e-01,  3.3953e-02, -6.4481e-02],
+         [ 5.4682e+01,  4.6808e+01,  2.9492e-01,  8.2421e-01,  3.2992e-02,
+          -1.3719e-01, -1.1099e-01,  3.4481e-02,  7.2558e-03, -4.1264e-02,
+          -8.5311e-02, -1.0641e-01,  3.7364e-02, -6.3753e-02]]],
+       device='mps:0')
 
-def my_model_function():
-    return MyModel()
+x.permute(1, 0, 2)[..., 3].sqrt()
 
-def GetInput():
-    return torch.rand(2, 3, 14, dtype=torch.float32)
+tensor([[7.3947, 0.8907],
+        [6.8417, 0.1727],
+        [0.5482,    nan]], device='mps:0')
 
+x[..., 3].sqrt().T
+x.permute(1, 0, 2)[..., 3].clone().sqrt()
+x.permute(1, 0, 2)[..., 3].pow(0.5)
+
+tensor([[0.8907, 0.9106],
+        [0.8945, 0.9105],
+        [0.8899, 0.9079]], device='mps:0')

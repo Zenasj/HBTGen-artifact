@@ -1,28 +1,50 @@
-# tf.random.uniform((B, None, 28), dtype=tf.float32)
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
+import os
+import time
+import shutil
+
 import tensorflow as tf
+from tensorflow import keras
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # An LSTM layer with 64 units, input shape (None, 28)
-        # This corresponds to the setup in the issue, expecting variable sequence length and feature size 28.
-        self.lstm = tf.keras.layers.LSTM(64)
-        self.dense = tf.keras.layers.Dense(10)
+assert len(tf.config.list_physical_devices('GPU'))>0, "You have to run this on a GPU machine, otherwise you do not see the effect."
+print(tf.config.list_physical_devices('GPU'))
 
-    def call(self, inputs):
-        x = self.lstm(inputs)
-        x = self.dense(x)
-        return x
+model_save_path='tmp'
 
-def my_model_function():
-    # Return an instance of MyModel.
-    # No pretrained weights provided in the issue, so this is initialized fresh.
-    return MyModel()
+lstm_layer = keras.layers.LSTM(64, input_shape=(None, 28))
+model = keras.models.Sequential([lstm_layer, keras.layers.Dense(10)])
 
-def GetInput():
-    # Returns a random tensor input that matches the input expected by MyModel:
-    # Shape: [batch_size, time_steps, features] = [8, 512, 28]
-    # The time_steps here is inferred from the benchmark input shape used in the issue's timing tests.
-    # dtype float32 is standard for the model.
-    return tf.random.uniform((8, 512, 28), dtype=tf.float32)
+mnist = keras.datasets.mnist
+(x_train, y_train), (x_test, y_test) = mnist.load_data()
+x_train, x_test = x_train / 255.0, x_test / 255.0
 
+model.compile(loss=keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+        optimizer="sgd", metrics=["accuracy"])
+model.fit(x_train[0:128], y_train[0:128], validation_data=(x_test, y_test), batch_size=64, epochs=1)
+tf.saved_model.save(model, model_save_path)
+
+# Keras load + inference
+model_reload_keras = tf.keras.models.load_model(model_save_path)
+inp = tf.ones(shape=[8, 512, 28])
+for i in range(501):
+    # Avoid load offset.
+    if i == 1:
+        startT = int(round(time.time() * 1000))
+    model_reload_keras.predict_on_batch(inp)
+endT = int(round(time.time() * 1000))
+print('Keras load -- inference time: ' + str(endT-startT) + 'ms')
+
+# TF load + inference
+model_reload_tf = tf.saved_model.load(str(model_save_path))
+infer = model_reload_tf.signatures['serving_default']
+for i in range(501):
+    # Avoid load offset.
+    if i == 1:
+        startT = int(round(time.time() * 1000))
+    infer(inp)
+endT = int(round(time.time() * 1000))
+print('TF load -- inference time (should be as fast as previous run [on GPU]): ' + str(endT - startT) + 'ms')
+
+shutil.rmtree(model_save_path)

@@ -1,52 +1,161 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Assuming standard 4D input tensor for detection models
+import glob
+import os
+import shutil
+import subprocess
+import sys
+from os import path
+from setuptools import find_packages, setup
+import numpy as np
+
 import torch
-from torch import nn
+from torch.utils.cpp_extension import CUDA_HOME, CppExtension, CUDAExtension
+from torch.utils.hipify import hipify_python
+from setuptools import Extension
+from Cython.Build import cythonize
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Placeholder for fused model components (since actual implementation is in CUDA extensions)
-        self.crop_and_resize = nn.Identity()  # Stub for CUDA kernel
-        self.deform_conv = nn.Identity()      # Stub for deformable convolution
-        self.box_iou_rotated = nn.Identity()  # Stub for rotated IoU calculation
 
-    def forward(self, x):
-        # Simulate the expected data flow through CUDA extensions
-        # Note: Actual logic would require the compiled extensions
-        return self.box_iou_rotated(self.deform_conv(self.crop_and_resize(x)))
+def get_version():
+    version_file = 'det/version.py'
+    with open(version_file, 'r', encoding='utf-8') as f:
+        exec(compile(f.read(), version_file, 'exec'))
+    return locals()['__version__']
 
-def my_model_function():
-    # Returns an instance with placeholder modules until extensions are properly compiled
-    return MyModel()
 
-def GetInput():
-    # Generate random input matching expected detection model input (BCHW)
-    B, C, H, W = 2, 3, 224, 224  # Typical input dimensions for detection models
-    return torch.rand(B, C, H, W, dtype=torch.float32)
+torch_ver = [int(x) for x in torch.__version__.split('.')[:2]]
+assert torch_ver >= [1, 4], 'Requires PyTorch >= 1.4'
+_NP_INCLUDE_DIRS = np.get_include()
 
-# Okay, so the user is having a problem compiling a CUDA extension in PyTorch 1.11.0. The error they're getting is about the 'at' namespace not having a member 'Tensor' in their CUDA code. Let me think about what that might mean.
-# First, I know that in PyTorch, the ATen library is where the Tensor class is defined. The 'at' namespace is part of ATen. The error suggests that in the CUDA code, when they're trying to use at::Tensor, it's not recognized. That might be due to an outdated or incorrect header inclusion.
-# Looking at the provided setup.py and the code snippets, the extensions are built using torch.utils.cpp_extension. The user is compiling their own detection codebase, which probably has some custom CUDA kernels. The error is in crop_and_resize_kernel.cu at line 247. Let me think about possible causes here.
-# In older versions of PyTorch, the ATen headers might have had different structures. For example, in some versions, you need to include specific headers to get access to Tensor. Maybe the code is missing an include like #include <ATen/ATen.h> or #include <torch/extension.h>.
-# Alternatively, maybe the code is using an older style where Tensor was part of the at namespace, but in newer versions, there might be changes. Wait, PyTorch 1.11.0 is from around mid-2021. Let me recall: the torch/extension.h header was introduced to simplify the inclusion of necessary headers. So perhaps the CUDA files should include torch/extension.h instead of directly including parts of ATen.
-# The error message is pointing to line 247 in crop_and_resize_kernel.cu. If the code there is using at::Tensor, but the necessary headers aren't included, that would cause the error. The fix might be adding the correct include directives.
-# Another possibility: the CUDA code is written for an older version of PyTorch and needs to be updated. For instance, in PyTorch 1.0 and above, the ATen headers were restructured. So maybe the code is using an older style where Tensor was part of at, but in the current setup, it's not properly included.
-# Let me think about how to fix this. The user's setup.py is building the extensions, but the CUDA files have this error. To resolve the compilation issue, the CUDA source files should include the appropriate headers. Specifically, including <torch/extension.h> at the top of the .cu files might bring in the necessary definitions.
-# Alternatively, if they need to use at::Tensor directly, they might need to include <ATen/ATen.h> or other specific headers. But using torch/extension.h is the recommended way for extensions, as it includes common headers needed for writing extensions.
-# So the main steps would be:
-# 1. Ensure that all CUDA files (.cu) include torch/extension.h at the top. This header includes the necessary ATen headers and simplifies the extension writing process.
-# 2. Check if there are any other missing includes or outdated references to the 'at' namespace. For example, if they were using at::Tensor, maybe they should now use torch::Tensor, but I think torch::Tensor is part of the C++ frontend, which is different. Wait, no, the ATen's Tensor is still in the at namespace. Hmm.
-# Wait, maybe the code is missing the inclusion of the header that defines at::Tensor. The torch/extension.h would include that. So adding that header might resolve the issue.
-# Alternatively, maybe the user's code is using an older style where they had to manually include various headers, but in the newer setup, the headers have changed. For example, in some versions, the Tensor class moved or the headers changed names.
-# Another angle: The error is in a CUDA file, so perhaps the compilation flags are missing something. For instance, the NVCC compiler might need additional flags or include paths. But the setup.py's get_extensions function already sets include_dirs and other compile args. Maybe the include directories aren't set correctly.
-# Looking at the setup.py, the include_dirs is set to [extensions_dir], which is the directory where the sources are. Maybe the headers are not in the right place, but that's more of a code structure issue.
-# Alternatively, the problem is that in the CUDA code, the 'at' namespace isn't accessible because the necessary headers aren't included. So the fix would be adding #include <torch/extension.h> at the top of the CUDA files. Let's see:
-# In the error line, the code references at::Tensor. If the header that defines that isn't included, the compiler can't find it. So the fix would involve ensuring that the CUDA files include the correct headers.
-# Therefore, the solution is likely to modify the CUDA files (like crop_and_resize_kernel.cu) to include torch/extension.h. Alternatively, if they need more specific includes, but the extension header is the standard way.
-# Additionally, maybe the user is using a version of PyTorch where the ATen headers are in a different location. But since they're using torch.utils.cpp_extension, which should handle the include paths, that's probably not the issue.
-# Another possible problem: The code might be using an older version of PyTorch where the Tensor was part of the at namespace, but in newer versions, perhaps the structure changed. Wait, no, the at namespace is still used for ATen's Tensor. Maybe the user's CUDA code is missing the inclusion of the correct headers.
-# In conclusion, the main fix is to ensure that the CUDA files include the necessary headers. The most straightforward way is adding #include <torch/extension.h> at the top of the CUDA source files. This header is designed to include all the necessary headers for writing extensions, including the ATen headers.
-# Therefore, the user should check each CUDA file in their codebase (like the one causing the error) and make sure they include torch/extension.h. Additionally, verify that any references to at::Tensor are correctly placed after including the headers.
-# Another possible step is to update the PyTorch version, but the user is specifically using 1.11.0, so maybe they have a reason to stick with that. Alternatively, there might be a bug in that version's headers, but that's less likely.
-# So the main actionable item for the user is to modify their CUDA source files to include the appropriate headers, likely torch/extension.h.
-# </think>
+
+def install_package(package):
+    output = subprocess.check_output(
+        [sys.executable, '-m', 'pip', 'install', package])
+    print(output.decode())
+
+
+def load_package(requirements_path='requirements.txt'):
+    requirements = []
+    with open(requirements_path, 'r') as f:
+        for each in f.readlines():
+            requirements.append(each.strip())
+    return requirements
+
+
+def load_scripts(scripts_path: list):
+    scripts = []
+    for sub_path in scripts_path:
+        for each_scripts in os.listdir(sub_path):
+            scripts.append('{}/{}'.format(sub_path, each_scripts))
+
+    return scripts
+
+
+def get_extensions():
+    this_dir = path.dirname(path.abspath(__file__))
+    extensions_dir = path.join(this_dir, 'det', 'core', 'layer', 'csrc')
+
+    main_source = path.join(extensions_dir, 'vision.cpp')
+    sources = glob.glob(path.join(extensions_dir, '**', '*.cpp'))
+
+    is_rocm_pytorch = False
+    if torch_ver >= [1, 5]:
+        from torch.utils.cpp_extension import ROCM_HOME
+
+        is_rocm_pytorch = (True if ((torch.version.hip is not None) and
+                                    (ROCM_HOME is not None)) else False)
+
+    if is_rocm_pytorch:
+        hipify_python.hipify(
+            project_directory=this_dir,
+            output_directory=this_dir,
+            includes='/det/core/layer/csrc/*',
+            show_detailed=True,
+            is_pytorch_extension=True,
+        )
+
+        # Current version of hipify function in pytorch creates an intermediate directory
+        # named "hip" at the same level of the path hierarchy if a "cuda" directory exists,
+        # or modifying the hierarchy, if it doesn't. Once pytorch supports
+        # "same directory" hipification (https://github.com/pytorch/pytorch/pull/40523),
+        # the source_cuda will be set similarly in both cuda and hip paths, and the explicit
+        # header file copy (below) will not be needed.
+        source_cuda = glob.glob(
+            path.join(extensions_dir, '**', 'hip', '*.hip')) + glob.glob(
+                path.join(extensions_dir, 'hip', '*.hip'))
+
+        shutil.copy(
+            'det/core/layer/csrc/box_iou_rotated/box_iou_rotated_utils.h',
+            'det/core/layer/csrc/box_iou_rotated/hip/box_iou_rotated_utils.h',
+        )
+        shutil.copy(
+            'det/core/layer/csrc/deformable/deform_conv.h',
+            'det/core/layer/csrc/deformable/hip/deform_conv.h',
+        )
+
+    else:
+        source_cuda = glob.glob(path.join(
+            extensions_dir, '**', '*.cu')) + glob.glob(
+                path.join(extensions_dir, '*.cu'))
+
+    sources = [main_source] + sources
+
+    extension = CppExtension
+
+    extra_compile_args = {'cxx': []}
+    define_macros = []
+
+    if (torch.cuda.is_available() and
+        ((CUDA_HOME is not None) or is_rocm_pytorch)) or os.getenv(
+            'FORCE_CUDA', '0') == '1':
+        extension = CUDAExtension
+        sources += source_cuda
+
+        if not is_rocm_pytorch:
+            define_macros += [('WITH_CUDA', None)]
+            extra_compile_args['nvcc'] = [
+                '-O3',
+                '-DCUDA_HAS_FP16=1',
+                '-D__CUDA_NO_HALF_OPERATORS__',
+                '-D__CUDA_NO_HALF_CONVERSIONS__',
+                '-D__CUDA_NO_HALF2_OPERATORS__',
+            ]
+        else:
+            define_macros += [('WITH_HIP', None)]
+            extra_compile_args['nvcc'] = []
+
+        # It's better if pytorch can do this by default ..
+        CC = os.environ.get('CC', None)
+        if CC is not None:
+            extra_compile_args['nvcc'].append('-ccbin={}'.format(CC))
+
+    include_dirs = [extensions_dir]
+
+    ext_modules = [
+        extension(
+            'det._C',
+            sources,
+            include_dirs=include_dirs,
+            define_macros=define_macros,
+            extra_compile_args=extra_compile_args,
+        ),
+    ]
+    ext_modules_cython = cythonize([
+        Extension(
+            name='det.model.post_processor.cython_nms',
+            sources=['det/model/post_processor/cython_nms.pyx'],
+            extra_compile_args=['-Wno-cpp'],
+            include_dirs=[_NP_INCLUDE_DIRS])
+    ])
+
+    return ext_modules + ext_modules_cython
+
+
+setup(
+    name='det',
+    version=get_version(),
+    description='SMore-Det: Detection codebase.',
+    packages=find_packages(exclude=('configs', 'tests*')),
+    install_requires=load_package('./requirements.txt'),
+    include_package_data=False,
+    ext_modules=get_extensions(),
+    cmdclass={'build_ext': torch.utils.cpp_extension.BuildExtension},
+)

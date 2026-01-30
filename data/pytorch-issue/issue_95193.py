@@ -1,17 +1,19 @@
-# torch.rand(2, dtype=torch.float32, requires_grad=True)
-import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
+import torch
+class BasicModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
 
     def forward(self, tensor):
         return torch.logit(tensor, eps=0.3)
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(2, dtype=torch.float32, requires_grad=True)
-
+if __name__ == "__main__":
+    tensor = torch.randn([2], dtype=torch.float32, requires_grad=True)
+    model = BasicModule()
+    model = torch.compile(model)
+    fwd_res = model(tensor)
+    bwd_tensor = torch.randn([2], dtype=torch.float32)
+    fwd_res.backward(bwd_tensor)
+    print(fwd_res)
+    print(tensor.grad)

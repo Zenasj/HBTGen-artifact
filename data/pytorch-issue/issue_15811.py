@@ -1,30 +1,38 @@
-# torch.rand(B, C, dtype=torch.float32)
-import torch
 import torch.nn as nn
 
-class BugModule(nn.Module):
+import torch
+import time
+class BugModule(torch.nn.Module):
     def __init__(self, num_mod):
-        super().__init__()
-        self.modlist = nn.ModuleList([nn.Linear(1000, 50) for _ in range(num_mod)])
+        torch.nn.Module.__init__(self)
+        self.modlist = torch.nn.ModuleList(
+            [torch.nn.Linear(1000, 50) for _ in range(num_mod)])
 
     def forward(self, x):
-        return self.modlist[0](x)
+        out = self.modlist[0](x)
+        return out
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.small = BugModule(2)  # 2 modules (baseline)
-        self.large = BugModule(200)  # 200 modules (problem case)
 
-    def forward(self, x):
-        # Return outputs of both submodels to compare their execution
-        out_small = self.small(x)
-        out_large = self.large(x)
-        return out_small, out_large
+model2 = BugModule(2)
+model200 = BugModule(200)
+model2 = model2.cuda()
+model200 = model200.cuda()
+model2 = torch.nn.DataParallel(model2)
+model200 = torch.nn.DataParallel(model200)
 
-def my_model_function():
-    return MyModel()
+model2_times = []
+model200_times = []
+out = model2(torch.FloatTensor(50, 1000))
+out = model200(torch.FloatTensor(50, 1000))
+for i in range(200):
+    t = time.time()
+    out = model2(torch.FloatTensor(50, 1000))
+    model2_times.append(time.time() - t)
 
-def GetInput():
-    return torch.rand(50, 1000, dtype=torch.float32)
+for i in range(200):
+    t = time.time()
+    out = model200(torch.FloatTensor(50, 1000))
+    model200_times.append(time.time() - t)
 
+print('Model 2 takes {} sec'.format(sum(model2_times) / 200.0))
+print('Model 200 takes {} sec'.format(sum(model200_times) / 200.0))

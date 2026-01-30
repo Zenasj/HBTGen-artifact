@@ -1,29 +1,11 @@
-# torch.rand(B, C, H, W, dtype=...)  # Add a comment line at the top with the inferred input shape
-
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.softmax = nn.Softmax(dim=1)
-
-    def forward(self, x):
-        return self.softmax(x)
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    B, C, H, W = 3, 3, 3, 3
-    return torch.rand(B, C, H, W, requires_grad=True)
-
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
-# grad_output = torch.ones_like(output)
-# grad_input = torch.autograd.grad(outputs=output, inputs=input_tensor, grad_outputs=grad_output, retain_graph=True)[0]
-
+torch.manual_seed(0)
+op = torch.ops.aten._softmax_backward_data
+grad_output = torch.ones(3, 3, 3)
+temp = torch.randn(3, 10, 3)
+out = temp[:, :3, :]
+out = out.contiguous()
+print(out.is_contiguous())
+grad_input = op(grad_output, out, 1, torch.float32)
+print(grad_input)

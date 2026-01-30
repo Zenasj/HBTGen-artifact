@@ -1,28 +1,12 @@
-# torch.rand(1, dtype=torch.float32)  # The input shape is inferred as a single-element tensor for simplicity
+from setuptools import setup, Extension
+from torch.utils import cpp_extension
+
+setup(name='diff_cpp',
+      ext_modules=[cpp_extension.CppExtension('diff_cpp', ['diff.cpp'])],
+      cmdclass={'build_ext': cpp_extension.BuildExtension})
 
 import torch
-import torch.nn as nn
-
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Define a simple model for demonstration purposes
-        self.linear = nn.Linear(1, 1)
-
-    def forward(self, x):
-        return self.linear(x)
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(1, dtype=torch.float32, requires_grad=True)
-
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
-# output.backward()  # This should not hang now
-
+import diff_cpp    # fine
+x = torch.tensor([1.0, 2.0], requires_grad=True)
+y = torch.sum(x)
+diff_cpp.backw(y)  # hangs

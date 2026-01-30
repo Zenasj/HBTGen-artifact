@@ -1,29 +1,25 @@
-# tf.random.uniform((B, 128, 128, 3), dtype=tf.float32)
+import attr
+
 import tensorflow as tf
 from tensorflow.keras import layers
+from tensorflow.keras import Model, Sequential
 
-class MyModel(tf.keras.Model):
-    def __init__(self, n_out=8):
+@attr.s(eq=False)
+class TestLayer(layers.Layer):
+    _n_out: int = attr.ib(validator=lambda i, a, x: x>=8)
+    
+    def __attrs_post_init__(self):
         super().__init__()
-        # Using an internal Conv2D layer configured via the input attribute n_out
-        # This mimics the original TestLayer with @attr.s decoration logic abstracted away
-        # The Conv2D uses a 3x3 kernel with ReLU activation
-        self.conv_layer = layers.Conv2D(n_out, 3, activation='relu')
-        # Additional downstream Dense layer (like in the Sequential example) to complete the model
-        self.dense = layers.Dense(1)
+        self.fn = layers.Conv2D(self._n_out, 3, activation='relu')
+    
+    def call(self, x, **kwargs):
+        return self.fn(x, **kwargs)
+    
 
-    def call(self, inputs, training=False):
-        x = self.conv_layer(inputs)
-        # Flatten spatial dims to feed to Dense layer
-        x = layers.Flatten()(x)
-        return self.dense(x)
+m = Sequential([TestLayer(8), layers.Dense(1)])
 
-def my_model_function():
-    # Instantiate MyModel with n_out=8 as per example usage
-    return MyModel(n_out=8)
+m.build([None, 128, 128, 3])
 
-def GetInput():
-    # Create a random float32 tensor with batch size 1, height & width 128, 3 channels,
-    # which matches the expected input shape as seen in the issue test code
-    return tf.random.uniform((1, 128, 128, 3), dtype=tf.float32)
+from tensorflow.python.util import nest
 
+nest.flatten(TestLayer(8)) # returns [8], should be [ TestLayer at <0x???????>]

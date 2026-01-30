@@ -1,21 +1,51 @@
-import torch
-from torch import nn
+import torch.nn as nn
 
-# torch.rand(1, dtype=torch.float32)
-class MyModel(nn.Module):
+class M(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.linear = nn.Linear(1, 1, bias=False)
+        self.linear = torch.nn.Linear(1, 1,bias=False)
 
     def forward(self, x):
         return self.linear(self.linear(x))
+with torch.no_grad():
+    m=M()
+    m.linear.weight[:]=10.
+    x=torch.tensor([2.])
+    exported= torch.export.export(m, (torch.ones(1),))
+    unflattened = torch.export.unflatten(exported)
+    print(unflattened.graph)
+    print(unflattened.linear.graph)
+    assert m(x)==200.0
+    assert unflattened(x)==200.0
 
-def my_model_function():
-    model = MyModel()
-    with torch.no_grad():
-        model.linear.weight[:] = 10.0  # Matches weight initialization in the issue example
-    return model
+def forward(self, x,y):
+    z=[]
+    for v in [x,y]:
+        z.append(self.linear(v))
+    return torch.cat(z,dim=0)
 
-def GetInput():
-    return torch.rand(1, dtype=torch.float32)  # Matches input shape (single-element tensor)
+import torch
 
+class M(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear = torch.nn.Linear(1, 1,bias=False)
+
+    def forward(self, x,y):
+        z=[]
+        for v in [x,y,x,y,x,y,x,y]:
+            z.append(self.linear(v))
+        return torch.cat(z,dim=0)
+
+with torch.no_grad():
+    m=M()
+    m.linear.weight[:]=10.
+    x=torch.tensor([2.])
+    y = torch.tensor([3.])
+    exported= torch.export.export(m, (x, y))
+    unflattened = torch.export.unflatten(exported)
+    print(unflattened.graph)
+    print(unflattened.linear.graph)
+    print(m(x, y))
+    print(exported.module()(x,y))
+    print(unflattened(x, y))

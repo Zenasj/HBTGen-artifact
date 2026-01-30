@@ -1,19 +1,28 @@
-# torch.rand(2, 4, dtype=torch.float)
-import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
+py
+import torch
+
+class Model(torch.nn.Module):
+
     def __init__(self):
         super().__init__()
-        
-    def forward(self, x):
-        t2 = x.to(dtype=torch.bool)
-        t3 = torch.cumsum(t2, dim=1)
+
+    def forward(self):
+        t1 = torch.full([2, 4], 1)
+        t2 = t1.to(dtype=torch.bool)
+        # t2 = torch.full([2, 4], 1, dtype=torch.bool) # if use this line, the output with compile with be [1, 1, 1, 1]
+        t3 = torch.cumsum(t2, 1)
         return t3
 
-def my_model_function():
-    return MyModel()
+with torch.no_grad():
+    func = Model()
+    func = torch.compile(func)
+    print(func())
+    # tensor([[True, True, True, True],
+    #         [True, True, True, True]])
 
-def GetInput():
-    return torch.full((2, 4), 1, dtype=torch.float)
-
+func = Model()
+print(func())
+# tensor([[1, 2, 3, 4],
+#         [1, 2, 3, 4]])

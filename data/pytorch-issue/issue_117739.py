@@ -1,33 +1,10 @@
-# torch.rand(B, C, H, W, dtype=...)  # In this case, the input is a 2D tensor of shape (N, D) where N is the number of samples and D is the feature dimension.
 import torch
-import torch.nn as nn
+t1 = torch.rand((1000,768))
+x1 = torch.matmul(t1, t1.T) # 1.34 ms ± 42.8 µs per loop
+y1 = torch.matmul(t1, t1.T.detach().clone()) # 1.92 ms ± 48.2 µs per loop
+assert x1.allclose(y1) # True
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        x1 = torch.matmul(x, x.T)
-        y1 = torch.matmul(x, x.T.detach().clone())
-        return x1, y1
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # The input shape is (N, D) where N is the number of samples and D is the feature dimension.
-    # Here we use N=1000 and D=768 as in the example provided.
-    return torch.rand((1000, 768))
-
-# Example usage:
-# model = my_model_function()
-# x, y = model(GetInput())
-# assert x.allclose(y)  # This should be True
-
-# ### Explanation:
-# - **MyModel**: This class defines a simple model that takes a 2D tensor `x` and computes two matrix multiplications: one with `x.T` and another with `x.T.detach().clone()`. The model returns both results.
-# - **my_model_function**: This function returns an instance of `MyModel`.
-# - **GetInput**: This function generates a random tensor of shape `(1000, 768)` to match the input expected by `MyModel`.
-# This setup allows you to compare the performance and results of the two matrix multiplications as described in the issue.
+t2 = torch.rand((10000,768))
+x2 = torch.matmul(t2, t2.T) # 270 ms ± 2.83 ms per loop
+y2 = torch.matmul(t2, t2.T.detach().clone()) # 181 ms ± 2.45 ms per loop
+assert x2.allclose(y2) # True

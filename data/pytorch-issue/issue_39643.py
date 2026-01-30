@@ -1,36 +1,59 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Bone module (backbone with BatchNorm)
-        self.bone = nn.Sequential(
-            nn.Conv2d(3, 64, kernel_size=3, padding=1),
-            nn.BatchNorm2d(64),
-            nn.ReLU(),
-            nn.MaxPool2d(2)
-        )
-        # Head module (classification head with BatchNorm)
-        self.head = nn.Sequential(
-            nn.Conv2d(64, 128, kernel_size=3, padding=1),
-            nn.BatchNorm2d(128),
-            nn.ReLU(),
-            nn.AdaptiveAvgPool2d((1, 1)),
-            nn.Flatten(),
-            nn.Linear(128, 10)
-        )
+mp.spawn(
+        self._train,
+        nprocs=len(gpu_ids))
 
-    def forward(self, x):
-        # Forward through bone and head modules
-        x = self.bone(x)
-        return self.head(x)
+optimizer, remain_optimizer = get_optimizer(model, optimizer)
+if isinstance(dist_config, DistConfig) \
+            and dist_config.multiprocessing_distributed and dist_config.sync_bn:
+      model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
 
-def my_model_function():
-    return MyModel()
+def step(self, closure=None):
+        """Performs a single optimization step.
 
-def GetInput():
-    # Generate random input tensor matching model's expected input shape
-    return torch.rand(2, 3, 224, 224, dtype=torch.float32)
+        Arguments:
+            closure (callable, optional): A closure that reevaluates the model
+                and returns the loss.
+        """
+        loss = None
+        if closure is not None:
+            loss = closure()
 
+        for group in self.param_groups:
+            weight_decay = group['weight_decay']
+            momentum = group['momentum']
+            dampening = group['dampening']
+            nesterov = group['nesterov']
+
+            for p in group['params']:
+                if p.grad is None:
+                    continue
+
+def forward(self, *inputs):
+        x, *other = inputs
+        b1, b2, b3 = self.bone(x)
+        out1, out2, out3 = self.head(b1, b2, b3)
+        return [out1, out2, out3]
+
+if isinstance(dist_config, DistConfig) \
+            and dist_config.multiprocessing_distributed and dist_config.sync_bn:
+      model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
+
+for group in self.param_groups:
+            weight_decay = group['weight_decay']
+            momentum = group['momentum']
+            dampening = group['dampening']
+            nesterov = group['nesterov']
+            print(id(group['params'][1])) # get the id of parameter in optimizer
+            for p in group['params']:
+                if p.grad is None:
+                    continue
+
+def forward(self, *inputs):
+        x, *other = inputs
+        b1, b2, b3 = self.bone(x)
+        out1, out2, out3 = self.head(b1, b2, b3)
+        id(list(self.parameters())[1])  # get the id of parameter in model
+        return [out1, out2, out3]

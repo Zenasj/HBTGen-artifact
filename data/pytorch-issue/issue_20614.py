@@ -1,28 +1,10 @@
-# torch.rand(1)  # Dummy input tensor
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Create sparse tensor as in the example
-        indices = torch.zeros([1, 1], dtype=torch.long)
-        values = torch.ones([1, 2, 3])
-        sparse_tensor = torch.sparse_coo_tensor(indices, values, torch.Size([2, 2, 3]))
-        
-        # Modify original values tensor (in-place operation)
-        values.resize_(4, 5)
-        
-        # Check if sparse tensor's values retain original size (new behavior)
-        new_values_size = sparse_tensor.coalesce().values().size()
-        expected_size = torch.Size([1, 2, 3])
-        
-        # Return boolean indicating if invariant holds (new behavior)
-        return torch.tensor([int(new_values_size == expected_size)])
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Dummy input that matches the required input shape
-    return torch.rand(1)
-
+# Calling resize_ on non-requires-grad value tensor
+i2 = torch.zeros([1, 1])
+v2 = torch.ones([1, 2, 3])
+t2 = torch.sparse_coo_tensor(i2, v2, torch.Size([2, 2, 3]))
+v2.resize_(4, 5)
+t2.coalesce().values().size()
+# On current master, this throws "indices and values must have same nnz, but got nnz from indices: 1, nnz from values: 4", because resizing the original value tensor affects `values_` of the sparse tensor.
+# After this PR, this prints "torch.Size([1, 2, 3])", which means resizing the original value tensor doesn't affect `values_` of the sparse tensor.

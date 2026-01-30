@@ -1,19 +1,18 @@
-# torch.rand(1, dtype=torch.int64)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Convert to float16 and back to int64 to detect precision loss
-        converted = x.to(torch.float16)
-        reconstructed = converted.to(torch.int64)
-        # Return boolean tensor indicating mismatch
-        return (reconstructed != x).any()
+In [4]: print(torch.arange(2040, 2105))
+tensor([2040, 2041, 2042, 2043, 2044, 2045, 2046, 2047, 2048, 2049, 2050, 2051,
+        2052, 2053, 2054, 2055, 2056, 2057, 2058, 2059, 2060, 2061, 2062, 2063,
+        2064, 2065, 2066, 2067, 2068, 2069, 2070, 2071, 2072, 2073, 2074, 2075,
+        2076, 2077, 2078, 2079, 2080, 2081, 2082, 2083, 2084, 2085, 2086, 2087,
+        2088, 2089, 2090, 2091, 2092, 2093, 2094, 2095, 2096, 2097, 2098, 2099,
+        2100, 2101, 2102, 2103, 2104])
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Test case from the issue demonstrating precision loss
-    return torch.tensor([2101], dtype=torch.int64)
-
+In [5]: print(torch.arange(2040, 2105).half())
+tensor([2040., 2041., 2042., 2043., 2044., 2045., 2046., 2047., 2048., 2048.,
+        2050., 2052., 2052., 2052., 2054., 2056., 2056., 2056., 2058., 2060.,
+        2060., 2060., 2062., 2064., 2064., 2064., 2066., 2068., 2068., 2068.,
+        2070., 2072., 2072., 2072., 2074., 2076., 2076., 2076., 2078., 2080.,
+        2080., 2080., 2082., 2084., 2084., 2084., 2086., 2088., 2088., 2088.,
+        2090., 2092., 2092., 2092., 2094., 2096., 2096., 2096., 2098., 2100.,
+        2100., 2100., 2102., 2104., 2104.], dtype=torch.float16)

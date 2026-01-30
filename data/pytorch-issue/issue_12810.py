@@ -1,14 +1,11 @@
-# torch.rand(B, dtype=torch.float32)
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        return x[None, :]  # Replicates the problematic slice with None
 
-def my_model_function():
-    return MyModel()
+@torch.jit.script
+def fun(a):
+	return a[None, :]
 
-def GetInput():
-    return torch.rand(5)  # Example 1D input tensor with shape (5,)
 
+if __name__ == '__main__':
+	a = torch.tensor([0])
+	fun(a)

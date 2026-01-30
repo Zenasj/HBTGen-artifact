@@ -1,21 +1,11 @@
-# torch.rand(1, 1)  # Inferred input shape from minimal example (scalar input)
 import torch
-import torch.nn as nn
+import random
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Dummy model to satisfy structure requirements (no relation to TensorBoard issue)
-        self.linear = nn.Linear(1, 1)
+import numpy as np 
+from torch.utils.tensorboard import SummaryWriter
 
-    def forward(self, x):
-        return self.linear(x)
+writer = SummaryWriter( )
 
-def my_model_function():
-    # Returns a simple model instance (placeholder for demonstration)
-    return MyModel()
 
-def GetInput():
-    # Returns a random tensor matching the model's expected input shape
-    return torch.rand(1, 1)
-
+for i in range(10):
+    writer.add_scalar('loss/test',np.random.random() , i)

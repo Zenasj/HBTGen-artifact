@@ -1,19 +1,27 @@
-# torch.rand(1, dtype=torch.float)
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        s, x_tail = x[..., 0], x[..., 1:]
-        outputs = [s]
-        for xs_i in torch.unbind(x_tail, dim=-1):
-            s = s + xs_i
-            outputs.append(s)
-        return torch.stack(outputs, dim=-1)
+def sequential_scan(bin_op, x):
+    s, x_tail = x[..., 0], x[..., 1:]
+    outputs = [s]
+    for xs_i in torch.unbind(x_tail, dim=-1):
+        s = bin_op(s, xs_i)
+        outputs.append(s)
 
-def my_model_function():
-    return MyModel()
+    output = torch.stack(outputs, dim=-1)
+    return output
 
-def GetInput():
-    return torch.rand(1, dtype=torch.float)
+def test_scan(L):
+    sum_op = lambda x, y: x + y
+    a = 1 + torch.arange(L)
 
+    csum = sequential_scan(sum_op, a)
+    print(csum)
+
+    scan_opt = torch.compile(sequential_scan)
+    csum = scan_opt(sum_op, a)
+    print(csum)
+    print()
+
+if __name__ == "__main__":
+    test_scan(4)
+    test_scan(1)

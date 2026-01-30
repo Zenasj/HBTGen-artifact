@@ -1,26 +1,24 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Assumed input shape (1, 3, 224, 224)
-import torch
-import torch.nn as nn
-from torch.onnx import register_custom_op_symbolic
+def register_custom_op_symbolic(symbolic_name, symbolic_fn, opset_version):
+    if not bool(re.match(r"^[a-zA-Z0-9-_]*::[a-zA-Z-_]+[a-zA-Z0-9-_]*$", symbolic_name)):
+        raise RuntimeError("Failed to register operator {}. \
+                           The symbolic name must match the format Domain::Name, \
+                           and sould start with a letter and contain only \
+                           alphanumerical characters"
+                           .format(symbolic_name))
+    ns, op_name = symbolic_name.split('::')
+    unaccepted_domain_names = ["onnx", "aten", "prim"]
+    if ns in unaccepted_domain_names:
+        raise RuntimeError("Failed to register operator {}. The domain {} is already a used domain."
+                           .format(symbolic_name, ns))
+    import torch.onnx.symbolic_registry as sym_registry
+    from torch.onnx.symbolic_helper import _onnx_stable_opsets
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv = nn.Conv2d(3, 64, kernel_size=3, padding=1)
-    
-    def forward(self, x):
-        # Example usage of a custom operator (symbolic registration fixed in PR)
-        # Actual implementation would depend on custom op logic
-        return self.conv(x)
+    for version in _onnx_stable_opsets:
+        if version >= opset_version:
+            sym_registry.register_op(op_name, symbolic_fn, ns, version)
 
-def my_model_function():
-    # Register corrected custom op with proper symbolic name format
-    def symbolic_myop(g, input):
-        return g.op("CustomDomain::MyCustomOp", input)
-    
-    register_custom_op_symbolic("CustomDomain::MyCustomOp", symbolic_myop, 1)
-    return MyModel()
-
-def GetInput():
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
-
+raise RuntimeError("Failed to register operator {}. \
+                           The symbolic name must match the format Domain::Name, \
+                           and sould start with a letter and contain only \
+                           alphanumerical characters"
+                           .format(symbolic_name))

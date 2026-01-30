@@ -1,19 +1,14 @@
-import torch
 import torch.nn as nn
 
-# torch.rand(B, 100, dtype=torch.float32)
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.model = nn.Sequential(nn.Linear(100, 100))
+from torch.distributed._composable.fsdp import fully_shard
+import torch.distributed as dist
+from torch import nn
 
-    def forward(self, x):
-        return self.model(x)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    B = 2  # Example batch size, can be any positive integer
-    return torch.rand(B, 100, dtype=torch.float32)
-
+if __name__ == '__main__':
+    dist.init_process_group(backend='gloo')
+    model = nn.Sequential(nn.Linear(100, 100))
+    print(model[0].weight.device)
+    model_fsdp = fully_shard(model)
+    dtensor = model_fsdp[0].weight
+    print(dtensor.device)
+    print(dtensor.full_tensor())

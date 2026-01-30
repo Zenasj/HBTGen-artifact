@@ -1,116 +1,187 @@
-# tf.random.uniform((1, 172), dtype=tf.float32) <- inferred input shape from rigControls variable initialization
+import math
 
-import tensorflow as tf
-from collections import namedtuple
+# Build the approximation model
+import os
+import pickle
+import sys
+from pathlib import Path
+
 import numpy as np
+import yaml
+import tensorflow.compat.v1 as tf
+from collections import namedtuple
 
-# Note:
-# - The original code is TF1 style using tf.compat.v1. Here we adapt it to TF2 style with tf.keras.Model.
-# - The original code uses external modules `cnnModel` and `rigidDeformer` which we cannot include here.
-#   Hence we will create placeholders to represent the submodules and model parts.
-# - The original model builds two models (base mesh + refine mesh), adds outputs, then deforms them using rigidDeformer.
-# - We combine all into one `MyModel` with sub-models and apply the deformation.
-# - We simulate the pipeline so that calling MyModel(input) returns the "final refined mesh" tensor.
-# - Since details of cnnModel.buildModel and rigidDeformer.RigidDeformer are missing,
-#   we replace them with tf.keras layers or tf.function placeholders that mimic the interface.
-# - The input to the model is of shape (1,172) float32 as rigControls.
-# - The output shape is not clearly stated; we assume output is a tf.float32 tensor.
+sys.path.append(os.path.join('..','cnnModel'))
+sys.path.append('..')
+from cnnModel import cnnModel,rigidDeformer
 
-# Placeholder for cnnModel.buildModel
-# Simulates a model that returns a dict with 'output' tensor and some metadata.
-def dummy_cnnModel_buildModel(data, dataset, neutral, config):
-    # Simply returns a dictionary with 'output': some tensor computed from data['pose']
-    # Simulate output shape: Assume output is (1, 6890, 3) representing vertices?
-    pose = data['pose']  # shape (1,172)
-    batch_size = tf.shape(pose)[0]
-    # For demo, output some transformation of pose:
-    # e.g. linear projection + reshape to (batch_size, 6890, 3)
-    projection = tf.keras.layers.Dense(6890 * 3)(pose)
-    output = tf.reshape(projection, (batch_size, 6890, 3))
-    return {'output': output, 'parts': None, 'cache': None}
+def buildModel(config,pose,addNeutral=True):
 
-# Placeholder for rigidDeformer.RigidDeformer
-# Simulates a deformation operation on mesh vertices
-class DummyRigidDeformer(tf.keras.layers.Layer):
-    def __init__(self, neutral, rigid_files, mask):
-        super().__init__()
-        # Store neutral and mask, just keep for shape reference
-        self.neutral = neutral
-        self.mask = mask
-        # For demo, no actual deformation, identity function
+    with open(config['data_params']['cache_file'],'rb') as file:
+        data = pickle.load(file)
+    cache = data
+    parts = data['vCharts']
+    faces = data['faces']
+    neutral = data['neutral'][data['active']].astype('float32')
+    uvs = data['uv']
+    if 'parameter_mask' in data:
+        mask = data['parameter_mask']
+    else:
+        mask = None
 
-    @tf.function
-    def deformTF(self, mesh):
-        # Assume input mesh shape (batch_size, num_vertices, 3)
-        # Return mesh unmodified (identity)
-        return mesh
+    # Create the model
+    partCount = np.max(parts)+1
+    data = {'pose':pose}
+    usedVerts = []
+    usedUVs = []
+    for i in range(partCount):
+        if np.sum(parts==i) > 0:
+            data['image-'+str(i)] = tf.ones(1)
+        else:
+            data['image-'+str(i)] = None
+        ref = faces.reshape(-1)
+        idx = np.arange(len(neutral))[parts==i]
+        if len(idx) == 0:
+            continue
+        usedFaces = [True if v in idx else False for v in ref]
+        usedFaces = np.sum(np.asarray(usedFaces).reshape((-1,3)),-1) == 3
+        faceIdx = np.arange(len(faces))[usedFaces]
+        uv = uvs[idx]
+        usedUVs.append(uv)
+        usedVerts.append(idx)
+    idx = np.concatenate(usedVerts)
+    linear = np.zeros(neutral.shape,dtype='float32')
+    if addNeutral:
+        linear[idx] = neutral[idx]
+    else:
+        neutral = linear
+    data['linear'] = linear
+    dataset = namedtuple('Dataset','mask usedUVs usedVerts')(mask,usedUVs,usedVerts)
+    model = cnnModel.buildModel(data,dataset,neutral,config)
+    model['parts'] = parts
+    model['cache'] = cache
+    return model
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Initialization mimics Approximator.__init__
+class Approximator():
 
-        # rigControls shape: (1,172), used as input not stored as variable here
+    def __init__(self,  sess):
+        ####
+        rigControls = tf.Variable(tf.zeros([1, 172], tf.float32))
 
-        # Normally loaded from configs and files, replaced by dummies here:
-        self.baseConfig = {}   # placeholder config dict
-        self.approxConfig = {}
+        approximation_config = 'experiments/v00_refine_model_leaky.yaml'
+        with open(approximation_config) as file:
+            approximationConfig = yaml.load(file)
+        with tf.variable_scope('refine'):
+            refineMesh = buildModel(approximationConfig, rigControls, addNeutral=False)
 
-        # For dummy neutral, faces, parts
-        # Use placeholder tensors / np arrays to replace missing data loading - shapes assumed
-        neutral = np.zeros((6890, 3), dtype=np.float32)  # e.g. neutral mesh vertices
-        faces = np.zeros((13776, 3), dtype=np.int32)    # example faces
-        parts = np.zeros((6890,), dtype=np.int32)       # vertex chart assignments
-        mask = np.arange(len(parts))                     # mask over vertices
+        base_config = 'experiments/v00_base_model_leaky.yaml'
+        with open(base_config) as file:
+            baseConfig = yaml.load(file)
+        mesh = buildModel(baseConfig, rigControls)
 
-        self.neutral = tf.constant(neutral)
-        self.faces = faces
-        self.parts = parts
-        self.mask = mask
+        have_refineMesh = True
+        refineMesh['output'] = mesh['output'] + refineMesh['output']
 
-        # dataset namedtuple
-        dataset = namedtuple('Dataset', 'mask usedUVs usedVerts')(None, [], [])
+        print(refineMesh['output'])
+        print(type(refineMesh['output']))
 
-        # dummy initial data dictionary - pose placeholder input will come later
-        dummy_pose = tf.zeros((1, 172), dtype=tf.float32)
+        # Apply ridig deformer
+        # Load info about the mesh
+        with open(os.path.join(baseConfig['data_params']['cache_file']), 'rb') as file:
+            data = pickle.load(file)
+        parts = data['vCharts']
+        neutral = data['neutral'][data['active']]
+        print("data['neutral'].shape=", data['neutral'].shape)
+        print('neutral.shape=', neutral.shape)
+        faces = data['faces']
+        mask = np.arange(len(parts))[parts > -1]
 
-        # Build base and refine models using dummy builder
-        self.base_model = dummy_cnnModel_buildModel({'pose': dummy_pose}, dataset, neutral, self.baseConfig)
-        self.refine_model = dummy_cnnModel_buildModel({'pose': dummy_pose}, dataset, neutral, self.approxConfig)
+        if 'rigid_files' in baseConfig['data_params']:
 
-        # Output is the sum of base and refine outputs as in Approximator
-        self.have_refineMesh = True
+            cur_rigidDeformer = rigidDeformer.RigidDeformer(neutral, [f for f in
+                                                                      baseConfig['data_params']['rigid_files']], mask)
+            final_base_mesh = cur_rigidDeformer.deformTF(mesh['output'][0])[np.newaxis]
+            if have_refineMesh:
+                final_refineMesh = cur_rigidDeformer.deformTF(refineMesh['output'][0])[np.newaxis]
+        else:
+            final_base_mesh = mesh['output']
+            if have_refineMesh:
+                final_refineMesh = refineMesh['output']
 
-        # Create rigid deformer instance
-        self.rigid_deformer = DummyRigidDeformer(neutral, [], mask)
+        # print('final_refineMesh.shape =', final_refineMesh.eval())
+        print('type(final_refineMesh) =', type(final_refineMesh))
 
-    @tf.function
-    def call(self, rigControls):
-        # rigControls shape: (batch_size, 172)
+        ####
+        vars = tf.trainable_variables()
+        print(vars)
+        vars_to_train = vars[0]
+        vars_to_load = vars[1:]
+        self.saver = tf.train.Saver(vars_to_load)
 
-        # Update sub-model outputs with new pose input (simulate buildModel again with given pose)
-        # In practice, with TF2 one should build sub-models with keras layers and call them
-        # Here we simulate recomputing base and refine outputs based on new rigControls input
+        checkpoint_dir = 'E:\\PycharmProjects\\FDFD-Metahuman-Y-up\\output\\v00_refine_model_leaky'
+        self.checkpointFile = tf.train.latest_checkpoint(checkpoint_dir)
+        self.saver.restore(sess, self.checkpointFile)
 
-        # Recompute base output
-        base_proj = tf.keras.layers.Dense(6890 * 3)(rigControls)
-        base_output = tf.reshape(base_proj, (tf.shape(rigControls)[0], 6890, 3))
+        self.rigControls=rigControls
+        self.sess=sess
+        self.final_refineMesh=final_refineMesh
 
-        refine_proj = tf.keras.layers.Dense(6890 * 3)(rigControls)
-        refine_output = tf.reshape(refine_proj, (tf.shape(rigControls)[0], 6890, 3))
 
-        # Sum outputs as in original code refineMesh['output'] = mesh['output'] + refineMesh['output']
-        combined_output = base_output + refine_output
+    def fk(self,control):
+        # vars = tf.trainable_variables()
+        # print("after_vars =",vars)
+        self.rigControls= control
+        # print('self.rigControls=',self.rigControls)
+        #
+        # # init = tf.global_variables_initializer()
+        # # self.sess.run(init)
+        # vars = tf.trainable_variables()
+        # print(vars)
+        # vars_to_train = vars[0]
+        # vars_to_load = vars[1:]
+        # saver = tf.train.Saver(vars_to_load)
+        #
+        # checkpoint_dir = 'E:\\PycharmProjects\\FDFD-Metahuman-Y-up\\output\\v00_refine_model_leaky'
+        # checkpointFile = tf.train.latest_checkpoint(checkpoint_dir)
+        # saver.restore(sess, checkpointFile)
 
-        # Apply rigid deformer identity for now
-        final_refineMesh = self.rigid_deformer.deformTF(combined_output)
-
+        final_refineMesh=self.sess.run([self.final_refineMesh])
         return final_refineMesh
 
-def my_model_function():
-    return MyModel()
+    def ik(self,verts):
+        pass
 
-def GetInput():
-    # Return a valid random input tensor matching rigControls (batch_size=1, 172 features, float32)
-    return tf.random.uniform((1, 172), dtype=tf.float32)
 
+
+
+
+
+
+
+if __name__ == '__main__':
+    # Load the model from file
+    with tf.Session() as sess:
+        approx=Approximator(sess)
+
+
+        conbtrol0=tf.zeros([1, 172], tf.float32)
+        verts0=approx.fk(conbtrol0)
+        print('verts0=',verts0)
+
+        conbtrol1 = tf.ones([1, 172], tf.float32)
+        verts1 = approx.fk(conbtrol1)
+        print('verts1=', verts1)
+
+None
+
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior()
+
+import tensorflow as tf
+conbtrol0=tf.zeros([1, 172], tf.float32)
+verts0= tf.math.multiply(conbtrol0, conbtrol0)
+print('verts0=',verts0)
+
+conbtrol1 = tf.ones([1, 172], tf.float32)
+verts1 = tf.math.multiply(conbtrol1, conbtrol1)
+print('verts1=', verts1)

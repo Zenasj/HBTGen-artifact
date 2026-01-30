@@ -1,19 +1,10 @@
-# torch.rand(B, 10, dtype=torch.float32)
-import torch
+from torch.optim import Adam
+from torch.optim.lr_scheduler import LinearLR
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.layer = nn.Linear(10, 10)  # Matches the dummy model in the issue
-    
-    def forward(self, x):
-        return self.layer(x)
-
-def my_model_function():
-    return MyModel()  # Returns the same dummy model used in the bug report
-
-def GetInput():
-    B = 4  # Arbitrary batch size matching minimal reproducible example
-    return torch.rand(B, 10, dtype=torch.float32)  # Matches Linear(10,10) input requirements
-
+# Dummy net
+net = nn.Linear(10, 10)
+opt = Adam(net.parameters())
+scheduler = LinearLR(opt, start_factor=0, total_iters=4)
+for epoch in range(10):
+    scheduler.step()

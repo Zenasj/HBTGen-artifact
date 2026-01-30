@@ -1,124 +1,152 @@
-# tf.random.uniform((B, 32, 32, 3), dtype=tf.float32) ← input shape from CIFAR-10 dataset used in model
+import math
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
 
 import tensorflow as tf
+
+# disable eager model for tf=2.x
+if LooseVersion(tf.__version__) >= LooseVersion('2.0.0'):
+    tf.compat.v1.disable_eager_execution()
+
+#%%
 from distutils.version import LooseVersion
+import numpy as np
+import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
+# disable eager model for tf=2.x
+if LooseVersion(tf.__version__) >= LooseVersion('2.0.0'):
+    tf.compat.v1.disable_eager_execution()
 
-        # Load or define the backbone classifier model (ResNet50) 
-        # with input shape (32,32,3), no pre-trained weights, max pooling, and 10 classes
-        # taking into account API differences across TF versions.
-        if LooseVersion(tf.__version__) < LooseVersion('2.0.0'):
-            base_model = tf.keras.applications.ResNet50(include_top=True, 
-                                                       weights=None, 
-                                                       input_shape=(32,32,3), 
-                                                       pooling='max', 
-                                                       classes=10)
+batch_size = 100
+#%%
+def download_data():
+
+    # get raw data
+    (trainX, trainY), (testX, testY) = tf.keras.datasets.cifar10.load_data()
+    trainX = trainX.astype(np.float32)
+    testX  = testX.astype(np.float32)
+
+    # ont-hot
+    trainY = tf.keras.utils.to_categorical(trainY, 10)
+    testY  = tf.keras.utils.to_categorical(testY , 10)
+
+    # get validation sets
+    training_size = 45000
+    validX = trainX[training_size:,:]
+    validY = trainY[training_size:,:]
+
+    trainX = trainX[:training_size,:]
+    trainY = trainY[:training_size,:]
+
+    return trainX, trainY, validX, validY, testX, testY
+
+#%%
+def data_pipeline(dataX, dataY):
+
+    # create dataset API
+    def preprocess_fn(dataX, dataY):
+        
+        dataX = tf.image.random_flip_left_right(dataX)
+
+        # workaround solution
+        if LooseVersion(tf.__version__) < LooseVersion('1.14.0'):
+            outputX = dataX
         else:
-            base_model = tf.keras.applications.resnet.ResNet50(include_top=True, 
-                                                               weights=None, 
-                                                               input_shape=(32,32,3), 
-                                                               pooling='max', 
-                                                               classes=10)
+            outputX = (dataX, dataY)
+        return outputX, dataY
 
-        # Define inputs
-        self.clf_input = tf.keras.layers.Input(shape=(32,32,3), name="model_input")
-        self.label_ref = tf.keras.layers.Input(shape=(10,), name="label_ref")
+    dataset = tf.data.Dataset.from_tensor_slices( (dataX, dataY) )
+    dataset = dataset.shuffle(batch_size * 8)
+    dataset = dataset.repeat()
+    dataset = dataset.batch(batch_size)
+    dataset = dataset.map(preprocess_fn, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    dataset = dataset.prefetch(tf.data.experimental.AUTOTUNE)
+    return dataset
 
-        # Forward pass through base model
-        self.clf_out = base_model(self.clf_input)
+#%%
+class custom_model():
+    def __init__(self):
 
-        # Save model components for use in call
-        self.base_model = base_model
+        # custom loss
+        def cw_loss(y_true, y_pred):
 
-        # Following the original "cw_loss" logic, we store necessary tensors
-        # Note: this model instance is designed for inference/training usage consistent with 
-        # the loss function defined below.
+            # workaround solution
+            if LooseVersion(tf.__version__) < LooseVersion('1.14.0'):
+                label_mask  = y_true
+                pre_softmax = clf_out
+            else:
+                label_mask  = label_ref
+                pre_softmax = clf_out                
 
-    def call(self, inputs, training=False):
-        """
-        Forward call expects inputs as a tuple (images, labels), where:
-          - images: Tensor, shape (B, 32, 32, 3)
-          - labels: Tensor, shape (B, 10) one-hot encoded
-        
-        Returns logits from the ResNet50 base_model.
-        """
-        # Unpack inputs tuple (image batch and labels batch)
-        x, label_ref = inputs
-        
-        # Forward through base classification model
-        logits = self.base_model(x, training=training)
-        return logits
+            # API changed
+            if LooseVersion(tf.__version__) < LooseVersion('1.14.0'):
+                correct_logit = tf.reduce_sum(label_mask * pre_softmax, axis=1, keep_dims=True)
+            else:
+                correct_logit = tf.reduce_sum(label_mask * pre_softmax, axis=1, keepdims=True)
 
-    @staticmethod
-    def cw_loss(label_ref, clf_out):
-        """
-        Implementation of the custom Carlini-Wagner like loss function (cw_loss) as discussed.
-        
-        Essentially:
-          - Computes difference of logits to true class logit plus margin;
-          - Applies ReLU, softmax weighting to focus on classes differing from true class;
-          - Computes weighted sum as loss per example;
-          - Returns mean loss over batch.
+            distance = tf.nn.relu( pre_softmax - correct_logit + (1-label_mask) * 10) 
+            inactivate = tf.cast( tf.less_equal(distance, 1e-9), dtype=tf.float32)
+            weight = tf.keras.layers.Activation('softmax')(-1e9*inactivate + distance)
+            loss = tf.reduce_sum((1-label_mask) * distance * weight, axis=1)
+            loss = tf.math.reduce_mean(loss)
+            return loss
 
-        Args:
-            label_ref: ground-truth one-hot labels tensor, shape (B,10)
-            clf_out: logits tensor from model, shape (B,10)
+        # API changed
+        if LooseVersion(tf.__version__) < LooseVersion('2.0.0'):
+            model = tf.keras.applications.ResNet50(include_top=True, weights=None, input_shape=(32,32,3), pooling='max', classes=10)
+        else:
+            model = tf.keras.applications.resnet.ResNet50(include_top=True, weights=None, input_shape=(32,32,3), pooling='max', classes=10)
 
-        Returns:
-            scalar tensor loss
-        """
-        # Handle 'keepdims' argument name difference for TF < 1.14 compatibility
-        keepdims_arg = 'keepdims' if LooseVersion(tf.__version__) >= LooseVersion('1.14.0') else 'keep_dims'
+        clf_input = tf.keras.layers.Input(shape=(32,32,3), name="model/input")
+        label_ref = tf.keras.layers.Input(shape=(10,) , name='label_ref')
+        clf_out   = model(clf_input)
 
-        # Compute correct class logits: sum over label * logits reduces to correct class logits
-        correct_logit = tf.reduce_sum(label_ref * clf_out, axis=1, **{keepdims_arg: True})
-
-        # Calculate distance with margin: difference between other logits & correct logit plus margin (10 for non-true classes)
-        distance = tf.nn.relu(clf_out - correct_logit + (1 - label_ref) * 10)
-
-        # Identify inactive positions (distance very small)
-        inactivate = tf.cast(tf.less_equal(distance, 1e-9), tf.float32)
-
-        # Softmax weighting: large negative on inactive positions to zero out in softmax
-        weight_input = -1e9 * inactivate + distance
-        weight = tf.keras.layers.Activation('softmax')(weight_input)
-
-        # Weighted sum over non-true classes of distance * weight
-        loss_vec = tf.reduce_sum((1 - label_ref) * distance * weight, axis=1)
-
-        # Mean loss across batch
-        loss = tf.reduce_mean(loss_vec)
-        return loss
-
-def my_model_function():
-    """
-    Construct and return an instance of MyModel.
-    For practical training/inference as in discussed example,
-    the model expects input as a tuple (images, labels).
-    """
-    return MyModel()
-
-def GetInput():
-    """
-    Generate a random input compatible with MyModel's expected input:
-      - images tensor of shape (batch_size, 32, 32, 3), float32
-      - labels tensor of shape (batch_size, 10), one-hot encoded
-
-    Here, we use batch_size=4 arbitrarily for demonstration.
-    """
-    import numpy as np
+        # workaround solution
+        if LooseVersion(tf.__version__) < LooseVersion('1.14.0'):
+            input_list = [clf_input]
+        else:
+            input_list = [clf_input, label_ref]
     
-    batch_size = 4
-    # Random float image batch in [0,1]
-    images = tf.random.uniform(shape=(batch_size, 32, 32, 3), dtype=tf.float32)
-    
-    # Random integer labels in [0,9]
-    labels_int = np.random.randint(low=0, high=10, size=(batch_size,))
-    # One-hot encode
-    labels = tf.one_hot(labels_int, depth=10, dtype=tf.float32)
-    
-    return (images, labels)
+        clf_model = tf.keras.models.Model(inputs=input_list, outputs=clf_out, name='clf_model')
+        clf_model.compile(loss='categorical_crossentropy', optimizer='SGD', metrics=['accuracy', cw_loss])
 
+        self.clf_model = clf_model
+
+#%%
+if __name__ == '__main__':
+
+    # set GPU
+    import os
+    if os.environ.get("CUDA_VISIBLE_DEVICES") is None:
+        os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+
+    # reset tf session
+    tf.compat.v1.keras.backend.clear_session()
+    gpu_options = tf.compat.v1.GPUOptions(allow_growth=True)
+    sess = tf.compat.v1.Session(config=tf.compat.v1.ConfigProto(gpu_options=gpu_options))
+    tf.compat.v1.keras.backend.set_session(sess) 
+
+    # prepare data
+    trainX, trainY, validX, validY, testX, testY = download_data()
+    train_gen = data_pipeline(trainX, trainY)
+    valid_gen = data_pipeline(validX, validY)
+    test_gen = data_pipeline(testX, testY)
+
+    # build targeted model
+    targeted_model = custom_model()
+    model = targeted_model.clf_model
+    
+    # fit and evalutate
+    model.fit(train_gen,
+            steps_per_epoch = trainY.shape[0] // batch_size,
+            validation_data = valid_gen,
+            validation_steps= validY.shape[0] // batch_size,
+            epochs=5,
+            verbose=2)
+
+    # workaround solution
+    if LooseVersion(tf.__version__) < LooseVersion('1.14.0'):
+        model.evaluate(testX, testY, verbose=2, batch_size=batch_size)
+    else:
+        model.evaluate( (testX, testY), testY, verbose=2, batch_size=batch_size)

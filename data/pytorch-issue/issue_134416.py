@@ -1,20 +1,32 @@
-# torch.rand(1, 4, 65536, dtype=torch.float32) ← Add a comment line at the top with the inferred input shape
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv = nn.Conv1d(4, 1, 10, padding=4)
+print(torch.__version__)
 
-    def forward(self, x):
-        return self.conv(x)
+import torch
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+import torch
+print(torch.__version__)
+import torch.nn.functional as F
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(1, 4, 65536, dtype=torch.float32)
+weight_cpu = torch.randn(1, 4, 10, device="cpu")
+weight_mps = weight_cpu.detach().clone().to("mps")
 
+nc = 65536 # OK
+nc = 66000 # NotImplementedError: Output channels > 65536 not supported at the MPS device.
+x_cpu = torch.randn(1, 4, nc, device="cpu")
+x_mps = x_cpu.detach().clone().to("mps")
+
+y_cpu = F.conv1d(x_cpu, weight_cpu)
+y_mps = F.conv1d(x_mps, weight_mps)
+
+print(y_cpu)
+print(y_mps)
+# Outputs:
+# 2.6.0.dev20241212
+# tensor([[[ 1.7427,  6.5344, -0.4782,  ...,  6.6598, -8.1508,  5.4256]]])
+# tensor([[[ 1.7427,  6.5344, -0.4782,  ...,  6.6598, -8.1508,  5.4256]]],
+#        device='mps:0')
+
+import platform
+platform.mac_ver()
+# My output: ('15.2', ('', '', ''), 'arm64')

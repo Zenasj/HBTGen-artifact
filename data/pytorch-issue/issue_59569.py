@@ -1,10 +1,7 @@
-# torch.rand(1, dtype=torch.float32)  # Assuming a simple scalar input for demonstration
-
 import torch
 import torch.nn as nn
-import torch.fx as fx
 
-class MyModel(nn.Module):
+class Foo(torch.nn.Module):
     def __init__(self):
         super().__init__()
 
@@ -14,18 +11,5 @@ class MyModel(nn.Module):
             res = res + b
         return res
 
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    a = torch.rand(1, dtype=torch.float32)
-    b = torch.tensor(5, dtype=torch.float32)
-    return (a, b)
-
-# Example usage:
-# model = my_model_function()
-# input_data = GetInput()
-# output = model(*input_data)
-# print(output)
-
+concrete_args = {'b': torch.tensor(5)}
+traced = fx.symbolic_trace(Foo(), concrete_args=concrete_args)

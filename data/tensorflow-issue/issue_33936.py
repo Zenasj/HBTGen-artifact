@@ -1,35 +1,58 @@
-# tf.random.uniform((2, 100), dtype=tf.float32) ← Input shape inferred from batch=2, n_features=100
+from tensorflow import keras
+from tensorflow.keras import optimizers
 
+import math
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Initialize the weights and bias as variables on the model
-        self.n_features = 100
-        # Initialize w with 1.0 for each feature and b with 1.0 as in the example
-        self.w = tf.Variable(tf.ones([self.n_features], dtype=tf.float32), trainable=True)
-        self.b = tf.Variable(1.0, dtype=tf.float32, trainable=True)
+error = True
+n_features = 100
+batch = 2
 
-    def call(self, inputs, apply_sigmoid=True):
-        # inputs shape: (batch_size, n_features)
-        # Linear combination z = sum(w * x, axis=1) + b, output shape (batch_size, 1)
-        z = tf.reduce_sum(self.w * inputs, axis=1, keepdims=True) + self.b
+"""
+model
+"""
+x = tf.keras.Input(shape=(n_features,), dtype=tf.float32)
+w = tf.Variable([1.0] * n_features)
+b = tf.Variable(1.0)
+z = tf.reduce_sum(w * x, axis=1, keepdims=True) + b
 
-        if apply_sigmoid:
-            # Use tf.sigmoid as in the original "error=True" case
-            y_pred = tf.sigmoid(z)
-        else:
-            # Manual sigmoid alternative (equivalent but slower numerically)
-            y_pred = 1.0 / (1.0 + tf.exp(-z))
+"""
+loss is incorrect if error is true
+"""
+if error:
+    y_ = tf.sigmoid(z)
+else:
+    y_ = 1.0 / (1.0 + math.e ** (-z))
 
-        return y_pred
+m = tf.keras.Model(inputs=x, outputs=y_)
 
-def my_model_function():
-    # Return an instance of MyModel with default initialization
-    return MyModel()
+"""
+loss
+"""
+optimizer=tf.keras.optimizers.SGD(learning_rate=0.001)
+loss = tf.keras.losses.BinaryCrossentropy()
+m.compile(optimizer = optimizer, loss = loss)
 
-def GetInput():
-    # Generate a random input tensor matching the input shape (batch=2, features=100), float32
-    return tf.random.uniform((2, 100), dtype=tf.float32)
+"""
+train dataset
+"""
+x = np.array([[1.0 for i in range(n_features)]] * batch, dtype=np.float32)
+y = np.array([0.0] * batch, dtype=np.float32)
 
+"""
+get correct loss
+"""
+logits = m(x)
+l = loss(y, logits)
+
+"""
+get incorrect loss
+"""
+history = m.fit(x, y)
+
+"""
+history.history['loss'] != l.numpy()
+"""
+print(history.history)
+print(l.numpy())

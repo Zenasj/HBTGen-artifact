@@ -1,18 +1,16 @@
-# torch.rand(1, 1, 1, 5, dtype=torch.float32)  # Inferred input shape from the example
-import torch
 import torch.nn as nn
+
+python
+import os
+import torch
+from torch._subclasses import FakeTensorMode, CrossRefFakeMode
 import torch.nn.functional as F
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        return F.logsigmoid(x)
+fake_mode = FakeTensorMode()
+cross_ref_mode = CrossRefFakeMode()
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    return torch.rand(1, 1, 1, 5, dtype=torch.float32)
-
+with cross_ref_mode:
+    input = torch.tensor([1.0, 1.0, 1.0, 1.0, 1.0],
+device='xpu')
+    F.logsigmoid(input)

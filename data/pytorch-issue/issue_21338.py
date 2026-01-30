@@ -1,47 +1,8 @@
-# torch.rand(B, C, H, W, dtype=...)  # Add a comment line at the top with the inferred input shape
-
-import torch
-import torch.nn as nn
-
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3, stride=1, padding=1)
-        self.relu = nn.ReLU()
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
-        self.fc = nn.Linear(16 * 16 * 16, 10)  # Assuming input size is 32x32
-
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.relu(x)
-        x = self.pool(x)
-        x = x.view(-1, 16 * 16 * 16)
-        x = self.fc(x)
-        return x
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    B, C, H, W = 4, 3, 32, 32  # Batch size, channels, height, width
-    return torch.rand(B, C, H, W, dtype=torch.float32)
-
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
-
-# The provided issue is about a compile error in the PyTorch source code, specifically related to a missing `unpack` method in the `fbgemm::PackBMatrix` class. This issue does not provide any information about a specific PyTorch model or its structure. Therefore, I will create a simple example of a PyTorch model and an input function that matches the typical usage pattern.
-# Since no specific model or input shape is provided, I will assume a simple convolutional neural network (CNN) with a typical input shape of `(B, C, H, W)` where `B` is the batch size, `C` is the number of channels, and `H` and `W` are the height and width of the input image.
-# Here is the complete Python code:
-# ### Explanation:
-# 1. **MyModel Class**:
-#    - A simple CNN with one convolutional layer, ReLU activation, max pooling, and a fully connected layer.
-#    - The input shape is assumed to be `(B, 3, 32, 32)` where `B` is the batch size, and the input has 3 channels (e.g., RGB images).
-# 2. **my_model_function**:
-#    - Returns an instance of `MyModel`.
-# 3. **GetInput Function**:
-#    - Generates a random tensor with the shape `(B, 3, 32, 32)` to match the input expected by `MyModel`.
-# This code provides a basic example of a PyTorch model and an input generation function. If you have a specific model or input shape in mind, please provide more details, and I can adjust the code accordingly.
+#4 255.2 [1359/2418] ccache /usr/bin/g++-8  -DAT_PARALLEL_OPENMP=1 -DCPUINFO_SUPPORTED_PLATFORM=1 -DGFLAGS_IS_A_DLL=0 -DGOOGLE_GLOG_DLL_DECL="" -DGOOGLE_GLOG_DLL_DECL_FOR_UNITTESTS="" -DHAVE_MALLOC_USABLE_SIZE=1 -DHAVE_MMAP=1 -DHAVE_SHM_OPEN=1 -DHAVE_SHM_UNLINK=1 -DNNP_CONVOLUTION_ONLY=0 -DNNP_INFERENCE_ONLY=0 -DONNX_NAMESPACE=onnx_c2 -DTH_BLAS_MKL -DUSE_C11_ATOMICS=1 -D_FILE_OFFSET_BITS=64 -D_THP_CORE -Dcaffe2_EXPORTS -I../aten/src -I. -I../ -I../cmake/../third_party/benchmark/include -Icaffe2/contrib/aten -I../third_party/onnx -Ithird_party/onnx -I../third_party/foxi -Ithird_party/foxi -I../caffe2/../torch/csrc/api -I../caffe2/../torch/csrc/api/include -I../caffe2/aten/src/TH -Icaffe2/aten/src/TH -I../caffe2/../torch/../aten/src -Icaffe2/aten/src -Iaten/src -Icaffe2/../aten/src -Icaffe2/../aten/src/ATen -I../caffe2/../torch/csrc -I../caffe2/../torch/../third_party/miniz-2.0.8 -I../aten/src/TH -I../aten/../third_party/catch/single_include -I../aten/src/ATen/.. -Icaffe2/aten/src/ATen -I../caffe2/core/nomnigraph/include -I../third_party/miniz-2.0.8 -I../c10/.. -Ithird_party/ideep/mkl-dnn/include -I../third_party/ideep/mkl-dnn/src/../include -I../third_party/QNNPACK/include -I../third_party/pthreadpool/include -I../third_party/NNPACK/include -I../third_party/cpuinfo/include -I../third_party/fbgemm/include -I../third_party/fbgemm -I../third_party/FP16/include -isystem third_party/gloo -isystem ../cmake/../third_party/gloo -isystem ../cmake/../third_party/googletest/googlemock/include -isystem ../cmake/../third_party/googletest/googletest/include -isystem /opt/intel/mkl/include -isystem ../third_party/gemmlowp -isystem ../third_party/neon2sse -isystem ../third_party -isystem /usr/local/include/opencv4 -isystem /usr/local/include/eigen3 -isystem /usr/include/python3.6m -isystem /usr/local/lib/python3.6/dist-packages/numpy/core/include -isystem /opt/rocm/hip/include -isystem /include -isystem ../third_party/ideep/include -isystem include -fdebug-prefix-map='/tmp/scratch'='/usr/local/src' -g -march=haswell -fvisibility-inlines-hidden -fopenmp -DUSE_FBGEMM -O2 -fPIC -Wno-narrowing -Wall -Wextra -Wno-missing-field-initializers -Wno-type-limits -Wno-array-bounds -Wno-unknown-pragmas -Wno-sign-compare -Wno-unused-parameter -Wno-unused-variable -Wno-unused-function -Wno-unused-result -Wno-strict-overflow -Wno-strict-aliasing -Wno-error=deprecated-declarations -Wno-stringop-overflow -Wno-error=pedantic -Wno-error=redundant-decls -Wno-error=old-style-cast -fdiagnostics-color=always -faligned-new -Wno-unused-but-set-variable -Wno-maybe-uninitialized -fno-math-errno -fno-trapping-math -Wno-stringop-overflow -DHAVE_AVX_CPU_DEFINITION -DHAVE_AVX2_CPU_DEFINITION -O3  -fPIC   -DCAFFE2_USE_GLOO -DHAVE_GCC_GET_CPUID -DUSE_AVX -DUSE_AVX2 -DTH_HAVE_THREAD -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -Wno-write-strings -Wno-unknown-pragmas -Wno-missing-braces -Wno-maybe-uninitialized -fvisibility=hidden -DCAFFE2_BUILD_MAIN_LIB -O2 -pthread -std=gnu++11 -MD -MT caffe2/CMakeFiles/caffe2.dir/__/aten/src/ATen/native/quantized/cpu/qlinear_unpack.cpp.o -MF caffe2/CMakeFiles/caffe2.dir/__/aten/src/ATen/native/quantized/cpu/qlinear_unpack.cpp.o.d -o caffe2/CMakeFiles/caffe2.dir/__/aten/src/ATen/native/quantized/cpu/qlinear_unpack.cpp.o -c ../aten/src/ATen/native/quantized/cpu/qlinear_unpack.cpp
+#4 255.2 FAILED: caffe2/CMakeFiles/caffe2.dir/__/aten/src/ATen/native/quantized/cpu/qlinear_unpack.cpp.o 
+#4 255.2 ccache /usr/bin/g++-8  -DAT_PARALLEL_OPENMP=1 -DCPUINFO_SUPPORTED_PLATFORM=1 -DGFLAGS_IS_A_DLL=0 -DGOOGLE_GLOG_DLL_DECL="" -DGOOGLE_GLOG_DLL_DECL_FOR_UNITTESTS="" -DHAVE_MALLOC_USABLE_SIZE=1 -DHAVE_MMAP=1 -DHAVE_SHM_OPEN=1 -DHAVE_SHM_UNLINK=1 -DNNP_CONVOLUTION_ONLY=0 -DNNP_INFERENCE_ONLY=0 -DONNX_NAMESPACE=onnx_c2 -DTH_BLAS_MKL -DUSE_C11_ATOMICS=1 -D_FILE_OFFSET_BITS=64 -D_THP_CORE -Dcaffe2_EXPORTS -I../aten/src -I. -I../ -I../cmake/../third_party/benchmark/include -Icaffe2/contrib/aten -I../third_party/onnx -Ithird_party/onnx -I../third_party/foxi -Ithird_party/foxi -I../caffe2/../torch/csrc/api -I../caffe2/../torch/csrc/api/include -I../caffe2/aten/src/TH -Icaffe2/aten/src/TH -I../caffe2/../torch/../aten/src -Icaffe2/aten/src -Iaten/src -Icaffe2/../aten/src -Icaffe2/../aten/src/ATen -I../caffe2/../torch/csrc -I../caffe2/../torch/../third_party/miniz-2.0.8 -I../aten/src/TH -I../aten/../third_party/catch/single_include -I../aten/src/ATen/.. -Icaffe2/aten/src/ATen -I../caffe2/core/nomnigraph/include -I../third_party/miniz-2.0.8 -I../c10/.. -Ithird_party/ideep/mkl-dnn/include -I../third_party/ideep/mkl-dnn/src/../include -I../third_party/QNNPACK/include -I../third_party/pthreadpool/include -I../third_party/NNPACK/include -I../third_party/cpuinfo/include -I../third_party/fbgemm/include -I../third_party/fbgemm -I../third_party/FP16/include -isystem third_party/gloo -isystem ../cmake/../third_party/gloo -isystem ../cmake/../third_party/googletest/googlemock/include -isystem ../cmake/../third_party/googletest/googletest/include -isystem /opt/intel/mkl/include -isystem ../third_party/gemmlowp -isystem ../third_party/neon2sse -isystem ../third_party -isystem /usr/local/include/opencv4 -isystem /usr/local/include/eigen3 -isystem /usr/include/python3.6m -isystem /usr/local/lib/python3.6/dist-packages/numpy/core/include -isystem /opt/rocm/hip/include -isystem /include -isystem ../third_party/ideep/include -isystem include -fdebug-prefix-map='/tmp/scratch'='/usr/local/src' -g -march=haswell -fvisibility-inlines-hidden -fopenmp -DUSE_FBGEMM -O2 -fPIC -Wno-narrowing -Wall -Wextra -Wno-missing-field-initializers -Wno-type-limits -Wno-array-bounds -Wno-unknown-pragmas -Wno-sign-compare -Wno-unused-parameter -Wno-unused-variable -Wno-unused-function -Wno-unused-result -Wno-strict-overflow -Wno-strict-aliasing -Wno-error=deprecated-declarations -Wno-stringop-overflow -Wno-error=pedantic -Wno-error=redundant-decls -Wno-error=old-style-cast -fdiagnostics-color=always -faligned-new -Wno-unused-but-set-variable -Wno-maybe-uninitialized -fno-math-errno -fno-trapping-math -Wno-stringop-overflow -DHAVE_AVX_CPU_DEFINITION -DHAVE_AVX2_CPU_DEFINITION -O3  -fPIC   -DCAFFE2_USE_GLOO -DHAVE_GCC_GET_CPUID -DUSE_AVX -DUSE_AVX2 -DTH_HAVE_THREAD -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -Wno-write-strings -Wno-unknown-pragmas -Wno-missing-braces -Wno-maybe-uninitialized -fvisibility=hidden -DCAFFE2_BUILD_MAIN_LIB -O2 -pthread -std=gnu++11 -MD -MT caffe2/CMakeFiles/caffe2.dir/__/aten/src/ATen/native/quantized/cpu/qlinear_unpack.cpp.o -MF caffe2/CMakeFiles/caffe2.dir/__/aten/src/ATen/native/quantized/cpu/qlinear_unpack.cpp.o.d -o caffe2/CMakeFiles/caffe2.dir/__/aten/src/ATen/native/quantized/cpu/qlinear_unpack.cpp.o -c ../aten/src/ATen/native/quantized/cpu/qlinear_unpack.cpp
+#4 255.2 ../aten/src/ATen/native/quantized/cpu/qlinear_unpack.cpp: In member function 'at::Tensor at::native::{anonymous}::QLinearUnpackWeightInt8::operator()(at::Tensor)':
+#4 255.2 ../aten/src/ATen/native/quantized/cpu/qlinear_unpack.cpp:37:12: error: 'class fbgemm::PackBMatrix<signed char>' has no member named 'unpack'; did you mean 'pack'?
+#4 255.2      packB->unpack(weight_ptr_int8);
+#4 255.2             ^~~~~~
+#4 255.2             pack

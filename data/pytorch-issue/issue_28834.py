@@ -1,17 +1,11 @@
-# torch.rand(B, C, 1, 1, dtype=torch.float)
 import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        a = torch.tensor([[1.0, 2.0, 3.0]])
-        b = torch.tensor([[4.0, 5.0, 6.0]])
-        c = torch.cat((a, b), 0)
-        return b + c
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(2, 3, 1, 1, dtype=torch.float)
-
+x = torch.ones(20, 16, 50, 40, requires_grad=True)
+import io
+f = io.BytesIO()
+torch.onnx.export(nn.Conv2d(16, 13, 3, bias=False), x, f,
+                        keep_initializers_as_inputs=False, verbose=True, opset_version=14)
+import onnx
+f.seek(0)
+print(onnx.load(f))

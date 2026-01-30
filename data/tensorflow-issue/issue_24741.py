@@ -1,39 +1,60 @@
-# tf.random.uniform((B, 32), dtype=tf.float32) ← Input shape based on provided dataset shape (batch size variable)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
 
+import numpy as np
 import tensorflow as tf
+keras = tf.keras
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Define layers to match original model:
-        self.dense1 = tf.keras.layers.Dense(units=64, activation='relu')
-        self.dense2 = tf.keras.layers.Dense(units=64, activation='relu')
-        self.dense3 = tf.keras.layers.Dense(units=10, activation='softmax')
+# tf.data.Dataset instance
+tr_data = np.random.random((1000, 32)).astype(np.float32)
+tr_label = np.random.randint(low=0, high=10, size = 1000).astype(np.int32)
+tr_dataset = tf.data.Dataset.from_tensor_slices((tr_data, tr_label))
+tr_dataset = tr_dataset.batch(batch_size=32)
+tr_dataset = tr_dataset.repeat()
 
-    def call(self, inputs, training=False):
-        x = self.dense1(inputs)
-        x = self.dense2(x)
-        return self.dense3(x)
+val_data = np.random.random((100, 32)).astype(np.float32)
+val_label = np.random.randint(low=0, high=10, size = 100).astype(np.int32)
+val_dataset = tf.data.Dataset.from_tensor_slices((val_data, val_label))
+val_dataset = val_dataset.batch(batch_size=100).repeat()
 
-def my_model_function():
-    # Return a fresh instance of MyModel.
-    # No pretrained weights provided, so initialize fresh.
-    model = MyModel()
-    # Compile the model to support sparse categorical crossentropy loss and accuracy metric,
-    # ensuring correct dtype handling (int32 labels) to avoid the reported TypeError.
-    model.compile(
-        optimizer=tf.keras.optimizers.SGD(learning_rate=0.01),
-        loss=tf.keras.losses.sparse_categorical_crossentropy,
-        metrics=['accuracy']
-    )
-    return model
+# Training
+model = keras.Sequential()
+model.add(keras.layers.Dense(units=64, activation='relu'))
+model.add(keras.layers.Dense(units=64, activation='relu'))
+model.add(keras.layers.Dense(units=10, activation='softmax'))
+model.compile(optimizer=tf.train.GradientDescentOptimizer(.01), 
+              loss=keras.losses.sparse_categorical_crossentropy,
+              metrics=['accuracy'])
 
-def GetInput():
-    # Return a tuple (inputs, labels) compatible with the model and training loop.
-    # Inputs shape: (batch_size, 32), dtype float32
-    # Labels shape: (batch_size,), dtype int32 to avoid mismatch errors shown
-    batch_size = 32
-    inputs = tf.random.uniform(shape=(batch_size, 32), dtype=tf.float32)
-    labels = tf.random.uniform(shape=(batch_size,), minval=0, maxval=10, dtype=tf.int32)
-    return inputs, labels
+model.fit(tr_dataset, epochs = 5, steps_per_epoch = 1000 // 32,
+          validation_data = val_dataset, validation_steps = 1)
 
+import numpy as np
+import tensorflow as tf
+keras = tf.keras
+
+# np.array 
+tr_data = np.random.random((1000, 32)).astype(np.float32)
+tr_label = np.random.randint(low=0, high=10, size = 1000).astype(np.int32)
+# tr_dataset = tf.data.Dataset.from_tensor_slices((tr_data, tr_label))
+# tr_dataset = tr_dataset.batch(batch_size=32)
+# tr_dataset = tr_dataset.repeat()
+
+val_data = np.random.random((100, 32)).astype(np.float32)
+val_label = np.random.randint(low=0, high=10, size = 100).astype(np.int32)
+# val_dataset = tf.data.Dataset.from_tensor_slices((val_data, val_label))
+# val_dataset = val_dataset.batch(batch_size=100).repeat()
+
+# Training
+model = keras.Sequential()
+model.add(keras.layers.Dense(units=64, activation='relu'))
+model.add(keras.layers.Dense(units=64, activation='relu'))
+model.add(keras.layers.Dense(units=10, activation='softmax'))
+model.compile(optimizer=tf.train.GradientDescentOptimizer(.01), 
+              loss=keras.losses.sparse_categorical_crossentropy,
+              metrics=['accuracy'])
+
+model.fit(x=tr_data, y=tr_label, epochs=5, batch_size=32, validation_data=(val_data, val_label))
+# model.fit(tr_dataset, epochs = 5, steps_per_epoch = 1000 // 32,
+#           validation_data = val_dataset, validation_steps = 1)

@@ -1,23 +1,45 @@
-# torch.rand(10, 10, dtype=torch.float32)  # Inferred input shape (batch_size=10, features=10)
-import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
+import os
+
+import torch
+import torch.distributed as dist
+import torch.multiprocessing as mp
+
+
+class TwoLinLayerNet(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.a = nn.Linear(10, 10, bias=False)
-        self.b = nn.Linear(10, 1, bias=False)
+        self.a = torch.nn.Linear(10, 10, bias=False)
+        self.b = torch.nn.Linear(10, 1, bias=False)
 
     def forward(self, x):
-        a_out = self.a(x)
-        b_out = self.b(x)
-        return (a_out, b_out)
+        a = self.a(x)
+        b = self.b(x)
+        return (a, b)
 
-def my_model_function():
-    # Returns a CPU-based model instance (matches GetInput's default device)
-    return MyModel()
 
-def GetInput():
-    # Returns a CPU tensor (matches model's default device unless moved)
-    return torch.randn(10, 10, dtype=torch.float32)
+def worker(rank):
+    dist.init_process_group("nccl", rank=rank, world_size=2)
+    torch.cuda.set_device(rank)
+    print("init model")
+    model = TwoLinLayerNet().cuda()
+    print("init ddp")
+    ddp_model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[rank])
 
+    inp = torch.randn(10, 10).cuda()
+    print("train")
+
+    for _ in range(20):
+        output = ddp_model(inp)
+        loss = output[0] + output[1]
+        loss.sum().backward()
+
+
+if __name__ == "__main__":
+    os.environ["MASTER_ADDR"] = "localhost"
+    os.environ["MASTER_PORT"] = "29501"
+    os.environ[
+        "TORCH_DISTRIBUTED_DEBUG"
+    ] = "DETAIL"  # set to DETAIL for runtime logging.
+    mp.spawn(worker, nprocs=2, args=())

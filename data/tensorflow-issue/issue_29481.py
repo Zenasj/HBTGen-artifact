@@ -1,29 +1,96 @@
-# tf.random.uniform((B, 10), dtype=tf.float32) ← Inferred input shape based on reproduction code (batch size B, 10 features)
+from tensorflow import keras
+
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
+model = tf.keras.Sequential(
+    [
+        tf.keras.layers.Dense(10),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Dense(1),
+    ]
+)
+
+strategy = tf.distribute.MirroredStrategy()
+with strategy.scope():
+    out = model(tf.zeros((1, 10)), training=True)
+
+import tensorflow as tf
+
+strategy = tf.distribute.MirroredStrategy()
+with strategy.scope():
+
+
+  model = tf.keras.Sequential([
+        tf.keras.layers.Dense(10),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Dense(1),
+    ])
+
+  def forward():
+    return model(tf.zeros((1, 10)), training=True)
+    
+  print(strategy.experimental_run_v2(forward, args=()))
+
+model = tf.keras.Sequential(
+    [
+        tf.keras.layers.Dense(10),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Dense(1),
+    ]
+)
+
+strategy = tf.distribute.MirroredStrategy()
+with strategy.scope():
+    out = model(tf.zeros((1, 10)), training=True)
+    print(out)
+
+import tensorflow as tf
+from tensorflow.keras import layers
+
+class Model(tf.Module):
+
     def __init__(self):
         super().__init__()
-        # Define layers similar to the example reproductions:
-        # Dense(10) -> BatchNormalization -> Dense(1)
-        self.dense1 = tf.keras.layers.Dense(10)
-        self.batch_norm = tf.keras.layers.BatchNormalization()
-        self.dense2 = tf.keras.layers.Dense(1)
 
-    def call(self, inputs, training=False):
-        # Forward pass with explicit "training" passed on for BatchNormalization
-        x = self.dense1(inputs)
-        x = self.batch_norm(x, training=training)
-        x = self.dense2(x)
+        with self.name_scope:
+            self.layers = [
+                layers.Conv2D(10, (3, 3)),
+                layers.BatchNormalization()
+            ]
+
+    def no_param_call(self, input):
+        x = input
+        for layer in self.layers:
+            x = layer(x)
+
         return x
 
-def my_model_function():
-    # Return an instance of MyModel
-    # No pretrained weights or special params mentioned, so default init
-    return MyModel()
 
-def GetInput():
-    # Generate a random input tensor with shape (1, 10) as used in repro examples
-    # dtype float32 matches Tensorflow default for layers.Dense
-    return tf.random.uniform((1, 10), dtype=tf.float32)
+    def param_call(self, input):
+        x = input
+        for layer in self.layers:
+            x = layer(x, training=True)
 
+        return x
+
+
+def app():
+    strategy = tf.distribute.MirroredStrategy()
+    image_dimension = []
+    with strategy.scope():
+        model = Model()
+        no_param_forward_fn = tf.function(model.no_param_call, autograph=False).get_concrete_function(
+                tf.TensorSpec([1, 64, 64, 3], tf.float32)
+        )
+        print('no param call succeeded')
+        param_forward_fn = tf.function(model.param_call, autograph=False).get_concrete_function(
+            tf.TensorSpec([1, 64, 64, 3], tf.float32)
+        )
+        print('param call succeeded')
+
+
+if __name__ == '__main__':
+    app()
+
+my_model = Model(...)
+tf.keras.Model(inputs=[tf.keras.layers.Input(shape=...)], outputs=my_model.call(training=True))

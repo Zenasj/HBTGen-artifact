@@ -1,17 +1,18 @@
-# torch.rand(B=1, C=1, H=1, W=3, dtype=torch.float32)
 import torch
-from torch import nn
+import torch._dynamo as dynamo
+from torch._dynamo.backends.common import aot_autograd
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-    
-    def forward(self, x):
-        return x * x
+from typing import List
 
-def my_model_function():
-    return MyModel()
+def my_backend(gm: torch.fx.GraphModule,
+                    example_inputs: List[torch.Tensor]):
+    gm.print_readable()
+    return gm
 
-def GetInput():
-    return torch.rand(1, 1, 1, 3)
+my_backend = aot_autograd(fw_compiler=my_backend) 
 
+@dynamo.optimize(backend=my_backend)
+def f(x):
+    return x * x
+
+print(f(torch.rand(3)))

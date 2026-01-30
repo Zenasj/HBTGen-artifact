@@ -1,16 +1,19 @@
-# torch.rand(1, dtype=torch.float32)  # Inferred input shape based on example's scalar-like behavior
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        s = "Hello" + str(x[0].item())  # Mimics string concatenation in original MWE
-        print(s)
-        return x  # Returns input tensor to maintain model structure
+@torch.compile
+def f(x):
+    s = "Hello" + x
+    print(s)
 
-def my_model_function():
-    return MyModel()  # Returns the model instance
+f(", world!")
 
-def GetInput():
-    return torch.tensor([0.0])  # Matches the expected input shape (scalar tensor)
+from torch._dynamo.eval_frame import _debug_get_cache_entry_list
 
+name = ""
+for x in list(globals().keys()):
+    if x.startswith("__resume"):
+        name = x # should be __resume_at_14_0
+
+code = globals()[name]
+
+print(_debug_get_cache_entry_list(code))

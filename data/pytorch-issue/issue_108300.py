@@ -1,41 +1,64 @@
-# torch.rand(10, 10, dtype=torch.float32)  # Add a comment line at the top with the inferred input shape
+import torch.nn as nn
+
+if __name__ == "__main__":
+    from torch._dynamo.test_case import run_tests
+
+    if (HAS_CPU or HAS_CUDA) and not TEST_WITH_ROCM:
+        run_tests(needs="filelock")
+
+if __name__ == "__main__":
+    from torch._dynamo.test_case import run_tests
+
+    # if (HAS_CPU or HAS_CUDA) and not TEST_WITH_ROCM:
+    #     run_tests(needs="filelock")
+
+    CompiledOptimizerTests()
+
+def make_test(optim_cls, closure=None, kernel_count=2, **kwargs):
+    @requires_cuda()
+    def test_fn(self):
+        torch._dynamo.reset()
+        torch._inductor.metrics.reset()
+        input = torch.ones([10, 10], device="cuda:0")
+        model_eager = torch.nn.Sequential(
+            *[torch.nn.Linear(10, 10, device="cuda:0") for _ in range(2)]
+        )
+        model_eager(input).sum().backward()
+
+        input = torch.ones([10, 10], device="cuda:0")
+        model_compiled = deepcopy(model_eager)
+        model_compiled(input).sum().backward()
+
+        opt_eager = optim_cls(model_eager.parameters(), **kwargs)
+        opt_compiled = optim_cls(model_compiled.parameters(), **kwargs)
+        compiled_step = compile_opt(opt_compiled, closure=closure)
+
+        with torch.set_grad_enabled(False):
+            compiled_step()
+            opt_eager.step()
+
+        self.assertEqual(
+            list(model_eager.parameters()), list(model_compiled.parameters())
+        )
+
+        if self.check_kernel_count:
+            # currently, we compile the step and the rest of the computation
+            # separately because the step is a single element tensor
+            # hence, the usual kernel count is 2
+            self.assertEqual(
+                torch._inductor.metrics.generated_kernel_count, kernel_count
+            )
+
+    return test_fn
+
+from torch.testing._internal.inductor_utils import HAS_CPU, HAS_CUDA
+...
+...
+if __name__ == "__main__":
+    from torch._dynamo.test_case import run_tests
+
+    if (HAS_CPU or HAS_CUDA) and not TEST_WITH_ROCM:
+        run_tests(needs="filelock")
 
 import torch
-import torch.nn as nn
-import copy
-
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.linear1 = nn.Linear(10, 10)
-        self.linear2 = nn.Linear(10, 10)
-
-    def forward(self, x):
-        x = self.linear1(x)
-        x = self.linear2(x)
-        return x
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.rand(10, 10, dtype=torch.float32)
-
-# Example usage:
-# model = my_model_function()
-# input_data = GetInput()
-# output = model(input_data)
-
-# Based on the provided GitHub issue, it seems that the problem is related to running PyTorch inductor tests on Windows and WSL. The issue does not provide a specific PyTorch model or code that needs to be extracted into a single Python file. However, I can infer a simple model and test setup based on the context given.
-# Here's a complete Python code file that includes a simple model and a function to generate input data, which can be used for testing purposes:
-# ### Explanation:
-# 1. **MyModel Class**:
-#    - A simple neural network with two linear layers.
-#    - The `forward` method defines the forward pass through the model.
-# 2. **my_model_function**:
-#    - Returns an instance of `MyModel`.
-# 3. **GetInput Function**:
-#    - Generates a random tensor of shape `(10, 10)` with `dtype=torch.float32`, which is the expected input shape for the model.
-# This code can be used to create and test a simple PyTorch model. If you need to run more complex tests or integrate with the inductor, you may need to set up the environment correctly, including installing necessary dependencies and ensuring CUDA support.
+print(torch.cuda.is_available())

@@ -1,54 +1,134 @@
-# tf.random.uniform((10,), dtype=tf.float32) ← input is a 1D tensor of length 10 of floats, each element is input range plus uniform noise
+import random
 
+import os
+from tempfile import TemporaryDirectory
+
+import numpy as np
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # The "model" here mimics the pipeline in the issue, where the dataset is created by 
-        # adding uniform noise to a range of 10 floats. Since the original code used tf.data and random generators,
-        # we encapsulate the "random + range" operation in the forward call directly.
-        # We will simulate multiple repeats and caching logic via submodules.
 
-        # Number of repeats for simulation (like num_repeats in the issue)
-        self.num_repeats = 2
-
-        # RNG generator seeded, to produce reproducible uniform noise.
-        self.rng = tf.random.Generator.from_seed(0)
-
-    def call(self, x=None):
-        # We ignore the input x, as original pipeline uses dataset.range(10), so fixed input shape.
-
-        # Generate single noisy samples replicating the original pipeline:
-        # start with range(10), add uniform noise scalar per element.
-        def noisy_sample():
-            base = tf.cast(tf.range(10), tf.float32)  # Shape (10,)
-            noise = self.rng.uniform(shape=())       # scalar uniform noise
-            return base + noise
-
-        # Create `num_repeats` noisy samples
-        samples = []
-        for _ in range(self.num_repeats):
-            samples.append(noisy_sample())
-
-        # Simulate caching or snapshotting by returning all repeats concatenated
-        # In the original, flat_map over datasets concatenates them. So we concat 
-        # resulting vectors along axis 0:
-        # Final shape: (num_repeats * 10,)
-        output = tf.concat(samples, axis=0)
-        return output
+def as_numpy(ds: tf.data.Dataset):
+    return np.array([x.numpy() for x in ds])
 
 
-def my_model_function():
-    # Instantiate and return the model
-    return MyModel()
+def get_data(
+    num_repeats=2,
+    snap=False,
+    preprocess_early=False,
+    preprocess_late=False,
+    del_rng=False,
+):
+    """
+    Get numpy results from a data pipeline.
 
-def GetInput():
-    # The model ignores input but expects a dummy input for call signature, or None
-    # According to the comment, input shape corresponds to (10,), float32 tensor
+    The pipeline looks like:
+        1. range
+        2. add stateful random noise
+        3. create `num_repeats` `cache`d or `snapshot`ted versions
+        4. `flat_map` if num_repeats > 1
 
-    # We generate a random tensor of shape (10,) float32, 
-    # since the original pipeline was range(10) + noise,
-    # so just using range(10) cast float32 as input is compatible.
-    return tf.cast(tf.range(10), tf.float32)
+    Args:
+        num_repeats: number of duplicates created in step 3 above.
+        snap: use `snapshot` (otherwise use `cache`)
+        preprocess_early: if True, we iterate over individually cached / snapshotted
+            datasets prior to flat-mapping.
+        preprocess_late: if True, we iterate over the `flat_map`ped dataset
+        del_rng: if True, we delete the rng responsible for generating random noise in
+            step 2. This will cause an error if this map function is called again,
+            rather than using cached / snapshotted files on disk.
 
+    Returns:
+        Two iterations of the repeated dataset.
+    """
+    rng = tf.random.Generator.from_seed(0)
+    dataset = tf.data.Dataset.range(10).map(
+        lambda x: tf.cast(x, tf.float32) + rng.uniform(())
+    )
+    with TemporaryDirectory() as tmp_dir:
+        paths = [os.path.join(tmp_dir, f"repeat-{i}") for i in range(num_repeats)]
+        if snap:
+            datasets = [
+                dataset.apply(tf.data.experimental.snapshot(path)) for path in paths
+            ]
+        else:
+            datasets = [dataset.cache(path) for path in paths]
+        if preprocess_early:
+            # iterate over datasets individually to force saving to file
+            for ds in datasets:
+                as_numpy(ds)
+        if num_repeats == 1:
+            (dataset,) = datasets
+        else:
+            dataset = tf.data.Dataset.from_tensor_slices(datasets).flat_map(lambda x: x)
+        if preprocess_late:
+            # iterate over concatenated dataset to force saving to file
+            as_numpy(dataset)
+        if del_rng:
+            # this will cause an error is the original mapped dataset is called
+            del rng
+        return as_numpy(dataset), as_numpy(dataset)
+
+
+class SnapshotTest(tf.test.TestCase):
+    def test_consistent(self):
+        base0, base1 = get_data()
+        np.testing.assert_equal(base0, base1)
+
+    def test_reproducible(self):
+        base0, _ = get_data()
+        s0, s1 = get_data()
+        np.testing.assert_equal(s0, s1)
+        np.testing.assert_equal(s0, base0)
+
+    def test_snapshot(self):
+        base0, _ = get_data()
+        s0, s1 = get_data(snap=True)
+        np.testing.assert_equal(s0, s1)
+        np.testing.assert_equal(s0, base0)
+
+    def test_preprocess_late(self):
+        base0, _ = get_data()
+        s0, s1 = get_data(snap=True, preprocess_late=True)
+        np.testing.assert_equal(s0, s1)
+        np.testing.assert_equal(s0, base0)
+
+    def test_preprocess_late_del_rng(self):
+        base0, _ = get_data()
+        s0, s1 = get_data(snap=True, preprocess_late=True, del_rng=True)
+        np.testing.assert_equal(s0, s1)
+        np.testing.assert_equal(s0, base0)
+
+    def test_preprocess_early(self):
+        base0, _ = get_data()
+        s0, s1 = get_data(snap=True, preprocess_early=True)
+        np.testing.assert_equal(s0, s1)
+        np.testing.assert_equal(s0, base0)
+
+    def test_preprocess_early_del_rng(self):
+        base0, _ = get_data()
+        s0, s1 = get_data(snap=True, preprocess_early=True, del_rng=True)
+        np.testing.assert_equal(s0, s1)
+        np.testing.assert_equal(s0, base0)
+
+    def test_preprocess_no_repeats(self):
+        # preprocess_early is equivalent to preprocess_late here
+        base0, _ = get_data(num_repeats=1)
+        s0, s1 = get_data(snap=True, preprocess_early=True, num_repeats=1)
+        np.testing.assert_equal(s0, s1)
+        np.testing.assert_equal(s0, base0)
+
+    def test_preprocess_del_rng_no_repeats(self):
+        # preprocess_early is equivalent to preprocess_late here
+        base0, _ = get_data(num_repeats=1)
+        s0, s1 = get_data(snap=True, preprocess_early=True, num_repeats=1, del_rng=True)
+        np.testing.assert_equal(s0, s1)
+        np.testing.assert_equal(s0, base0)
+
+
+if __name__ == "__main__":
+    tf.test.main()
+
+if preprocess_early:
+    # iterate over datasets individually to force saving to file
+    for ds in datasets:
+        as_numpy(tf.data.Dataset.from_tensors(ds).flat_map(lambda x: x))

@@ -1,29 +1,20 @@
-# tf.random.uniform((B,), dtype=tf.string) ← Input is a batch of variable-length strings (text input)
-
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
-import tensorflow_hub as hub
-
-# Because original code references the ALBERT preprocessor TF Hub model and custom transformer block,
-# This reconstructed model matches the structure given in the issue and uses a hub.KerasLayer for preprocessing.
 
 class TransformerBlock(layers.Layer):
     def __init__(self, embed_dim, num_heads, ff_dim, rate=0.1):
-        super(TransformerBlock, self).__init__()
+        super(TransformerBlock, self).__init__()          
         self.att = layers.MultiHeadAttention(num_heads=num_heads, key_dim=embed_dim)
         self.ffn = keras.Sequential(
-            [
-                layers.Dense(ff_dim, activation="relu"),
-                layers.Dense(embed_dim),
-            ]
+            [layers.Dense(ff_dim, activation="relu"), layers.Dense(embed_dim),]
         )
         self.layernorm1 = layers.LayerNormalization(epsilon=1e-6)
         self.layernorm2 = layers.LayerNormalization(epsilon=1e-6)
         self.dropout1 = layers.Dropout(rate)
         self.dropout2 = layers.Dropout(rate)
 
-    def call(self, inputs, training=False):
+    def call(self, inputs, training):
         attn_output = self.att(inputs, inputs)
         attn_output = self.dropout1(attn_output, training=training)
         out1 = self.layernorm1(inputs + attn_output)
@@ -39,79 +30,57 @@ class TokenAndPositionEmbedding(layers.Layer):
         self.pos_emb = layers.Embedding(input_dim=maxlen, output_dim=embed_dim)
 
     def call(self, x):
-        # x shape: (batch_size, sequence_length)
         maxlen = tf.shape(x)[-1]
         positions = tf.range(start=0, limit=maxlen, delta=1)
         positions = self.pos_emb(positions)
         x = self.token_emb(x)
         return x + positions
 
-
-class MyModel(tf.keras.Model):
-    def __init__(self, num_classes=4):
-        super(MyModel, self).__init__()
-        # Using the same preprocessing layer as original: ALBERT English preprocess v3
-        # Assumption: The local path './albert_en_preprocess_3' is replaced with standard TFHub URL for universal usage,
-        # since no local files can be referenced here.
-        self.preprocessor_layer = hub.KerasLayer(
-            "https://tfhub.dev/tensorflow/albert_en_preprocess/3", trainable=False
-        )
-        # To get vocab_size, attempt to load the tokenizer from hub (cannot run here, so hardcode approximation)
-        # Original code attempts: preprocessor.tokenize.get_special_tokens_dict()['vocab_size']
-        # ALBERT vocab size is about 30000 tokens, so use 30000 as a safe assumption.
-        vocab_size = 30000
-        embed_dim = 32
-        num_heads = 2
-        ff_dim = 32
-        max_len = 128  # Assumed max length for input tokens
-
-        # Embedding for tokens and positions (sequence length max_len)
-        self.embedding_layer = TokenAndPositionEmbedding(max_len, vocab_size, embed_dim)
-        self.transformer_block = TransformerBlock(embed_dim, num_heads, ff_dim)
-        self.global_avg_pool = layers.GlobalAveragePooling1D()
-        self.dropout1 = layers.Dropout(0.1)
-        self.dense1 = layers.Dense(20, activation="relu")
-        self.dropout2 = layers.Dropout(0.1)
-        self.classifier = layers.Dense(num_classes, activation="softmax")
-
-    def call(self, inputs, training=False):
-        """
-        inputs: tf.Tensor of dtype tf.string and shape (batch_size,)
-        """
-        # Preprocess the raw string text input to get token IDs (int32 tensors)
-        preprocessed = self.preprocessor_layer(inputs)
-        encoder_inputs = preprocessed["input_word_ids"]  # shape (batch_size, sequence_length)
-
-        # For safe fixed length max_len, pad or truncate:
-        # Note: The preprocessor outputs fixed length, so we trust shape here
-        x = self.embedding_layer(encoder_inputs)
-        x = self.transformer_block(x, training=training)
-        x = self.global_avg_pool(x)
-        x = self.dropout1(x, training=training)
-        x = self.dense1(x)
-        x = self.dropout2(x, training=training)
-        output = self.classifier(x)
-        return output
+# https://tfhub.dev/tensorflow/albert_en_preprocess/3
+preprocessor_file = "./albert_en_preprocess_3"
+preprocessor_layer = hub.KerasLayer(preprocessor_file)
 
 
-def my_model_function():
-    # Return an instance of MyModel with default parameters for 4 classes as in original issue
-    model = MyModel(num_classes=4)
-    # Compile model similarly to original
-    model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["acc"])
+def get_model_transormer(num_classes):
+    embed_dim = 32  # Embedding size for each token
+    num_heads = 2  # Number of attention heads
+    ff_dim = 32  # Hidden layer size in feed forward network inside transformer
+    
+    preprocessor = hub.load(preprocessor_file)
+    vocab_size = preprocessor.tokenize.get_special_tokens_dict()['vocab_size'].numpy()
+
+    text_input = tf.keras.layers.Input(shape=(), dtype=tf.string) 
+
+    encoder_inputs = preprocessor_layer(text_input)['input_word_ids']
+
+    embedding_layer = TokenAndPositionEmbedding(encoder_inputs.shape[1], vocab_size, embed_dim)
+    x = embedding_layer(encoder_inputs)
+    transformer_block = TransformerBlock(embed_dim, num_heads, ff_dim)
+    x = transformer_block(x)
+    x = layers.GlobalAveragePooling1D()(x)
+    x = layers.Dropout(0.1)(x)
+    x = layers.Dense(20, activation="relu")(x)
+    x = layers.Dropout(0.1)(x)
+    outputs = layers.Dense(num_classes, activation="softmax")(x)
+
+    #outputs = layers.Dense(1, activation="sigmoid")(x)
+    model = keras.Model(inputs=text_input, outputs=outputs)
+
+    model.compile("adam", "categorical_crossentropy", metrics=["acc"])
+    #model.compile("adam", "binary_crossentropy", metrics=["accuracy"])
     return model
 
+model = get_model_transormer(4)
+model.save('model_charl')
 
-def GetInput():
-    # Return a batch of random string tensor inputs that simulate text strings
-    # Since model input dtype is tf.string and shape (batch_size,), generate batch_size=2 arbitrary strings
-    # These strings can be any English sentences or gibberish tokens
-    inputs = tf.constant(
-        [
-            "This is a sample input sentence.",
-            "Another example sentence for testing."
-        ],
-        dtype=tf.string,
-    )
-    return inputs
+converter = tf.lite.TFLiteConverter.from_saved_model('./model_charl')
+#converter.optimizations = [tf.lite.Optimize.OPTIMIZE_FOR_SIZE]
+converter.optimizations = [tf.lite.Optimize.DEFAULT]
+tflite_quant_model = converter.convert()
 
+converter = tf.lite.TFLiteConverter.from_saved_model(saved_model_dir)
+converter.target_spec.supported_ops = [
+  tf.lite.OpsSet.TFLITE_BUILTINS, # enable TensorFlow Lite ops.
+  tf.lite.OpsSet.SELECT_TF_OPS # enable TensorFlow ops.
+]
+tflite_model = converter.convert()

@@ -1,8 +1,13 @@
-# torch.rand(10, 10, dtype=torch.float32)
+import torch.nn as nn
+
 import torch
+import torch._dynamo
+import logging
 import warnings
 
-class MyModel(torch.nn.Module):
+torch._logging.set_logs(dynamo=logging.DEBUG)
+
+class MyModule(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.layer = torch.nn.Linear(10, 10)
@@ -12,9 +17,11 @@ class MyModel(torch.nn.Module):
             warnings.simplefilter('ignore')
             return self.layer(x)
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    return torch.randn(10, 10)
+x = torch.randn(10, 10)
 
+m = MyModule()
+print(m(x))
+
+opt_m = torch.compile(backend="eager", fullgraph=True)(m)
+print(opt_m(x))

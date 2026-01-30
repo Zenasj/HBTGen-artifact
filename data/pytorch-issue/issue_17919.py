@@ -1,18 +1,19 @@
-# torch.randint(0, 10, (3,), dtype=torch.long)
 import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.embedding = nn.Embedding(10, 3, sparse=True)  # Matches issue's embedding parameters
-        
-    def forward(self, x):
-        return self.embedding(x).sum()  # Reproduces the sum() operation from the issue examples
+m = nn.Embedding(10, 3, sparse=True)
+m.zero_grad()
+m(torch.LongTensor([7, 1, 3])).sum().backward()
+print(m.weight.grad)
 
-def my_model_function():
-    return MyModel()  # Returns the model instance with default initialization
+m = nn.Embedding(10, 3, sparse=True)
+m.zero_grad()
+m(torch.LongTensor([7, 1, 3])).sum().backward()
+m(torch.LongTensor([7, 1, 3])).sum().backward()
+print(m.weight.grad)
 
-def GetInput():
-    return torch.randint(0, 10, (3,), dtype=torch.long)  # Generates valid indices for embedding (size 10)
-
+m = nn.Embedding(10, 3, sparse=True)
+m.zero_grad()
+m(torch.LongTensor([7, 1, 3])).sum().backward()
+m(torch.LongTensor([8, 1, 3])).sum().backward()
+print(m.weight.grad)

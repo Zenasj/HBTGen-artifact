@@ -1,8 +1,12 @@
-# torch.rand(64, 2048, 64, dtype=torch.float16) ← Add a comment line at the top with the inferred input shape
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+import torch
+import torch.export._trace
+from torch._inductor.decomposition import decompositions, get_decompositions
+from torch.fx.experimental.proxy_tensor import make_fx
+
+
+class M(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.weight = torch.nn.Parameter(torch.randn(64, 64, 192, dtype=torch.float16))
@@ -11,11 +15,9 @@ class MyModel(nn.Module):
     def forward(self, x):
         return torch.ops.aten.baddbmm.default(self.bias, x, self.weight)
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+x = torch.randn(64, 2048, 64, dtype=torch.float16, requires_grad=False)
+inputs = (x,)
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(64, 2048, 64, dtype=torch.float16)
-
+m = M()
+gm = make_fx(m, pre_dispatch=False, decomposition_table=decompositions)(*inputs)
+gm.print_readable(print_output=True)

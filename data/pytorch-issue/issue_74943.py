@@ -1,42 +1,39 @@
-# torch.rand(64, 64, 50, 50, device='cuda') ← Add a comment line at the top with the inferred input shape
-
 import torch
-import torch.nn as nn
+import time
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
-        self.conv2 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
+inps = [torch.randn(64, 64, 50, 50, device='cuda') for _ in range(2)]
 
-    def forward(self, x):
-        # Using Tensor.add_
-        x = self.conv1(x)
-        x = x.add_(x)
+torch.cuda.synchronize()
+begin = time.time()
+for _ in range(5):
+  inps[0].add_(inps[1])
+torch.cuda.synchronize()
+print(time.time()-begin)
 
-        # Using torch.ops.aten.add_
-        x = self.conv2(x)
-        x = torch.ops.aten.add_(x, x)
+torch.cuda.synchronize()
+begin = time.time()
+for _ in range(5):
+  torch.ops.aten.add_(*inps)
+torch.cuda.synchronize()
+print(time.time()-begin)
 
-        return x
+0.005440473556518555
+0.7287805080413818
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
+from torch.profiler import profile, record_function, ProfilerActivity
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.randn(64, 64, 50, 50, device='cuda')
+inps = [torch.randn(64, 64, 50, 50, device='cpu') for _ in range(2)]
 
-# The provided issue discusses a performance problem with `torch.ops.aten.add_` and its resolution. However, it does not provide a complete PyTorch model or any specific model structure. Since the goal is to generate a complete Python code file that includes a model and an input function, we will need to infer and create a simple model for demonstration purposes.
-# Given the context, let's create a simple model that uses `torch.ops.aten.add_` and `Tensor.add_` for comparison. We will also include a function to generate a valid input tensor.
-# ### Explanation:
-# 1. **Input Shape**: The input shape is inferred from the issue as `torch.rand(64, 64, 50, 50, device='cuda')`.
-# 2. **MyModel Class**:
-#    - The model consists of two convolutional layers.
-#    - The `forward` method uses both `Tensor.add_` and `torch.ops.aten.add_` to demonstrate the difference in performance.
-# 3. **my_model_function**:
-#    - This function returns an instance of `MyModel`.
-# 4. **GetInput Function**:
-#    - This function generates a random tensor input that matches the expected input shape for `MyModel`.
-# This code can be used to compare the performance of `Tensor.add_` and `torch.ops.aten.add_` within a simple model.
+with profile(activities=[ProfilerActivity.CPU],
+        profile_memory=True, record_shapes=True) as prof:
+  torch.ops.aten.add_(*inps)
+print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=30))
+
+for overload in all_overloads:
+  try:
+    inputs = overload.parse_args(inp)
+  except:
+    pass
+  else:
+    break
+  call_function(inputs)

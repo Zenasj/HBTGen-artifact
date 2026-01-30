@@ -1,59 +1,82 @@
-# tf.random.uniform((None, None, 3), dtype=tf.float32) ← The input expected is a single 3-channel image of arbitrary height and width
+import argparse
+from glob import glob
 
 import tensorflow as tf
 import tensorflow_hub as hub
+from tensorflow.python.framework import ops
+from tensorflow.python.framework.ops import disable_eager_execution
+from tqdm import tqdm
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Load the DELF model from TensorFlow Hub as a KerasLayer
-        # Note: The original code uses hub.Module which is TF1 style.
-        # Here we adapt to TF2 by using hub.KerasLayer.
-        # The DELF module expects inputs of shape [H, W, 3], batch size 1 is typically required.
-        self.delf_layer = hub.KerasLayer(
-            "https://tfhub.dev/google/delf/1",
-            output_key="descriptors",
-            trainable=False
-        )
-        self.locations_layer = hub.KerasLayer(
-            "https://tfhub.dev/google/delf/1",
-            output_key="locations",
-            trainable=False
-        )
+disable_eager_execution()
+tf.compat.v1.disable_v2_behavior()
 
-    @tf.function(jit_compile=True)
-    def call(self, inputs):
-        # inputs: a 3D tensor [H, W, 3], float32 representing a single image, pixel values [0,1].
-        # DELF model from TF Hub expects batch dimension for TF2, so expand dims.
-        img_batch = tf.expand_dims(inputs, axis=0)
-        
-        # DELF TF hub module input dict for TF2 KerasLayer requires a dict
-        inputs_dict = {
-            'image': tf.cast(img_batch, tf.float32),
+class DeepDELF:
+
+    def __init__(self, input_path):
+        ops.reset_default_graph()
+
+        m = hub.Module('https://tfhub.dev/google/delf/1')
+
+        # The module operates on a single image at a time, so define a placeholder to
+        # feed an arbitrary image in.
+        self.image_placeholder = tf.compat.v1.placeholder(
+            tf.float32, shape=(None, None, 3), name='input_image')
+
+        module_inputs = {
+            'image': self.image_placeholder,
             'score_threshold': 100.0,
-            'image_scales': tf.constant([0.25, 0.3536, 0.5, 0.7071, 1.0, 1.4142, 2.0], dtype=tf.float32),
-            'max_feature_num': tf.constant(1000, dtype=tf.int32),
+            'image_scales': [0.25, 0.3536, 0.5, 0.7071, 1.0, 1.4142, 2.0],
+            'max_feature_num': 1000,
         }
-        
-        # Invoke descriptors and locations from the module. 
-        # Since hub.KerasLayer wraps the module, assume single call returns a dict with keys
-        # Note: TF Hub KerasLayer usage for a TF v1 hub.Module is limited, so emulate it.
-        desc = self.delf_layer(inputs_dict)  # descriptors tensor
-        loc = self.locations_layer(inputs_dict)  # locations tensor
-        
-        # Remove batch dimension for output for ease of use
-        desc = tf.squeeze(desc, axis=0)
-        loc = tf.squeeze(loc, axis=0)
-        
-        return {'locations': loc, 'descriptors': desc}
 
-def my_model_function():
-    # Return an instance of MyModel; weights are loaded from TF Hub automatically
-    return MyModel()
+        self.module_outputs = m(module_inputs, as_dict=True)
+        self.image_tf = self.image_input_fn(glob(input_path + '/*'))
+        self.path_list = glob(input_path + '/*')
 
-def GetInput():
-    # Create a random image tensor with 3 channels and arbitrary height and width
-    # DELF commonly uses natural image input shapes. Let's pick 224x224 for testing.
-    height, width = 224, 224
-    return tf.random.uniform((height, width, 3), dtype=tf.float32)
+    def extract(self):
+        with tf.compat.v1.train.MonitoredSession() as sess:
+            results_dict = {}  # Stores the locations and their descriptors for each image
+            for image_path in tqdm(self.path_list):
+                image = sess.run(self.image_tf)
+                print('Extracting locations and descriptors from %s' % image_path)
+                results_dict[image_path] = sess.run(
+                    [self.module_outputs['locations'], self.module_outputs['descriptors']],
+                    feed_dict={self.image_placeholder: image})
+            return results_dict
 
+    def image_input_fn(self, image_files):
+        filename_queue = tf.compat.v1.train.string_input_producer(
+            image_files, shuffle=False)
+        reader = tf.compat.v1.WholeFileReader()
+        _, value = reader.read(filename_queue)
+        image_tf = tf.image.decode_jpeg(value, channels=3)
+        return tf.image.convert_image_dtype(image_tf, tf.float32)
+
+
+def main(args):
+    path = args['input_path']
+    extrator = None
+    extractor = DeepDELF(path)
+    results_dict = extractor.extract()
+    results_dict2 = extractor.extract()
+    print("Shape feature: ", results_dict.keys())
+    print("Shape feature 2: ", results_dict2.keys())
+
+
+def args_parser():
+    parser = argparse.ArgumentParser(description="Methods extract image.")
+    parser.add_argument('-i', '--input_path', 
+                        help="The path of the input image.")
+    return vars(parser.parse_args())
+
+
+if __name__ == "__main__":
+    args = args_parser()
+    # End default optional arguments
+    # Print info arguments
+    print("Extract feature from image.".upper().center(100))
+    print(str("-" * 63).center(100))
+    print("|{:<30}:\n|{:<30}|".format("Image path", args['input_path']).center(100))
+    print(str("-" * 63).center(100))
+
+    main(args)

@@ -1,68 +1,76 @@
-# tf.random.uniform((1, 3, 64, 224, 224), dtype=tf.float32) ← Input shape and dtype inferred from the issue example
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
 import functools
 from collections.abc import Iterable
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Parameters inferred from the example usage
-        output_channels = 64
-        kernel_shape = (7, 7, 7)
-        is_training = True
-        use_batch_norm = True
-        activation_fn = 'relu'
-        use_bias = False
 
-        # Build the sub-layers pipeline similar to Unit3D layer
-        self._pipeline_layers = []
-
-        # Conv3D layer with channels_first format to match input shape (1,3,64,224,224)
-        self._pipeline_layers.append(
-            tf.keras.layers.Conv3D(
-                filters=output_channels,
-                kernel_size=kernel_shape,
-                strides=(1, 1, 1),
-                padding='same',
-                use_bias=use_bias,
-                data_format='channels_first'
-            )
+# TODO Check for correctness of the model implementation
+class Unit3D(tf.keras.layers.Layer):
+    def __init__(self, output_channels,
+                 kernel_shape=(1, 1, 1),
+                 stride=(1, 1, 1),
+                 activation_fn='relu',
+                 use_batch_norm=True,
+                 use_bias=False,
+                 is_training=False,
+                 name='unit_3d'):
+        super(Unit3D, self).__init__(name=name)
+        self._output_channels = output_channels
+        self._kernel_shape = kernel_shape
+        self._stride = stride
+        self._activation = activation_fn
+        self._use_batch_norm = use_batch_norm
+        self._use_bias = use_bias
+        self._is_training = is_training
+        self._pipeline = []
+        self._pipeline.append(tf.keras.layers.Conv3D(
+            filters=self._output_channels,
+            kernel_size=self._kernel_shape,
+            strides=self._stride,
+            padding='same',
+            use_bias=self._use_bias,
+            data_format='channels_first'
         )
+        )
+        if self._use_batch_norm:
+            bn = tf.keras.layers.BatchNormalization(
+                axis=1,
+                fused=False,
+            )
+            bn = functools.partial(bn, training=self._is_training)
+            self._pipeline.append(bn)
 
-        if use_batch_norm:
-            # BatchNorm axis=1 to normalize channels_first format
-            bn_layer = tf.keras.layers.BatchNormalization(axis=1, fused=False)
-            # The issue's approach was to fix training flag using partial; here we fix it in call
-            self._batch_norm = bn_layer
-        else:
-            self._batch_norm = None
-
-        if activation_fn is not None:
-            self._activation = tf.keras.layers.Activation(activation_fn)
-        else:
-            self._activation = None
-
-        # Compose the pipeline functional layers (Conv -> BN -> Activation)
-        # Using a list of callables, converted to a single composed callable in call method
-
-    def call(self, inputs, training=None, mask=None):
-        # Execute Conv3D
-        x = self._pipeline_layers[0](inputs)
-        # Execute BatchNorm if used, passing training flag properly
-        if self._batch_norm is not None:
-            x = self._batch_norm(x, training=training)
-        # Execute activation
         if self._activation is not None:
-            x = self._activation(x)
-        return x
+            self._pipeline.append(tf.keras.layers.Activation(
+                activation=self._activation
+            )
+            )
 
-def my_model_function():
-    # Return an instance of MyModel, no special initialization needed beyond __init__
-    return MyModel()
+        print(isinstance(self._pipeline, Iterable))
+        print(type(self._pipeline))
+        self._pipeline = lambda x: functools.reduce(lambda f, g: g(f), self._pipeline, x)
 
-def GetInput():
-    # Return a random tensor input matching expected input of shape (1, 3, 64, 224, 224)
-    # dtype float32 as per example from issue
-    return tf.random.uniform(shape=(1, 3, 64, 224, 224), dtype=tf.float32)
+    def call(self, input):
+        return self._pipeline(input)
 
+import tensorflow as tf
+from nets.i3d import Unit3D
+
+model = Unit3D(output_channels=64, kernel_shape=[7,7,7],
+               is_training=True)
+
+input = tf.keras.backend.random_uniform(shape=(1,3,64,224,224),
+                                        dtype=tf.float32)
+output = model(input)
+
+import tensorflow as tf
+from i3d import Unit3D
+
+model = Unit3D(output_channels=64, kernel_shape=[7,7,7],
+               is_training=True)
+
+input = tf.keras.backend.random_uniform(shape=(1,3,64,224,224),
+                                        dtype=tf.float32)
+output = model(input)

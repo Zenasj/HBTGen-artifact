@@ -1,21 +1,17 @@
-# torch.rand(0, 3, 4, dtype=torch.float32)
 import torch
-from torch import nn
+x = torch.ones(0)
+print(x.int().max().item()) # Gives -2147483648
+x = x.cuda()
+print(x.int().max().item()) # Gives 0
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        # Compare CPU and CUDA outputs of max reduction along axis 1
-        cpu_val, _ = torch.max(x.cpu(), 1)
-        cuda_val, _ = torch.max(x.cuda(), 1)
-        # Return 1 if shapes match (1 for success, 0 otherwise)
-        return torch.tensor(
-            cpu_val.shape == cuda_val.shape,
-            dtype=torch.int32
-        )
+import torch
+import numpy as np
 
-def my_model_function():
-    return MyModel()
+print(np.ones((0, 3, 4)).max(1).shape) # (0, 4)
+print(np.ones((0, 3, 4)).max(2).shape) # (0, 3)
 
-def GetInput():
-    return torch.empty(0, 3, 4, dtype=torch.float32)
+print(*map(lambda x:x.size(), torch.ones((0, 3, 4)).max(1))) # (0, 4) (0, 4)
+print(*map(lambda x:x.size(), torch.ones((0, 3, 4)).max(2))) # (0, 3) (0, 3)
 
+print(np.ones((0, 3, 4)).max(0).shape) # Raises an identity error
+print(*map(lambda x:x.size(), torch.ones((0, 3, 4)).max(0))) # Raises an identity error

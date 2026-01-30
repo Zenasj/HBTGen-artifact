@@ -1,19 +1,24 @@
-# torch.rand(B, C, H, W, dtype=...)  # Inferred input shape: (1,) for this specific case
+import torch.nn as nn
+
 import torch
-from torch import nn
-
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-
+ 
+class TestModule(torch.nn.Module):
     def forward(self, x):
         return x + torch.randn_like(x, device=x.device)
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    return torch.zeros([1], device='cuda', dtype=torch.float32)
-
+ 
+trace_input = torch.zeros([1], device='cuda', dtype=torch.float32)
+module = torch.jit.trace_module(TestModule(), dict(forward=(trace_input,)), check_trace=False)
+ 
+try:
+    print('CUDA')
+    module(trace_input)
+    print('Correct\n')
+except RuntimeError as e:
+    print(e, '\n')
+ 
+try:
+    print('CPU')
+    module(trace_input.cpu())
+    print('Correct\n')
+except RuntimeError as e:
+    print(e, '\n')

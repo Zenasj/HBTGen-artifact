@@ -1,8 +1,9 @@
-# torch.randint(0, 15, (B, S), dtype=torch.long)
-import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
+from torch import nn
+import torch
+
+class Model(nn.Module):
     def __init__(self):
         super().__init__()
         self.emb = nn.Embedding(15, 96)
@@ -16,18 +17,34 @@ class MyModel(nn.Module):
         self.attn_layers = nn.TransformerEncoder(
             enc_layer,
             num_layers=10,
-            enable_nested_tensor=True  # From original code
+            enable_nested_tensor=True
         )
 
     def forward(self, x):
         x = self.emb(x)
         return self.attn_layers(x)
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    # Matches sample_input shape (1, 3) and dynamic export requirements
-    B, S = 1, 3  # From original sample_input [[1,2,3]]
-    return torch.randint(0, 15, (B, S), dtype=torch.long)
+model = Model().eval()
+# sample_input = torch.randint(0, 15, (1, 20))
+sample_input = torch.tensor([[1, 2, 3]])
+exported = torch.onnx.dynamo_export(
+    model,
+    sample_input,
+    export_options=torch.onnx.ExportOptions(dynamic_shapes=True)
+)
 
+exported.save("model.onnx")
+print("Exported")
+
+import numpy as np
+import onnxruntime
+
+session = onnxruntime.InferenceSession("model.onnx", providers=["CPUExecutionProvider"])
+input = np.array([[1, 2, 3]], dtype=np.int64)
+# input = sample_input.numpy()
+output = session.run(None, {"arg0": input})
+torch_input = torch.tensor(input)
+torch_output = model(torch_input)
+torch.testing.assert_close(torch.tensor(output[0]), torch_output)
+print(output)

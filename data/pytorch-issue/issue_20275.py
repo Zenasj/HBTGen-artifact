@@ -1,4 +1,3 @@
-# torch.rand(B, C, H, W, dtype=...)  # Input shape: (batch_size, 3, 32, 32)
 import torch
 import torch.nn as nn
 
@@ -31,8 +30,8 @@ class MeanOnlyBatchNorm(nn.Module):
             red_dim = (0,) + tuple(range(2, x.dim()))
             mean = x.mean(red_dim)
             activation = x - mean[exp_dim]
-            with torch.no_grad():
-                self.running_mean.mul_(1 - self.momentum).add_(mean * self.momentum)
+            self.running_mean = (self.momentum * mean +
+                                 (1 - self.momentum) * self.running_mean)
         else:
             activation = x - self.running_mean[exp_dim]
 
@@ -42,29 +41,28 @@ class MeanOnlyBatchNorm(nn.Module):
         return '{num_features}, eps={eps}, momentum={momentum}, affine=True, ' \
                'track_running_stats=True'.format(**self.__dict__)
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        n_class = 10
-        c1 = nn.Conv2d(3, 1000, kernel_size=3, padding=1, stride=4)
-        bn1 = MeanOnlyBatchNorm(c1)
-        act1 = nn.ReLU(True)
-        pool1 = nn.AdaptiveAvgPool2d(1)
-        n2 = nn.Conv2d(1000, n_class, kernel_size=1)
-        bn2 = MeanOnlyBatchNorm(n2)
-        self.model = nn.Sequential(c1, bn1, act1, pool1, n2, bn2)
 
-    def forward(self, x):
-        return self.model(x)
+n_class = 10
+batch_size = 100
+n_batches = 2000
+input_size = (3, 32, 32)
+device = torch.device('cuda')
+c1 = nn.Conv2d(3, 1000, kernel_size=3, padding=1, stride=4)
+bn1 = MeanOnlyBatchNorm(c1)
+act1 = nn.ReLU(True)
+pool1 = nn.AdaptiveAvgPool2d(1)
+n2 = nn.Conv2d(1000, n_class, kernel_size=1)
+bn2 = MeanOnlyBatchNorm(n2)
+m = nn.Sequential(c1, bn1, act1, pool1, n2, bn2).to(device)
+optimizer = torch.optim.Adam(m.parameters())
+for _ in range(n_batches):
+    t = torch.randn(*((batch_size,) + input_size), device=device)
+    x = m(t).view(batch_size, -1)
+    loss = torch.nn.functional.cross_entropy(
+        x, torch.randint(n_class, (batch_size,), dtype=torch.long,
+                         device=device))
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    batch_size = 100
-    input_size = (3, 32, 32)
-    device = torch.device('cuda')
-    return torch.randn(*((batch_size,) + input_size), device=device)
-
+self.running_mean.mul_(1 - self.momentum).add_(mean.detach() * self.momentum)

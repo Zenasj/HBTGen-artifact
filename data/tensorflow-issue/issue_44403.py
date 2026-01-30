@@ -1,35 +1,52 @@
-# tf.random.uniform((B, 1), dtype=tf.int64) ← input shape is (batch_size, 1) with int64 dtype
+from tensorflow import keras
+from tensorflow.keras import layers
 
 import tensorflow as tf
+import os
+import shutil
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Initialize the lookup table with predefined keys and string values
-        # Keys are int64: [0,1,2], values are strings: ["A", "B", "C"]
-        table_init = tf.lookup.KeyValueTensorInitializer(
+
+class MyLookup(tf.keras.layers.Layer):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.table_init = tf.lookup.KeyValueTensorInitializer(
             key_dtype=tf.int64,
             keys=[0, 1, 2],
             value_dtype=tf.string,
             values=["A", "B", "C"],
             name="table_init")
-        self.index_to_kw = tf.lookup.StaticHashTable(table_init, default_value="?")
+        self.index_to_kw = tf.lookup.StaticHashTable(self.table_init, "?")
 
     def call(self, inputs, **kwargs):
-        # Perform lookup on inputs, returning string tensor
         return self.index_to_kw.lookup(inputs)
 
 
-def my_model_function():
-    # Returns an instance of MyModel.
-    # No weights loading required since StaticHashTable is initialized internally.
-    return MyModel()
+class TestSaveProblem(tf.test.TestCase):
 
+    def determine_and_clear_test_workdir(self):
+        testname = self.id()
+        result = os.path.abspath(os.path.join(
+            os.path.dirname(__file__), "tmp_test_workdir", testname))
+        shutil.rmtree(result, ignore_errors=True)
+        return result
 
-def GetInput():
-    # Returns a random input tensor compatible with MyModel:
-    # Example shape (batch_size=3, 1), dtype int64 with values in [0..2] (valid keys)
-    batch_size = 3
-    # Inputs are int64 integers between 0 and 2, shape (batch_size, 1)
-    return tf.random.uniform((batch_size, 1), minval=0, maxval=3, dtype=tf.int64)
+    def testSaveProblem(self):
+        export_dir = self.determine_and_clear_test_workdir() + "/saved_model"
 
+        exampledata = [1, 2]
+
+        input = tf.keras.layers.Input(shape=1, dtype=tf.int64)
+        output = MyLookup(name='result')(input)
+        model = tf.keras.Model(inputs=[input], outputs=[output])
+
+        # save and load
+        model.save(export_dir, save_format='tf', include_optimizer=False)
+        loaded_model = tf.saved_model.load(export_dir, [tf.saved_model.SERVING]).signatures[
+            'serving_default']
+
+        # test after saving and loading (works!)
+        loaded_result = loaded_model(tf.constant(exampledata, dtype=tf.int64))['result']
+        self.assertAllEqual([b"B", b"C"], loaded_result)
+
+if __name__ == '__main__':
+    tf.test.main()

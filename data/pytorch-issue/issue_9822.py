@@ -1,14 +1,17 @@
-# torch.rand(1, 3, 224, 224, dtype=torch.float32)
+class MyModel(nn.Module):
+    def forward(self, x):
+        return x[:, :, :, 1:-1]
+
 import torch
+import torch.onnx as tonnx
 import torch.nn as nn
+from torch.autograd import Variable
 
 class MyModel(nn.Module):
     def forward(self, x):
         return x[:, :, :, 1:-1]
 
-def my_model_function():
-    return MyModel()
+dummy_input = Variable(torch.randn(1, 3, 224, 224))
+model = MyModel()
 
-def GetInput():
-    return torch.rand(1, 3, 224, 224, dtype=torch.float32)
-
+tonnx.export(model, dummy_input, "/tmp/model.onnx", verbose=True)

@@ -1,18 +1,15 @@
-# torch.rand(5, dtype=torch.float32)  # Input shape is (5,)
+import torch.nn as nn
+
 import torch
-import warnings
-from torch import nn
 
-class MyModel(nn.Module):
-    def forward(self, x):
-        for _ in range(10):
-            x = torch.nn.functional.softmax(x)
-            warnings.warn("Test warning message", stacklevel=2)
-        return x
+def foo(x):
+  for i in range(10):
+    x = torch.nn.functional.softmax(x)  # generates a warning inside
 
-def my_model_function():
-    return MyModel()
+foo(torch.rand(5))
 
-def GetInput():
-    return torch.rand(5)
+# warning is printed once
 
+torch.jit.script(foo)(torch.rand(5))
+
+# warning is printed 10 times

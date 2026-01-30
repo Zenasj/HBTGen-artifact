@@ -1,33 +1,49 @@
-# torch.rand(B, C, H, W, dtype=...)  # The input shape is not explicitly defined in the issue, so we will assume a generic input shape (B, C, H, W) for demonstration purposes.
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        # Assuming a simple model structure for demonstration purposes
-        self.conv1 = nn.Conv2d(in_channels=3, out_channels=64, kernel_size=3, padding=1)
-        self.relu = nn.ReLU()
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.fc = nn.Linear(64 * 8 * 8, 10)  # Assuming the input size after pooling is 8x8
+sizes = [
+    # These will succeed.
+    10000,
+    100000,
+    6042451,
+    6042453,
+    7000000,
 
-    def forward(self, x):
-        x = self.pool(self.relu(self.conv1(x)))
-        x = x.view(-1, 64 * 8 * 8)  # Flatten the tensor
-        x = self.fc(x)
-        return x
+    # This will fail.
+    6042452,
+]
 
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
 
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    # Assuming a batch size of 1, 3 channels, and image size of 32x32
-    return torch.rand(1, 3, 32, 32, dtype=torch.float32)
+for n in sizes:
+    print(f"n = {n}")
+    x = torch.rand((n,), dtype=torch.float64, device="cuda")
+    for i in range(100):
+        torch.topk(x, k=1, dim=0)
+        print(f"\r  {i}", end="")
+    print()
 
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
+import torch
+from utils import Timer
 
+torch.manual_seed(0)
+
+experiments = (
+    (1, 10000, lambda: torch.rand(size=(39, 222075), device="cuda")),
+    (1, 10000, lambda: torch.rand(size=(32, 262144), device="cuda")),
+    (1, 4,     lambda: torch.rand(size=(39, 222075), device="cuda")),
+    (1, 4,     lambda: torch.rand(size=(32, 262144), device="cuda")),
+
+    (0, 10000, lambda: torch.rand(size=(786842, 25), device="cuda")),
+    (0, 10000, lambda: torch.rand(size=(1048576, 16), device="cuda")),
+    (0, 4,     lambda: torch.rand(size=(786842, 25), device="cuda")),
+    (0, 4,     lambda: torch.rand(size=(1048576, 16), device="cuda")),
+)
+
+for dim, k, tensor_constructor in experiments:
+    x = tensor_constructor()
+    timer = Timer(
+        stmt="torch.topk(x, dim=dim, k=k)",
+        globals={"x": x, "dim": dim, "k": k},
+        label=f"k:{k:>6}, dim:{dim}, size:{list(x.shape)}",
+    )
+    measurement = timer.blocked_autorange(min_run_time=5)
+    print(f"{measurement.median * 1e6:>10.0f} us{'':>10}{measurement.label}")

@@ -1,49 +1,89 @@
-# tf.random.uniform((B,), dtype=tf.int32) ← Input shape inferred from dataset range; sequence of integers
+import random
+
+import sys
 
 import tensorflow as tf
 import numpy as np
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Initialize the large embedding variable from a fixed numpy array
-        # Assuming vocab size large enough for sequence indices, dense embedding dim 400
-        self.vocab_size = 100  # Based on input_fn Dataset range(100)
-        self.embedding_dim = 400
-        # Large constant numpy array to simulate big embedding variable initialization
-        self.emb_init_np = np.random.rand(3000000, self.embedding_dim).astype(np.float32)
-        # For demonstration, picking a slice to avoid massive memory usage in this TF 2.x conversion
-        # NOTE: Original estimation was 3 million by 400; here to make runnable, slice down:
-        self.emb_init_np = self.emb_init_np[:self.vocab_size, :]  # simplify embedding table size
-        
-        # Create embedding variable initialized from numpy array, non-trainable as in original
-        self.embedding_var = tf.Variable(initial_value=self.emb_init_np,
-                                         trainable=False,
-                                         name="big_embedding")
+from hooks import InitHook
 
-        # Dense layer corresponding to logits
-        self.dense = tf.keras.layers.Dense(1000)
+def input_fn():
+  dataset = tf.data.Dataset.range(100)
+  # Make sequence data
+  dataset = dataset.map(lambda x: {'x': [x]})
+  dataset = dataset.repeat(3)
+  return dataset
 
-    @tf.function(jit_compile=True)
-    def call(self, inputs):
-        # inputs expected to be a 1D tensor of sequence indices: shape (B, )
-        # embedding_lookup expects indices into embedding_var
-        emb = tf.nn.embedding_lookup(self.embedding_var, inputs)
-        logits = self.dense(emb)
-        predictions = tf.greater(logits, 0.0)
-        return predictions
+def model_fn(features, labels, mode, params):
+  seq = features['x']
+  with tf.device('/gpu:0'):
+    arr = np.random.rand(3000000, 400)
+    var = tf.get_variable('big', arr.shape, trainable=False)
+    emb = tf.nn.embedding_lookup(var, seq)
+  logits = tf.layers.dense(emb, 1000)
+  predictions = tf.greater(logits, 0.0)
+  # Don't care about loss but have to provide something
+  loss = tf.reduce_mean(logits)
+  trainable_vars = tf.trainable_variables()
+  global_step = tf.train.get_or_create_global_step()
+  saveable_vars = trainable_vars + [global_step]
+  def init_fn(scaffold, sess):
+    sess.run(var.initializer, {var.initial_value: arr})
+  saver = tf.train.Saver(var_list=saveable_vars)
+  if mode == tf.estimator.ModeKeys.TRAIN:
+    scaffold = tf.train.Scaffold(init_fn=init_fn, saver=saver)
+    optimizer = tf.train.GradientDescentOptimizer(0.1)
+    train_op = optimizer.minimize(loss, global_step=global_step)
+    output_spec = tf.estimator.EstimatorSpec(
+      mode=mode,
+      loss=loss,
+      scaffold=scaffold,
+      train_op=train_op)
+  elif mode == tf.estimator.ModeKeys.EVAL:
+    hooks = [InitHook(var.initializer, {var.initial_value: arr})]
+    ready_for_local_init_op = tf.constant([], dtype=tf.string)
+    ready_op = tf.constant([], dtype=tf.string)
+    scaffold = tf.train.Scaffold(init_fn=init_fn, saver=saver, ready_for_local_init_op=ready_for_local_init_op, ready_op=ready_op)
+    output_spec = tf.estimator.EstimatorSpec(
+      scaffold=scaffold,
+      mode=mode,
+      evaluation_hooks=hooks,
+      loss=loss)
+  elif mode == tf.estimator.ModeKeys.PREDICT:
+    ready_for_local_init_op = tf.constant([], dtype=tf.string)
+    ready_op = tf.constant([], dtype=tf.string)
+    scaffold = tf.train.Scaffold(ready_for_local_init_op=ready_for_local_init_op, ready_op=ready_op, saver=saver)
+    hooks = [InitHook(var.initializer, {var.initial_value: arr})]
+    predictions = {
+      'predictions': predictions
+    }
+    output_spec = tf.estimator.EstimatorSpec(
+      mode=mode,
+      predictions=predictions,
+      scaffold=scaffold,
+      prediction_hooks=hooks)
+  return output_spec
 
+tf.logging.set_verbosity(tf.logging.INFO)
+estimator = tf.estimator.Estimator(model_fn=model_fn, config=tf.estimator.RunConfig())
+eval_spec = tf.estimator.EvalSpec(input_fn=input_fn, start_delay_secs=0, throttle_secs=3)
+if sys.argv[1] == 'bad':
+  train_spec = tf.estimator.TrainSpec(input_fn=input_fn)
+  tf.estimator.train_and_evaluate(estimator, train_spec, eval_spec)
+elif sys.argv[1] == 'good':
+  train_spec = tf.estimator.TrainSpec(input_fn=input_fn, max_steps=100)
+  estimator.evaluate(input_fn=input_fn)
+results = estimator.predict(input_fn=input_fn)
+for result in results:
+  pass
 
-def my_model_function():
-    # Return instance of MyModel with initialized embedding_var from numpy array
-    return MyModel()
+class InitHook(training.SessionRunHook):
+  def __init__(self, op, feed_dict):
+    self.op = op
+    self.feed_dict = feed_dict
 
+  def after_create_session(self, session, coord):  # pylint: disable=unused-argument
+    session.run(self.op, feed_dict=self.feed_dict)
 
-def GetInput():
-    # Return a 1D tensor of integer indices matching input range for embedding lookup
-    # Using batch size B=8 arbitrarily, indices in [0, vocab_size)
-    B = 8
-    # Use tf.range clipped by vocab_size to simulate example input batch
-    input_tensor = tf.random.uniform(shape=(B,), minval=0, maxval=100, dtype=tf.int32)
-    return input_tensor
-
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior()

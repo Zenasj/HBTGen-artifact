@@ -1,29 +1,37 @@
-# torch.randint(0, 20, (500, 30), dtype=torch.long) ← inferred input shape (batch_size=500, sequence_length=30)
+import random
+
 import torch
 import torch.nn as nn
+import numpy as np
 
-class MyModel(nn.Module):
+
+class sampleModel(nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
-        self.layers = nn.Sequential(
-            nn.Embedding(500, 10, max_norm=1.0),
-            nn.Linear(10, 2)
-        )
-        self.loss_criterion = nn.NLLLoss()  # Matches original setup despite potential numerical issues
+        super(sampleModel, self).__init__()
+        input_layer= nn.Embedding(500, 10, max_norm=1.0)
+        output_layer = nn.Linear(10, 2)
+        self.layers = nn.Sequential(input_layer, output_layer)
+        self.loss_criterion = nn.NLLLoss()
 
-    def forward(self, inputs):
-        input, labels = inputs  # Unpack tuple from GetInput()
-        em_x = self.layers[0](input).sum(dim=1)
+    def forward(self, input, labels):
+        em_x = self.layers[0](input).sum(1)
         out = self.layers[1](em_x)
         loss = self.loss_criterion(out, labels)
         return loss
 
-def my_model_function():
-    return MyModel()
 
-def GetInput():
-    # Generate input and labels as tuple matching the forward's requirements
-    input_data = torch.randint(0, 20, (500, 30), dtype=torch.long)
-    labels = torch.cat([torch.zeros(250, dtype=torch.long), torch.ones(250, dtype=torch.long)])
-    return (input_data, labels)
+if __name__ == "__main__":
+    device = torch.device('cpu')
+    
+    model = sampleModel().to(device)
 
+    data = []
+    for i in range(0,500):
+        data.append(np.random.randint(0, 20, size=30))
+    
+    inputx = torch.LongTensor(data).to(device)
+    labels = torch.LongTensor( [0]*250 + [1]*250 ).to(device)
+    
+    loss = model(inputx, labels)
+    print(loss)
+    loss.backward()

@@ -1,23 +1,20 @@
-# torch.rand(4, 32, 4, dtype=torch.float32)
 import torch
-from torch import nn
+import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        # Linear layer with in_features=32 (from input's permuted dim) and out_features=4
-        self.linear = nn.Linear(32, 4, bias=True)
+def test_dynamo_dtensor_AAA(self):
+        mesh = DeviceMesh(self.device_type, torch.arange(self.world_size))
 
-    def forward(self, x):
-        tmp = x.permute(0, 2, 1).contiguous()  # Permute and ensure contiguous
-        out = self.linear(tmp)                 # Apply linear layer
-        return out.permute(0, 2, 1)            # Reverse permutation
+        # test passing in DTensor as inputs/outputs and run some tensor computation
+        def fn(x, y, z):
+            tmp = x.permute(0, 2, 1).contiguous()
+            out = torch._C._nn.linear(tmp, y, z)
+            return out.permute(0, 2, 1)
 
-def my_model_function():
-    # Initialize the model with default parameters (random weights/bias)
-    return MyModel()
+        x = DTensor.from_local(torch.randn(4, 32, 4, requires_grad=True), mesh, [Shard(0)], run_check=False)
+        y = DTensor.from_local(torch.randn(4, 32, requires_grad=True), mesh, [Shard(0)], run_check=False)
+        z = DTensor.from_local(torch.randn(4, requires_grad=True), mesh, [Shard(0)], run_check=False)
+        ref = fn(x, y, z)
 
-def GetInput():
-    # Generate input matching the model's expected shape with gradients enabled
-    return torch.randn(4, 32, 4, requires_grad=True)
-
+        opt_fn = torch.compile(fn, backend="aot_eager", fullgraph=True)
+        res = opt_fn(x, y, z)
+        self.assertEqual(res, ref)

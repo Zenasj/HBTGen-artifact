@@ -1,40 +1,31 @@
-# torch.rand(num_envs, num_steps, frame_dim, dtype=torch.float32)  # Inferred input shape
 import torch
-import torch.nn as nn
+torch.use_deterministic_algorithms(True)
 
-class MyModel(nn.Module):
-    def __init__(self, num_envs, num_steps, frame_dim):
-        super(MyModel, self).__init__()
-        self.num_envs = num_envs
-        self.num_steps = num_steps
-        self.frame_dim = frame_dim
+frame_dim = 140
+num_steps = 10
+num_envs = 512
 
-    def forward(self, src):
-        buffer = src.clone()
-        # The problematic line - shift frames [0, 8] into [1, 9]
-        buffer[:, 1 : self.num_steps] = buffer[:, 0 : (self.num_steps - 1)]
-        return buffer
 
-def my_model_function():
-    num_envs = 512
-    num_steps = 10
-    frame_dim = 140
-    return MyModel(num_envs, num_steps, frame_dim)
+def go():
+    torch.manual_seed(0)
+    src = torch.randn(num_envs, num_steps, frame_dim).cuda()
+    buffer = src.clone()
 
-def GetInput():
-    num_envs = 512
-    num_steps = 10
-    frame_dim = 140
-    return torch.randn(num_envs, num_steps, frame_dim, dtype=torch.float32).cuda()
+    # The problematic line - shift frames [0, 8] into [1, 9]
+    buffer[:, 1 : num_steps] = buffer[:, 0 : (num_steps - 1)]
 
-# Example usage:
-# model = my_model_function()
-# input_tensor = GetInput()
-# output = model(input_tensor)
+    print("Sum:", buffer.cpu().sum().item(), src.cpu().sum().item())
 
-# ### Explanation:
-# 1. **Inferred Input Shape**: The input shape is inferred from the issue description: `torch.rand(num_envs, num_steps, frame_dim, dtype=torch.float32)`.
-# 2. **MyModel Class**: The `MyModel` class encapsulates the logic described in the issue. It takes a tensor `src`, clones it to `buffer`, and then shifts the frames.
-# 3. **my_model_function**: This function returns an instance of `MyModel` with the specified dimensions.
-# 4. **GetInput Function**: This function generates a random tensor with the same shape and dtype as the input expected by `MyModel`.
-# This code should be ready to use with `torch.compile(MyModel())(GetInput())`.
+
+for i in range(10):
+    go()
+
+Sum: -413.53521728515625 -993.8636474609375
+Sum: -132.9031982421875 -993.8636474609375
+Sum: -186.0804443359375 -993.8636474609375
+Sum: -177.52325439453125 -993.8636474609375
+Sum: -24.764511108398438 -993.8636474609375
+Sum: -245.3650665283203 -993.8636474609375
+Sum: -408.0976867675781 -993.8636474609375
+Sum: -464.16082763671875 -993.8636474609375
+Sum: -417.3087463378906 -993.8636474609375

@@ -1,49 +1,261 @@
-# torch.rand(B, C=3, H=32, W=32, dtype=torch.float32)  # Assumed input shape for a simple CNN
+"""
+For code used in distributed training.
+"""
+from typing import Tuple
+
+import torch
+import torch.distributed as dist
+
+import os
+
+from torch import Tensor
+
+import torch.multiprocessing as mp
+
+def set_sharing_strategy(new_strategy=None):
+    """
+    https://pytorch.org/docs/stable/multiprocessing.html
+    https://discuss.pytorch.org/t/how-does-one-setp-up-the-set-sharing-strategy-strategy-for-multiprocessing/113302
+    https://stackoverflow.com/questions/66426199/how-does-one-setup-the-set-sharing-strategy-strategy-for-multiprocessing-in-pyto
+    """
+    from sys import platform
+
+    if new_strategy is not None:
+        mp.set_sharing_strategy(new_strategy=new_strategy)
+    else:
+        if platform == 'darwin':  # OS X
+            # only sharing strategy available at OS X
+            mp.set_sharing_strategy('file_system')
+        else:
+            # ulimit -n 32767 or ulimit -n unlimited (perhaps later do try catch to execute this increase fd limit)
+            mp.set_sharing_strategy('file_descriptor')
+
+def use_file_system_sharing_strategy():
+    """
+    when to many file descriptor error happens
+
+    https://discuss.pytorch.org/t/how-does-one-setp-up-the-set-sharing-strategy-strategy-for-multiprocessing/113302
+    """
+    import torch.multiprocessing
+    torch.multiprocessing.set_sharing_strategy('file_system')
+
+def find_free_port():
+    """ https://stackoverflow.com/questions/1365265/on-localhost-how-do-i-pick-a-free-port-number """
+    import socket
+    from contextlib import closing
+
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+        s.bind(('', 0))
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        return str(s.getsockname()[1])
+
+def setup_process(rank, world_size, port, backend='gloo'):
+    """
+    Initialize the distributed environment (for each process).
+
+    gloo: is a collective communications library (https://github.com/facebookincubator/gloo). My understanding is that
+    it's a library/API for process to communicate/coordinate with each other/master. It's a backend library.
+
+    export NCCL_SOCKET_IFNAME=eth0
+    export NCCL_IB_DISABLE=1
+
+    https://stackoverflow.com/questions/61075390/about-pytorch-nccl-error-unhandled-system-error-nccl-version-2-4-8
+
+    https://pytorch.org/docs/stable/distributed.html#common-environment-variables
+    """
+    import torch.distributed as dist
+    import os
+    import torch
+
+    if rank != -1:  # -1 rank indicates serial code
+        print(f'setting up rank={rank} (with world_size={world_size})')
+        # MASTER_ADDR = 'localhost'
+        MASTER_ADDR = '127.0.0.1'
+        # set up the master's ip address so this child process can coordinate
+        os.environ['MASTER_ADDR'] = MASTER_ADDR
+        print(f"{MASTER_ADDR=}")
+        os.environ['MASTER_PORT'] = port
+        print(f"{port=}")
+
+        # - use NCCL if you are using gpus: https://pytorch.org/tutorials/intermediate/dist_tuto.html#communication-backends
+        if torch.cuda.is_available():
+            # unsure if this is really needed
+            # os.environ['NCCL_SOCKET_IFNAME'] = 'eth0'
+            # os.environ['NCCL_IB_DISABLE'] = '1'
+            backend = 'nccl'
+        print(f'{backend=}')
+        # Initializes the default distributed process group, and this will also initialize the distributed package.
+        dist.init_process_group(backend, rank=rank, world_size=world_size)
+        # dist.init_process_group(backend, rank=rank, world_size=world_size)
+        # dist.init_process_group(backend='nccl', init_method='env://', world_size=world_size, rank=rank)
+        print(f'--> done setting up rank={rank}')
+
+def cleanup(rank):
+    """ Destroy a given process group, and deinitialize the distributed package """
+    # only destroy the process distributed group if the code is not running serially
+    if rank != -1:  # -1 rank indicates serial code
+        dist.destroy_process_group()
+
+def get_batch(batch: Tuple[Tensor, Tensor], rank) -> Tuple[Tensor, Tensor]:
+    x, y = batch
+    if torch.cuda.is_available():
+        x, y = x.to(rank), y.to(rank)
+    else:
+        # I don't think this is needed...
+        # x, y = x.share_memory_(), y.share_memory_()
+        pass
+    return x, y
+
+def test_setup():
+    print('test_setup')
+    port = find_free_port()
+    world_size = 4
+    mp.spawn(setup_process, args=(world_size, port), nprocs=4)
+    print('successful test_setup!')
+
+
+if __name__ == '__main__':
+    test_setup()
+
+# python3 DDP.py --projectName "PyTorch-4K-2X" --batchSize 32 --nEpochs 2 --lr 1e-3 --step 10 --threads 8 --optim AdamW
+
+import argparse, os, sys
+import random
+import numpy as np
+import time
 import torch
 import torch.nn as nn
+import torch.backends.cudnn as cudnn 
+import torch.optim as optim
+from torch.autograd import Variable
+from torch.utils.data import DataLoader
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1)
-        self.relu = nn.ReLU()
-        self.pool = nn.MaxPool2d(2, 2)
-        self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
-        self.fc = nn.Linear(32 * 8 * 8, 10)  # Assumes 8x8 spatial dims after pooling
 
-    def forward(self, x):
-        x = self.pool(self.relu(self.conv1(x)))
-        x = self.pool(self.relu(self.conv2(x)))
-        x = x.view(-1, 32 * 8 * 8)
-        x = self.fc(x)
-        return x
+import tempfile
+import torch.distributed as dist
+import torch.multiprocessing as mp
 
-def my_model_function():
-    # Returns a simple CNN model instance
-    return MyModel()
+from torch.nn.parallel import DistributedDataParallel as DDP
 
-def GetInput():
-    # Returns a random input tensor matching the expected input shape
-    return torch.rand(4, 3, 32, 32, dtype=torch.float32)  # Batch size 4, 3 channels, 32x32 images
+from PIL import Image, ImageFile
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 
-# Okay, let me start by understanding what the user is asking for. They want me to generate a single Python code file based on the GitHub issue provided. The code must follow specific structural requirements, including a class MyModel, functions my_model_function and GetInput, and handle any missing parts by making informed guesses.
-# Looking at the GitHub issue, the main problem is about DDP (Distributed Data Parallel) deadlocks on a DGX A100 machine. The user provided a code example that reproduces the issue and some comments from others suggesting fixes. The key issue identified was that each process was choosing its own port, leading to mismatched MASTER_PORT values. The solution involved selecting a single port in the main process and passing it to all workers.
-# However, the user's task isn't to fix the DDP code but to extract a PyTorch model from the issue. Wait, the issue doesn't actually describe a PyTorch model's architecture. It's about distributed training setup and a bug in process group initialization. There's no model class or structure mentioned in the issue's code snippets. 
-# Hmm, the user might have made a mistake here. The problem is about distributed setup, not a model's code. The code provided is for setting up DDP, not defining a neural network. The task requires extracting a model, but there's no model in the issue. 
-# But maybe I need to look again. The user's goal says the issue "likely describes a PyTorch model, possibly including partial code..." but in this case, there's no model code. The comments include a DDP setup and some training code snippets, but no actual model architecture. 
-# The user's requirements mention if the issue has missing components, I should infer or reconstruct them. Since there's no model, perhaps I need to create a simple example model based on common PyTorch practices. 
-# Wait, the problem says "extract and generate a single complete Python code file from the issue". Since the issue's code is about distributed training setup, but not a model, maybe the user expects me to create a model that would be used in such a setup? 
-# Alternatively, maybe the user confused the task. The GitHub issue is about DDP deadlock, not a model's code. But the task instructions require a model class. Since there's no model in the provided content, perhaps I should infer a simple model, like a CNN or MLP, and structure the code accordingly.
-# Looking at the output structure required: the model must be MyModel, and the GetInput function should return a compatible input. Since the issue involves GPU training, the input might be a 4D tensor (B, C, H, W). 
-# Given that, I'll proceed by creating a simple CNN as MyModel. The input shape would be something like torch.rand(B, 3, 32, 32) for images. The functions my_model_function returns an instance, and GetInput generates the input tensor. 
-# Wait, but the user's example in the GitHub issue uses a DDP setup with processes. However, the task is to generate a model code, not the DDP setup. The DDP code isn't part of the model itself, so perhaps the model is just a standard PyTorch module. 
-# Since the original issue's code doesn't contain a model, I'll have to create a minimal one. Let's make a simple CNN with a couple of convolutional layers and a fully connected layer. The input shape would be 3 channels, 32x32 images. 
-# So, the code structure would be:
-# - Class MyModel with __init__ and forward
-# - my_model_function returns MyModel()
-# - GetInput returns a random tensor of shape (batch, 3, 32, 32)
-# I also need to ensure that the code can be compiled with torch.compile, which requires the model to be compatible. The model should use standard PyTorch modules. 
-# I'll write the code with comments as specified, noting assumptions about the input shape since it wasn't provided. Since the issue's environment has CUDA and A100 GPUs, the model should work with GPU, but the code itself doesn't need to handle that explicitly, as it's handled by PyTorch.
-# I should check if there's any mention of a model in the comments. Looking back, in one of the comments, there's a DDP training code snippet that imports a Net from "... import Net", but that's a placeholder. Without more info, I can't reconstruct that, so a simple model is the way to go.
-# Final check: The user's instructions say to not include test code or __main__ blocks, which I'll avoid. The code must be in a single Python code block with the specified structure. Alright, that should cover it.
-# </think>
+from ... import Net
+from ... import loss
+from ... import CustomDataset
+import metrics
+
+def main():
+    
+    parser = argparse.ArgumentParser(description="PyTorch-W&B-Training")
+    
+    parser.add_argument("--projectName", default="PyTorch-4K-2X", type=str, help="Project Name for W&B")
+    parser.add_argument("--batchSize", type=int, default=12, help="Training batch size")
+    parser.add_argument("--nEpochs", type=int, default=50, help="Number of epochs to train for")
+    parser.add_argument("--lr", type=float, default=0.001, help="Learning Rate. Default=0.1")
+    parser.add_argument("--step", type=int, default=10, help="Sets the learning rate to the initial LR decayed by momentum every n epochs,   Default: n=10")
+    parser.add_argument("--resume", default="", type=str, help="Path to checkpoint (default: none)")
+    parser.add_argument("--start-epoch", default=1, type=int, help="Manual epoch number (useful on restarts)")
+    parser.add_argument("--clip", type=float, default=0.1, help="Clipping Gradients. Default=0.1")
+    parser.add_argument("--threads", type=int, default=4, help="Number of threads for data loader to use, Default: 4")
+    parser.add_argument("--optim", default='AdamW', type=str, help="AdamW optimizer")
+    parser.add_argument("--momentum", default=0.9, type=float, help="Momentum, Default: 0.9")
+    parser.add_argument("--weight-decay", "--wd", default=1e-4, type=float, help="Weight decay, Default: 1e-4")
+    parser.add_argument('--pretrained', default='', type=str, help='path to pretrained model (default: none)')
+
+    #parser.add_argument("--rank", default="4", type=str, help="rank (default: 0)")
+    parser.add_argument('-g', '--gpus', default=4, type=int,
+                            help='number of gpus per node')
+    parser.add_argument('-nr', '--nr', default=0, type=int,
+                            help='ranking within the nodes')
+    parser.add_argument("--world_size", default=4, type=int, help="world_size = num_gpus that you want to train upon (default: 4)")
+
+    parser.add_argument("--trainDir", type=str, default='/opt/hubshare/vectorly-share/shared/Image_Superresolution/Dataset/Train/CombinedALL/2X/', help="Training Dataset Path") # Train/CombinedALL/2X/
+    parser.add_argument("--trainInputSize", type=int, default=256, help="Training Data Input Image Size")
+    
+    
+    cudnn.benchmark = True  
+    torch.backends.cudnn.determinstic = False
+    random.seed(hash("setting random seeds") % 2**32 - 1)
+    np.random.seed(hash("improves reproducibility") % 2**32 - 1)
+    torch.manual_seed(hash("by removing stochasticity") % 2**32 - 1)
+    torch.cuda.manual_seed_all(hash("so runs are repeatable") % 2**32 - 1)
+
+    
+    import wandb
+    wandb.login()
+    
+    global opt
+    opt = parser.parse_args()
+    print(opt)
+    
+    opt.seed = random.randint(1, 10000)
+    print("Random Seed: ", opt.seed)
+    torch.manual_seed(opt.seed)
+    
+    
+    mp.spawn(train, nprocs=opt.world_size, args=(opt, ))
+    
+    
+def find_free_port():
+    """ https://stackoverflow.com/questions/1365265/on-localhost-how-do-i-pick-a-free-port-number """
+    import socket
+    from contextlib import closing
+
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+        s.bind(('', 0))
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        return str(s.getsockname()[1])
+
+
+def setup_process(rank, master_addr, master_port, world_size, backend='nccl'):
+    print(f'setting up {rank} {world_size} {backend}')
+
+    # set up the master's ip address so this child process can coordinate
+    os.environ['MASTER_ADDR'] = master_addr
+    os.environ['MASTER_PORT'] = master_port
+    print(f"{master_addr} {master_port}")
+
+    # Initializes the default distributed process group, and this will also initialize the distributed package.
+    dist.init_process_group(backend, rank=rank, world_size=world_size)
+    print(f"{rank} init complete")
+    dist.destroy_process_group()
+    print(f"{rank} destroy complete")
+    
+    
+def train(gpu, opt):
+    
+    print("===> Setting Environment for DDP")
+    
+    rank = opt.nr * opt.gpus + gpu
+    print(f"Running DDP based training on rank {rank}.")
+    
+#     dist.init_process_group(
+#         backend='nccl',
+#         #init_method='env://',
+#         world_size=opt.world_size,
+#         rank=rank)
+
+    master_addr='10.1.1.20'
+    master_port = find_free_port()
+    
+    setup_process(rank, master_addr, master_port, opt.world_size, backend='nccl')
+    
+    print("===> Environment successfully configured for DDP")
+    dist.destroy_process_group()
+
+    epochs = opt.nEpochs
+    project_name = opt.projectName
+    
+    config = dict(
+        epochs=epochs,
+        batch_size=opt.batchSize,
+        learning_rate=opt.lr,
+        dataset="DemoVal",
+        architecture="4K-2X"
+    )
+    
+    
+    
+if __name__ == "__main__":
+    main()

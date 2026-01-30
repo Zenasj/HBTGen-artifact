@@ -1,41 +1,44 @@
-# torch.rand(4, 1, 8, dtype=torch.float32)
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self, embedding_dim, num_heads):
-        super().__init__()
-        self.attn_with = nn.MultiheadAttention(
-            embedding_dim,
-            num_heads,
-            add_zero_attn=True,
-            batch_first=False  # Matches original code's tensor layout (seq_len, batch, ...)
-        )
-        self.attn_without = nn.MultiheadAttention(
-            embedding_dim,
-            num_heads,
-            add_zero_attn=False,
-            batch_first=False
-        )
+import torch
+import numpy as np
 
-    def forward(self, x):
-        # Dynamically generate mask based on input sequence length
-        seq_len = x.size(0)
-        mask = torch.ones(seq_len, seq_len, dtype=torch.bool, device=x.device)
-        for i in range(seq_len):
-            mask[i, :i] = False  # Allow attention to previous tokens only
-        mask = mask.float() * -10000.0  # Convert to -inf mask
+embedding_dim = 8
+batch_size = 1
+num_heads = 2
+seq_len = 4
 
-        # Run both attention variants and return outputs for comparison
-        out_with, _ = self.attn_with(x, x, x, attn_mask=mask)
-        out_without, _ = self.attn_without(x, x, x, attn_mask=mask)
-        return (out_with, out_without)  # Return tuple of outputs for gradient comparison
+net = torch.nn.MultiheadAttention(embedding_dim, num_heads, add_zero_attn=True)
+mask = torch.from_numpy(np.array([[True, True, True, True],
+                                  [False, True, True, True],
+                                  [False, False, True, True],
+                                  [False, False, False, True]])).float() * -10000.0
 
-def my_model_function():
-    # Initialize with parameters from the original issue's reproduction code
-    return MyModel(embedding_dim=8, num_heads=2)
+for i in range(seq_len):
+    x = torch.ones(seq_len, batch_size, embedding_dim, requires_grad=True)
+    o, w = net(x, x, x, attn_mask=mask)
+    # o.shape is (seq_len, batch_size, embedding_dim)
+    o.mean([1, 2])[i].backward()
+    print(i, x.grad.sum([1, 2]).view(-1))
 
-def GetInput():
-    # Generate random input matching the original test's dimensions (seq_len=4, batch_size=1, embedding_dim=8)
-    return torch.rand(4, 1, 8, dtype=torch.float32)
+# expected output:
+# 0, [0, 0, 0, 0] # it means that the first output(first token in the sequence) does not depend on any input
+# 1, [x, 0, 0, 0] # it means that the second output only depends on the first token
+# 2, [y, z, 0, 0]
+# 3, [t, w, u, 0]
 
+# observed output:
+# 0, [0, 0, 0, 0] # this one seems right
+# 1, [x, y, 0, 0] # this is obviously wrong(the provided mask should have prevented the second token from attending to itself)
+# 2, [z, t, w, 0]
+# 3, [u, a, b, c]
+
+attn_output_weights.masked_fill_(attn_mask, float('-inf'))
+attn_output_weights = softmax(attn_output_weights, dim=-1)
+
+attn_output_weights = softmax(attn_output_weights, dim=-1)
+attn_output_weights.masked_fill_(attn_mask, 0.0)
+
+attn_output_weights.masked_fill_(attn_mask, float('-inf'))
+attn_output_weights = softmax(attn_output_weights, dim=-1)
+attn_output_weights.masked_fill_(attn_mask, 0.0)

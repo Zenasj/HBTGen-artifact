@@ -1,13 +1,13 @@
-# torch.rand(5, 5, 1, 1, dtype=torch.float32)
-import torch
 import torch.nn as nn
+
+import torch
 
 class MyRelu(torch.autograd.Function):
     @staticmethod
     def forward(ctx, input):
         ctx.save_for_backward(input)
         return input.clamp(min=0)
-    
+
     @staticmethod
     def backward(ctx, grad_output):
         input, = ctx.saved_tensors
@@ -15,21 +15,19 @@ class MyRelu(torch.autograd.Function):
         grad_input[input < 0] = 0
         return grad_input
 
-    @staticmethod
-    def symbolic(g, input):
-        zero = g.op("Constant", value_t=torch.tensor(0, dtype=torch.float))
-        return g.op("Clip", input, zero)
-
-class MyModel(nn.Module):
+class MyModule(torch.nn.Module):
     def __init__(self):
-        super(MyModel, self).__init__()
+        super(MyModule, self).__init__()
         
     def forward(self, input):
         return MyRelu.apply(input)
+    
+module = MyModule()
+x = torch.randn(5, 5)
+y = module(x)
 
-def my_model_function():
-    return MyModel()
+torch.onnx.export(module, x, 'test.onnx', export_params=True, opset_version=13, operator_export_type=torch.onnx.OperatorExportTypes.ONNX_FALLTHROUGH, do_constant_folding=False, verbose=False, input_names=['input'], output_names=['output'])
 
-def GetInput():
-    return torch.rand(5, 5, 1, 1, dtype=torch.float32)
-
+@staticmethod
+def symbolic(ctx, input):
+      return g.op("Clip", input, g.op("Constant", value_t=torch.tensor(0, dtype=torch.float)))

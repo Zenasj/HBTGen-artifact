@@ -1,17 +1,4 @@
-# torch.rand(8, 1, 128, 1024, 1024, dtype=torch.float32)
 import torch
-from torch import nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-    
-    def forward(self, x):
-        return x.sum(1)
-
-def my_model_function():
-    return MyModel()
-
-def GetInput():
-    return torch.rand(8, 1, 128, 1024, 1024, dtype=torch.float32)
-
+a = torch.zeros(8, 1, 128, 1024, 1024)
+a.cuda().sum(1)

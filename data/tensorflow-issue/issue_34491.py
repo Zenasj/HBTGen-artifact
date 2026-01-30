@@ -1,68 +1,116 @@
-# tf.random.uniform((100, 20, 1), dtype=tf.float32) ← Input shape inferred from original example: (num_seqs=100, time_steps=20, features=1)
-
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import models
+
 import numpy as np
+from numpy.random import normal, randint
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Masking, LSTM, Activation, Dense
 
-class MyModel(tf.keras.Model):
-    def __init__(self, time_steps=20, lstm_size=16, mask_value=0., **kwargs):
-        super().__init__(**kwargs)
-        # Masking layer to ignore padded values (= mask_value)
-        self.mask = tf.keras.layers.Masking(mask_value=mask_value, input_shape=(time_steps, 1))
-        # LSTM with return_sequences=True for sequence labeling
-        self.lstm = tf.keras.layers.LSTM(lstm_size, return_sequences=True)
-        # Final Dense layer outputs 1 scalar per timestep
-        self.dense = tf.keras.layers.Dense(1)
-        # Sigmoid activation for binary classification per timestep
-        self.activation = tf.keras.layers.Activation("sigmoid")
+time_steps = 20
+num_seqs = 100
+X = normal(size=(num_seqs, time_steps))  # create artificial data
+Y = np.where(X > 0, 1, 0)  # create simple target
 
-    def call(self, inputs, training=False):
-        x = self.mask(inputs)
-        x = self.lstm(x, training=training)
-        x = self.dense(x)
-        x = self.activation(x)
-        return x
+lens = randint(low=1, high=time_steps, size=num_seqs)  # create lengths < time_steps (padding needed)
+seqs = [row[:row_len] for row, row_len in zip(X, lens)]  # artificially cut sequences
+target_seqs = [row[:row_len] for row, row_len in zip(Y, lens)]  # artificially cut target sequences
+
+padded_seqs = pad_sequences(seqs, padding='post', dtype='float32', maxlen=time_steps).reshape(num_seqs, time_steps, -1)
+padded_targets = pad_sequences(target_seqs, dtype='float32', padding='post', maxlen=time_steps).reshape(num_seqs, time_steps, -1)
+
+LSTM_SIZE = 16
+model = Sequential()
+model.add(Masking(mask_value=0., input_shape=(time_steps,1)))
+model.add(LSTM(LSTM_SIZE, return_sequences=True))
+model.add(Dense(1))
+model.add(Activation("sigmoid"))
+model.compile(loss="binary_crossentropy", optimizer="adam", metrics=["binary_crossentropy"])
+print(model.summary())
+
+model.fit(padded_seqs, padded_targets, batch_size=1024, epochs=10)
+
+from keras.preprocessing.sequence import pad_sequences
+from keras.models import Sequential
+from keras.layers import Masking, LSTM, Activation, Dense
+
+from tensorflow.python.keras.utils import losses_utils
+from tensorflow.python.keras.utils.losses_utils import ReductionV2, squeeze_or_expand_dimensions, _safe_mean
+from tensorflow.python.ops import math_ops
+from tensorflow.python.framework import ops
+from tensorflow.python.keras import backend
+from tensorflow.python.keras.engine import keras_tensor
+from tensorflow.python.ops.ragged import ragged_tensor
 
 
-def my_model_function():
-    """
-    Returns an instance of MyModel with default parameters matching the original reported issue:
-    - input shape: (20 timesteps, 1 feature)
-    - mask_value=0. (matching the pad_sequences default padding)
-    - LSTM size=16
-    """
-    return MyModel()
+def reduce_weighted_loss(weighted_losses,
+                         sample_weight,  # !!!!!!!!!!!!!!!!!!!!THIS IS A CHANGE!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                         reduction=ReductionV2.SUM_OVER_BATCH_SIZE):
+  """Reduces the individual weighted loss measurements."""
+  if reduction == ReductionV2.NONE:
+    loss = weighted_losses
+  else:
+    loss = math_ops.reduce_sum(weighted_losses)
+    if reduction == ReductionV2.SUM_OVER_BATCH_SIZE:
+      loss = _safe_mean(loss, math_ops.reduce_sum(sample_weight))  # !!!!!!!!!!!!!!!!!!!!THIS IS A CHANGE!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  return loss
 
 
-def GetInput():
-    """
-    Returns a randomly generated input tensor matching the expected input shape of MyModel:
-    - shape: (100, 20, 1)
-    - dtype: tf.float32
-    - values follow standard normal distribution, but with padded zeros applied at end of sequence as in original example
+def compute_weighted_loss(losses,
+                          sample_weight=None,
+                          reduction=ReductionV2.SUM_OVER_BATCH_SIZE,
+                          name=None):
+  """Computes the weighted loss.
+  Args:
+    losses: `Tensor` of shape `[batch_size, d1, ... dN]`.
+    sample_weight: Optional `Tensor` whose rank is either 0, or the same rank as
+      `losses`, or be broadcastable to `losses`.
+    reduction: (Optional) Type of `tf.keras.losses.Reduction` to apply to loss.
+      Default value is `SUM_OVER_BATCH_SIZE`.
+    name: Optional name for the op.
+  Raises:
+    ValueError: If the shape of `sample_weight` is not compatible with `losses`.
+  Returns:
+    Weighted loss `Tensor` of the same type as `losses`. If `reduction` is
+    `NONE`, this has the same shape as `losses`; otherwise, it is scalar.
+  """
+  ReductionV2.validate(reduction)
 
-    To simulate padding as in original issue:
-    - Variable sequence lengths between 1 and 20
-    - padded with zeros at the end (mask_value=0.0)
-    """
+  # If this function is called directly, then we just default 'AUTO' to
+  # 'SUM_OVER_BATCH_SIZE'. Eg. Canned estimator use cases.
+  if reduction == ReductionV2.AUTO:
+    reduction = ReductionV2.SUM_OVER_BATCH_SIZE
+  if sample_weight is None:
+    sample_weight = 1.0
+  with backend.name_scope(name or 'weighted_loss'):
+    # Save the `reduction` argument for loss normalization when distributing
+    # to multiple replicas. Used only for estimator + v1 optimizer flow.
+    ops.get_default_graph()._last_loss_reduction = reduction  # pylint: disable=protected-access
 
-    num_seqs = 100
-    time_steps = 20
-    feature_dim = 1
+    if not isinstance(losses,
+                      (keras_tensor.KerasTensor, ragged_tensor.RaggedTensor)):
+      losses = ops.convert_to_tensor_v2_with_dispatch(losses)
+    input_dtype = losses.dtype
 
-    # Generate random normal data
-    X = np.random.normal(size=(num_seqs, time_steps)).astype(np.float32)
+    if not isinstance(sample_weight, keras_tensor.KerasTensor):
+      sample_weight = ops.convert_to_tensor_v2_with_dispatch(sample_weight)
 
-    # Generate random sequence lengths between 1 and 20 (as in original)
-    lengths = np.random.randint(low=1, high=time_steps + 1, size=num_seqs)
+    # TODO(psv): Handle casting here in a better way, eg. if losses is float64
+    # we do not want to lose precision.
+    losses = math_ops.cast(losses, 'float32')
+    sample_weight = math_ops.cast(sample_weight, 'float32')
+    # Update dimensions of `sample_weight` to match with `losses` if possible.
+    losses, _, sample_weight = squeeze_or_expand_dimensions(  # pylint: disable=unbalanced-tuple-unpacking
+        losses, None, sample_weight)
+    weighted_losses = math_ops.multiply(losses, sample_weight)
 
-    # Zero out values beyond each sequence length to simulate padding
-    for i, length in enumerate(lengths):
-        if length < time_steps:
-            X[i, length:] = 0.0  # pad by zeros to match mask_value
+    # Apply reduction function to the individual weighted losses.
+    loss = reduce_weighted_loss(weighted_losses, sample_weight, reduction)  # !!!!!!!!!!!!!!!!!!!!THIS IS A CHANGE!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    # Convert the result back to the input type.
+    loss = math_ops.cast(loss, input_dtype)
+    return loss
 
-    # Reshape to (num_seqs, time_steps, 1)
-    X = np.expand_dims(X, axis=-1)
 
-    # Convert to tf.Tensor
-    return tf.convert_to_tensor(X, dtype=tf.float32)
-
+losses_utils.compute_weighted_loss = compute_weighted_loss

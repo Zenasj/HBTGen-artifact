@@ -1,39 +1,97 @@
-# torch.tensor([2], dtype=torch.long)
-import torch
 import torch.nn as nn
 
-class MyModel(nn.Module):
+class SomeModel(nn.Module):
+
     def __init__(self):
-        super(MyModel, self).__init__()
-        # Problematic setup (original issue's model)
-        self.emb1 = nn.Embedding(10, 5)
-        self.lin1 = nn.Linear(5, 1)
-        self.seq1 = nn.Sequential(self.emb1, self.lin1)  # Problematic: uses existing attributes
-        
-        # Fixed setup (workaround)
-        self.seq2 = nn.Sequential(
-            nn.Embedding(10, 5),
-            nn.Linear(5, 1)
-        )  # Fixed: layers defined inline
-        
-        # Second test case (problematic with Sigmoid)
-        self.emb2 = nn.Embedding(8, 10)
-        self.seq3 = nn.Sequential(
-            self.emb2,
-            nn.Linear(10, 1),
+        super(SomeModel, self).__init__()
+        dim = 5
+        self.emb = nn.Embedding(10, dim)
+        self.lin1 = nn.Linear(dim, 1)
+        self.seq = nn.Sequential(
+            self.emb,
+            self.lin1,
+        )
+
+    def forward(self, input):
+        return self.seq(input)
+
+model = SomeModel()
+
+dummy_input = torch.tensor([2], dtype=torch.long)
+dummy_input
+
+torch.onnx.export(model, dummy_input, "model.onnx", verbose=True)
+
+class SomeModel(nn.Module):
+
+    def __init__(self):
+        super(SomeModel, self).__init__()
+        dim = 5
+        self.seq = nn.Sequential(
+            nn.Embedding(10, dim),
+            nn.Linear(dim, 1),
+        )
+
+    def forward(self, input):
+        return self.seq(input)
+
+model = SomeModel()
+
+import os
+
+import torch
+from torch import nn
+
+
+class SomeModel(nn.Module):
+
+    def __init__(self):
+        super(SomeModel, self).__init__()
+        dim = 5
+        self.emb = nn.Embedding(10, dim)
+        self.lin1 = nn.Linear(dim, 1)
+        self.seq = nn.Sequential(
+            self.emb,
+            self.lin1,
+        )
+
+    def forward(self, input):
+        return self.seq(input)
+
+
+model = SomeModel()
+
+
+dummy_input = torch.tensor([2], dtype=torch.long)
+dummy_input
+
+torch.onnx.export(model, dummy_input, "model.onnx", verbose=True)
+os.remove('model.onnx')
+
+
+print('\n\nTEST CASE 2\n\n')
+
+
+n = 8
+dim = 10
+
+class SomeModel(nn.Module):
+
+    def __init__(self):
+        super(SomeModel, self).__init__()
+        self.embedding = nn.Embedding(n, dim)
+        self.seq = nn.Sequential(
+            self.embedding,
+            nn.Linear(dim, 1),
             nn.Sigmoid()
-        )  # Problematic: uses existing emb2
+        )
 
-    def forward(self, x):
-        # Return outputs from all setups for comparison
-        out1 = self.seq1(x)   # Problematic
-        out2 = self.seq2(x)   # Fixed
-        out3 = self.seq3(x)   # Problematic (second test case)
-        return out1, out2, out3
+    def forward(self, indices):
+        return self.seq(indices)
 
-def my_model_function():
-    return MyModel()
+model = SomeModel()
 
-def GetInput():
-    return torch.tensor([2], dtype=torch.long)
+dummy_input = torch.LongTensor([2])
+torch.onnx.export(model, dummy_input, "foo.onnx", verbose=True)
 
+os.remove('foo.onnx')

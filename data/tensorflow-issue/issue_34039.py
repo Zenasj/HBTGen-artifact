@@ -1,37 +1,48 @@
-# tf.random.uniform((12, 372, 558, 3), dtype=tf.float32)
+import random
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras import optimizers
+
+#!/usr/bin/env python3
+import sys
 import tensorflow as tf
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
-        # Using DenseNet121 without weights; input shape and classes defined as per issue
-        self.model = tf.keras.applications.DenseNet121(
-            weights=None, input_shape=(372, 558, 3), classes=10)
-
-    def call(self, inputs, training=False):
-        return self.model(inputs, training=training)
-
-def my_model_function():
-    # Return an instance of MyModel
-    return MyModel()
-
-def GetInput():
-    # Return a random input tensor matching the input expected by MyModel
-    # The issue used batch_size=12, shape=(372, 558, 3)
-    # dtype float32 standard for images
+def main():
+    strategy = tf.distribute.MirroredStrategy()
     batch_size = 12
-    H, W, C = 372, 558, 3
-    return tf.random.uniform((batch_size, H, W, C), dtype=tf.float32)
+    features_shape = 372, 558, 3
+    labels = 10
+    sample = tf.random.uniform(features_shape)
 
-# ---
-# ### Explanation and Assumptions
-# - The provided issue was about an error/crash when using a `tf.data.Dataset` pipeline with fixed-size batching (`drop_remainder=True`) and distributing strategy mirrored across multiple GPUs.
-# - The core model used was `tf.keras.applications.DenseNet121` with input shape `(372, 558, 3)` and 10 classes. Batch size was fixed at 12.
-# - The problem was related to accessing an out-of-bounds slice index in the dataset pipeline when `drop_remainder=True` batching was used. But the model construction and input shape were clear and stable.
-# - As requested, I wrapped the DenseNet121 as a subclassed Keras Model called `MyModel`. Since no multiple models were compared, no fusion or extra comparison logic was needed.
-# - `my_model_function()` simply returns a new instance of `MyModel`.
-# - `GetInput()` generates a random uniform tensor of shape `(12, 372, 558, 3)`, matching the batch size and input shape used in the issue snippet.
-# - I added the comment with inferred input tensor shape and dtype: `(12, 372, 558, 3)` and `tf.float32`.
-# - This code is compatible with TensorFlow 2.20.0 and can be used in XLA-compiled functions.
-# - No testing or main blocks included as per instructions.
-# This gives a complete self-contained Python code file reflecting the model and usage scenario described in the issue.
+    def batch_print(b, l):
+        tf.print("shape", b.shape, tf.shape(b))
+        tf.print(b[10])  # <<< crash here
+        return b, l
+
+    ds_train = tf.data.Dataset.from_tensors([sample]).map(lambda s: (tf.squeeze(s), tf.ones((labels,)))) \
+        .repeat().batch(batch_size, drop_remainder=True).map(batch_print)
+    ds_val = tf.data.Dataset.from_tensors([sample]).map(lambda s: (tf.squeeze(s), tf.ones((labels,)))) \
+        .repeat().batch(batch_size, drop_remainder=True).take(10)
+
+    import tensorflow_core.python.keras.backend
+    original_input = tensorflow_core.python.keras.layers.Input
+
+    def create_input(*args, **kwargs):
+        return original_input(*args, batch_size=batch_size, **kwargs)
+
+    # monkey-patch the input layer to ensure the fixed tensor shape
+    tensorflow_core.python.keras.layers.Input = create_input
+
+    with strategy.scope():
+        model = tf.keras.applications.DenseNet121(
+            weights=None, input_shape=features_shape, classes=labels)
+        model.build((batch_size,) + features_shape)
+        model.summary()
+        optimizer = tf.keras.optimizers.RMSprop(learning_rate=0.001)
+        cross_entropy = tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.1)
+        model.compile(optimizer=optimizer, loss=cross_entropy, metrics=["accuracy"])
+    model.fit(ds_train, validation_data=ds_val, epochs=1, steps_per_epoch=100)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

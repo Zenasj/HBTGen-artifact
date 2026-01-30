@@ -1,90 +1,65 @@
-# tf.random.uniform((B,)) with dtype=tf.string ← Model input expects a batch of strings of variable shape
-
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
 
-class MyModel(tf.keras.Model):
-    def __init__(self):
-        super().__init__()
+from keras.layers.core import Dense, Dropout, Activation
+from tensorflow.keras import optimizers, models, layers, callbacks
 
-        # Because the original model is a BERT text classification model using TF Hub layers
-        # inference: 
-        #   Input: batch of strings, shape (batch_size,)
-        #   Layers:
-        #     - TF Hub preprocessing layer
-        #     - TF Hub BERT encoder layer (trainable)
-        #     - Several Dense layers with ReLU activations and final softmax output
+def build_classifier_model():
+    text_input = tf.keras.layers.Input(shape = (), dtype = tf.string, name = 'text')
+    preprocessing_layer = hub.KerasLayer(tfhub_handle_preprocess, name = 'preprocessing')
+    encoder_inputs = preprocessing_layer(text_input)
+    encoder = hub.KerasLayer(tfhub_handle_encoder, trainable=True, name='BERT_encoder')
+    outputs = encoder(encoder_inputs)
+    net = outputs['pooled_output']
+    net = Dropout(0.1)(net)
+    net = Dense(1024, activation = 'relu', name = 'hidde')(net)
+    net = Dense(256, activation = 'relu', name = 'hidden')(net)
+    net = Dense(256, activation = 'relu', name = 'hidden_')(net)
+    net = Dense(128, activation = 'relu', name = 'hidden_l')(net)
+    net = Dense(64, activation = 'relu', name = 'hidden_la')(net)
+    net = Dense(64, activation = 'relu', name = 'hidden_lay')(net)
+    net = Dense(16, activation = 'relu', name = 'hidden_laye')(net)
+    net = Dense(3, activation='softmax', name='output')(net)
+    return tf.keras.Model(text_input, net)
+    
+def load_callbacks(patience_num, filename):
+  return [
+    callbacks.EarlyStopping(
+        monitor = 'val_loss',
+        patience = patience_num
+    ),
+    callbacks.ModelCheckpoint(
+        filepath = f'{filename}.h5',
+        monitor = 'val_loss',
+        save_best_only = True,
+        verbose = 1
+    )
+  ]
 
-        # Placeholder URLs - user must replace with actual TFHub handles
-        self.tfhub_handle_preprocess = "https://tfhub.dev/tensorflow/bert_en_uncased_preprocess/3"
-        self.tfhub_handle_encoder = "https://tfhub.dev/tensorflow/bert_en_uncased_L-12_H-768_A-12/3"
+loss = tf.keras.losses.CategoricalCrossentropy(from_logits = False)
+metrics = tf.metrics.CategoricalAccuracy()
+optimizer = optimizers.RMSprop(learning_rate = 0.001)
+epochs = 5
+batch_size = round(train_x.shape[0]/10)
+batch_size = 1500
 
-        import tensorflow_hub as hub
-        # TF Hub layers
-        self.preprocessing_layer = hub.KerasLayer(self.tfhub_handle_preprocess, name='preprocessing')
-        self.encoder = hub.KerasLayer(self.tfhub_handle_encoder, trainable=True, name='BERT_encoder')
+model = build_classifier_model()
 
-        # Dropout for regularization
-        self.dropout = tf.keras.layers.Dropout(0.1)
+model.compile(optimizer = optimizer, loss = loss, metrics = metrics)
 
-        # Dense layers as per original, note: careful with naming duplicates
-        self.dense_1024 = tf.keras.layers.Dense(1024, activation='relu', name='hidden')
-        self.dense_256_a = tf.keras.layers.Dense(256, activation='relu', name='hidden_1')
-        self.dense_256_b = tf.keras.layers.Dense(256, activation='relu', name='hidden_2')
-        self.dense_128 = tf.keras.layers.Dense(128, activation='relu', name='hidden_3')
-        self.dense_64_a = tf.keras.layers.Dense(64, activation='relu', name='hidden_4')
-        self.dense_64_b = tf.keras.layers.Dense(64, activation='relu', name='hidden_5')
-        self.dense_16 = tf.keras.layers.Dense(16, activation='relu', name='hidden_6')
-        self.output_layer = tf.keras.layers.Dense(3, activation='softmax', name='output')
+print("Training:")
+history = model.fit(x = train_x, y = train_y, epochs = epochs, validation_data = (val_x, val_y), callbacks = load_callbacks(10, 'model'), verbose = 1)
+print("Testing:")
+model.evaluate(test_x, test_y)
 
-    def call(self, inputs, training=False):
-        """
-        Forward pass.
-        inputs: tf.Tensor of dtype tf.string and shape (batch_size,)
-        """
-
-        # 1) Preprocessing (tokenization, etc) via TFHub preprocessing layer
-        encoder_inputs = self.preprocessing_layer(inputs)
-
-        # 2) BERT encoding, returns dict with 'pooled_output' and 'sequence_output'
-        bert_outputs = self.encoder(encoder_inputs)
-        pooled_output = bert_outputs['pooled_output']  # shape (batch_size, 768)
-
-        # 3) Dropout applied on pooled_output (only during training)
-        x = self.dropout(pooled_output, training=training)
-
-        # 4) Fully connected layers as per original
-        x = self.dense_1024(x)
-        x = self.dense_256_a(x)
-        x = self.dense_256_b(x)
-        x = self.dense_128(x)
-        x = self.dense_64_a(x)
-        x = self.dense_64_b(x)
-        x = self.dense_16(x)
-        outputs = self.output_layer(x)  # softmax probabilities over 3 classes
-
-        return outputs
+### Relevant log output
 
 
-def my_model_function():
-    """
-    Returns an instance of MyModel with initialized TF Hub layers.
-    Note: requires tensorflow_hub installed and internet to download modules or 
-    cached modules on local disk. 
-    """
-    return MyModel()
 
-
-def GetInput():
-    """
-    Returns a random tensor input that matches the expected input of MyModel.
-    Since input shape is (batch_size,) with dtype string, we generate
-    a batch of random sentences (dummy strings).
-
-    Assumption: batch size 32, and each string length approx 10 tokens (words).
-    We generate dummy strings of repeated tokens for simplicity.
-    """
-    batch_size = 32
-    # Create dummy "sentences": e.g. "word word word ..." repeated 10 times
-    dummy_sentences = ["hello tensorflow keras model" for _ in range(batch_size)]
-    return tf.constant(dummy_sentences, dtype=tf.string)
-
+gpus = tf.config.experimental.list_physical_devices('GPU')
+print()
+print(gpus)
+print()
+for gpu in gpus:
+	tf.config.experimental.set_memory_growth(gpu, True)

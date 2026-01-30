@@ -1,40 +1,20 @@
-# torch.rand(B, C, H, W, dtype=torch.float32)  # Inferred input shape for the Conv3d model
+ERROR: test_DistributedDataParallel (__main__.TestDistBackendWithFork)
+ERROR: test_DistributedDataParallel_SyncBatchNorm (__main__.TestDistBackendWithFork)
+ERROR: test_DistributedDataParallel_SyncBatchNorm_Diff_Input_Sizes_gradient (__main__.TestDistBackendWithFork)
+ERROR: test_DistributedDataParallel_with_grad_is_view (__main__.TestDistBackendWithFork)
+
+PTSingle: 0.6859778165817261
+PT    :   0.6859777371088663
+NPSing:   0.6859777629530678
+NP    :   0.6859777629530678
 
 import torch
-import torch.nn as nn
+import numpy as np
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.conv3d = nn.Conv3d(1, 1, kernel_size=1, bias=False)
-        self.transformer_decoder_layer_gelu = nn.TransformerDecoderLayer(d_model=64, nhead=8, dim_feedforward=256, activation="gelu")
-        self.transformer_decoder_layer_relu = nn.TransformerDecoderLayer(d_model=64, nhead=8, dim_feedforward=256, activation="relu")
-        self.transformer_encoder_layer_gelu = nn.TransformerEncoderLayer(d_model=64, nhead=8, dim_feedforward=256, activation="gelu")
+data = [0.0014468701556324959,0.19974617660045624,0.2590259611606598,3.7469475269317627,0.027207523584365845,0.2559516727924347,0.1512461155653,2.632812023162842,0.1647290289402008,0.4095090329647064,0.24858342111110687,0.1345278024673462]
+ptTensorCPU = torch.Tensor(data)
+ptTensorGPU = ptTensorCPU.cuda()
 
-    def forward(self, x):
-        # Conv3d
-        conv3d_output = self.conv3d(x)
-        
-        # Transformer Decoder Layer with GELU
-        transformer_decoder_input = torch.randn(10, 32, 64).cuda()
-        transformer_decoder_memory = torch.randn(10, 32, 64).cuda()
-        transformer_decoder_output_gelu = self.transformer_decoder_layer_gelu(transformer_decoder_input, transformer_decoder_memory)
-        
-        # Transformer Decoder Layer with ReLU
-        transformer_decoder_output_relu = self.transformer_decoder_layer_relu(transformer_decoder_input, transformer_decoder_memory)
-        
-        # Transformer Encoder Layer with GELU
-        transformer_encoder_input = torch.randn(10, 32, 64).cuda()
-        transformer_encoder_output_gelu = self.transformer_encoder_layer_gelu(transformer_encoder_input)
-        
-        return conv3d_output, transformer_decoder_output_gelu, transformer_decoder_output_relu, transformer_encoder_output_gelu
-
-def my_model_function():
-    # Return an instance of MyModel, include any required initialization or weights
-    return MyModel()
-
-def GetInput():
-    # Return a random tensor input that matches the input expected by MyModel
-    B, C, H, W = 1, 1, 1, 1  # Example input shape for Conv3d
-    return torch.rand(B, C, H, W, dtype=torch.float32).cuda()
-
+print('np : %s' % np.mean(data))
+print('cpu: %s' % float(ptTensorCPU.mean()))
+print('gpu: %s' % float(ptTensorGPU.mean()))

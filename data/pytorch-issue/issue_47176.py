@@ -1,22 +1,51 @@
-# torch.rand(2, 3, 3, 3, dtype=torch.float32, device='cuda')
 import torch
-import torch.nn as nn
 
-class MyModel(nn.Module):
-    def __init__(self):
-        super(MyModel, self).__init__()
-        self.dropout = nn.Dropout(p=0.5)  # Core module causing the bug
+torch.Size([2, 3, 3, 3]) (54, 1, 18, 6)
+tensor([[[[ 0.,  1.,  2.],
+          [ 3.,  4.,  5.],
+          [ 6.,  7.,  8.]],
 
-    def forward(self, x):
-        return self.dropout(x)
+         [[ 9., 10., 11.],
+          [12., 13., 14.],
+          [15., 16., 17.]],
 
-def my_model_function():
-    return MyModel()  # Returns the faulty Dropout model
+         [[18., 19., 20.],
+          [21., 22., 23.],
+          [24., 25., 26.]]],
 
-def GetInput():
-    # Reproduces discontiguous channels-last input as in the issue
-    base = torch.empty(2, 3, 3, 6, device="cuda", memory_format=torch.channels_last)
-    base.normal_(0, 1)  # Random initialization instead of fixed arange
-    input_tensor = base[..., ::2]  # Creates discontiguous view
-    return input_tensor
 
+        [[[27., 28., 29.],
+          [30., 31., 32.],
+          [33., 34., 35.]],
+
+         [[36., 37., 38.],
+          [39., 40., 41.],
+          [42., 43., 44.]],
+
+         [[45., 46., 47.],
+          [48., 49., 50.],
+          [51., 52., 53.]]]], device='cuda:0')
+tensor([[[[ 0.,  3.,  6.],
+          [ 9., 12., 15.],
+          [18., 21., 24.]],
+
+         [[52.,  4.,  7.],
+          [10., 13., 16.],
+          [19., 22., 25.]],
+
+         [[53.,  5.,  8.],
+          [11., 14., 17.],
+          [20., 23., 26.]]],
+
+
+        [[[ 2., 30., 33.],
+          [36., 39., 42.],
+          [45., 48., 51.]],
+
+         [[28., 31., 34.],
+          [37., 40., 43.],
+          [46., 49., 52.]],
+
+         [[29., 32., 35.],
+          [38., 41., 44.],
+          [47., 50., 53.]]]], device='cuda:0')
