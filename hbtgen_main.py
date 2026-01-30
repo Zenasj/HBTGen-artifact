@@ -399,14 +399,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     import os
-
-    os.environ["http_proxy"] = "http://114.212.86.150:10809"
-    os.environ["https_proxy"] = "http://114.212.86.150:10809"
-    os.environ["CUDA_VISIBLE_DEVICES"] = "6"
-    os.environ["TMPDIR"] = "/data/zyzhao/tmp"
-    os.environ["TEMP"] = "/data/zyzhao/tmp"
-    os.environ["TMP"] = "/data/zyzhao/tmp"
-    os.environ["TORCH_HOME"] = "/data/zyzhao/transformers-cache"
-    os.environ["TRITON_CACHE_DIR"] = "/data/zyzhao/tmp/triton-cache"
-
     main()
