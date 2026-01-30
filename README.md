@@ -1,4 +1,4 @@
-# HAPFU
+# HBTGen
 
 A command-line pipeline for:
 
@@ -50,7 +50,7 @@ pip install -r requirements.txt
 │   ├── cluster_and_feature_generate/
 │   └── generate_scripts/
 ├── llm_config.json
-└── hapfu_main.py
+└── hbtgen_main.py
 ```
 
 ---
@@ -77,7 +77,7 @@ Create `llm_config.json` in the working directory:
 All commands are run through:
 
 ```bash
-python hapfu_main.py [OPTIONS]
+python hbtgen_main.py [OPTIONS]
 ```
 
 ### Common Options
@@ -109,7 +109,7 @@ reduction="umap",
 ### Example
 
 ```bash
-python hapfu_main.py \
+python hbtgen_main.py \
   --mode abstract \
   --compiler pytorch \
   --encoder-id 5
@@ -140,7 +140,7 @@ Generates feature markdowns from clustered CSV files using an LLM.
 ### Example
 
 ```bash
-python hapfu_main.py \
+python hbtgen_main.py \
   --mode feature \
   --compiler pytorch
 ```
@@ -163,7 +163,7 @@ Runs an evaluation loop driven by LLM prompts.
 ### Example
 
 ```bash
-python hapfu_main.py \
+python hbtgen_main.py \
   --mode script \
   --compiler pytorch \
   --time 4 \
