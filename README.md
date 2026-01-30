@@ -112,7 +112,7 @@ reduction="umap",
 python hbtgen_main.py \
   --mode abstract \
   --compiler pytorch \
-  --encoder-id 5
+  --encoder-id 6
 ```
 
 Encoder IDs:

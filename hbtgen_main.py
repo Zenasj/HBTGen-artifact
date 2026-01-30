@@ -8,10 +8,6 @@ Modes:
   - abstract: encode issue code into vectors + run clustering.
   - feature : generate cluster-level features using an LLM config.
   - script  : run an LLM-driven evaluation loop for multiple rounds.
-
-This file is intentionally structured to be easy to extend:
-  - Add a new mode in RunMode + argparse choices + parse_args_to_config() + run_with_config().
-  - Add a new compiler in TargetCompiler + argparse choices + parse_args_to_config().
 """
 
 import argparse
